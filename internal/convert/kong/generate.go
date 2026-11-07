@@ -61,6 +61,12 @@ func (w *writer) generate(pointer string, op map[string]any, original map[string
 	if len(plugins) > 0 {
 		route["plugins"] = plugins
 	}
+	if w.document[policy.CORSExtension] != nil && method != "options" {
+		// Kong forwards a plain OPTIONS request on a route that takes it.
+		w.report.Changed = append(w.report.Changed, Change{Route: name, Field: "cors", Note: "Kong answers preflights only on a route " +
+			"that takes OPTIONS, and this one does not, so browsers on other origins are refused (stricter). Add OPTIONS to its methods " +
+			"if Kong may also forward plain OPTIONS requests."})
+	}
 	w.report.Generated = append(w.report.Generated, name)
 	from := "the operation"
 	if original != nil {

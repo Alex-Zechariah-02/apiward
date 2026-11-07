@@ -16,10 +16,12 @@ import (
 	"github.com/Alex-Zechariah-02/apiward/internal/semantics"
 )
 
-// Result is a decK file read into an exchange document and its ledger.
+// Result is a decK file read into an exchange document and its ledger,
+// and the Kong route behind each operation in Kong's order, for reference tests.
 type Result struct {
 	Document map[string]any
 	Ledger   *exchange.Ledger
+	Routes   []semantics.Route
 }
 
 // reader holds what one Read has found so far.
@@ -46,6 +48,8 @@ type reader struct {
 	corsRules []*corsRule
 	browser   map[string]any // the API's x-apiward-cors, or nil
 	allow     []string
+	routes    []semantics.Route
+	groups    []string // groups of the consumer whose RS256 key is the first trusted one
 }
 
 // consumer is what the reader needs from a consumer: never a credential.
@@ -91,7 +95,7 @@ func Read(root map[string]any, data []byte) (*Result, error) {
 	r.rootMembers(root)
 	slices.SortFunc(r.ledger.Items, func(a, b exchange.Item) int { return cmp.Compare(a.ID, b.ID) })
 	slices.SortFunc(r.ledger.CredentialsSkipped, func(a, b exchange.Skipped) int { return cmp.Compare(a.Type, b.Type) })
-	return &Result{Document: r.document(), Ledger: r.ledger}, nil
+	return &Result{Document: r.document(), Ledger: r.ledger, Routes: kongOrder(r.routes)}, nil
 }
 
 // add records one ledger item; source marks the setting as accounted for.
@@ -140,8 +144,12 @@ func (r *reader) readConsumers(consumers []any) {
 		for _, kind := range credentialLists {
 			r.skip(kind, len(list(c[kind])))
 		}
+		trusted := len(r.ledger.Trust.Issuers)
 		for j, secret := range list(c["jwt_secrets"]) {
 			r.trustKey(object(secret), "consumer:"+name+":"+strconv.Itoa(j))
+		}
+		if trusted == 0 && len(r.ledger.Trust.Issuers) > 0 {
+			r.groups = entry.groups
 		}
 		r.carry("consumer:"+name, pointer, identity(c))
 		note := "Consumers and their credentials stay in the identity provider; they are not migrated."

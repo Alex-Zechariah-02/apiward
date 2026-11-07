@@ -31,6 +31,7 @@ type corsRule struct {
 	plugin *plugin
 	value  map[string]any
 	d      semantics.Distance
+	closed bool // the route does not take OPTIONS, so Kong answers no preflight on it
 }
 
 // cors maps Kong's cors plugin to the route's browser access. Without it
@@ -185,11 +186,21 @@ func (r *reader) settleCORS() {
 		value["methods"] = toAny(slices.DeleteFunc(texts(value["methods"]), func(m string) bool { return !used[m] }))
 		r.browser = value
 	}
+	closed := map[string]bool{} // plugin pointer → a route it applies to answers no preflight
+	for _, rule := range r.corsRules {
+		if rule != nil && rule.closed {
+			closed[rule.plugin.pointer] = true
+		}
+	}
 	for _, rule := range r.corsRules {
 		if rule == nil || r.used[rule.plugin.pointer] {
 			continue
 		}
 		d, target := rule.d, "#/"+policy.CORSExtension
+		if closed[rule.plugin.pointer] && d.Class != exchange.NotExpressible {
+			d = semantics.Distance{Class: exchange.Approximated, Direction: exchange.Looser,
+				Note: "A route of this cors plugin does not take OPTIONS, so Kong answers its preflights 404 and browsers on other origins are refused there; the gateway answers them. Accept the item to import the browser access."}
+		}
 		if value == nil && d.Class != exchange.NotExpressible {
 			d = semantics.Distance{Class: exchange.NotExpressible,
 				Note: "The API's routes differ in browser access; one API has one, so none is written and browsers on other origins are refused."}

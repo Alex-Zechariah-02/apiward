@@ -1,0 +1,60 @@
+{
+  "openapi": "3.1.0",
+  "info": {"title": "probe fixture", "version": "1"},
+  "components": {"securitySchemes": {"apiward": {"type": "http", "scheme": "bearer"}}},
+  "x-apiward-cors": {"origins": ["https://shop.example"], "methods": ["GET", "POST"], "headers": ["Content-Type"]},
+  "paths": {
+    "/items": {
+      "get": {"operationId": "items", "x-apiward-access": "allow", "security": []}
+    },
+    "/orders/{rest}": {
+      "get": {
+        "operationId": "orders.read", "x-apiward-target": "/orders/*", "x-apiward-access": "allow",
+        "security": [{"apiward": []}], "x-apiward-roles": ["CUSTOMER", "STAFF"],
+        "x-apiward-rate": {"algorithm": "sliding-window", "count": 3, "window_seconds": 1, "key": "subject"}
+      },
+      "post": {
+        "operationId": "orders.write", "x-apiward-target": "/orders/*", "x-apiward-access": "allow",
+        "security": [{"apiward": []}], "x-apiward-roles": ["STAFF"], "x-apiward-max-bytes": 64,
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {
+          "type": "object", "required": ["item", "count"],
+          "properties": {"item": {"type": "string", "minLength": 3}, "count": {"type": "integer", "minimum": 2}}
+        }}}}
+      }
+    },
+    "/hosted": {
+      "get": {
+        "operationId": "hosted", "x-apiward-access": "allow", "security": [],
+        "x-apiward-when": {"hosts": ["*.example.com"], "headers": [{"name": "X-Version", "value": "v2"}]}
+      }
+    },
+    "/denied": {"get": {"operationId": "denied", "x-apiward-access": "deny", "security": []}},
+    "/loose": {"get": {"operationId": "loose", "x-apiward-access": "allow", "security": []}},
+    "/refused": {"get": {"operationId": "refused", "x-apiward-access": "allow", "security": []}}
+  },
+  "x-apiward-migration": {
+    "version": 1,
+    "source": {"format": "openapi", "format_version": "3.1.0", "sha256": "0000000000000000000000000000000000000000000000000000000000000000"},
+    "items": [
+      {"id": "openapi:member:x-apiward-cors", "facet": "other", "class": "exact", "source": "#/x-apiward-cors", "target": "#/x-apiward-cors", "note": "", "accepted": false},
+      {"id": "openapi:operation:GET /denied", "facet": "route", "class": "exact", "source": "#/paths/~1denied/get", "target": "#/paths/~1denied/get", "note": "", "accepted": false},
+      {"id": "openapi:operation:GET /denied:access", "facet": "access", "class": "exact", "source": "#/paths/~1denied/get", "target": "#/paths/~1denied/get", "note": "", "accepted": false},
+      {"id": "openapi:operation:GET /hosted", "facet": "route", "class": "exact", "source": "#/paths/~1hosted/get", "target": "#/paths/~1hosted/get", "note": "", "accepted": false},
+      {"id": "openapi:operation:GET /hosted:when", "facet": "route", "class": "approximated", "direction": "both", "source": "#/paths/~1hosted/get", "target": "#/paths/~1hosted/get/x-apiward-when", "note": "", "accepted": false},
+      {"id": "openapi:operation:GET /items", "facet": "route", "class": "exact", "source": "#/paths/~1items/get", "target": "#/paths/~1items/get", "note": "", "accepted": false},
+      {"id": "openapi:operation:GET /loose", "facet": "route", "class": "exact", "source": "#/paths/~1loose/get", "target": "#/paths/~1loose/get", "note": "", "accepted": false},
+      {"id": "openapi:operation:GET /loose:auth", "facet": "auth", "class": "approximated", "direction": "looser", "source": "#/paths/~1loose/get", "target": "#/paths/~1loose/get", "note": "", "accepted": false},
+      {"id": "openapi:operation:GET /orders/{rest}", "facet": "route", "class": "exact", "source": "#/paths/~1orders~1{rest}/get", "target": "#/paths/~1orders~1{rest}/get", "note": "", "accepted": false},
+      {"id": "openapi:operation:GET /orders/{rest}:auth", "facet": "auth", "class": "approximated", "direction": "stricter", "source": "#/paths/~1orders~1{rest}/get", "target": "#/paths/~1orders~1{rest}/get", "note": "", "accepted": false},
+      {"id": "openapi:operation:GET /orders/{rest}:rate", "facet": "rate", "class": "approximated", "direction": "both", "source": "#/paths/~1orders~1{rest}/get", "target": "#/paths/~1orders~1{rest}/get", "note": "", "accepted": false},
+      {"id": "openapi:operation:GET /orders/{rest}:roles", "facet": "roles", "class": "equivalent", "source": "#/paths/~1orders~1{rest}/get", "target": "#/paths/~1orders~1{rest}/get", "note": "", "accepted": false},
+      {"id": "openapi:operation:GET /refused", "facet": "route", "class": "not_expressible", "source": "#/paths/~1refused/get", "target": "", "note": "", "accepted": false},
+      {"id": "openapi:operation:POST /orders/{rest}", "facet": "route", "class": "exact", "source": "#/paths/~1orders~1{rest}/post", "target": "#/paths/~1orders~1{rest}/post", "note": "", "accepted": false},
+      {"id": "openapi:operation:POST /orders/{rest}:size", "facet": "size", "class": "equivalent", "source": "#/paths/~1orders~1{rest}/post", "target": "#/paths/~1orders~1{rest}/post", "note": "", "accepted": false},
+      {"id": "openapi:operation:POST /orders/{rest}:body", "facet": "validation", "class": "exact", "source": "#/paths/~1orders~1{rest}/post", "target": "#/paths/~1orders~1{rest}/post/requestBody", "note": "", "accepted": false}
+    ],
+    "carried": [],
+    "credentials_skipped": [],
+    "trust": {"issuers": []}
+  }
+}

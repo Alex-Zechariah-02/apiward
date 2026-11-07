@@ -24,16 +24,24 @@ const (
 // methods an operation pointer may name, as OpenAPI lists them.
 var methods = []string{"get", "put", "post", "delete", "options", "head", "patch", "trace"}
 
-// withoutLooser returns a copy of the document without each operation that
-// a looser, unaccepted ledger item points into, and a refusal for each. A
-// looser item that points at no operation is an error: it must not pass.
+// withoutLooser returns a copy of the document without each operation or
+// API setting that a looser, unaccepted ledger item points into, and a
+// refusal for each. A looser item that points at neither is an error: it
+// must not pass.
 func withoutLooser(document map[string]any, ledger *exchange.Ledger) (map[string]any, []openapi.Refused, error) {
+	out := maps.Clone(document)
 	paths, _ := document["paths"].(map[string]any)
 	paths = maps.Clone(paths)
 	refused := []openapi.Refused{}
 	removed := map[string]bool{}
 	for _, item := range ledger.Items {
 		if item.Class != exchange.Approximated || item.Direction != exchange.Looser || item.Accepted {
+			continue
+		}
+		if setting := strings.TrimPrefix(item.Target, "#/"); slices.Contains(exchange.Settings, setting) {
+			delete(out, setting)
+			refused = append(refused, openapi.Refused{Path: setting, Code: CodeLooser,
+				Message: "Looser than the source: " + item.Note + " Accept the ledger item to import it.", Field: policy.Clip(item.ID)})
 			continue
 		}
 		path, method, err := operationAt(item.Target)
@@ -50,7 +58,6 @@ func withoutLooser(document map[string]any, ledger *exchange.Ledger) (map[string
 		refused = append(refused, openapi.Refused{Method: strings.ToUpper(method), Path: policy.Clip(path), Code: CodeLooser,
 			Message: "Looser than the source: " + item.Note + " Accept the ledger item to import it.", Field: policy.Clip(item.ID)})
 	}
-	out := maps.Clone(document)
 	out["paths"] = paths
 	return out, refused, nil
 }

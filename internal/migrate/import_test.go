@@ -19,8 +19,10 @@ import (
 
 // settings is the number of source settings in each fixture, counted by
 // hand: shop has 7 operations, 2 unchecked parameters, 1 optional body,
-// 1 scope and its servers; plain has 2 operations; open has 1.
-var settings = map[string]int{"shop.json": 12, "plain.yaml": 2, "open.json": 1}
+// 1 scope, its servers, 3 signed-in operations naming no roles and
+// 1 assumed body limit; plain has 2 operations; open has 1 operation
+// naming no roles.
+var settings = map[string]int{"shop.json": 16, "plain.yaml": 2, "open.json": 2}
 
 // run runs a migrate command line and returns its exit status and stderr.
 func run(args ...string) (int, string) {
@@ -101,6 +103,10 @@ func TestMigrateImport(t *testing.T) {
 		"openapi:operation:GET /health":              {"exact", ""},
 		"openapi:operation:GET /orders/{id}":         {"approximated", "looser"},
 		"openapi:operation:POST /orders:body":        {"approximated", "stricter"},
+		"openapi:operation:POST /orders:size":        {"approximated", "stricter"},
+		"openapi:operation:GET /orders:roles":        {"approximated", "stricter"},
+		"openapi:operation:POST /orders:roles":       {"approximated", "stricter"},
+		"openapi:operation:GET /orders/{id}:roles":   {"approximated", "stricter"},
 		"openapi:operation:GET /orders/{id}/items":   {"not_expressible", "PATH_TEMPLATE_UNSUPPORTED"},
 		"openapi:operation:TRACE /debug":             {"not_expressible", "METHOD_REFUSED"},
 		"openapi:parameter:GET /orders:query.page":   {"not_expressible", "query"},
@@ -128,7 +134,7 @@ func TestMigrateImport(t *testing.T) {
 	if err := json.Unmarshal(data, &report); err != nil {
 		t.Fatal(err)
 	}
-	summary := Summary{Exact: 4, Approximated: Directions{Stricter: 1, Looser: 1}, NotExpressible: 6}
+	summary := Summary{Exact: 4, Approximated: Directions{Stricter: 5, Looser: 1}, NotExpressible: 6}
 	if report.LedgerSummary != summary || report.API != "" || len(report.Refused) != 2 || report.StaleDecisions == nil {
 		t.Fatalf("report %s", data)
 	}

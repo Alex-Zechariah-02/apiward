@@ -26,13 +26,18 @@ type controls struct {
 	when     map[string]any // the route's x-apiward-when, or nil
 	cors     *corsRule      // the route's cors plugin, or nil
 	allow    []string       // the route's allowed address ranges, or nil
+	// Kong's own decision primitives, for reference tests.
+	identity    *semantics.Identity
+	sourceRate  *semantics.Rate
+	sourceBytes int64
 }
 
-// pending is an item every operation of the route gets.
+// pending is an item every operation of the route gets; member is the
+// pointer below the operation it targets, or "".
 type pending struct {
-	suffix, facet, source string
-	bodyOnly              bool
-	d                     semantics.Distance
+	suffix, facet, source, member string
+	bodyOnly                      bool
+	d                             semantics.Distance
 }
 
 // refusal is why a plugin refuses its route.
@@ -106,11 +111,16 @@ func (r *reader) jwt(c *controls, plugins map[string]*plugin) *refusal {
 	if len(r.ledger.Trust.Issuers) == 0 {
 		return &refusal{CodeAuth, "no RS256 credential whose key is the issuer is in the file.", p.pointer}
 	}
+	c.identity = &semantics.Identity{Scheme: semantics.IssuerKey, ChecksExpiry: slices.Contains(texts(p.config["claims_to_verify"]), "exp")}
 	anonymous := text(p.config["anonymous"])
 	if anonymous == "" {
 		c.auth = true
 		c.item("jwt", "auth", p, semantics.Distance{Class: exchange.Approximated, Direction: exchange.Stricter,
 			Note: "Tokens of the issuers' RS256 keys only; the gateway also requires an audience and reads tokens from the Authorization header only (query and cookie tokens are refused)."})
+		if plugins["acl"] == nil {
+			c.item("roles", "roles", p, semantics.Distance{Class: exchange.Approximated, Direction: exchange.Stricter,
+				Note: "Kong admitted every signed-in caller; the gateway permits listed roles only, so every caller is refused until permits are added."})
+		}
 		return nil
 	}
 	guest := r.consumers[anonymous]
@@ -150,8 +160,8 @@ func acl(c *controls, plugins map[string]*plugin) *refusal {
 		return &refusal{CodeDeny, "acl without an allow list cannot be expressed.", p.pointer}
 	case !c.auth && plugins["jwt"] == nil:
 		c.deny = true
-		c.item("acl", "access", p, semantics.Distance{Class: exchange.Equivalent,
-			Note: "No plugin signs callers in, so Kong's acl refuses every caller; the operation is denied."})
+		c.item("acl", "access", p, semantics.Distance{Class: exchange.Approximated, Direction: exchange.Both,
+			Note: "No plugin signs callers in, so Kong's acl refuses every caller, with 401; the operation is denied, with 403."})
 	case !c.auth:
 		c.item("acl", "roles", p, semantics.Distance{Class: exchange.Approximated, Direction: exchange.Looser,
 			Note: "Anonymous callers are admitted, so the roles do not apply. Accept the item to import it."})
@@ -199,7 +209,8 @@ func rate(c *controls, plugins map[string]*plugin) *refusal {
 			key = "subject"
 		}
 	}
-	n, w, d := semantics.Rate{Algorithm: semantics.FixedAligned, Count: count, Window: window}.Convert()
+	c.sourceRate = &semantics.Rate{Algorithm: semantics.FixedAligned, Count: count, Window: window}
+	n, w, d := c.sourceRate.Convert()
 	if d.Class == exchange.NotExpressible {
 		return &refusal{CodeRate, d.Note, p.pointer}
 	}
@@ -236,6 +247,7 @@ func size(c *controls, plugins map[string]*plugin) *refusal {
 		return &refusal{CodeUnknown, "request-size-limiting has an unknown unit or size.", p.pointer}
 	}
 	c.maxBytes = amount * unit
+	c.sourceBytes = c.maxBytes
 	d := semantics.Distance{Class: exchange.Equivalent, Note: fmt.Sprintf("Bodies of at most %d bytes.", c.maxBytes)}
 	if c.maxBytes > maxBodyBytes {
 		c.maxBytes = maxBodyBytes

@@ -53,7 +53,7 @@ func TestRoles(t *testing.T) {
 	}{
 		{allow, exchange.Equivalent, ""},
 		{Roles{Source: TokenClaim, Claim: "realm.groups", Rule: AllowList}, exchange.Approximated, exchange.Stricter},
-		{Roles{Source: GatewayGroups, Rule: AllowList}, exchange.Approximated, exchange.Stricter},
+		{Roles{Source: GatewayGroups, Rule: AllowList}, exchange.Approximated, exchange.Both},
 		{deny, exchange.NotExpressible, ""},
 	}
 	for _, c := range cases {

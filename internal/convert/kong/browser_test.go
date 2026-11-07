@@ -5,6 +5,7 @@ package kong
 
 import (
 	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 
@@ -27,7 +28,8 @@ func TestKongBrowser(t *testing.T) {
 	for _, item := range result.Ledger.Items {
 		classes[strings.TrimPrefix(item.ID, Format+":")] = item.Class
 	}
-	if classes["plugin:service.site:cors"] != exchange.Equivalent || classes["operation:pages:GET /pages:ip-restriction"] != exchange.Equivalent {
+	// The routes do not take OPTIONS, so Kong answers no preflight: looser.
+	if classes["plugin:service.site:cors"] != exchange.Approximated || classes["operation:pages:GET /pages:ip-restriction"] != exchange.Equivalent {
 		t.Fatalf("items %v", classes)
 	}
 
@@ -35,9 +37,12 @@ func TestKongBrowser(t *testing.T) {
 	// its operation, with the API's cors and ip-restriction plugins; read
 	// again, they give the same settings.
 	result.Ledger.Source.Format, result.Ledger.Carried = "openapi", nil
-	out, _, err := Write(result.Document, result.Ledger, Options{})
+	out, report, err := Write(result.Document, result.Ledger, Options{})
 	if err != nil {
 		t.Fatal(err)
+	}
+	if !slices.ContainsFunc(report.Changed, func(c Change) bool { return c.Field == "cors" && c.Route == "pages-get" }) {
+		t.Errorf("no report that the route without OPTIONS answers no preflight: %+v", report.Changed)
 	}
 	data, _ := json.Marshal(out)
 	var root map[string]any

@@ -6,6 +6,7 @@ import (
 	"cmp"
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"slices"
 	"strings"
 
@@ -38,6 +39,22 @@ func openapiLedger(root map[string]any, report *openapi.Report, data []byte) *ex
 		_, d := semantics.PathRule{Match: semantics.LastSegmentTemplate, Value: w.Path}.Convert()
 		at := pointer(w.Path, w.Method)
 		add("operation:"+names[w.Operation], "route", at, at, d)
+	}
+	for _, m := range slices.Concat(report.Mapped, report.Widened) {
+		if m.Auth == "required" && !namesRoles(root, m.Path, m.Method) {
+			add("operation:"+names[m.Operation]+":roles", "roles", pointer(m.Path, m.Method), pointer(m.Path, m.Method),
+				semantics.Distance{Class: exchange.Approximated, Direction: exchange.Stricter,
+					Note: "The description names no roles: no role is permitted until permits are added, so every caller is refused."})
+		}
+	}
+	for _, a := range report.Assumed {
+		if a.Field != "body.max_bytes" {
+			continue // the other assumptions state JSON Schema's own defaults
+		}
+		method, path, _ := strings.Cut(names[a.Operation], " ")
+		add("operation:"+names[a.Operation]+":size", "size", pointer(path, method), pointer(path, method),
+			semantics.Distance{Class: exchange.Approximated, Direction: exchange.Stricter,
+				Note: fmt.Sprintf("The description states no body limit; the gateway refuses bodies over %v bytes.", a.Value)})
 	}
 	for _, r := range report.Refused {
 		d := semantics.Distance{Class: exchange.NotExpressible, Note: r.Code + ": " + r.Message}
@@ -83,6 +100,15 @@ func openapiLedger(root map[string]any, report *openapi.Report, data []byte) *ex
 	}
 	slices.SortFunc(ledger.Items, func(a, b exchange.Item) int { return cmp.Compare(a.ID, b.ID) })
 	return ledger
+}
+
+// namesRoles reports whether the described operation lists x-apiward-roles.
+func namesRoles(root map[string]any, path, method string) bool {
+	paths, _ := root["paths"].(map[string]any)
+	item, _ := paths[path].(map[string]any)
+	op, _ := item[strings.ToLower(method)].(map[string]any)
+	_, named := op["x-apiward-roles"]
+	return named
 }
 
 // mappedDistance is exact, except where the import requires sign-in that

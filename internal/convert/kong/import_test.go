@@ -35,7 +35,7 @@ func TestKongImport(t *testing.T) {
 		{"operation:items:GET /items:body", exchange.Approximated, exchange.Stricter, "refuses a request with a body"},
 		{"operation:orders:GET /orders/{rest}", exchange.Approximated, exchange.Stricter, "/orders/ itself"},
 		{"operation:orders:POST /orders/{rest}:jwt", exchange.Approximated, exchange.Stricter, "audience"},
-		{"operation:orders:POST /orders/{rest}:acl", exchange.Approximated, exchange.Stricter, "roles claim"},
+		{"operation:orders:POST /orders/{rest}:acl", exchange.Approximated, exchange.Both, "roles claim"},
 		{"operation:orders:POST /orders/{rest}:rate-limiting", exchange.Approximated, exchange.Both, "per consumer"},
 		{"operation:orders:POST /orders/{rest}:request-size-limiting", exchange.Equivalent, "", "8192 bytes"},
 		{"operation:orders:POST /orders/{rest}:body", exchange.Approximated, exchange.Stricter, "JSON object of at most 8192"},

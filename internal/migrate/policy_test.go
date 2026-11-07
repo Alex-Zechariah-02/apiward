@@ -114,6 +114,21 @@ func TestLooserNeedsAccept(t *testing.T) {
 	if code != openapi.ExitPartial || !slices.Contains(operationIDs(t, out), "shop.getOrder") {
 		t.Fatalf("exit %d: %s", code, stderr)
 	}
+
+	// A looser API setting: Kong answers no preflight on these routes, so
+	// the browser access is left out of the policy until accepted.
+	browser, _, _, _ := kongImport(t, "browser.yaml")
+	for _, extra := range [][]string{nil, {"--decisions", decisionsFile(t, `{"target": "$['x-apiward-migration'].items[?@.id=='kong-deck:plugin:service.site:cors']",
+		"update": {"accepted": true, "direction": "looser"}}`)}} {
+		code, stderr, out, report := migrated(t, browser, base(), extra...)
+		var p policy.Policy
+		data, _ := os.ReadFile(out)
+		json.Unmarshal(data, &p)
+		left := slices.ContainsFunc(reportOf(t, report).Refused, func(r openapi.Refused) bool { return r.Code == CodeLooser })
+		if code != openapi.ExitPartial || p.APIs[1].CORS == nil != (extra == nil) || left != (extra == nil) {
+			t.Errorf("decisions %v: exit %d, browser access %+v, left out %v: %s", extra, code, p.APIs[1].CORS, left, stderr)
+		}
+	}
 }
 
 // TestCarriedNeverCompiled puts a canary in every place the policy must not

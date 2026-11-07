@@ -17,6 +17,7 @@ const (
 	KeySet       Scheme = "jwks"          // keys fetched from the issuer's key set
 	CallerKey    Scheme = "caller_key"    // a key stored per consumer
 	SharedSecret Scheme = "shared_secret" // a secret shared with the gateway (HMAC, API key, password)
+	Absent       Scheme = "absent"        // sign-in is required, but nothing signs a caller in
 )
 
 // Identity is a sign-in setting and the token checks it makes.
@@ -40,6 +41,9 @@ const (
 
 // Authenticates is the decision rule: whether the token signs the caller in.
 func (i Identity) Authenticates(token Token) bool {
+	if i.Scheme == Absent {
+		return false
+	}
 	switch token {
 	case ValidToken:
 		return true
@@ -62,6 +66,8 @@ func (i Identity) Convert() Distance {
 		added = append(added, "audience")
 	}
 	switch {
+	case i.Scheme == Absent:
+		return equivalent("Nothing signs callers in, so every caller is refused.")
 	case i.Scheme == CallerKey || i.Scheme == SharedSecret:
 		return inexpressible("The gateway signs callers in only with tokens of a trusted issuer.")
 	case i.Scheme == KeySet:
@@ -117,7 +123,11 @@ func (r Roles) Convert() Distance {
 	case r.Rule == DenyList:
 		return inexpressible("The gateway permits listed roles; it has no deny list.")
 	case r.Source == GatewayGroups:
-		return approximated(exchange.Stricter, "Groups stored at the source gateway must be issued as a roles claim; until then the caller is refused.")
+		// The source decides by the groups stored on the signed-in consumer,
+		// the gateway by the token's roles: a token can carry a listed role
+		// its consumer never held, and the reverse.
+		return approximated(exchange.Both, "The source decided by groups stored on its consumers; the gateway reads the token's roles claim. "+
+			"Callers the source refused are permitted when their token carries a listed role, and callers it admitted are refused until it does.")
 	case r.Claim != "roles":
 		return approximated(exchange.Stricter, "The gateway reads the roles claim; tokens must carry the roles there.")
 	}

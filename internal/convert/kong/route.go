@@ -113,9 +113,12 @@ func (r *reader) readRoute(svc *service, route map[string]any, pointer string) {
 		r.causes[refused.source] = refused.code + ": " + refused.message
 		return
 	}
+	if c.cors != nil && route["methods"] != nil && !slices.Contains(texts(route["methods"]), "OPTIONS") {
+		c.cors.closed = true
+	}
 	if when != nil {
 		c.when = when
-		c.items = append(c.items, pending{suffix: "when", facet: "route", source: pointer, d: whenDistance(when)})
+		c.items = append(c.items, pending{suffix: "when", facet: "route", source: pointer, member: "/" + policy.WhenExtension, d: whenDistance(when)})
 	}
 	if r.forwardSet && !slices.Equal(c.allow, r.allow) {
 		r.refuse("route:"+name, "route", pointer, CodeSetting,
@@ -185,14 +188,14 @@ func (r *reader) operations(name, pointer string, route map[string]any, c *contr
 		d.Note = strings.TrimSpace(d.Note + methodNote)
 		for _, target := range targets {
 			for _, method := range routeMethods {
-				r.operation(name, pointer, strings.ToUpper(method), target, index, d, c)
+				r.operation(name, pointer, strings.ToUpper(method), target, index, rule, d, c)
 			}
 			index++
 		}
 	}
 }
 
-func (r *reader) operation(name, pointer, method, target string, index int, d semantics.Distance, c *controls) {
+func (r *reader) operation(name, pointer, method, target string, index int, rule semantics.PathRule, d semantics.Distance, c *controls) {
 	path, prefix := strings.CutSuffix(target, "*")
 	if prefix {
 		path += "{rest}"
@@ -218,6 +221,7 @@ func (r *reader) operation(name, pointer, method, target string, index int, d se
 	}
 	item[strings.ToLower(method)] = op
 	r.count++
+	r.routes = append(r.routes, r.sourceRoute(operationID, method, rule, c))
 	r.signedIn = r.signedIn || c.auth
 	at := "#/paths/" + escape(path) + "/" + strings.ToLower(method)
 	r.add(id, "route", pointer, at, d)
@@ -225,7 +229,7 @@ func (r *reader) operation(name, pointer, method, target string, index int, d se
 		if e.bodyOnly && !slices.Contains(bodyMethods, method) {
 			continue
 		}
-		r.add(id+":"+e.suffix, e.facet, e.source, at, e.d)
+		r.add(id+":"+e.suffix, e.facet, e.source, at+e.member, e.d)
 	}
 	r.add(id+":body", "validation", pointer, at, c.bodyDistance(method))
 }

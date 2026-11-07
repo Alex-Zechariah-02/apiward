@@ -32,6 +32,7 @@ var commands = map[string]openapi.Subcommand{
 	"inventory": {Usage: inventoryUsage, Required: []string{"from", "in", "report"}, Run: runInventory},
 	"policy": {Usage: policyUsage, Required: []string{"exchange", "base", "api", "upstream", "out", "report"},
 		Optional: noDecisions(), Switches: []string{"with-permits"}, Run: runPolicy},
+	"probes": {Usage: probesUsage, Required: []string{"exchange", "out"}, Run: runProbes},
 }
 
 // Command runs "migrate <subcommand>" and returns the exit status.
