@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Alex-Zechariah-02/apiward/internal/session"
 	"github.com/Alex-Zechariah-02/apiward/internal/store"
 )
 
@@ -23,7 +24,7 @@ func TestEnrolmentExpiryAtConsumption(t *testing.T) {
 			defer st.Close()
 			issued := time.Now().UTC().Truncate(time.Millisecond)
 			expires := issued.Add(time.Minute)
-			pending := store.Enrolment{Name: "late", Secret: tokenHash(newToken()), Permissions: store.PermRead, ExpiresAt: expires}
+			pending := store.Enrolment{Name: "late", Secret: session.Hash(session.NewToken()), Permissions: store.PermRead, ExpiresAt: expires}
 			issue := store.TransitionRecord{ID: "operator:expiry-test", Kind: "operator.enrol", Actor: "operator", Target: pending.Name, Digest: "test"}
 			if err := st.IssueEnrolment(t.Context(), issue, pending, issued); err != nil {
 				t.Fatal(err)

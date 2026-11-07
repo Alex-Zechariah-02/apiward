@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Alex-Zechariah-02/apiward/internal/session"
 	"github.com/Alex-Zechariah-02/apiward/internal/store"
 )
 
@@ -92,12 +93,12 @@ func TestNativeListenersAndAdministration(t *testing.T) {
 	// No Admin API route exists on the data plane, with or without the
 	// administrator's session and the admin origin.
 	harness := e.mustLogin(harnessAdmin, harnessPassword)
-	session := harness.headers(e)
+	signedIn := harness.headers(e)
 	for _, probe := range []struct{ method, path string }{
 		{http.MethodGet, "/admin/health"}, {http.MethodGet, "/admin/status"}, {http.MethodPost, "/admin/session"},
 		{http.MethodPut, "/admin/blocked-accounts/mallory"}, {http.MethodPost, "/admin/candidates"}, {http.MethodGet, "/"},
 	} {
-		resp, body := e.exchange(probe.method, probe.path, "application/json", `{}`, session...)
+		resp, body := e.exchange(probe.method, probe.path, "application/json", `{}`, signedIn...)
 		_, id := requestID(resp, body)
 		if events := e.requestEvents(id, 1); resp.StatusCode != http.StatusNotFound || len(events) != 1 || events[0]["stage"] != "ROUTE" {
 			t.Errorf("%s %s on the data plane: %d %s, events %v", probe.method, probe.path, resp.StatusCode, body, events)
@@ -108,7 +109,7 @@ func TestNativeListenersAndAdministration(t *testing.T) {
 	membership := `{"reason":"test containment"}`
 	put := func(header ...string) int {
 		code, _, _ := e.adminSend(http.MethodPut, "/admin/blocked-accounts/alice", membership,
-			append([]string{"If-Match", `"r1"`, "Idempotency-Key", "native-admin-" + newToken()[:8]}, header...)...)
+			append([]string{"If-Match", `"r1"`, "Idempotency-Key", "native-admin-" + session.NewToken()[:8]}, header...)...)
 		return code
 	}
 	cookie := []string{"Cookie", sessionCookie + "=" + harness.cookie}
@@ -119,7 +120,7 @@ func TestNativeListenersAndAdministration(t *testing.T) {
 		"no session":      {[]string{"Origin", e.adminOrigin()}, http.StatusUnauthorized},
 		"no CSRF token":   {append(cookie, "Origin", e.adminOrigin()), http.StatusForbidden},
 		"foreign origin":  {append(cookie, csrfHeader, harness.csrf, "Origin", "http://"+e.dataAddr), http.StatusForbidden},
-		"data-plane host": {append(session, "Host", e.dataAddr), http.StatusBadRequest},
+		"data-plane host": {append(signedIn, "Host", e.dataAddr), http.StatusBadRequest},
 	} {
 		if got := put(tc.header...); got != tc.want {
 			t.Errorf("membership change with %s: %d, want %d", name, got, tc.want)
@@ -131,7 +132,7 @@ func TestNativeListenersAndAdministration(t *testing.T) {
 	if code, _ := e.get("/a/x", bearer(t, "alice")...); code != http.StatusOK {
 		t.Fatalf("alice before containment: %d", code)
 	}
-	if got := put(session...); got != http.StatusOK {
+	if got := put(signedIn...); got != http.StatusOK {
 		t.Fatalf("authorised membership change: %d", got)
 	}
 	member := e.status()

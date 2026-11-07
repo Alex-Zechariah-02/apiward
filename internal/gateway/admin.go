@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/audit"
+	"github.com/Alex-Zechariah-02/apiward/internal/session"
 	"github.com/Alex-Zechariah-02/apiward/internal/store"
 )
 
@@ -33,7 +34,7 @@ const (
 // caller is the authenticated administrator of one admin request.
 type caller struct {
 	admin   store.Administrator
-	session session
+	session session.Session
 	token   string
 }
 
@@ -187,7 +188,7 @@ func (c *Controller) route(mux *http.ServeMux, pattern string, required store.Pe
 				return
 			}
 			token := r.Header.Get(csrfHeader)
-			if subtle.ConstantTimeCompare([]byte(token), []byte(who.session.csrf)) != 1 {
+			if subtle.ConstantTimeCompare([]byte(token), []byte(who.session.CSRF)) != 1 {
 				c.refuse(w, r, http.StatusForbidden, "forbidden", "csrf", &who)
 				return
 			}
@@ -197,7 +198,7 @@ func (c *Controller) route(mux *http.ServeMux, pattern string, required store.Pe
 			return
 		}
 		if !unsafeMethod(r.Method) {
-			c.audit.Record(audit.Event{Kind: "admin.read", Method: r.Method, Path: r.URL.Path, Actor: who.admin.Name, Session: who.session.reference})
+			c.audit.Record(audit.Event{Kind: "admin.read", Method: r.Method, Path: r.URL.Path, Actor: who.admin.Name, Session: who.session.Reference})
 		}
 		handler(w, r, who)
 	})
@@ -211,18 +212,18 @@ func (c *Controller) authenticate(w http.ResponseWriter, r *http.Request) (calle
 	var who caller
 	if cookie, err := r.Cookie(sessionCookie); err == nil {
 		who.token = cookie.Value
-		who.session, reason = c.sessions.lookup(cookie.Value, time.Now())
+		who.session, reason = c.sessions.Lookup(cookie.Value, time.Now())
 	}
 	if reason == "" {
-		admin, found, err := c.store.Administrator(r.Context(), who.session.admin)
+		admin, found, err := c.store.Administrator(r.Context(), who.session.Admin)
 		if err != nil {
 			c.logger.Error("reading administrator", "error", err)
 			adminError(w, http.StatusServiceUnavailable, "unavailable", "")
 			return caller{}, false
 		}
 		who.admin = admin
-		if !found || admin.Status != "active" || admin.Credential != who.session.credential {
-			c.sessions.revoke(who.token)
+		if !found || admin.Status != "active" || admin.Credential != who.session.Credential {
+			c.sessions.Revoke(who.token)
 			reason = "credential_changed"
 		}
 	}
@@ -238,7 +239,7 @@ func (c *Controller) authenticate(w http.ResponseWriter, r *http.Request) (calle
 func (c *Controller) refuse(w http.ResponseWriter, r *http.Request, status int, code, reason string, who *caller) {
 	event := audit.Event{Kind: "admin.rejected", Method: r.Method, Path: r.URL.Path, Status: status, Reason: reason}
 	if who != nil {
-		event.Kind, event.Actor, event.Session = "admin.denied", who.admin.Name, who.session.reference
+		event.Kind, event.Actor, event.Session = "admin.denied", who.admin.Name, who.session.Reference
 	}
 	c.audit.Record(event)
 	adminError(w, status, code, "")

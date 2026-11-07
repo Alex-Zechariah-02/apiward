@@ -11,6 +11,7 @@ import (
 	"sync"
 	"unicode/utf8"
 
+	"github.com/Alex-Zechariah-02/apiward/internal/session"
 	"golang.org/x/crypto/argon2"
 )
 
@@ -61,4 +62,4 @@ func verifyPassword(encoded, password string) bool {
 
 // dummyHash is verified against when the named administrator does not exist,
 // so the response time does not reveal which names exist.
-var dummyHash = sync.OnceValue(func() string { return hashPassword(newToken()) })
+var dummyHash = sync.OnceValue(func() string { return hashPassword(session.NewToken()) })

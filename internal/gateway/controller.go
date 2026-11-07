@@ -17,6 +17,7 @@ import (
 
 	"github.com/Alex-Zechariah-02/apiward/internal/audit"
 	"github.com/Alex-Zechariah-02/apiward/internal/compile"
+	"github.com/Alex-Zechariah-02/apiward/internal/session"
 	"github.com/Alex-Zechariah-02/apiward/internal/store"
 )
 
@@ -91,7 +92,7 @@ type Controller struct {
 	observations *observations
 
 	// Administrator authentication state, in memory only.
-	sessions *sessions
+	sessions *session.Table
 	throttle *throttle
 	hashing  chan struct{} // bounds concurrent password hashing
 
@@ -163,7 +164,7 @@ func prepareController(cfg Config, logger *slog.Logger) (*Controller, error) {
 		limiter:      newLimiter(),
 		clock:        rateClock{anchor: time.Now()},
 		observations: newObservations(),
-		sessions:     newSessions(cfg.AdminIdleTimeout, cfg.AdminSessionLifetime),
+		sessions:     session.New(cfg.AdminIdleTimeout, cfg.AdminSessionLifetime),
 		throttle:     newThrottle(),
 		hashing:      make(chan struct{}, maxHashing),
 		logger:       logger,

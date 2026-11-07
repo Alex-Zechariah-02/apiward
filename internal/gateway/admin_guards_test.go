@@ -9,6 +9,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/Alex-Zechariah-02/apiward/internal/session"
 )
 
 // Repeated failures lock one administrator name, a burst of
@@ -118,7 +120,7 @@ func TestBrowserRequestGuards(t *testing.T) {
 		{"same host, another port", slices.Concat(cookie, csrf, []string{"Origin", "http://127.0.0.1:1"})},
 		{"same port, another host name", slices.Concat(cookie, csrf, []string{"Origin", "http://localhost:" + port(e.admin)})},
 		{"no CSRF token", slices.Concat(cookie, origin)},
-		{"wrong CSRF token", slices.Concat(cookie, origin, []string{csrfHeader, newToken()})},
+		{"wrong CSRF token", slices.Concat(cookie, origin, []string{csrfHeader, session.NewToken()})},
 		{"another session's CSRF token", slices.Concat(cookie, origin, []string{csrfHeader, other.csrf})},
 	}
 	for i, tc := range cases {

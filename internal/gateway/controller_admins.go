@@ -38,7 +38,7 @@ func (c *Controller) Enrol(ctx context.Context, e store.Enrolment, passwordHash 
 	if err != nil {
 		return c.storeFailure(t.ID, err)
 	}
-	c.sessions.revokeAdmin(e.Name)
+	c.sessions.RevokeAdmin(e.Name)
 	fault.CrashPoint("enrol-after-commit")
 	return c.finish(ctx, Outcome{Transition: t.ID, Outcome: "committed"}, audit.Event{Kind: "transition.committed", Transition: t.ID, Actor: e.Name})
 }
@@ -71,6 +71,6 @@ func (c *Controller) ChangePassword(ctx context.Context, admin store.Administrat
 	if err != nil {
 		return c.storeFailure(t.ID, err)
 	}
-	c.sessions.revokeAdmin(admin.Name)
+	c.sessions.RevokeAdmin(admin.Name)
 	return c.finish(ctx, Outcome{Transition: t.ID, Outcome: "committed"}, audit.Event{Kind: "transition.committed", Transition: t.ID, Actor: admin.Name})
 }

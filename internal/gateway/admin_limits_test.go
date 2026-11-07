@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/compile"
+	"github.com/Alex-Zechariah-02/apiward/internal/session"
 	"github.com/Alex-Zechariah-02/apiward/internal/store"
 )
 
@@ -32,7 +33,7 @@ func TestAdminLimits(t *testing.T) {
 		t.Fatalf("limits body: %s (%v)", body, err)
 	}
 	want := map[string]int64{
-		"temporary_rules": store.MaxActiveOverrides, "live_views": maxEventStreams, "administrator_sessions": maxSessions,
+		"temporary_rules": store.MaxActiveOverrides, "live_views": maxEventStreams, "administrator_sessions": session.Max,
 		"rate_counters": compile.MaxCounters, "recent_requests": recentEventLimit,
 	}
 	for name, max := range want {

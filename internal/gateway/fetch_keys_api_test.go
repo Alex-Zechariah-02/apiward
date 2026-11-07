@@ -9,6 +9,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/Alex-Zechariah-02/apiward/internal/session"
 )
 
 func TestFetchKeyReload(t *testing.T) {
@@ -166,7 +168,7 @@ func TestFetchConcurrentKeyReload(t *testing.T) {
 		})
 	}
 	for range 5 {
-		code, body, _ := e.as(s, http.MethodPost, "/admin/keys/reload", "", "Idempotency-Key", "keys-concurrent-"+newToken()[:16])
+		code, body, _ := e.as(s, http.MethodPost, "/admin/keys/reload", "", "Idempotency-Key", "keys-concurrent-"+session.NewToken()[:16])
 		if code != 200 {
 			t.Errorf("reload: %d %s", code, body)
 		}

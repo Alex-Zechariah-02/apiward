@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/audit"
+	"github.com/Alex-Zechariah-02/apiward/internal/session"
 	"github.com/Alex-Zechariah-02/apiward/internal/store"
 )
 
@@ -48,7 +49,7 @@ func (c *Controller) handleEnrol(w http.ResponseWriter, r *http.Request) {
 		c.refuse(w, r, http.StatusTooManyRequests, "too_many_attempts", reason, nil)
 		return
 	}
-	e, found, err := c.store.Enrolment(r.Context(), tokenHash(body.Secret))
+	e, found, err := c.store.Enrolment(r.Context(), session.Hash(body.Secret))
 	if err != nil {
 		c.logger.Error("reading enrolment", "error", err)
 		adminError(w, http.StatusServiceUnavailable, "unavailable", "")
@@ -122,7 +123,7 @@ func (c *Controller) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	c.throttle.succeeded(body.Name)
 
-	token, s, err := c.sessions.create(admin.Name, admin.Credential, now)
+	token, s, err := c.sessions.Create(admin.Name, admin.Credential, now)
 	if err != nil {
 		adminError(w, http.StatusServiceUnavailable, "session_limit", "")
 		return
@@ -135,16 +136,16 @@ func (c *Controller) handleLogin(w http.ResponseWriter, r *http.Request) {
 		HttpOnly: true,
 		SameSite: http.SameSiteStrictMode,
 	})
-	c.audit.Record(audit.Event{Kind: "admin.authenticated", Method: r.Method, Path: r.URL.Path, Actor: admin.Name, Session: s.reference})
+	c.audit.Record(audit.Event{Kind: "admin.authenticated", Method: r.Method, Path: r.URL.Path, Actor: admin.Name, Session: s.Reference})
 	writeJSON(w, http.StatusCreated, sessionView(admin, s))
 }
 
-func sessionView(admin store.Administrator, s session) map[string]any {
+func sessionView(admin store.Administrator, s session.Session) map[string]any {
 	return map[string]any{
 		"name":        admin.Name,
 		"permissions": admin.Permissions.Names(),
-		"csrf_token":  s.csrf,
-		"expires_at":  s.expires.UTC(),
+		"csrf_token":  s.CSRF,
+		"expires_at":  s.Expires.UTC(),
 	}
 }
 
@@ -153,8 +154,8 @@ func (c *Controller) handleWhoAmI(w http.ResponseWriter, r *http.Request, who ca
 }
 
 func (c *Controller) handleLogout(w http.ResponseWriter, r *http.Request, who caller) {
-	c.sessions.revoke(who.token)
-	c.audit.Record(audit.Event{Kind: "admin.logout", Method: r.Method, Path: r.URL.Path, Actor: who.admin.Name, Session: who.session.reference})
+	c.sessions.Revoke(who.token)
+	c.audit.Record(audit.Event{Kind: "admin.logout", Method: r.Method, Path: r.URL.Path, Actor: who.admin.Name, Session: who.session.Reference})
 	clearSessionCookie(w)
 	w.WriteHeader(http.StatusNoContent)
 }

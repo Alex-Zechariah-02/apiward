@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/policy"
+	"github.com/Alex-Zechariah-02/apiward/internal/session"
 	"github.com/Alex-Zechariah-02/apiward/internal/store"
 )
 
@@ -22,7 +23,7 @@ import (
 const harnessAdmin = "harness"
 
 var (
-	harnessPassword = "harness-" + newToken()
+	harnessPassword = "harness-" + session.NewToken()
 	harnessHash     = sync.OnceValue(func() string { return hashPassword(harnessPassword) })
 )
 

@@ -11,11 +11,12 @@ import (
 	"testing"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/policy"
+	"github.com/Alex-Zechariah-02/apiward/internal/session"
 	"github.com/Alex-Zechariah-02/apiward/internal/store"
 )
 
 // testPassword returns a fresh administrator password for one test.
-func testPassword() string { return "pw-" + newToken() }
+func testPassword() string { return "pw-" + session.NewToken() }
 
 // installEnv creates a fresh installation with the operator install command,
 // for a first administrator named root, and starts the gateway on it. It
@@ -127,7 +128,7 @@ func TestBootstrapIsLocalAndOneTime(t *testing.T) {
 	if n := queryInt(t, e.database, `SELECT COUNT(*) FROM administrator`); n != 0 {
 		t.Fatalf("%d administrators exist before enrolment", n)
 	}
-	if got := queryString(t, e.database, `SELECT secret FROM enrolment WHERE administrator = 'root'`); got != tokenHash(secret) {
+	if got := queryString(t, e.database, `SELECT secret FROM enrolment WHERE administrator = 'root'`); got != session.Hash(secret) {
 		t.Fatal("the stored enrolment is not the hash of the printed secret")
 	}
 	if mode := queryString(t, e.database, `SELECT mode FROM deployment`); mode != store.ModeBootstrap {
@@ -156,7 +157,7 @@ func TestBootstrapIsLocalAndOneTime(t *testing.T) {
 	// Without the secret, nothing creates or authenticates an administrator.
 	password := testPassword()
 	attempts := []struct{ name, secret string }{
-		{"root", ""}, {"root", "wrong"}, {"root", newToken()}, {"other", secret}, {"admin", secret},
+		{"root", ""}, {"root", "wrong"}, {"root", session.NewToken()}, {"other", secret}, {"admin", secret},
 	}
 	for _, a := range attempts {
 		if code, body := e.enrol(a.name, a.secret, password); code != http.StatusUnauthorized {

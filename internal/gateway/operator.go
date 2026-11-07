@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/audit"
+	"github.com/Alex-Zechariah-02/apiward/internal/session"
 	"github.com/Alex-Zechariah-02/apiward/internal/store"
 )
 
@@ -78,8 +79,8 @@ func runInstall(o *operatorContext, flags map[string]string) (int, error) {
 
 	now := time.Now()
 	installation := randomHex(16)
-	secret := newToken()
-	first := store.Enrolment{Name: name, Secret: tokenHash(secret), Permissions: store.PermAll, ExpiresAt: now.Add(enrolmentLifetime)}
+	secret := session.NewToken()
+	first := store.Enrolment{Name: name, Secret: session.Hash(secret), Permissions: store.PermAll, ExpiresAt: now.Add(enrolmentLifetime)}
 	t := store.TransitionRecord{ID: "operator:install:" + installation, Kind: "operator.install", Actor: "operator", Target: name, Digest: "operator"}
 	if err := o.record(audit.Event{Kind: "transition.intent", Transition: t.ID}); err != nil {
 		return 1, err
@@ -118,8 +119,8 @@ func runEnrol(o *operatorContext, flags map[string]string) (int, error) {
 	o.openAudit()
 
 	now := time.Now()
-	secret := newToken()
-	e := store.Enrolment{Name: name, Secret: tokenHash(secret), Permissions: permissions, ExpiresAt: now.Add(enrolmentLifetime)}
+	secret := session.NewToken()
+	e := store.Enrolment{Name: name, Secret: session.Hash(secret), Permissions: permissions, ExpiresAt: now.Add(enrolmentLifetime)}
 	t := store.TransitionRecord{ID: fmt.Sprintf("operator:enrol:%s:%s", name, randomHex(8)), Kind: "operator.enrol", Actor: "operator", Target: name, Digest: "operator"}
 	if err := o.record(audit.Event{Kind: "transition.intent", Transition: t.ID}); err != nil {
 		return 1, err

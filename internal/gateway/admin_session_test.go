@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/Alex-Zechariah-02/apiward/internal/session"
 )
 
 // Sessions are server-side, unpredictable,
@@ -92,14 +94,14 @@ func TestAdminSessions(t *testing.T) {
 		valid := e.mustLogin(harnessAdmin, harnessPassword)
 		tampered := []byte(valid.cookie)
 		tampered[len(tampered)-1] ^= 1
-		for _, token := range []string{"", "x", strings.Repeat("A", 43), string(tampered), valid.cookie + "A", newToken(), valid.csrf} {
+		for _, token := range []string{"", "x", strings.Repeat("A", 43), string(tampered), valid.cookie + "A", session.NewToken(), valid.csrf} {
 			code, body, _ := e.adminSend(http.MethodGet, "/admin/status", "", "Cookie", sessionCookie+"="+token)
 			if code != http.StatusUnauthorized || strings.Contains(body, "revision") {
 				t.Fatalf("token %q: %d %s", token, code, body)
 			}
 		}
 		// A token chosen by the client is never adopted at login.
-		chosen := newToken()
+		chosen := session.NewToken()
 		code, _, header := e.adminSend(http.MethodPost, "/admin/session",
 			string(mustJSON(map[string]string{"name": harnessAdmin, "password": harnessPassword})),
 			"Origin", e.adminOrigin(), "Cookie", sessionCookie+"="+chosen)

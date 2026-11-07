@@ -99,7 +99,7 @@ func (c *Controller) handleEventStream(w http.ResponseWriter, r *http.Request, w
 	}
 	heartbeat := time.NewTicker(15 * time.Second)
 	defer heartbeat.Stop()
-	expiry := time.NewTimer(time.Until(who.session.expires))
+	expiry := time.NewTimer(time.Until(who.session.Expires))
 	defer expiry.Stop()
 	for {
 		select {
@@ -107,19 +107,19 @@ func (c *Controller) handleEventStream(w http.ResponseWriter, r *http.Request, w
 			return
 		case <-c.observations.done:
 			return
-		case <-who.session.done:
+		case <-who.session.Closed():
 			return
 		case <-expiry.C:
 			return
 		case <-heartbeat.C:
-			if !c.sessions.active(who.token, time.Now()) {
+			if !c.sessions.Active(who.token, time.Now()) {
 				return
 			}
 			if !write(": heartbeat\n\n") {
 				return
 			}
 		case event := <-viewer.events:
-			if !c.sessions.active(who.token, time.Now()) {
+			if !c.sessions.Active(who.token, time.Now()) {
 				return
 			}
 			if count := c.observations.takeDropped(viewer); count > 0 {
