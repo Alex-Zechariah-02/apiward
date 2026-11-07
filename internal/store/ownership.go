@@ -21,7 +21,7 @@ func LockDeployment(database string) (*os.File, error) {
 	}
 	if err := lockFile(file); err != nil {
 		file.Close()
-		return nil, fmt.Errorf("database %q is held by another gateway process: %w", database, err)
+		return nil, fmt.Errorf("database %q is %w: %w", database, ErrHeld, err)
 	}
 	return file, nil
 }

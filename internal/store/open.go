@@ -43,7 +43,7 @@ func Connect(path, journal string) (*sql.DB, error) {
 	if _, err := db.Exec("BEGIN IMMEDIATE; COMMIT"); err != nil {
 		db.Close()
 		if isBusy(err) {
-			return nil, fmt.Errorf("database %q is held by another gateway process: %w", path, err)
+			return nil, fmt.Errorf("database %q is %w: %w", path, ErrHeld, err)
 		}
 		return nil, fmt.Errorf("%w: opening database: %v", ErrUnavailable, err)
 	}

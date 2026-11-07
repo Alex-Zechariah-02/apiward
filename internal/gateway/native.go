@@ -1,3 +1,7 @@
+// The native gateway: the controller, its enforcement handler and the native
+// proxy, served by the project's own net/http data-plane server, and the
+// command line that runs it.
+
 package gateway
 
 import (
@@ -5,25 +9,14 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"io/fs"
 	"log/slog"
 	"net"
 	"net/http"
 	"os"
 	"os/signal"
-	"path"
-	"strings"
 	"sync"
 	"syscall"
-	"time"
-
-	"github.com/Alex-Zechariah-02/apiward/internal/audit"
-	"github.com/Alex-Zechariah-02/apiward/internal/compile"
-	"github.com/Alex-Zechariah-02/apiward/internal/forward"
 )
-
-// The native gateway: the controller, its enforcement handler and the native
-// proxy, served by the project's own net/http data-plane server.
 
 // Exit statuses of the native run command.
 const (
@@ -134,15 +127,12 @@ func runNative(configPath string, logger *slog.Logger) int {
 	signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
 	defer signal.Stop(signals)
 
-	cfg, err := loadNativeConfig(configPath)
-	if err == nil {
-		err = operatorPaths(configPath, cfg.controller, "run", nil)
-	}
+	settings, err := LoadSettings(configPath)
 	if err != nil {
 		logger.Error("configuration refused", "error", err)
 		return exitFailed
 	}
-	g, err := startNative(cfg, logger)
+	g, err := startNative(*settings.native, logger)
 	if err != nil {
 		logger.Error("startup failed", "error", err)
 		return exitFailed
@@ -186,82 +176,40 @@ type nativeGateway struct {
 // a failure leaves nothing served. When it returns an error, everything it
 // acquired is released.
 func startNative(cfg nativeConfig, logger *slog.Logger) (*nativeGateway, error) {
-	proxy, err := forward.NewUpstreamProxy(cfg.upstream, logger)
+	d, err := openDeployment(cfg, logger)
 	if err != nil {
 		return nil, err
 	}
-	c, err := NewController(cfg.controller, logger)
-	if err != nil {
-		return nil, err
-	}
-	release := func(err error) (*nativeGateway, error) {
-		return nil, errors.Join(err, c.Stop())
-	}
-	// A log that cannot be opened refuses every admission and every change
-	// for as long as the process runs; a running gateway could only report it.
-	if c.audit.OpenErr() != nil {
-		return release(fmt.Errorf("audit log: %w", c.audit.OpenErr()))
-	}
-	enforcement, err := newHandler(c, cfg.maxBodyBytes, proxy.Forward)
-	if err != nil {
-		return release(err)
-	}
+	c := d.controller
 	listener, err := net.Listen("tcp", cfg.listen)
 	if err != nil {
-		return release(fmt.Errorf("data listener: %w", err))
+		return nil, errors.Join(classify(ErrListen, fmt.Errorf("data listener: %w", err)), c.Stop())
 	}
-	metricsListener, err := net.Listen("tcp", cfg.metricsListen)
+	metricsListener, err := d.listen()
 	if err != nil {
 		listener.Close()
-		return release(fmt.Errorf("metrics listener: %w", err))
-	}
-	if err := c.Start(); err != nil {
-		listener.Close()
-		metricsListener.Close()
-		return release(fmt.Errorf("admin listener: %w", err))
+		return nil, errors.Join(err, c.Stop())
 	}
 
 	// HTTP/1.0 and HTTP/1.1 only, over plain TCP.
 	protocols := new(http.Protocols)
 	protocols.SetHTTP1(true)
-	g := &nativeGateway{
-		controller: c,
-		data: &http.Server{
-			Handler:           dataPlane(enforcement, cfg.website),
-			Protocols:         protocols,
-			ReadHeaderTimeout: cfg.readHeaderTimeout,
-			ReadTimeout:       cfg.readTimeout,
-			WriteTimeout:      cfg.writeTimeout,
-			IdleTimeout:       cfg.idleTimeout,
-			MaxHeaderBytes:    cfg.headerLimit,
-			// "OPTIONS *" reaches enforcement, which refuses every target
-			// that is not in origin form, instead of being answered by
-			// net/http.
-			DisableGeneralOptionsHandler: true,
-			ErrorLog:                     slog.NewLogLogger(logger.Handler(), slog.LevelWarn),
-		},
-		metrics: &http.Server{
-			Handler:           http.HandlerFunc(c.handleMetrics),
-			ReadHeaderTimeout: 5 * time.Second,
-			WriteTimeout:      5 * time.Second,
-			IdleTimeout:       30 * time.Second,
-			MaxHeaderBytes:    defaultHeaderBytes,
-		},
-		served: make(chan error, 2),
+	data := &http.Server{
+		Handler:   d.handler,
+		Protocols: protocols,
+		// "OPTIONS *" reaches enforcement, which refuses every target that
+		// is not in origin form, instead of being answered by net/http.
+		DisableGeneralOptionsHandler: true,
+		ErrorLog:                     slog.NewLogLogger(logger.Handler(), slog.LevelWarn),
 	}
+	cfg.server().Apply(data)
+	g := &nativeGateway{controller: c, data: data, metrics: d.metrics, served: make(chan error, 2)}
 	g.stop = sync.OnceValue(g.shutdown)
 	go func() { g.served <- g.data.Serve(listener) }()
 	go func() { g.served <- g.metrics.Serve(metricsListener) }()
 
-	// Listening does not mean protected requests are admitted: the deployment
-	// may be in bootstrap or recovery, without usable authority, or without
-	// its audit log.
 	logger.Info("listening", "data", listener.Addr().String(), "admin", cfg.controller.AdminListen)
-	attrs := []any{"admission", c.admission()}
-	if current := c.Current(); current != nil {
-		attrs = append(attrs, "generation", current.ID, "revision", current.Revision)
-	}
-	logger.Info("protected admission", attrs...)
+	d.logAdmission(logger)
 	return g, nil
 }
 
@@ -286,83 +234,4 @@ func (g *nativeGateway) shutdown() error {
 	}
 	errs = append(errs, g.controller.stopWithin(ctx))
 	return errors.Join(errs...)
-}
-
-// dataPlane is the data-plane server's handler: enforcement for every request,
-// except the website's exact routes when a website is configured. No router
-// cleans or redirects a path before enforcement sees it.
-func dataPlane(enforcement http.Handler, website fs.FS) http.Handler {
-	if website == nil {
-		return enforcement
-	}
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		name, contentType, ok := websiteFile(r)
-		if !ok {
-			enforcement.ServeHTTP(w, r)
-			return
-		}
-		stripUntrustedHeaders(r.Header)
-		w.Header().Set("X-Request-Id", audit.NewRequestID())
-		w.Header().Set("X-Content-Type-Options", "nosniff")
-		w.Header().Set("Cache-Control", "no-store")
-		serveFrontendFile(w, r, website, name, contentType)
-	})
-}
-
-// websiteFile names the Fetch page at an approved client route, or a file
-// of the flat assets directory at /assets/<name>. The
-// request target is compared as received, before any decoding, and an asset
-// name may hold only letters, digits, '.', '-' and '_', so no target reaches
-// any other file. Every other request is not the website's.
-func websiteFile(r *http.Request) (name, contentType string, ok bool) {
-	if r.Method != http.MethodGet && r.Method != http.MethodHead {
-		return "", "", false
-	}
-	target, _, _ := strings.Cut(r.RequestURI, "?")
-	if isWebsitePage(target) {
-		return "index.html", "text/html; charset=utf-8", true
-	}
-	asset, found := strings.CutPrefix(target, "/assets/")
-	switch path.Ext(asset) {
-	case ".js":
-		contentType = "text/javascript"
-	case ".css":
-		contentType = "text/css"
-	case ".svg":
-		contentType = "image/svg+xml"
-	case ".webp":
-		contentType = "image/webp"
-	}
-	if !found || contentType == "" || !isAssetName(asset) {
-		return "", "", false
-	}
-	return "assets/" + asset, contentType, true
-}
-
-func isWebsitePage(target string) bool {
-	switch target {
-	case "/", "/food", "/mart", "/cart", "/checkout", "/my-orders", "/help", "/signin",
-		"/merchant", "/rider", "/support", "/ops", "/lab", "/account":
-		return true
-	}
-	if !compile.IsCanonical(target) {
-		return false
-	}
-	for _, prefix := range []string{"/store/", "/item/", "/my-orders/", "/help/"} {
-		if id, found := strings.CutPrefix(target, prefix); found && id != "" && !strings.Contains(id, "/") {
-			return true
-		}
-	}
-	return false
-}
-
-func isAssetName(name string) bool {
-	for _, c := range name {
-		switch {
-		case 'a' <= c && c <= 'z', 'A' <= c && c <= 'Z', '0' <= c && c <= '9', c == '.', c == '-', c == '_':
-		default:
-			return false
-		}
-	}
-	return true
 }

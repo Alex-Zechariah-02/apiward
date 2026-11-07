@@ -27,7 +27,7 @@ jobs:
         with:
           go-version-file: go.mod
       - run: go mod verify
-      - run: test -z "$(gofmt -l cmd internal)"
+      - run: test -z "$(gofmt -l $(git ls-files '*.go'))"
       - run: go vet ./...
       - run: go vet -tags faultinject ./...
       - run: go test ./... -count=1

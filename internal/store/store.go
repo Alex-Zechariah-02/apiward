@@ -21,6 +21,9 @@ const (
 // corrupt or unrecognised authority.
 var ErrUnavailable = errors.New("authoritative state unavailable")
 
+// ErrHeld marks a database that another gateway process holds.
+var ErrHeld = errors.New("held by another gateway process")
+
 // Final dispositions of a provisional base. Confirmed keeps its policy as the
 // new confirmed base; the others restore the rollback target. Quarantined
 // marks a provisional base found in a restored historical database.

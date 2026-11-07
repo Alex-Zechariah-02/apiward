@@ -1,10 +1,10 @@
+// Admin API Access Checker: a request asked about against the generation in
+// force or a stored draft, decided by compile.Decide.
+
 package gateway
 
 import (
 	"net/http"
-	"net/url"
-	"slices"
-	"strings"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/compile"
 	"github.com/Alex-Zechariah-02/apiward/internal/policy"
@@ -50,20 +50,7 @@ func (c *Controller) handleAccessCheck(w http.ResponseWriter, r *http.Request, w
 	if !decodeBody(w, r, maxAdminBody, &check) {
 		return
 	}
-	if !slices.Contains([]string{"GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"}, check.Method) {
-		adminError(w, http.StatusBadRequest, "bad_request", "method")
-		return
-	}
-	path, ok := checkedPath(check.Path)
-	if !ok {
-		adminError(w, http.StatusBadRequest, "bad_request", "path")
-		return
-	}
-	if len(check.Roles) > policy.MaxRoles || slices.ContainsFunc(check.Roles, func(role string) bool { return role == "" || len(role) > policy.MaxIDLength }) {
-		adminError(w, http.StatusBadRequest, "bad_request", "roles")
-		return
-	}
-	inbound, field := checkedInbound(check.Host, check.Headers)
+	question, field := compile.NewQuestion(check.Method, check.Path, check.Host, check.Headers, check.Roles)
 	if field != "" {
 		adminError(w, http.StatusBadRequest, "bad_request", field)
 		return
@@ -88,97 +75,28 @@ func (c *Controller) handleAccessCheck(w http.ResponseWriter, r *http.Request, w
 		adminError(w, http.StatusServiceUnavailable, "gateway_unavailable", "")
 		return
 	}
-
-	answer := accessAnswer{Generation: g.ID, Candidate: check.Candidate, Roles: []string{}, IgnoredRoles: []string{}, NotChecked: []string{"rate", "body"}}
-	refuse := func(check, code string) {
-		answer.Decision, answer.Check, answer.Code = "refused", &check, &code
-		writeJSON(w, http.StatusOK, answer)
-	}
-	target, rule := g.Match(path, check.Method, inbound)
-	if target == nil {
-		refuse("route", "not_found")
-		return
-	}
-	if rule == nil {
-		refuse("route", "method_not_allowed")
-		return
-	}
-	operation, api := rule.Operation(), rule.API()
-	answer.Operation, answer.API, answer.Public = &operation, &api, rule.Public()
-	if !rule.Permitted() {
-		refuse("access", "forbidden")
-		return
-	}
-	if !rule.Public() {
-		// A real request also needs a valid token from the trusted issuer;
-		// the roles given here stand for its verified roles.
-		answer.NotChecked = []string{"token", "rate", "body"}
-		roles, ignored, reason := g.Authorise(check.Roles, rule)
-		answer.Roles, answer.IgnoredRoles = nonNil(roles), nonNil(ignored)
-		if check.Subject != nil {
-			if _, found := (*blocked)[*check.Subject]; found {
-				refuse("blocked", "account_blocked")
-				return
-			}
+	decision := g.Decide(question, func() bool {
+		if check.Subject == nil {
+			return false
 		}
-		if reason != "" {
-			refuse("role", "forbidden")
-			return
-		}
-	}
-	destination, ok := rule.Destination(path)
-	if !ok {
-		refuse("forward", "path_not_canonical")
-		return
-	}
-	forwarded := destination.Path()
-	answer.Decision, answer.ForwardedPath = "allowed", &forwarded
-	writeJSON(w, http.StatusOK, answer)
+		_, found := (*blocked)[*check.Subject]
+		return found
+	})
+	writeJSON(w, http.StatusOK, newAccessAnswer(decision, g.ID, check.Candidate))
 }
 
-// Bounds of the host and headers an access check may give: a host name with
-// a port, and as many headers as conditions allow, each as long as one.
-const (
-	maxCheckHost    = 253 + len(":65535")
-	maxCheckHeaders = 2 * policy.MaxWhenHeaders
-	maxCheckValue   = 256
-)
-
-// checkedInbound bounds the host and headers given for conditions and puts
-// the headers in request form; field names the refused member.
-func checkedInbound(host string, headers map[string]string) (in compile.Inbound, field string) {
-	if len(host) > maxCheckHost {
-		return in, "host"
+// newAccessAnswer puts a decision in the Admin API's answer form, where an
+// absent value is null.
+func newAccessAnswer(d compile.Answer, generation string, candidate *int64) accessAnswer {
+	answer := accessAnswer{Decision: "allowed", Generation: generation, Candidate: candidate, Public: d.Public,
+		Roles: d.Roles, IgnoredRoles: d.Ignored, NotChecked: d.NotChecked}
+	if d.Operation != "" {
+		answer.Operation, answer.API = &d.Operation, &d.API
 	}
-	if len(headers) > maxCheckHeaders {
-		return in, "headers"
+	if !d.Allowed {
+		answer.Decision, answer.Check, answer.Code = "refused", &d.Check, &d.Code
+		return answer
 	}
-	header := http.Header{}
-	for name, value := range headers {
-		if name == "" || len(name) > policy.MaxHeaderName || len(value) > maxCheckValue {
-			return in, "headers"
-		}
-		header.Set(name, value)
-	}
-	return compile.Inbound{Host: host, Header: header}, ""
-}
-
-// checkedPath applies the request handler's own canonical-path check to a
-// path given as text, so the same targets are refused before routing.
-func checkedPath(text string) (string, bool) {
-	if !strings.HasPrefix(text, "/") || len(text) > policy.MaxTargetLength || strings.ContainsAny(text, "?#") {
-		return "", false
-	}
-	parsed, err := url.ParseRequestURI(text)
-	if err != nil {
-		return "", false
-	}
-	return compile.CanonicalPath(&http.Request{URL: parsed})
-}
-
-func nonNil(values []string) []string {
-	if values == nil {
-		return []string{}
-	}
-	return values
+	answer.ForwardedPath = &d.Forwarded
+	return answer
 }

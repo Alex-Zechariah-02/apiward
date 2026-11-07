@@ -110,6 +110,28 @@ An API's routes, methods and request schemas move between gateways through stand
 
 Sign-in, trusted issuers, roles, rate limits and other gateway-specific settings have no standard form, so they are not translated between products: set them again in the target gateway, and review every imported policy before staging it. Consumers and their credentials stay in the identity provider.
 
+## Embedding in a Go application
+
+A Go program can run the gateway inside itself instead of beside it. The program serves the gateway's data plane on its own HTTP server; the gateway keeps its Admin API and metrics listeners, its database, its audit log and its start and stop. Every request still passes the full pipeline.
+
+```go
+cfg, err := apiward.LoadConfig("gateway.json") // the same file `gateway run` reads
+gw, err := apiward.New(cfg, logger)            // takes the deployment lock; binds nothing
+err = gw.Start()                               // Admin API and metrics; requests admitted from now on
+mux.Handle("/api/", http.StripPrefix("/api", gw)) // policy targets are the paths below /api
+server := &http.Server{Addr: ":8080", Handler: mux}
+gw.ServerSettings().Apply(server)              // header size and timeouts from the configuration
+// ... serve; on shutdown stop the server first, then:
+err = gw.Stop(ctx)                             // waits for requests in progress, then closes the audit log
+```
+
+- Import `github.com/Alex-Zechariah-02/apiward`. The deployment is installed and its first policy published as for the binary (`gateway install`, then the Dashboard). The configuration's `data.listen` is still required and checked, but an embedded gateway never binds it.
+- Before `Start` and from `Stop` on, every request is refused with `503 gateway_unavailable` and recorded. `Start` and `Stop` each run once.
+- Errors from `LoadConfig`, `New`, `Start` and `Stop` match exactly one of `ErrConfig`, `ErrLocked`, `ErrStorage`, `ErrListen`, `ErrStarted`, `ErrStopped` or `ErrIncomplete` with `errors.Is`. Refused requests are HTTP responses, never Go errors.
+- Apply `ServerSettings` to your server: the gateway cannot enforce header size or timeouts on a server it does not own. Body limits and every other check stay in the handler. Do not rewrite `RemoteAddr` from client headers before the gateway: address lists and per-address rate limits read it.
+- Package `github.com/Alex-Zechariah-02/apiward/policy` holds the policy document types, `Decode`, `Encode` (the canonical form: two policies with the same meaning encode to the same bytes) and `Check`, which answers offline whether a policy would allow a described request (route, access, roles and forwarded path; tokens, rate limits, bodies and blocked accounts need a running gateway).
+- `examples/embed` is a runnable host program with its own test.
+
 ## How it is built
 
 - The gateway has its own HTTP server and reverse proxy, built on the Go standard library. It serves HTTP/1.0 and HTTP/1.1 in plain text. Each request passes all five controls in one pipeline and then goes only to the API that the policy names, once.
@@ -124,7 +146,10 @@ Sign-in, trusted issuers, roles, rate limits and other gateway-specific settings
 
 ### Code layout
 
-Each package under `internal/` imports only the packages listed before it; a test enforces the order.
+Each package under `internal/` imports only the packages listed before it; a test enforces the order, and which internal packages each public package may reach.
+
+- `apiward` (repository root): the public package for running the gateway inside a Go program (above).
+- `policy`: the public policy document types, canonical encoding and offline check.
 
 - `internal/fault`: the fault-injection points tests use to crash, delay or fail the gateway at exact places. They act only in binaries built with the `faultinject` tag; normal builds compile them to no-ops.
 - `internal/policy`: the policy document: its types, strict JSON decoding, and the limits and identifier formats every policy must meet.
@@ -134,6 +159,7 @@ Each package under `internal/` imports only the packages listed before it; a tes
 - `internal/audit`: the durable security log; an admitted request is acknowledged only after its record is synced to disk, and the writer never deletes a file.
 - `internal/openapi`: the offline OpenAPI import and export; it turns a description into a candidate policy, checks it with the compiler, and writes one API of a policy back as a description.
 - `internal/gateway`: the gateway itself, which uses the packages above.
+- `examples/embed`: a host program that embeds the gateway, using only the public packages.
 
 ## Build and test
 

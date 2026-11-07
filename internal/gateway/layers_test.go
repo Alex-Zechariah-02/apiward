@@ -1,4 +1,5 @@
-// Layering of the internal packages: none imports a package above it.
+// Layering of the internal packages (none imports a package above it) and
+// the internal packages each public package may reach.
 
 package gateway
 
@@ -21,6 +22,15 @@ var layers = map[string][]string{
 	"audit":   {"fault"},
 	"openapi": {"policy", "compile"},
 	"gateway": {"fault", "policy", "compile", "forward", "store", "audit"},
+}
+
+// exposed lists, for each package outside internal/, the internal packages its
+// non-test code may import: a public package reaches the core only through
+// these, never the store, audit writer or forwarder directly.
+var exposed = map[string][]string{
+	".":              {"gateway"},
+	"policy":         {"policy", "compile"},
+	"examples/embed": nil,
 }
 
 // unlayered packages are not part of the gateway's layering.
@@ -65,6 +75,23 @@ func TestPackageLayers(t *testing.T) {
 				if ok && !slices.Contains(allowed, dep) && !slices.Contains(unlayered, dep) {
 					t.Errorf("internal/%s imports internal/%s (tags %v)", name, dep, tags)
 				}
+			}
+		}
+	}
+}
+
+func TestPublicImports(t *testing.T) {
+	root := filepath.Join("..", "..")
+	module := modulePath(t, root)
+	for name, allowed := range exposed {
+		pkg, err := build.Default.ImportDir(filepath.Join(root, filepath.FromSlash(name)), 0)
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		for _, imp := range pkg.Imports {
+			dep, ok := strings.CutPrefix(imp, module+"/internal/")
+			if ok && !slices.Contains(allowed, dep) {
+				t.Errorf("%s imports internal/%s", name, dep)
 			}
 		}
 	}

@@ -123,7 +123,26 @@ type Controller struct {
 // open. A database without usable authority is not an error: the controller
 // is returned serving no protected request, and its health and audit log say
 // why.
+//
+// Its errors are classified: ErrConfig for the settings, ErrLocked when
+// another process holds the deployment, ErrStorage when the database cannot
+// be opened.
 func NewController(cfg Config, logger *slog.Logger) (*Controller, error) {
+	c, err := prepareController(cfg, logger)
+	if err != nil {
+		return nil, classify(ErrConfig, err)
+	}
+	if err := c.open(); err != nil {
+		if errors.Is(err, store.ErrHeld) {
+			return nil, classify(ErrLocked, err)
+		}
+		return nil, classify(ErrStorage, err)
+	}
+	return c, nil
+}
+
+// prepareController checks cfg and builds the controller, opening nothing.
+func prepareController(cfg Config, logger *slog.Logger) (*Controller, error) {
 	if logger == nil {
 		return nil, errors.New("a logger is required")
 	}
@@ -155,19 +174,26 @@ func NewController(cfg Config, logger *slog.Logger) (*Controller, error) {
 			return nil, err
 		}
 	}
+	return c, nil
+}
 
+// open takes the deployment lock, opens the database and the audit log and
+// publishes the effective policy. A database without usable authority leaves
+// the controller unavailable, not failed.
+func (c *Controller) open() error {
+	cfg := c.config
 	// The database's exclusive lock is taken before the audit log is opened,
 	// so a second gateway for the same deployment stops here and never
 	// becomes a second writer of its audit log.
 	ownership, err := store.LockDeployment(cfg.Database)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	c.ownership = ownership
 	st, err := store.OpenStore(cfg.Database)
 	if err != nil && !errors.Is(err, store.ErrUnavailable) {
 		ownership.Close()
-		return nil, err
+		return err
 	}
 	c.audit = audit.OpenAudit(cfg.AuditLog, cfg.AuditMaxBytes, cfg.AuditMaxFiles)
 
@@ -175,23 +201,23 @@ func NewController(cfg Config, logger *slog.Logger) (*Controller, error) {
 	defer c.mu.Unlock()
 	if err != nil {
 		c.unavailable(err.Error())
-		return c, nil
+		return nil
 	}
 	c.store = st
 	blocked, err := st.BlockedAccounts(context.Background())
 	if err != nil {
 		c.unavailable("reading blocked accounts: " + err.Error())
-		return c, nil
+		return nil
 	}
 	c.blocked.Store(&blocked)
 	addresses, err := st.BlockedAddresses(context.Background())
 	if err != nil {
 		c.unavailable("reading blocked addresses: " + err.Error())
-		return c, nil
+		return nil
 	}
 	c.addresses.Store(&addresses)
 	c.reconcile(compile.TrustedNow())
-	return c, nil
+	return nil
 }
 
 func (cfg Config) check() error {

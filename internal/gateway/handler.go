@@ -9,6 +9,7 @@ import (
 	"net/netip"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/audit"
@@ -30,6 +31,10 @@ type Handler struct {
 	// operation is bounded by it as well as by the operation's own ceiling.
 	maxBodyBytes int64
 	forward      forwardFunc
+	// held is set while an embedded gateway has not started its own
+	// listeners; every request is then refused at capture, so nothing is
+	// admitted before the Admin API and metrics can observe it.
+	held atomic.Bool
 }
 
 // forwardFunc sends an admitted request to the upstream bound in its context
@@ -94,7 +99,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// Capture: the single generation used for every later decision.
 	g := h.controller.Current()
-	if g == nil {
+	if g == nil || h.held.Load() {
 		q.reject(audit.StageCapture, http.StatusServiceUnavailable, "gateway_unavailable")
 		return
 	}
