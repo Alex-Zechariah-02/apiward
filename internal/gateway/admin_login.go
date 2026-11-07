@@ -13,20 +13,20 @@ import (
 )
 
 // acquireHashing takes one of the bounded password-hashing slots.
-func (c *Controller) acquireHashing() bool {
+func (s *adminAPI) acquireHashing() bool {
 	select {
-	case c.hashing <- struct{}{}:
+	case s.hashing <- struct{}{}:
 		return true
 	default:
 		return false
 	}
 }
 
-func (c *Controller) releaseHashing() { <-c.hashing }
+func (s *adminAPI) releaseHashing() { <-s.hashing }
 
-func (c *Controller) handleEnrol(w http.ResponseWriter, r *http.Request) {
-	if !c.sameOrigin(r) {
-		c.refuse(w, r, http.StatusForbidden, "forbidden", "bad_origin", nil)
+func (s *adminAPI) handleEnrol(w http.ResponseWriter, r *http.Request) {
+	if !s.sameOrigin(r) {
+		s.refuse(w, r, http.StatusForbidden, "forbidden", "bad_origin", nil)
 		return
 	}
 	var body struct {
@@ -41,34 +41,34 @@ func (c *Controller) handleEnrol(w http.ResponseWriter, r *http.Request) {
 		adminError(w, http.StatusBadRequest, "bad_request", "")
 		return
 	}
-	if c.store == nil {
+	if s.store == nil {
 		adminError(w, http.StatusServiceUnavailable, "unavailable", "")
 		return
 	}
 	now := time.Now()
-	if reason := c.throttle.check(body.Name, now); reason != "" {
-		c.refuse(w, r, http.StatusTooManyRequests, "too_many_attempts", reason, nil)
+	if reason := s.throttle.check(body.Name, now); reason != "" {
+		s.refuse(w, r, http.StatusTooManyRequests, "too_many_attempts", reason, nil)
 		return
 	}
-	e, found, err := c.store.Enrolment(r.Context(), session.Hash(body.Secret))
+	e, found, err := s.store.Enrolment(r.Context(), session.Hash(body.Secret))
 	if err != nil {
-		c.logger.Error("reading enrolment", "error", err)
+		s.logger.Error("reading enrolment", "error", err)
 		adminError(w, http.StatusServiceUnavailable, "unavailable", "")
 		return
 	}
 	if !found || e.Name != body.Name || !now.Before(e.ExpiresAt) {
-		c.throttle.failed(body.Name, false, now)
-		c.refuse(w, r, http.StatusUnauthorized, "unauthenticated", "enrolment_invalid", nil)
+		s.throttle.failed(body.Name, false, now)
+		s.refuse(w, r, http.StatusUnauthorized, "unauthenticated", "enrolment_invalid", nil)
 		return
 	}
-	if !c.acquireHashing() {
+	if !s.acquireHashing() {
 		adminError(w, http.StatusServiceUnavailable, "busy", "")
 		return
 	}
 	passwordHash := hashPassword(body.Password)
-	c.releaseHashing()
+	s.releaseHashing()
 
-	outcome, status := c.Enrol(r.Context(), e, passwordHash)
+	outcome, status := s.control.Enrol(r.Context(), e, passwordHash)
 	if status != http.StatusOK {
 		pipeline.WriteJSON(w, status, outcome)
 		return
@@ -76,9 +76,9 @@ func (c *Controller) handleEnrol(w http.ResponseWriter, r *http.Request) {
 	pipeline.WriteJSON(w, http.StatusCreated, map[string]any{"name": e.Name, "permissions": e.Permissions.Names()})
 }
 
-func (c *Controller) handleLogin(w http.ResponseWriter, r *http.Request) {
-	if !c.sameOrigin(r) {
-		c.refuse(w, r, http.StatusForbidden, "forbidden", "bad_origin", nil)
+func (s *adminAPI) handleLogin(w http.ResponseWriter, r *http.Request) {
+	if !s.sameOrigin(r) {
+		s.refuse(w, r, http.StatusForbidden, "forbidden", "bad_origin", nil)
 		return
 	}
 	var body struct {
@@ -88,18 +88,18 @@ func (c *Controller) handleLogin(w http.ResponseWriter, r *http.Request) {
 	if !decodeBody(w, r, maxAdminBody, &body) {
 		return
 	}
-	if c.store == nil {
+	if s.store == nil {
 		adminError(w, http.StatusServiceUnavailable, "unavailable", "")
 		return
 	}
 	now := time.Now()
-	if reason := c.throttle.check(body.Name, now); reason != "" {
-		c.refuse(w, r, http.StatusTooManyRequests, "too_many_attempts", reason, nil)
+	if reason := s.throttle.check(body.Name, now); reason != "" {
+		s.refuse(w, r, http.StatusTooManyRequests, "too_many_attempts", reason, nil)
 		return
 	}
-	admin, found, err := c.store.Administrator(r.Context(), body.Name)
+	admin, found, err := s.store.Administrator(r.Context(), body.Name)
 	if err != nil {
-		c.logger.Error("reading administrator", "error", err)
+		s.logger.Error("reading administrator", "error", err)
 		adminError(w, http.StatusServiceUnavailable, "unavailable", "")
 		return
 	}
@@ -111,20 +111,20 @@ func (c *Controller) handleLogin(w http.ResponseWriter, r *http.Request) {
 	if active {
 		encoded = admin.Password
 	}
-	if !c.acquireHashing() {
+	if !s.acquireHashing() {
 		adminError(w, http.StatusServiceUnavailable, "busy", "")
 		return
 	}
 	verified := verifyPassword(encoded, body.Password) && active
-	c.releaseHashing()
+	s.releaseHashing()
 	if !verified {
-		c.throttle.failed(body.Name, found, now)
-		c.refuse(w, r, http.StatusUnauthorized, "unauthenticated", "bad_credentials", nil)
+		s.throttle.failed(body.Name, found, now)
+		s.refuse(w, r, http.StatusUnauthorized, "unauthenticated", "bad_credentials", nil)
 		return
 	}
-	c.throttle.succeeded(body.Name)
+	s.throttle.succeeded(body.Name)
 
-	token, s, err := c.sessions.Create(admin.Name, admin.Credential, now)
+	token, created, err := s.sessions.Create(admin.Name, admin.Credential, now)
 	if err != nil {
 		adminError(w, http.StatusServiceUnavailable, "session_limit", "")
 		return
@@ -137,8 +137,8 @@ func (c *Controller) handleLogin(w http.ResponseWriter, r *http.Request) {
 		HttpOnly: true,
 		SameSite: http.SameSiteStrictMode,
 	})
-	c.audit.Record(audit.Event{Kind: "admin.authenticated", Method: r.Method, Path: r.URL.Path, Actor: admin.Name, Session: s.Reference})
-	pipeline.WriteJSON(w, http.StatusCreated, sessionView(admin, s))
+	s.audit.Record(audit.Event{Kind: "admin.authenticated", Method: r.Method, Path: r.URL.Path, Actor: admin.Name, Session: created.Reference})
+	pipeline.WriteJSON(w, http.StatusCreated, sessionView(admin, created))
 }
 
 func sessionView(admin store.Administrator, s session.Session) map[string]any {
@@ -150,13 +150,13 @@ func sessionView(admin store.Administrator, s session.Session) map[string]any {
 	}
 }
 
-func (c *Controller) handleWhoAmI(w http.ResponseWriter, r *http.Request, who caller) {
+func (s *adminAPI) handleWhoAmI(w http.ResponseWriter, r *http.Request, who caller) {
 	pipeline.WriteJSON(w, http.StatusOK, sessionView(who.admin, who.session))
 }
 
-func (c *Controller) handleLogout(w http.ResponseWriter, r *http.Request, who caller) {
-	c.sessions.Revoke(who.token)
-	c.audit.Record(audit.Event{Kind: "admin.logout", Method: r.Method, Path: r.URL.Path, Actor: who.admin.Name, Session: who.session.Reference})
+func (s *adminAPI) handleLogout(w http.ResponseWriter, r *http.Request, who caller) {
+	s.sessions.Revoke(who.token)
+	s.audit.Record(audit.Event{Kind: "admin.logout", Method: r.Method, Path: r.URL.Path, Actor: who.admin.Name, Session: who.session.Reference})
 	clearSessionCookie(w)
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -167,7 +167,7 @@ func clearSessionCookie(w http.ResponseWriter) {
 
 // handlePassword changes the caller's own password after verifying the
 // current one, and ends all of the caller's sessions.
-func (c *Controller) handlePassword(w http.ResponseWriter, r *http.Request, who caller) {
+func (s *adminAPI) handlePassword(w http.ResponseWriter, r *http.Request, who caller) {
 	var body struct {
 		Current string `json:"current_password"`
 		New     string `json:"new_password"`
@@ -180,11 +180,11 @@ func (c *Controller) handlePassword(w http.ResponseWriter, r *http.Request, who 
 		return
 	}
 	now := time.Now()
-	if reason := c.throttle.check(who.admin.Name, now); reason != "" {
-		c.refuse(w, r, http.StatusTooManyRequests, "too_many_attempts", reason, &who)
+	if reason := s.throttle.check(who.admin.Name, now); reason != "" {
+		s.refuse(w, r, http.StatusTooManyRequests, "too_many_attempts", reason, &who)
 		return
 	}
-	if !c.acquireHashing() {
+	if !s.acquireHashing() {
 		adminError(w, http.StatusServiceUnavailable, "busy", "")
 		return
 	}
@@ -193,14 +193,14 @@ func (c *Controller) handlePassword(w http.ResponseWriter, r *http.Request, who 
 	if verified {
 		passwordHash = hashPassword(body.New)
 	}
-	c.releaseHashing()
+	s.releaseHashing()
 	if !verified {
-		c.throttle.failed(who.admin.Name, true, now)
-		c.refuse(w, r, http.StatusUnauthorized, "unauthenticated", "bad_credentials", &who)
+		s.throttle.failed(who.admin.Name, true, now)
+		s.refuse(w, r, http.StatusUnauthorized, "unauthenticated", "bad_credentials", &who)
 		return
 	}
 
-	outcome, status := c.ChangePassword(r.Context(), who.admin, passwordHash)
+	outcome, status := s.control.ChangePassword(r.Context(), who.admin, passwordHash)
 	if status != http.StatusOK {
 		pipeline.WriteJSON(w, status, outcome)
 		return

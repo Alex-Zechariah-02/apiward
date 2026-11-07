@@ -54,7 +54,7 @@ func TestControllerWithoutAuthorityServesNothing(t *testing.T) {
 			if g := c.Current(); g != nil {
 				t.Fatalf("published %s without usable authority", g.ID)
 			}
-			if err := c.Start(); err != nil {
+			if err := c.Start(newAdminAPI(c).handler()); err != nil {
 				t.Fatal(err)
 			}
 			if health := e.health(); health != "unavailable" {
@@ -83,7 +83,7 @@ func TestSecondControllerCannotOwnDeployment(t *testing.T) {
 	e := newEnv(t)
 	seed(t, e.database, e.policy(e.a, false), seedOptions{})
 	first, _ := e.own(e.controllerConfig())
-	if err := first.Start(); err != nil {
+	if err := first.Start(newAdminAPI(first).handler()); err != nil {
 		t.Fatal(err)
 	}
 	g := first.Current()
@@ -131,7 +131,7 @@ func TestStartFailureLeavesNoListener(t *testing.T) {
 	writers, servers := goroutines(auditWriter), goroutines(adminServer)
 
 	c, _ := e.own(e.controllerConfig())
-	if err := c.Start(); err == nil {
+	if err := c.Start(newAdminAPI(c).handler()); err == nil {
 		t.Fatal("Start succeeded on an occupied address")
 	}
 	if got := goroutines(adminServer); got != servers {

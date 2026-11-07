@@ -24,7 +24,7 @@ func knownQuery(query url.Values, names ...string) bool {
 	return true
 }
 
-func (c *Controller) handleEvents(w http.ResponseWriter, r *http.Request, who caller) {
+func (s *adminAPI) handleEvents(w http.ResponseWriter, r *http.Request, who caller) {
 	query, err := url.ParseQuery(r.URL.RawQuery)
 	if err != nil {
 		adminError(w, http.StatusBadRequest, "bad_request", "")
@@ -52,7 +52,7 @@ func (c *Controller) handleEvents(w http.ResponseWriter, r *http.Request, who ca
 		}
 	}
 	// One match beyond the page says whether a next page exists.
-	matches := c.observations.Recent(func(event *monitor.Observed) bool {
+	matches := s.observations.Recent(func(event *monitor.Observed) bool {
 		return (after == 0 || event.Sequence() < after) &&
 			(ref == "" || event.RequestID == ref) &&
 			(subject == "" || (event.Subject != nil && *event.Subject == subject)) &&
@@ -71,17 +71,17 @@ func (c *Controller) handleEvents(w http.ResponseWriter, r *http.Request, who ca
 	pipeline.WriteJSON(w, http.StatusOK, list{Items: items, Next: next})
 }
 
-func (c *Controller) handleEventStream(w http.ResponseWriter, r *http.Request, who caller) {
+func (s *adminAPI) handleEventStream(w http.ResponseWriter, r *http.Request, who caller) {
 	if r.Header.Get("Accept") != "text/event-stream" || r.URL.RawQuery != "" {
 		adminError(w, http.StatusBadRequest, "bad_request", "")
 		return
 	}
-	viewer := c.observations.Subscribe()
+	viewer := s.observations.Subscribe()
 	if viewer == nil {
 		adminError(w, http.StatusServiceUnavailable, "stream_limit", "")
 		return
 	}
-	defer c.observations.Unsubscribe(viewer)
+	defer s.observations.Unsubscribe(viewer)
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-store")
 	controller := http.NewResponseController(w)
@@ -108,24 +108,24 @@ func (c *Controller) handleEventStream(w http.ResponseWriter, r *http.Request, w
 		select {
 		case <-r.Context().Done():
 			return
-		case <-c.observations.Closing():
+		case <-s.observations.Closing():
 			return
 		case <-who.session.Closed():
 			return
 		case <-expiry.C:
 			return
 		case <-heartbeat.C:
-			if !c.sessions.Active(who.token, time.Now()) {
+			if !s.sessions.Active(who.token, time.Now()) {
 				return
 			}
 			if !write(": heartbeat\n\n") {
 				return
 			}
 		case event := <-viewer.Feed():
-			if !c.sessions.Active(who.token, time.Now()) {
+			if !s.sessions.Active(who.token, time.Now()) {
 				return
 			}
-			if count := c.observations.TakeDropped(viewer); count > 0 {
+			if count := s.observations.TakeDropped(viewer); count > 0 {
 				if !write(fmt.Sprintf("event: dropped\ndata: {\"count\":%d}\n\n", count)) {
 					return
 				}

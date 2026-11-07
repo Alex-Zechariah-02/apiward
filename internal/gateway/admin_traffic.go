@@ -15,7 +15,7 @@ import (
 	"github.com/Alex-Zechariah-02/apiward/internal/pipeline"
 )
 
-func (c *Controller) handleTraffic(w http.ResponseWriter, r *http.Request, who caller) {
+func (s *adminAPI) handleTraffic(w http.ResponseWriter, r *http.Request, who caller) {
 	query, err := url.ParseQuery(r.URL.RawQuery)
 	if err != nil {
 		adminError(w, http.StatusBadRequest, "bad_request", "")
@@ -75,7 +75,7 @@ func (c *Controller) handleTraffic(w http.ResponseWriter, r *http.Request, who c
 	current, previous := totals{}, totals{}
 	// The ring is newest first, so the latest refusal code of each account or
 	// address is the first one seen.
-	for _, entry := range c.observations.Recent(func(event *monitor.Observed) bool {
+	for _, entry := range s.observations.Recent(func(event *monitor.Observed) bool {
 		return !event.Time.Before(previousStart) && !event.Time.After(now)
 	}, 0) {
 		event := entry.RequestView
@@ -169,7 +169,7 @@ func (c *Controller) handleTraffic(w http.ResponseWriter, r *http.Request, who c
 	// A comparison needs the whole previous window: when the ring has dropped
 	// requests from inside it, the count would be too low, so none is given.
 	var earlier *totals
-	if oldest, dropped := c.observations.RetainedSince(); !dropped || !oldest.After(previousStart) {
+	if oldest, dropped := s.observations.RetainedSince(); !dropped || !oldest.After(previousStart) {
 		earlier = &previous
 	}
 	pipeline.WriteJSON(w, http.StatusOK, struct {

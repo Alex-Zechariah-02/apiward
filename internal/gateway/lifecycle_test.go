@@ -153,7 +153,7 @@ func TestControllerOwnedByApplication(t *testing.T) {
 		t.Fatalf("%d audit writers, want %d", got, writers+1)
 	}
 
-	if err := c.Start(); err != nil {
+	if err := c.Start(newAdminAPI(c).handler()); err != nil {
 		t.Fatal(err)
 	}
 	if health := e.health(); health != store.ModeNormal {
@@ -162,7 +162,7 @@ func TestControllerOwnedByApplication(t *testing.T) {
 	if s := e.status(); s.State != store.ModeNormal || s.Generation != g.ID || s.Confirmed != 1 {
 		t.Fatalf("status %+v", s)
 	}
-	if err := c.Start(); err == nil || !strings.Contains(err.Error(), "already started") {
+	if err := c.Start(newAdminAPI(c).handler()); err == nil || !strings.Contains(err.Error(), "already started") {
 		t.Fatalf("second Start: %v", err)
 	}
 	if got := goroutines(adminServer); got != servers+1 {
@@ -175,7 +175,7 @@ func TestControllerOwnedByApplication(t *testing.T) {
 	if err := c.Stop(); err != nil {
 		t.Fatalf("repeated Stop: %v", err)
 	}
-	if err := c.Start(); err == nil || !strings.Contains(err.Error(), "stopped") {
+	if err := c.Start(newAdminAPI(c).handler()); err == nil || !strings.Contains(err.Error(), "stopped") {
 		t.Fatalf("Start after Stop: %v", err)
 	}
 	if c.Current() != nil {

@@ -5,16 +5,17 @@ package gateway
 import (
 	"context"
 	"errors"
+	"net/http"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/audit"
 	"github.com/Alex-Zechariah-02/apiward/internal/compile"
 	"github.com/Alex-Zechariah-02/apiward/internal/store"
 )
 
-// Start serves the Admin API on its loopback listener. Protected admission
-// does not wait for it: it follows the generation published since
+// Start serves admin, the Admin API, on its loopback listener. Protected
+// admission does not wait for it: it follows the generation published since
 // NewController. Start succeeds at most once, and never once Stop has begun.
-func (c *Controller) Start() error {
+func (c *Controller) Start(admin http.Handler) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	switch {
@@ -23,7 +24,7 @@ func (c *Controller) Start() error {
 	case c.admin != nil:
 		return errors.New("controller already started")
 	}
-	return c.startAdmin()
+	return c.startAdmin(admin)
 }
 
 // Stop begins the stop (see beginStop), shuts the Admin API down, waiting at
@@ -98,13 +99,13 @@ func (c *Controller) shutdown(ctx context.Context) error {
 	return errors.Join(errs...)
 }
 
-// admission reports whether protected admission can run at this moment:
+// Admission reports whether protected admission can run at this moment:
 // "ready" when a published generation is unexpired and the audit log accepts
 // acknowledgements, otherwise why it cannot (the stop, the deployment mode,
 // "unavailable", "generation_expired" or "audit_failed"). A ready gateway may
 // still refuse every request its policy denies, and the next request may
 // still fail; this is an observation, not a promise.
-func (c *Controller) admission() string {
+func (c *Controller) Admission() string {
 	c.mu.Lock()
 	state := c.state
 	c.mu.Unlock()
@@ -138,4 +139,11 @@ func (c *Controller) unavailable(reason string) {
 // its authority was read, whatever the deployment mode.
 func (c *Controller) ready() bool {
 	return c.store != nil && (c.state == store.ModeNormal || c.state == store.ModeBootstrap || c.state == store.ModeRecovery)
+}
+
+// State returns the deployment mode, or the reason no authority is served.
+func (c *Controller) State() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.state
 }

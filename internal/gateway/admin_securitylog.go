@@ -15,7 +15,7 @@ import (
 // handleSecurityLog searches the request records in the active and rotated
 // audit files, newest first, with the same secret-free fields as the live
 // views. format=csv or format=json exports up to securityLogExportRows rows.
-func (c *Controller) handleSecurityLog(w http.ResponseWriter, r *http.Request, who caller) {
+func (s *adminAPI) handleSecurityLog(w http.ResponseWriter, r *http.Request, who caller) {
 	values := r.URL.Query()
 	query, field := monitor.ParseQuery(values)
 	if field != "" {
@@ -47,12 +47,12 @@ func (c *Controller) handleSecurityLog(w http.ResponseWriter, r *http.Request, w
 			return
 		}
 	}
-	files, missing, err := monitor.LogFiles(c.audit.Path())
+	files, missing, err := monitor.LogFiles(s.audit.Path())
 	if err != nil {
 		adminError(w, http.StatusServiceUnavailable, "gateway_unavailable", "")
 		return
 	}
-	result, err := monitor.Search(filepath.Dir(c.audit.Path()), files, start, query, limit, scan)
+	result, err := monitor.Search(filepath.Dir(s.audit.Path()), files, start, query, limit, scan)
 	if errors.Is(err, monitor.ErrCursorGone) {
 		adminError(w, http.StatusGone, "cursor_gone", "after")
 		return

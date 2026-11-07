@@ -146,7 +146,7 @@ func (d *deployment) listen() (net.Listener, error) {
 	if err != nil {
 		return nil, classify(ErrListen, fmt.Errorf("metrics listener: %w", err))
 	}
-	if err := d.controller.Start(); err != nil {
+	if err := d.controller.Start(newAdminAPI(d.controller).handler()); err != nil {
 		metrics.Close()
 		return nil, classify(ErrListen, fmt.Errorf("admin listener: %w", err))
 	}
@@ -157,7 +157,7 @@ func (d *deployment) listen() (net.Listener, error) {
 // does not mean they are, as the deployment may be in bootstrap or recovery,
 // without usable authority, or without its audit log.
 func (d *deployment) logAdmission(logger *slog.Logger) {
-	attrs := []any{"admission", d.controller.admission()}
+	attrs := []any{"admission", d.controller.Admission()}
 	if current := d.controller.Current(); current != nil {
 		attrs = append(attrs, "generation", current.ID, "revision", current.Revision)
 	}

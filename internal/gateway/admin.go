@@ -1,17 +1,17 @@
-// Admin API listener, routing, host and origin checks and authentication.
+// The Admin API server: routing, authentication, Host, Origin and CSRF checks.
 
 package gateway
 
 import (
 	"context"
 	"crypto/subtle"
-	"errors"
-	"fmt"
-	"net"
+	"io/fs"
+	"log/slog"
 	"net/http"
 	"time"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/audit"
+	"github.com/Alex-Zechariah-02/apiward/internal/monitor"
 	"github.com/Alex-Zechariah-02/apiward/internal/pipeline"
 	"github.com/Alex-Zechariah-02/apiward/internal/session"
 	"github.com/Alex-Zechariah-02/apiward/internal/store"
@@ -41,107 +41,103 @@ type caller struct {
 
 type adminHandler func(w http.ResponseWriter, r *http.Request, who caller)
 
-// startAdmin serves the project Admin API. It binds only to loopback and is
-// separate from the data plane, so client traffic can never reach it. The
-// caller holds c.mu.
-func (c *Controller) startAdmin() error {
-	listener, err := net.Listen("tcp", c.config.AdminListen)
-	if err != nil {
-		return err
-	}
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /admin/health", c.handleHealth)
-	mux.HandleFunc("POST /admin/enrol", c.handleEnrol)
-	mux.HandleFunc("POST /admin/session", c.handleLogin)
-
-	c.route(mux, "GET /admin/session", 0, c.handleWhoAmI)
-	c.route(mux, "DELETE /admin/session", 0, c.handleLogout)
-	c.route(mux, "PUT /admin/password", 0, c.handlePassword)
-	c.route(mux, "GET /admin/status", store.PermRead, c.handleStatus)
-	c.route(mux, "GET /admin/policy", store.PermRead, c.handlePolicy)
-	c.route(mux, "GET /admin/revisions", store.PermRead, c.handleRevisions)
-	c.route(mux, "GET /admin/revisions/{id}", store.PermRead, c.handleRevision)
-	c.route(mux, "GET /admin/keys", store.PermRead, c.handleKeys)
-	c.route(mux, "POST /admin/keys/reload", store.PermManagePolicy, c.handleReloadKeys)
-	c.route(mux, "GET /admin/blocked-accounts", store.PermRead, c.handleBlockedAccounts)
-	c.route(mux, "PUT /admin/blocked-accounts/{subject}", store.PermManageSubjects, c.handleBlockAccount)
-	c.route(mux, "DELETE /admin/blocked-accounts/{subject}", store.PermManageSubjects, c.handleUnblockAccount)
-	c.route(mux, "GET /admin/blocked-addresses", store.PermRead, c.handleBlockedAddresses)
-	c.route(mux, "PUT /admin/blocked-addresses/{range}", store.PermManageSubjects, c.handleBlockAddress)
-	c.route(mux, "DELETE /admin/blocked-addresses/{range}", store.PermManageSubjects, c.handleUnblockAddress)
-	c.route(mux, "GET /admin/administrators", store.PermRead, c.handleAdministrators)
-	c.route(mux, "GET /admin/events", store.PermRead, c.handleEvents)
-	c.route(mux, "GET /admin/events/stream", store.PermRead, c.handleEventStream)
-	c.route(mux, "GET /admin/traffic", store.PermRead, c.handleTraffic)
-	c.route(mux, "GET /admin/limits", store.PermRead, c.handleLimits)
-	c.route(mux, "POST /admin/access-check", store.PermRead, c.handleAccessCheck)
-	c.route(mux, "GET /admin/advice", store.PermRead, c.handleAdvice)
-	c.route(mux, "GET /admin/alerts", store.PermRead, c.handleAlerts)
-	c.route(mux, "POST /admin/candidates/{id}/impact", store.PermRead, c.handleImpact)
-	c.route(mux, "GET /admin/candidates", store.PermRead, c.handleCandidates)
-	c.route(mux, "GET /admin/candidates/{id}", store.PermRead, c.handleCandidate)
-	c.route(mux, "POST /admin/candidates", store.PermManagePolicy, c.handlePostCandidate)
-	c.route(mux, "DELETE /admin/candidates/{id}", store.PermManagePolicy, c.handleWithdrawCandidate)
-	c.route(mux, "POST /admin/genesis", store.PermManagePolicy, c.handleEstablish("genesis"))
-	c.route(mux, "POST /admin/recovery-base", store.PermManagePolicy, c.handleEstablish("recovery_base"))
-	c.route(mux, "GET /admin/provisional", store.PermRead, c.handleProvisional)
-	c.route(mux, "POST /admin/provisional", store.PermManagePolicy, c.handleActivate)
-	c.route(mux, "POST /admin/provisional/confirm", store.PermManagePolicy, c.handleResolve("cpa.confirm", store.DispositionConfirmed))
-	c.route(mux, "POST /admin/provisional/rollback", store.PermManagePolicy, c.handleResolve("cpa.rollback", store.DispositionRolledBack))
-	c.route(mux, "GET /admin/activations", store.PermReadHistory, c.handleActivations)
-	c.route(mux, "GET /admin/overrides", store.PermRead, c.handleOverrides)
-	c.route(mux, "GET /admin/overrides/history", store.PermReadHistory, c.handleOverrideHistory)
-	c.route(mux, "GET /admin/overrides/{id}", store.PermRead, c.handleOverride)
-	c.route(mux, "POST /admin/overrides/validate", store.PermManagePolicy, c.handleValidateOverride)
-	c.route(mux, "POST /admin/overrides", store.PermManagePolicy, c.handleCreateOverride)
-	c.route(mux, "DELETE /admin/overrides/{id}", store.PermManagePolicy, c.handleRevokeOverride)
-	c.route(mux, "GET /admin/history", store.PermReadHistory, c.handleHistory)
-	c.route(mux, "GET /admin/history/{id}", store.PermReadHistory, c.handleHistoryEntry)
-	c.route(mux, "GET /admin/security-log", store.PermReadHistory, c.handleSecurityLog)
-	if c.ui != nil {
-		// Only the page and its flat assets directory exist: no fallback page
-		// can answer an unknown path, so an API path never receives HTML.
-		mux.HandleFunc("GET /{$}", c.serveUI)
-		mux.HandleFunc("GET /assets/{file}", c.serveUI)
-	}
-	registerTestRoutes(c, mux)
-
-	c.admin = &http.Server{
-		Handler:           c.checkHost(detachWrites(mux)),
-		ReadHeaderTimeout: 5 * time.Second,
-		ReadTimeout:       10 * time.Second,
-		WriteTimeout:      30 * time.Second,
-	}
-	go func(admin *http.Server) {
-		if err := admin.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			c.logger.Error("admin listener stopped", "error", err)
-		}
-	}(c.admin)
-	return nil
+// adminAPI is the Admin API: routing, authentication, the Host, Origin and
+// CSRF checks, the login throttle, password hashing, the dashboard files and
+// every handler. It changes state only through the controller's exported
+// operations.
+type adminAPI struct {
+	control      *Controller
+	config       Config
+	store        *store.DB
+	audit        *audit.AuditLog
+	observations *monitor.Observations
+	limiter      *pipeline.Limiter
+	sessions     *session.Table
+	throttle     *throttle
+	hashing      chan struct{} // bounds concurrent password hashing
+	ui           fs.FS         // nil when AdminUI is not set
+	logger       *slog.Logger
 }
 
-// stopAdmin stops a started Admin API server (nil: none was started). It
-// waits until ctx is done for requests in progress; if any remain, it closes
-// their connections and reports the incomplete shutdown.
-func stopAdmin(ctx context.Context, admin *http.Server) error {
-	if admin == nil {
-		return nil
+// newAdminAPI returns the Admin API of an opened controller.
+func newAdminAPI(c *Controller) *adminAPI {
+	return &adminAPI{
+		control: c, config: c.config, store: c.store, audit: c.audit,
+		observations: c.observations, limiter: c.limiter, sessions: c.sessions,
+		throttle: newThrottle(), hashing: make(chan struct{}, maxHashing), ui: c.ui, logger: c.logger,
 	}
-	if err := admin.Shutdown(ctx); err != nil {
-		return errors.Join(fmt.Errorf("admin listener shutdown: %w", err), admin.Close())
+}
+
+// handler routes every Admin API endpoint behind the Host check.
+func (s *adminAPI) handler() http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /admin/health", s.handleHealth)
+	mux.HandleFunc("POST /admin/enrol", s.handleEnrol)
+	mux.HandleFunc("POST /admin/session", s.handleLogin)
+
+	s.route(mux, "GET /admin/session", 0, s.handleWhoAmI)
+	s.route(mux, "DELETE /admin/session", 0, s.handleLogout)
+	s.route(mux, "PUT /admin/password", 0, s.handlePassword)
+	s.route(mux, "GET /admin/status", store.PermRead, s.handleStatus)
+	s.route(mux, "GET /admin/policy", store.PermRead, s.handlePolicy)
+	s.route(mux, "GET /admin/revisions", store.PermRead, s.handleRevisions)
+	s.route(mux, "GET /admin/revisions/{id}", store.PermRead, s.handleRevision)
+	s.route(mux, "GET /admin/keys", store.PermRead, s.handleKeys)
+	s.route(mux, "POST /admin/keys/reload", store.PermManagePolicy, s.handleReloadKeys)
+	s.route(mux, "GET /admin/blocked-accounts", store.PermRead, s.handleBlockedAccounts)
+	s.route(mux, "PUT /admin/blocked-accounts/{subject}", store.PermManageSubjects, s.handleBlockAccount)
+	s.route(mux, "DELETE /admin/blocked-accounts/{subject}", store.PermManageSubjects, s.handleUnblockAccount)
+	s.route(mux, "GET /admin/blocked-addresses", store.PermRead, s.handleBlockedAddresses)
+	s.route(mux, "PUT /admin/blocked-addresses/{range}", store.PermManageSubjects, s.handleBlockAddress)
+	s.route(mux, "DELETE /admin/blocked-addresses/{range}", store.PermManageSubjects, s.handleUnblockAddress)
+	s.route(mux, "GET /admin/administrators", store.PermRead, s.handleAdministrators)
+	s.route(mux, "GET /admin/events", store.PermRead, s.handleEvents)
+	s.route(mux, "GET /admin/events/stream", store.PermRead, s.handleEventStream)
+	s.route(mux, "GET /admin/traffic", store.PermRead, s.handleTraffic)
+	s.route(mux, "GET /admin/limits", store.PermRead, s.handleLimits)
+	s.route(mux, "POST /admin/access-check", store.PermRead, s.handleAccessCheck)
+	s.route(mux, "GET /admin/advice", store.PermRead, s.handleAdvice)
+	s.route(mux, "GET /admin/alerts", store.PermRead, s.handleAlerts)
+	s.route(mux, "POST /admin/candidates/{id}/impact", store.PermRead, s.handleImpact)
+	s.route(mux, "GET /admin/candidates", store.PermRead, s.handleCandidates)
+	s.route(mux, "GET /admin/candidates/{id}", store.PermRead, s.handleCandidate)
+	s.route(mux, "POST /admin/candidates", store.PermManagePolicy, s.handlePostCandidate)
+	s.route(mux, "DELETE /admin/candidates/{id}", store.PermManagePolicy, s.handleWithdrawCandidate)
+	s.route(mux, "POST /admin/genesis", store.PermManagePolicy, s.handleEstablish("genesis"))
+	s.route(mux, "POST /admin/recovery-base", store.PermManagePolicy, s.handleEstablish("recovery_base"))
+	s.route(mux, "GET /admin/provisional", store.PermRead, s.handleProvisional)
+	s.route(mux, "POST /admin/provisional", store.PermManagePolicy, s.handleActivate)
+	s.route(mux, "POST /admin/provisional/confirm", store.PermManagePolicy, s.handleResolve("cpa.confirm", store.DispositionConfirmed))
+	s.route(mux, "POST /admin/provisional/rollback", store.PermManagePolicy, s.handleResolve("cpa.rollback", store.DispositionRolledBack))
+	s.route(mux, "GET /admin/activations", store.PermReadHistory, s.handleActivations)
+	s.route(mux, "GET /admin/overrides", store.PermRead, s.handleOverrides)
+	s.route(mux, "GET /admin/overrides/history", store.PermReadHistory, s.handleOverrideHistory)
+	s.route(mux, "GET /admin/overrides/{id}", store.PermRead, s.handleOverride)
+	s.route(mux, "POST /admin/overrides/validate", store.PermManagePolicy, s.handleValidateOverride)
+	s.route(mux, "POST /admin/overrides", store.PermManagePolicy, s.handleCreateOverride)
+	s.route(mux, "DELETE /admin/overrides/{id}", store.PermManagePolicy, s.handleRevokeOverride)
+	s.route(mux, "GET /admin/history", store.PermReadHistory, s.handleHistory)
+	s.route(mux, "GET /admin/history/{id}", store.PermReadHistory, s.handleHistoryEntry)
+	s.route(mux, "GET /admin/security-log", store.PermReadHistory, s.handleSecurityLog)
+	if s.ui != nil {
+		// Only the page and its flat assets directory exist: no fallback page
+		// can answer an unknown path, so an API path never receives HTML.
+		mux.HandleFunc("GET /{$}", s.serveUI)
+		mux.HandleFunc("GET /assets/{file}", s.serveUI)
 	}
-	return nil
+	registerTestRoutes(s, mux)
+	return s.checkHost(detachWrites(mux))
 }
 
 // checkHost refuses any request whose Host is not exactly the admin listener
 // address, so a name that resolves to loopback cannot be used to reach the
 // API from another site's pages (DNS rebinding).
-func (c *Controller) checkHost(next http.Handler) http.Handler {
+func (s *adminAPI) checkHost(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Cache-Control", "no-store")
-		if r.Host != c.config.AdminListen {
-			c.refuse(w, r, http.StatusBadRequest, "bad_request", "bad_host", nil)
+		if r.Host != s.config.AdminListen {
+			s.refuse(w, r, http.StatusBadRequest, "bad_request", "bad_host", nil)
 			return
 		}
 		next.ServeHTTP(w, r)
@@ -164,9 +160,9 @@ func detachWrites(next http.Handler) http.Handler {
 // sameOrigin requires the Origin header of a state-changing request to name
 // the admin listener itself. A request without one is refused: a browser
 // always sends it on such requests, and other clients can.
-func (c *Controller) sameOrigin(r *http.Request) bool {
+func (s *adminAPI) sameOrigin(r *http.Request) bool {
 	origins := r.Header.Values("Origin")
-	return len(origins) == 1 && origins[0] == "http://"+c.config.AdminListen
+	return len(origins) == 1 && origins[0] == "http://"+s.config.AdminListen
 }
 
 func unsafeMethod(method string) bool {
@@ -177,29 +173,29 @@ func unsafeMethod(method string) bool {
 // holding the required permission (0: any administrator, for their own
 // session). A state-changing request also needs the admin origin and the
 // session's CSRF token.
-func (c *Controller) route(mux *http.ServeMux, pattern string, required store.Permission, handler adminHandler) {
+func (s *adminAPI) route(mux *http.ServeMux, pattern string, required store.Permission, handler adminHandler) {
 	mux.HandleFunc(pattern, func(w http.ResponseWriter, r *http.Request) {
-		who, ok := c.authenticate(w, r)
+		who, ok := s.authenticate(w, r)
 		if !ok {
 			return
 		}
 		if unsafeMethod(r.Method) {
-			if !c.sameOrigin(r) {
-				c.refuse(w, r, http.StatusForbidden, "forbidden", "bad_origin", &who)
+			if !s.sameOrigin(r) {
+				s.refuse(w, r, http.StatusForbidden, "forbidden", "bad_origin", &who)
 				return
 			}
 			token := r.Header.Get(csrfHeader)
 			if subtle.ConstantTimeCompare([]byte(token), []byte(who.session.CSRF)) != 1 {
-				c.refuse(w, r, http.StatusForbidden, "forbidden", "csrf", &who)
+				s.refuse(w, r, http.StatusForbidden, "forbidden", "csrf", &who)
 				return
 			}
 		}
 		if who.admin.Permissions&required != required {
-			c.refuse(w, r, http.StatusForbidden, "forbidden", "permission", &who)
+			s.refuse(w, r, http.StatusForbidden, "forbidden", "permission", &who)
 			return
 		}
 		if !unsafeMethod(r.Method) {
-			c.audit.Record(audit.Event{Kind: "admin.read", Method: r.Method, Path: r.URL.Path, Actor: who.admin.Name, Session: who.session.Reference})
+			s.audit.Record(audit.Event{Kind: "admin.read", Method: r.Method, Path: r.URL.Path, Actor: who.admin.Name, Session: who.session.Reference})
 		}
 		handler(w, r, who)
 	})
@@ -208,28 +204,28 @@ func (c *Controller) route(mux *http.ServeMux, pattern string, required store.Pe
 // authenticate resolves the session cookie to a live session and re-reads the
 // administrator, so a quarantined administrator or a replaced credential loses
 // access at once.
-func (c *Controller) authenticate(w http.ResponseWriter, r *http.Request) (caller, bool) {
+func (s *adminAPI) authenticate(w http.ResponseWriter, r *http.Request) (caller, bool) {
 	reason := "no_session"
 	var who caller
 	if cookie, err := r.Cookie(sessionCookie); err == nil {
 		who.token = cookie.Value
-		who.session, reason = c.sessions.Lookup(cookie.Value, time.Now())
+		who.session, reason = s.sessions.Lookup(cookie.Value, time.Now())
 	}
 	if reason == "" {
-		admin, found, err := c.store.Administrator(r.Context(), who.session.Admin)
+		admin, found, err := s.store.Administrator(r.Context(), who.session.Admin)
 		if err != nil {
-			c.logger.Error("reading administrator", "error", err)
+			s.logger.Error("reading administrator", "error", err)
 			adminError(w, http.StatusServiceUnavailable, "unavailable", "")
 			return caller{}, false
 		}
 		who.admin = admin
 		if !found || admin.Status != "active" || admin.Credential != who.session.Credential {
-			c.sessions.Revoke(who.token)
+			s.sessions.Revoke(who.token)
 			reason = "credential_changed"
 		}
 	}
 	if reason != "" {
-		c.refuse(w, r, http.StatusUnauthorized, "unauthenticated", reason, nil)
+		s.refuse(w, r, http.StatusUnauthorized, "unauthenticated", reason, nil)
 		return caller{}, false
 	}
 	return who, true
@@ -237,12 +233,12 @@ func (c *Controller) authenticate(w http.ResponseWriter, r *http.Request) (calle
 
 // refuse answers a refused admin request and records why. Only the error code
 // reaches the client.
-func (c *Controller) refuse(w http.ResponseWriter, r *http.Request, status int, code, reason string, who *caller) {
+func (s *adminAPI) refuse(w http.ResponseWriter, r *http.Request, status int, code, reason string, who *caller) {
 	event := audit.Event{Kind: "admin.rejected", Method: r.Method, Path: r.URL.Path, Status: status, Reason: reason}
 	if who != nil {
 		event.Kind, event.Actor, event.Session = "admin.denied", who.admin.Name, who.session.Reference
 	}
-	c.audit.Record(event)
+	s.audit.Record(event)
 	adminError(w, status, code, "")
 }
 
@@ -256,10 +252,8 @@ func adminError(w http.ResponseWriter, status int, code, field string) {
 	pipeline.WriteJSON(w, status, body)
 }
 
-func (c *Controller) handleHealth(w http.ResponseWriter, r *http.Request) {
-	c.mu.Lock()
-	state := c.state
-	c.mu.Unlock()
+func (s *adminAPI) handleHealth(w http.ResponseWriter, r *http.Request) {
+	state := s.control.State()
 	if state != store.ModeNormal && state != store.ModeBootstrap && state != store.ModeRecovery {
 		state = "unavailable"
 	}

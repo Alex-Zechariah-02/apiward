@@ -46,7 +46,7 @@ type accessAnswer struct {
 // draft compiled with the active overrides, through the same matching and
 // permission code as real requests. It changes nothing and is no second
 // evaluator: every decision below is the request handler's own function.
-func (c *Controller) handleAccessCheck(w http.ResponseWriter, r *http.Request, who caller) {
+func (s *adminAPI) handleAccessCheck(w http.ResponseWriter, r *http.Request, who caller) {
 	var check accessCheck
 	if !decodeBody(w, r, maxAdminBody, &check) {
 		return
@@ -61,17 +61,17 @@ func (c *Controller) handleAccessCheck(w http.ResponseWriter, r *http.Request, w
 		return
 	}
 
-	g := c.Current()
+	g := s.control.Current()
 	if check.Candidate != nil {
 		var ok bool
-		if _, g, ok = c.candidateGeneration(w, r, *check.Candidate); !ok {
+		if _, g, ok = s.candidateGeneration(w, r, *check.Candidate); !ok {
 			return
 		}
 	} else if g == nil || g.Expired(compile.TrustedNow()) {
 		adminError(w, http.StatusServiceUnavailable, "gateway_unavailable", "")
 		return
 	}
-	blocked := c.blocked.Load()
+	blocked := s.control.Blocked()
 	if blocked == nil {
 		adminError(w, http.StatusServiceUnavailable, "gateway_unavailable", "")
 		return

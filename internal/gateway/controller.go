@@ -63,8 +63,9 @@ type Config struct {
 	// AdminUI is an optional directory of built dashboard files, served by
 	// the admin listener so the dashboard shares the Admin API's origin.
 	AdminUI string
-	// settingsFile is the startup operator configuration, never chosen by HTTP.
-	settingsFile string
+	// ReloadTrust reads the trust settings again from the startup
+	// configuration, never from HTTP; nil refuses every key reload.
+	ReloadTrust func() (pipeline.TrustConfig, error)
 }
 
 // Controller is the only component that changes the effective policy. It owns
@@ -95,8 +96,6 @@ type Controller struct {
 
 	// Administrator authentication state, in memory only.
 	sessions *session.Table
-	throttle *throttle
-	hashing  chan struct{} // bounds concurrent password hashing
 
 	// mu serialises every mutation, including timer-driven ones, and the
 	// lifecycle changes of Start and Stop.
@@ -167,8 +166,6 @@ func prepareController(cfg Config, logger *slog.Logger) (*Controller, error) {
 		clock:        pipeline.NewClock(),
 		observations: monitor.New(),
 		sessions:     session.New(cfg.AdminIdleTimeout, cfg.AdminSessionLifetime),
-		throttle:     newThrottle(),
-		hashing:      make(chan struct{}, maxHashing),
 		logger:       logger,
 	}
 	c.verifier.Store(verifier)
@@ -264,28 +261,4 @@ func (cfg *Config) applyDefaults() error {
 		}
 	}
 	return nil
-}
-
-// Current returns the published generation, or nil when nothing may be served.
-func (c *Controller) Current() *compile.Generation { return c.current.Load() }
-
-// Verifier returns the published token verifier.
-func (c *Controller) Verifier() *pipeline.Verifier { return c.verifier.Load() }
-
-// Blocked returns the published blocked accounts.
-func (c *Controller) Blocked() *store.BlockedAccounts { return c.blocked.Load() }
-
-// Addresses returns the published blocked address list.
-func (c *Controller) Addresses() *store.BlockedAddresses { return c.addresses.Load() }
-
-// gauges reads the published policy revision, active temporary rules and
-// blocked accounts for the metrics listener.
-func (c *Controller) gauges() (revision int64, overrides, blocked int) {
-	if generation := c.Current(); generation != nil {
-		revision, overrides = generation.Revision, len(generation.Overrides)
-	}
-	if accounts := c.blocked.Load(); accounts != nil {
-		blocked = len(*accounts)
-	}
-	return revision, overrides, blocked
 }

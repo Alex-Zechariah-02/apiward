@@ -18,7 +18,7 @@ import (
 // optionally only those of the comma-separated kinds, the outcome or the
 // actor given. Filters apply before the page limit, and the cursor is the
 // last entry's seq in the chosen order.
-func (c *Controller) handleHistory(w http.ResponseWriter, r *http.Request, who caller) {
+func (s *adminAPI) handleHistory(w http.ResponseWriter, r *http.Request, who caller) {
 	after, limit, ok := page(w, r, "order", "kind", "outcome", "actor")
 	if !ok {
 		return
@@ -32,7 +32,7 @@ func (c *Controller) handleHistory(w http.ResponseWriter, r *http.Request, who c
 		adminError(w, http.StatusBadRequest, "bad_request", "page")
 		return
 	}
-	items, err := c.store.History(r.Context(), filter, cursor, limit)
+	items, err := s.store.History(r.Context(), filter, cursor, limit)
 	if err != nil {
 		adminError(w, http.StatusServiceUnavailable, "unavailable", "")
 		return
@@ -98,8 +98,8 @@ func historyKind(kind string) bool {
 	return true
 }
 
-func (c *Controller) handleHistoryEntry(w http.ResponseWriter, r *http.Request, who caller) {
-	entry, found, err := c.store.HistoryEntry(r.Context(), r.PathValue("id"))
+func (s *adminAPI) handleHistoryEntry(w http.ResponseWriter, r *http.Request, who caller) {
+	entry, found, err := s.store.HistoryEntry(r.Context(), r.PathValue("id"))
 	switch {
 	case err != nil:
 		adminError(w, http.StatusServiceUnavailable, "unavailable", "")

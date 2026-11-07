@@ -23,7 +23,7 @@ func TestStopIsBoundedByStuckAdminRequest(t *testing.T) {
 	e := newEnv(t)
 	seed(t, e.database, e.policy(e.a, false), seedOptions{})
 	c, _ := e.own(e.controllerConfig())
-	if err := c.Start(); err != nil {
+	if err := c.Start(newAdminAPI(c).handler()); err != nil {
 		t.Fatal(err)
 	}
 	conn, err := net.Dial("tcp", e.admin)
@@ -162,7 +162,7 @@ func TestBeginStopEndsAdmission(t *testing.T) {
 	<-held
 
 	c.beginStop()
-	if got := c.admission(); got != stateStopping || c.Current() != nil {
+	if got := c.Admission(); got != stateStopping || c.Current() != nil {
 		t.Fatalf("after beginStop: admission %q, generation %v", got, c.Current())
 	}
 	resp, body := e.exchange(http.MethodGet, "/a/x", "", "")
@@ -173,7 +173,7 @@ func TestBeginStopEndsAdmission(t *testing.T) {
 	if outcome, status := c.Publish(context.Background(), "test", Change{ID: "after-begin-stop", Expected: 1, Policy: mustJSON(e.policy(e.a, false))}); status != http.StatusServiceUnavailable || outcome.Reason != "UNAVAILABLE" {
 		t.Fatalf("publication after beginStop: %d %+v", status, outcome)
 	}
-	if err := c.Start(); err == nil {
+	if err := c.Start(newAdminAPI(c).handler()); err == nil {
 		t.Fatal("Start after beginStop succeeded")
 	}
 

@@ -17,8 +17,8 @@ import (
 // handleAdvice answers the configuration warnings and unused permissions for
 // the generation in force, or for a stored draft compiled with the active
 // overrides.
-func (c *Controller) handleAdvice(w http.ResponseWriter, r *http.Request, who caller) {
-	g := c.Current()
+func (s *adminAPI) handleAdvice(w http.ResponseWriter, r *http.Request, who caller) {
+	g := s.control.Current()
 	var candidate *int64
 	if text := r.URL.Query().Get("candidate"); text != "" {
 		id, err := strconv.ParseInt(text, 10, 64)
@@ -27,7 +27,7 @@ func (c *Controller) handleAdvice(w http.ResponseWriter, r *http.Request, who ca
 			return
 		}
 		var ok bool
-		if _, g, ok = c.candidateGeneration(w, r, id); !ok {
+		if _, g, ok = s.candidateGeneration(w, r, id); !ok {
 			return
 		}
 		candidate = &id
@@ -35,12 +35,12 @@ func (c *Controller) handleAdvice(w http.ResponseWriter, r *http.Request, who ca
 		adminError(w, http.StatusServiceUnavailable, "gateway_unavailable", "")
 		return
 	}
-	files, missing, err := monitor.LogFiles(c.audit.Path())
+	files, missing, err := monitor.LogFiles(s.audit.Path())
 	if err != nil {
 		adminError(w, http.StatusServiceUnavailable, "gateway_unavailable", "")
 		return
 	}
-	use, err := monitor.PermitUse(filepath.Dir(c.audit.Path()), files, monitor.ExportScan)
+	use, err := monitor.PermitUse(filepath.Dir(s.audit.Path()), files, monitor.ExportScan)
 	if err != nil {
 		adminError(w, http.StatusServiceUnavailable, "gateway_unavailable", "")
 		return
@@ -56,19 +56,19 @@ func (c *Controller) handleAdvice(w http.ResponseWriter, r *http.Request, who ca
 
 // handleAlerts evaluates the alert rules when read; nothing is evaluated per
 // request.
-func (c *Controller) handleAlerts(w http.ResponseWriter, r *http.Request, who caller) {
+func (s *adminAPI) handleAlerts(w http.ResponseWriter, r *http.Request, who caller) {
 	now := time.Now()
 	items := []monitor.Finding{}
-	if spike := monitor.RefusalSpike(c.observations.Snapshot(), now); spike != nil {
+	if spike := monitor.RefusalSpike(s.observations.Snapshot(), now); spike != nil {
 		items = append(items, *spike)
 	}
-	if c.audit.Failed() {
+	if s.audit.Failed() {
 		items = append(items, monitor.Finding{ID: "A2", Severity: "critical", Object: "security_log", Message: "The security log cannot be written, so the gateway refuses requests it cannot record."})
 	}
-	if active, activeLimit, files, filesLimit := c.audit.Usage(); files >= filesLimit && float64(active) >= monitor.NearlyFull*float64(activeLimit) {
+	if active, activeLimit, files, filesLimit := s.audit.Usage(); files >= filesLimit && float64(active) >= monitor.NearlyFull*float64(activeLimit) {
 		items = append(items, monitor.Finding{ID: "A3", Severity: "high", Object: "security_log", Message: "The security log is nearly full. Move earlier log files to an archive before it fills, or the gateway will stop accepting requests."})
 	}
-	if float64(c.limiter.Size()) >= monitor.NearlyFull*float64(c.limiter.Capacity()) {
+	if float64(s.limiter.Size()) >= monitor.NearlyFull*float64(s.limiter.Capacity()) {
 		items = append(items, monitor.Finding{ID: "A4", Severity: "medium", Object: "rate_counters", Message: "Rate limit counters are nearly full. When they run out, requests that need a new counter are refused."})
 	}
 	monitor.SortFindings(items)

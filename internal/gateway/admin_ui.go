@@ -27,7 +27,7 @@ const uiPolicy = "default-src 'none'; script-src 'self'; style-src 'self'; img-s
 
 // serveUI serves one dashboard file. The files hold no data, so no session is
 // needed; everything the dashboard shows comes from the Admin API.
-func (c *Controller) serveUI(w http.ResponseWriter, r *http.Request) {
+func (s *adminAPI) serveUI(w http.ResponseWriter, r *http.Request) {
 	name, contentType := "index.html", "text/html; charset=utf-8"
 	if file := r.PathValue("file"); file != "" {
 		name, contentType = "assets/"+file, assetTypes[path.Ext(file)]
@@ -36,7 +36,7 @@ func (c *Controller) serveUI(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	serveFrontendFile(w, r, c.ui, name, contentType)
+	serveFrontendFile(w, r, s.ui, name, contentType)
 }
 
 // serveFrontendFile answers with one file of a built frontend under the

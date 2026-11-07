@@ -58,7 +58,7 @@ func overrideIDs(overrides []store.Override) []int64 {
 
 // compileEffective compiles a stored revision with the given overrides.
 func (c *Controller) compileEffective(ctx context.Context, revision int64, deadline time.Time, overrides []store.Override) (*compile.Generation, error) {
-	p, err := c.storedPolicy(ctx, revision)
+	p, err := storedPolicy(ctx, c.store, revision)
 	if err != nil {
 		return nil, err
 	}

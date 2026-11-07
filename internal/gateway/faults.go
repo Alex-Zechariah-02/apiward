@@ -17,13 +17,13 @@ import (
 // no such route, because whole-policy activation belongs to the confirmed
 // activation lifecycle. The hook still needs an administrator session with
 // manage_policy, the admin origin and the CSRF token.
-func registerTestRoutes(c *Controller, mux *http.ServeMux) {
-	c.route(mux, "POST /test/publish", store.PermManagePolicy, func(w http.ResponseWriter, r *http.Request, who caller) {
+func registerTestRoutes(s *adminAPI, mux *http.ServeMux) {
+	s.route(mux, "POST /test/publish", store.PermManagePolicy, func(w http.ResponseWriter, r *http.Request, who caller) {
 		var change Change
 		if !decodeBody(w, r, policy.MaxPolicyBytes, &change) {
 			return
 		}
-		outcome, status := c.Publish(r.Context(), who.admin.Name, change)
+		outcome, status := s.control.Publish(r.Context(), who.admin.Name, change)
 		pipeline.WriteJSON(w, status, outcome)
 	})
 }

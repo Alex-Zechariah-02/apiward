@@ -25,7 +25,7 @@ type candidateView struct {
 	Document json.RawMessage `json:"document,omitempty"`
 }
 
-func (c *Controller) handleCandidates(w http.ResponseWriter, r *http.Request, who caller) {
+func (s *adminAPI) handleCandidates(w http.ResponseWriter, r *http.Request, who caller) {
 	after, limit, ok := page(w, r)
 	if !ok {
 		return
@@ -34,7 +34,7 @@ func (c *Controller) handleCandidates(w http.ResponseWriter, r *http.Request, wh
 	if !ok {
 		return
 	}
-	records, err := c.store.Candidates(r.Context(), cursor, limit)
+	records, err := s.store.Candidates(r.Context(), cursor, limit)
 	if err != nil {
 		adminError(w, http.StatusServiceUnavailable, "unavailable", "")
 		return
@@ -50,12 +50,12 @@ func (c *Controller) handleCandidates(w http.ResponseWriter, r *http.Request, wh
 	pipeline.WriteJSON(w, http.StatusOK, result)
 }
 
-func (c *Controller) handleCandidate(w http.ResponseWriter, r *http.Request, who caller) {
+func (s *adminAPI) handleCandidate(w http.ResponseWriter, r *http.Request, who caller) {
 	id, ok := pathID(w, r)
 	if !ok {
 		return
 	}
-	record, found, err := c.store.Candidate(r.Context(), id)
+	record, found, err := s.store.Candidate(r.Context(), id)
 	switch {
 	case err != nil:
 		adminError(w, http.StatusServiceUnavailable, "unavailable", "")
@@ -68,7 +68,7 @@ func (c *Controller) handleCandidate(w http.ResponseWriter, r *http.Request, who
 
 // handlePostCandidate validates and stores a complete policy candidate. The
 // If-Match precondition names the confirmed revision it was prepared against.
-func (c *Controller) handlePostCandidate(w http.ResponseWriter, r *http.Request, who caller) {
+func (s *adminAPI) handlePostCandidate(w http.ResponseWriter, r *http.Request, who caller) {
 	expected, ok := ifMatch(w, r)
 	if !ok {
 		return
@@ -89,14 +89,14 @@ func (c *Controller) handlePostCandidate(w http.ResponseWriter, r *http.Request,
 		return
 	}
 	t := adminTransition(who, key, "candidate.create", "candidate", expected, compact.String())
-	outcome, status := c.StageCandidate(r.Context(), t, body.Policy)
+	outcome, status := s.control.StageCandidate(r.Context(), t, body.Policy)
 	if status != http.StatusOK {
 		pipeline.WriteJSON(w, status, outcome)
 		return
 	}
-	record, _, err := c.store.Candidate(r.Context(), outcome.Candidate)
+	record, _, err := s.store.Candidate(r.Context(), outcome.Candidate)
 	if err != nil {
-		c.logger.Error("reading committed candidate", "error", err)
+		s.logger.Error("reading committed candidate", "error", err)
 		outcome.Reason = "STORE_ERROR"
 		pipeline.WriteJSON(w, http.StatusServiceUnavailable, outcome)
 		return
@@ -104,7 +104,7 @@ func (c *Controller) handlePostCandidate(w http.ResponseWriter, r *http.Request,
 	pipeline.WriteJSON(w, http.StatusCreated, map[string]any{"receipt": outcome, "candidate": candidateView{CandidateRecord: record}})
 }
 
-func (c *Controller) handleWithdrawCandidate(w http.ResponseWriter, r *http.Request, who caller) {
+func (s *adminAPI) handleWithdrawCandidate(w http.ResponseWriter, r *http.Request, who caller) {
 	id, ok := pathID(w, r)
 	if !ok {
 		return
@@ -114,14 +114,14 @@ func (c *Controller) handleWithdrawCandidate(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	t := adminTransition(who, key, "candidate.withdraw", fmt.Sprintf("candidate %d", id), sql.NullInt64{}, nil)
-	outcome, status := c.WithdrawCandidate(r.Context(), t, id)
+	outcome, status := s.control.WithdrawCandidate(r.Context(), t, id)
 	pipeline.WriteJSON(w, status, outcome)
 }
 
 // handleEstablish confirms a deny-all candidate as the first base (genesis)
 // or the base that ends a recovery. The checksum shows the administrator
 // confirmed the exact document.
-func (c *Controller) handleEstablish(kind string) adminHandler {
+func (s *adminAPI) handleEstablish(kind string) adminHandler {
 	return func(w http.ResponseWriter, r *http.Request, who caller) {
 		var body struct {
 			Candidate int64  `json:"candidate"`
@@ -130,7 +130,7 @@ func (c *Controller) handleEstablish(kind string) adminHandler {
 		if !decodeBody(w, r, maxAdminBody, &body) {
 			return
 		}
-		outcome, status := c.EstablishBase(r.Context(), kind, who.admin.Name, body.Candidate, body.Checksum)
+		outcome, status := s.control.EstablishBase(r.Context(), kind, who.admin.Name, body.Candidate, body.Checksum)
 		pipeline.WriteJSON(w, status, outcome)
 	}
 }
@@ -139,7 +139,7 @@ func (c *Controller) handleEstablish(kind string) adminHandler {
 // If-Match precondition names the confirmed revision that becomes the
 // rollback target; the checksum shows the administrator chose the exact
 // document.
-func (c *Controller) handleActivate(w http.ResponseWriter, r *http.Request, who caller) {
+func (s *adminAPI) handleActivate(w http.ResponseWriter, r *http.Request, who caller) {
 	expected, ok := ifMatch(w, r)
 	if !ok {
 		return
@@ -157,13 +157,13 @@ func (c *Controller) handleActivate(w http.ResponseWriter, r *http.Request, who 
 		return
 	}
 	t := adminTransition(who, key, "cpa.activate", fmt.Sprintf("candidate %d", body.Candidate), expected, body)
-	outcome, status := c.Activate(r.Context(), t, body.Candidate, body.Checksum, body.ConfirmWithinSeconds)
-	c.writePolicyOutcome(w, r, outcome, status)
+	outcome, status := s.control.Activate(r.Context(), t, body.Candidate, body.Checksum, body.ConfirmWithinSeconds)
+	s.writePolicyOutcome(w, r, outcome, status)
 }
 
 // handleResolve confirms or rolls back the provisional revision named in the
 // body.
-func (c *Controller) handleResolve(kind, disposition string) adminHandler {
+func (s *adminAPI) handleResolve(kind, disposition string) adminHandler {
 	return func(w http.ResponseWriter, r *http.Request, who caller) {
 		expected, ok := ifMatch(w, r)
 		if !ok {
@@ -180,19 +180,19 @@ func (c *Controller) handleResolve(kind, disposition string) adminHandler {
 			return
 		}
 		t := adminTransition(who, key, kind, fmt.Sprintf("revision %d", body.Revision), expected, body)
-		outcome, status := c.Resolve(r.Context(), t, body.Revision, disposition)
-		c.writePolicyOutcome(w, r, outcome, status)
+		outcome, status := s.control.Resolve(r.Context(), t, body.Revision, disposition)
+		s.writePolicyOutcome(w, r, outcome, status)
 	}
 }
 
 // handleProvisional reports the current provisional base: its activation
 // record, the generation serving it and every control target it changes
 // relative to its rollback target.
-func (c *Controller) handleProvisional(w http.ResponseWriter, r *http.Request, who caller) {
+func (s *adminAPI) handleProvisional(w http.ResponseWriter, r *http.Request, who caller) {
 	ctx := r.Context()
-	a, err := c.store.Load(ctx)
+	a, err := s.store.Load(ctx)
 	if err != nil {
-		c.logger.Error("reading authority", "error", err)
+		s.logger.Error("reading authority", "error", err)
 		adminError(w, http.StatusServiceUnavailable, "unavailable", "")
 		return
 	}
@@ -201,31 +201,31 @@ func (c *Controller) handleProvisional(w http.ResponseWriter, r *http.Request, w
 		adminError(w, http.StatusNotFound, "no_provisional", "")
 		return
 	}
-	record, found, err := c.store.Activation(ctx, "revision", a.Provisional)
+	record, found, err := s.store.Activation(ctx, "revision", a.Provisional)
 	if err == nil && !found {
 		err = fmt.Errorf("activation of revision %d missing", a.Provisional)
 	}
 	var before, after policy.Policy
 	if err == nil {
-		before, err = c.storedPolicy(ctx, a.Confirmed)
+		before, err = storedPolicy(ctx, s.store, a.Confirmed)
 	}
 	if err == nil {
-		after, err = c.storedPolicy(ctx, a.Provisional)
+		after, err = storedPolicy(ctx, s.store, a.Provisional)
 	}
 	if err != nil {
-		c.logger.Error("reading the provisional base", "error", err)
+		s.logger.Error("reading the provisional base", "error", err)
 		adminError(w, http.StatusServiceUnavailable, "unavailable", "")
 		return
 	}
 	view := map[string]any{"activation": record, "changes": compile.PolicyChanges(before, after)}
-	if g := c.current.Load(); g != nil && g.Revision == a.Provisional {
+	if g := s.control.Current(); g != nil && g.Revision == a.Provisional {
 		view["generation"] = g.ID
 	}
 	pipeline.WriteJSON(w, http.StatusOK, view)
 }
 
-func (c *Controller) storedPolicy(ctx context.Context, id int64) (policy.Policy, error) {
-	r, found, err := c.store.Revision(ctx, id)
+func storedPolicy(ctx context.Context, st *store.DB, id int64) (policy.Policy, error) {
+	r, found, err := st.Revision(ctx, id)
 	if err == nil && !found {
 		err = fmt.Errorf("revision %d missing", id)
 	}
@@ -236,7 +236,7 @@ func (c *Controller) storedPolicy(ctx context.Context, id int64) (policy.Policy,
 }
 
 // handleActivations lists every provisional base with its final disposition.
-func (c *Controller) handleActivations(w http.ResponseWriter, r *http.Request, who caller) {
+func (s *adminAPI) handleActivations(w http.ResponseWriter, r *http.Request, who caller) {
 	after, limit, ok := page(w, r)
 	if !ok {
 		return
@@ -245,7 +245,7 @@ func (c *Controller) handleActivations(w http.ResponseWriter, r *http.Request, w
 	if !ok {
 		return
 	}
-	items, err := c.store.Activations(r.Context(), cursor, limit)
+	items, err := s.store.Activations(r.Context(), cursor, limit)
 	if err != nil {
 		adminError(w, http.StatusServiceUnavailable, "unavailable", "")
 		return

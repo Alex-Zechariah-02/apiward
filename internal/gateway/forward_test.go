@@ -36,7 +36,7 @@ func (e *env) serveNative(policy policy.Policy, timeouts forward.UpstreamTimeout
 	e.t.Helper()
 	seed(e.t, e.database, policy, seedOptions{})
 	c, _ := e.own(e.controllerConfig())
-	if err := c.Start(); err != nil {
+	if err := c.Start(newAdminAPI(c).handler()); err != nil {
 		e.t.Fatal(err)
 	}
 	logs := &logBuffer{}

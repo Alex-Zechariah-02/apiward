@@ -20,7 +20,7 @@ func TestStatusReportsUnreadableStoredAuthority(t *testing.T) {
 	read := func(ctx context.Context) map[string]any {
 		t.Helper()
 		reply := httptest.NewRecorder()
-		c.handleStatus(reply, httptest.NewRequestWithContext(ctx, http.MethodGet, "/admin/status", nil), caller{})
+		newAdminAPI(c).handleStatus(reply, httptest.NewRequestWithContext(ctx, http.MethodGet, "/admin/status", nil), caller{})
 		var status map[string]any
 		if reply.Code != http.StatusOK || json.Unmarshal(reply.Body.Bytes(), &status) != nil {
 			t.Fatalf("status: %d %s", reply.Code, reply.Body)

@@ -138,7 +138,11 @@ func loadNativeConfig(path string) (nativeConfig, error) {
 	if err != nil {
 		return nativeConfig{}, err
 	}
-	cfg.controller.settingsFile, err = filepath.Abs(path)
+	settingsFile, err := filepath.Abs(path)
+	cfg.controller.ReloadTrust = func() (pipeline.TrustConfig, error) {
+		reloaded, err := loadNativeConfig(settingsFile)
+		return reloaded.controller.JWT, err
+	}
 	return cfg, err
 }
 

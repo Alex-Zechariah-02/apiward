@@ -16,10 +16,10 @@ import (
 // they belong to: the active base revision, the confirmed and provisional
 // revisions and the serving generation, whose identity names the base and
 // every applied override.
-func (c *Controller) handleOverrides(w http.ResponseWriter, r *http.Request, who caller) {
-	a, err := c.store.Load(r.Context())
+func (s *adminAPI) handleOverrides(w http.ResponseWriter, r *http.Request, who caller) {
+	a, err := s.store.Load(r.Context())
 	if err != nil {
-		c.logger.Error("reading authority", "error", err)
+		s.logger.Error("reading authority", "error", err)
 		adminError(w, http.StatusServiceUnavailable, "unavailable", "")
 		return
 	}
@@ -31,7 +31,7 @@ func (c *Controller) handleOverrides(w http.ResponseWriter, r *http.Request, who
 	if a.Provisional != 0 {
 		view["provisional"] = a.Provisional
 	}
-	if g := c.current.Load(); g != nil {
+	if g := s.control.Current(); g != nil {
 		view["generation"] = g.ID
 		view["generation_overrides"] = append([]int64{}, g.Overrides...)
 	}
@@ -39,12 +39,12 @@ func (c *Controller) handleOverrides(w http.ResponseWriter, r *http.Request, who
 	pipeline.WriteJSON(w, http.StatusOK, view)
 }
 
-func (c *Controller) handleOverride(w http.ResponseWriter, r *http.Request, who caller) {
+func (s *adminAPI) handleOverride(w http.ResponseWriter, r *http.Request, who caller) {
 	id, ok := pathID(w, r)
 	if !ok {
 		return
 	}
-	o, found, err := c.store.Override(r.Context(), id)
+	o, found, err := s.store.Override(r.Context(), id)
 	switch {
 	case err != nil:
 		adminError(w, http.StatusServiceUnavailable, "unavailable", "")
@@ -56,7 +56,7 @@ func (c *Controller) handleOverride(w http.ResponseWriter, r *http.Request, who 
 }
 
 // handleOverrideHistory lists every override with its final disposition.
-func (c *Controller) handleOverrideHistory(w http.ResponseWriter, r *http.Request, who caller) {
+func (s *adminAPI) handleOverrideHistory(w http.ResponseWriter, r *http.Request, who caller) {
 	after, limit, ok := page(w, r)
 	if !ok {
 		return
@@ -65,7 +65,7 @@ func (c *Controller) handleOverrideHistory(w http.ResponseWriter, r *http.Reques
 	if !ok {
 		return
 	}
-	items, err := c.store.Overrides(r.Context(), `WHERE id > ? ORDER BY id LIMIT ?`, cursor, limit)
+	items, err := s.store.Overrides(r.Context(), `WHERE id > ? ORDER BY id LIMIT ?`, cursor, limit)
 	if err != nil {
 		adminError(w, http.StatusServiceUnavailable, "unavailable", "")
 		return
@@ -79,7 +79,7 @@ func (c *Controller) handleOverrideHistory(w http.ResponseWriter, r *http.Reques
 
 // handleValidateOverride answers whether a proposed override would be
 // created now. Nothing is created or recorded in the history.
-func (c *Controller) handleValidateOverride(w http.ResponseWriter, r *http.Request, who caller) {
+func (s *adminAPI) handleValidateOverride(w http.ResponseWriter, r *http.Request, who caller) {
 	expected, ok := ifMatch(w, r)
 	if !ok {
 		return
@@ -88,14 +88,14 @@ func (c *Controller) handleValidateOverride(w http.ResponseWriter, r *http.Reque
 	if !decodeBody(w, r, maxAdminBody, &request) {
 		return
 	}
-	outcome, status := c.ValidateOverride(r.Context(), who.admin.Name, expected.Int64, request)
+	outcome, status := s.control.ValidateOverride(r.Context(), who.admin.Name, expected.Int64, request)
 	pipeline.WriteJSON(w, status, outcome)
 }
 
 // handleCreateOverride creates a temporary override of the confirmed base.
 // The If-Match precondition names the confirmed revision the administrator
 // saw.
-func (c *Controller) handleCreateOverride(w http.ResponseWriter, r *http.Request, who caller) {
+func (s *adminAPI) handleCreateOverride(w http.ResponseWriter, r *http.Request, who caller) {
 	expected, ok := ifMatch(w, r)
 	if !ok {
 		return
@@ -109,12 +109,12 @@ func (c *Controller) handleCreateOverride(w http.ResponseWriter, r *http.Request
 		return
 	}
 	t := adminTransition(who, key, "tpo.create", "override", expected, request)
-	outcome, status := c.CreateOverride(r.Context(), t, request)
+	outcome, status := s.control.CreateOverride(r.Context(), t, request)
 	switch status {
 	case http.StatusOK:
 		status = http.StatusCreated
 	case http.StatusPreconditionFailed:
-		if a, err := c.store.Load(r.Context()); err == nil && a.Mode == store.ModeNormal {
+		if a, err := s.store.Load(r.Context()); err == nil && a.Mode == store.ModeNormal {
 			w.Header().Set("ETag", policyETag(a.Confirmed))
 		}
 	}
@@ -122,7 +122,7 @@ func (c *Controller) handleCreateOverride(w http.ResponseWriter, r *http.Request
 }
 
 // handleRevokeOverride ends one active override.
-func (c *Controller) handleRevokeOverride(w http.ResponseWriter, r *http.Request, who caller) {
+func (s *adminAPI) handleRevokeOverride(w http.ResponseWriter, r *http.Request, who caller) {
 	id, ok := pathID(w, r)
 	if !ok {
 		return
@@ -132,6 +132,6 @@ func (c *Controller) handleRevokeOverride(w http.ResponseWriter, r *http.Request
 		return
 	}
 	t := adminTransition(who, key, "tpo.revoke", fmt.Sprintf("override %d", id), sql.NullInt64{}, nil)
-	outcome, status := c.RevokeOverride(r.Context(), t, id)
+	outcome, status := s.control.RevokeOverride(r.Context(), t, id)
 	pipeline.WriteJSON(w, status, outcome)
 }
