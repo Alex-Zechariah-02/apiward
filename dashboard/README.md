@@ -27,7 +27,7 @@ The views are grouped by job.
 
 - **History:** every administrative transition, filtered by area, outcome and administrator, read page by page or all at once.
 - **Policy as code:** the policy in force as one JSON document to copy or download, and the Admin API requests a script uses to read it and to save a draft change from a file.
-- **Team:** the gateway's administrators and their permissions, and the token signing keys it trusts, with a reload from the operator's settings. Adding an administrator stays an operator command.
+- **Team:** the gateway's administrators and their permissions, the token signing keys it trusts, with a reload from the operator's settings, and the running build (version, Go toolchain and every compiled-in control with the phase it runs at). Adding an administrator stays an operator command.
 - **My account:** session details, your permissions in plain words, the gateway's address, and password change.
 
 The Changes, Temporary rules, Accounts, Roles and APIs pages open with the same list toolbar: a **Filter** box that narrows the rows already read (it sends nothing to the gateway), how many rows it leaves ("2 of 5 roles"; a paged list says "loaded"), and the list's main action at the right. **Add a temporary rule** there opens a step-by-step version of the rule form that ends on a review and then asks the usual confirmation.
