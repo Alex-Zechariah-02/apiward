@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/policy"
+	"github.com/Alex-Zechariah-02/apiward/module"
 )
 
 // compilerVersion is part of every generation identity so that a change in
@@ -61,13 +62,14 @@ type Rule struct {
 	forward   *rewrite // nil: the inbound path is forwarded unchanged
 	settings  *apiRule
 	permitted bool
-	public    bool            // auth "none": no token is read
-	roles     map[string]bool // roles holding a permit for this operation
-	body      *BodyRule       // nil: the operation accepts no body
-	headers   *headerRule     // nil: no header schema
-	rate      *RateRule       // nil: no rate limit
-	rateKey   string          // subject or direct peer address, checked by the compiler
-	when      *condition      // nil: selected when no conditioned rule holds
+	public    bool                               // auth "none": no token is read
+	roles     map[string]bool                    // roles holding a permit for this operation
+	body      *BodyRule                          // nil: the operation accepts no body
+	headers   *headerRule                        // nil: no header schema
+	rate      *RateRule                          // nil: no rate limit
+	rateKey   string                             // subject or direct peer address, checked by the compiler
+	when      *condition                         // nil: selected when no conditioned rule holds
+	checks    [module.Validate + 1][]ModuleCheck // module checks by phase
 }
 
 // Compile validates a complete policy and builds its generation. It either
@@ -170,6 +172,9 @@ func Compile(p policy.Policy, revision int64, notAfter time.Time) (*Generation, 
 			roles:     map[string]bool{},
 		}
 		if err := compileControls(op, i, r); err != nil {
+			return nil, err
+		}
+		if err := compileModules(op, i, r); err != nil {
 			return nil, err
 		}
 		if op.When == nil {

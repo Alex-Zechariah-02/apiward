@@ -220,7 +220,7 @@ func securityLogRecord(line []byte, query Query, result *Result) (RequestView, b
 		Time: record.Time, RequestID: record.RequestID, Stage: record.Stage, Decision: record.Decision, Status: record.Status,
 		Error: record.Error, Method: record.Method, Path: record.Path, Operation: record.Operation, API: record.API,
 		Subject: record.Subject, Roles: record.Roles, ClientAddress: record.ClientAddress, Generation: record.Generation,
-		DurationMS: record.DurationMS,
+		DurationMS: record.DurationMS, Modules: record.Modules,
 	})
 	return view, query.matches(view)
 }

@@ -50,6 +50,14 @@ export interface Status {
   // "unreadable" when the gateway could not read its stored policy for this
   // answer: confirmed, provisional and deadline are then unknown, not absent.
   stored_authority?: string
+  // build names the running binary and every control compiled into it.
+  build: GatewayBuild
+}
+
+export interface GatewayBuild {
+  version: string
+  go: string
+  modules: { id: string; phase: string; version: string }[]
 }
 
 interface RateRule {

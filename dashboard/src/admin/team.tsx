@@ -7,8 +7,10 @@ import { PageHeader } from '../app/header'
 import { ReadStamp, Time } from '../shared/time'
 import type { ViewProps } from '../app/views'
 import { permissionWords } from '../shared/checks'
+import { GatewayBuild } from './build'
 
-// The Team page: administrators and trusted token signing keys.
+// The Team page: administrators, trusted token signing keys and the gateway
+// build.
 
 interface Administrator {
   name: string
@@ -34,7 +36,7 @@ export function TeamView({ admin, can }: ViewProps) {
   const [trustedBefore, setTrustedBefore] = useState<SigningKey[] | null>(null)
   return (
     <>
-      <PageHeader title="Team" lede="Administrators, their permissions and the keys trusted to sign tokens.">
+      <PageHeader title="Team" lede="Administrators, their permissions, the keys trusted to sign tokens and the running build.">
         <ReadStamp
           okAt={admins.last?.at ?? null} failed={admins.failed}
           loading={admins.loading}
@@ -156,6 +158,7 @@ export function TeamView({ admin, can }: ViewProps) {
       <p className="hint section">
         Signing keys are read from the gateway host, not the policy, so a policy rollback never restores a retired key. Before retiring a key, check it is no longer in use: tokens it signed are refused once it is retired.
       </p>
+      <GatewayBuild admin={admin} />
     </>
   )
 }

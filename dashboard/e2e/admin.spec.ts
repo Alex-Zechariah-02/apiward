@@ -214,6 +214,15 @@ test.describe.serial('dashboard', () => {
     await expect(viewer.getByRole('button', { name: /^(Block( an Account| Now|…)|Unblock)/ })).toHaveCount(0)
     await go(viewer, 'Team')
     await expect(viewer.getByRole('button', { name: 'Reload Keys from Settings' })).toHaveCount(0)
+    // The build is shown read-only, exactly as the status reply gives it.
+    const { build } = (await (await viewerContext.request.get(adminURL + '/admin/status')).json()) as { build: { version: string; go: string; modules: { id: string }[] } }
+    const shown = viewer.getByRole('region', { name: 'Gateway Build' })
+    await expect(shown.getByText(build.version, { exact: true }).first()).toBeVisible()
+    await expect(shown.getByText(build.go, { exact: true })).toBeVisible()
+    await expect(shown.getByRole('row')).toHaveCount(build.modules.length + 1)
+    for (const [id, runsAt] of [['jwt', 'Identity'], ['rbac', 'Permissions'], ['rate', 'Traffic'], ['body', 'Validation'], ['validation', 'Validation']]) {
+      await expect(shown.getByRole('row', { name: new RegExp(`^${id} ${runsAt} `) })).toBeVisible()
+    }
     await go(viewer, 'Temporary Rules')
     await expect(viewer.getByRole('heading', { name: 'Active Rules' })).toBeVisible()
     await expect(viewer.getByRole('heading', { name: 'Add a Temporary Rule' })).toHaveCount(0)

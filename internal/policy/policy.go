@@ -69,6 +69,9 @@ type Operation struct {
 	Headers json.RawMessage `json:"headers,omitempty"` // JSON Schema for declared request headers
 	Rate    *RateRule       `json:"rate,omitempty"`
 	When    *When           `json:"when,omitempty"`
+	// Modules holds the members named by compiled-in modules other than the
+	// built-ins, keyed by module ID; it is encoded as those members.
+	Modules map[string]json.RawMessage `json:"-"`
 }
 
 // BodyRule declares a JSON request body, its size ceiling and the JSON Schema
@@ -145,6 +148,10 @@ func DecodePolicy(document []byte) (Policy, error) {
 		return Policy{}, Invalid("SCHEMA_VERSION_UNSUPPORTED", "schema_version")
 	}
 
+	document, modules, err := takeModules(document)
+	if err != nil {
+		return Policy{}, Invalid("SCHEMA_INVALID", "")
+	}
 	var p Policy
 	if err := DecodeStrict(document, &p); err != nil {
 		if strings.HasPrefix(err.Error(), "json: unknown field ") {
@@ -154,6 +161,11 @@ func DecodePolicy(document []byte) (Policy, error) {
 			return Policy{}, Invalid("SCHEMA_INVALID", "%s", typeErr.Field)
 		}
 		return Policy{}, Invalid("SCHEMA_INVALID", "")
+	}
+	for i, members := range modules {
+		if len(members) > 0 && i < len(p.Operations) {
+			p.Operations[i].Modules = members
+		}
 	}
 	return p, nil
 }

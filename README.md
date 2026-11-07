@@ -132,6 +132,15 @@ err = gw.Stop(ctx)                             // waits for requests in progress
 - Package `github.com/Alex-Zechariah-02/apiward/policy` holds the policy document types, `Decode`, `Encode` (the canonical form: two policies with the same meaning encode to the same bytes) and `Check`, which answers offline whether a policy would allow a described request (route, access, roles and forwarded path; tokens, rate limits, bodies and blocked accounts need a running gateway).
 - `examples/embed` is a runnable host program with its own test.
 
+## Compile-time modules
+
+A module adds a check to the request pipeline at build time. It implements `module.Control` from `github.com/Alex-Zechariah-02/apiward/module` and registers itself from `init` with `module.Register`; a custom binary is a copy of `cmd/gateway` with one blank import per module, built with plain `go build`. There is no runtime loading.
+
+- Phases are fixed in code, never configured: `ingress` (after the ingress checks, before a policy is captured), `identity` (after token verification), `authorise` (after roles and blocked accounts), `traffic` (after the rate limit) and `validate` (after body and header validation). Within a phase the built-in control runs first, then modules in ID order. A module cannot skip a later stage and never forwards anything.
+- A module's settings are the operation member named by its ID. They are compiled once with the policy; a `Compile` error or panic refuses the draft with `MODULE_FAILED`. A member no module in the build reads is refused with `UNKNOWN_FIELD`, so a policy written for another build never loses a check silently. Ingress modules take no settings.
+- A check sees a copy of the method, path, client address, headers (without the bearer token) and the verified subject and roles: no body and no connection. `Refuse` ends the request with a 4xx status and code; `Fail`, a panic or a missing result ends it with `503 gateway_unavailable`. Per-key state goes into a bounded `module.Table`, which refuses new keys when full.
+- Each request record holds a `modules` member with every non-built-in module's result (`PASS`, `REJECT`, `FAIL`, `NA` for not configured, `NE` for not reached); a module refusal or failure is recorded at the stage of its phase. `gateway version` and `GET /admin/status` (`build`) list the version, the Go toolchain and every compiled-in control, the five built-ins (`jwt`, `rbac`, `rate`, `body`, `validation`) included; the Dashboard shows them on the Team page.
+
 ## How it is built
 
 - The gateway has its own HTTP server and reverse proxy, built on the Go standard library. It serves HTTP/1.0 and HTTP/1.1 in plain text. Each request passes all five controls in one pipeline and then goes only to the API that the policy names, once.
@@ -150,6 +159,7 @@ Each package under `internal/` imports only the packages listed before it; a tes
 
 - `apiward` (repository root): the public package for running the gateway inside a Go program (above).
 - `policy`: the public policy document types, canonical encoding and offline check.
+- `module`: the public contract for compile-time modules and their bounded per-key table.
 
 - `internal/fault`: the fault-injection points tests use to crash, delay or fail the gateway at exact places. They act only in binaries built with the `faultinject` tag; normal builds compile them to no-ops.
 - `internal/policy`: the policy document: its types, strict JSON decoding, and the limits and identifier formats every policy must meet.
@@ -192,7 +202,7 @@ Run the required Go checks from the repository root. In PowerShell, give backend
 ```powershell
 $env:EAT_PORT_OFFSET='1000'
 go mod verify
-gofmt -l cmd internal
+gofmt -l $(git ls-files '*.go')
 go vet ./...
 go vet -tags faultinject ./...
 go test ./... -count=1

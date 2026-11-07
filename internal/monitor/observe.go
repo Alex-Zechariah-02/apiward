@@ -3,6 +3,7 @@
 package monitor
 
 import (
+	"maps"
 	"slices"
 	"strings"
 	"sync"
@@ -34,6 +35,8 @@ type RequestView struct {
 	Code          *string   `json:"code"`
 	Generation    string    `json:"generation"`
 	DurationMS    float64   `json:"duration_ms"`
+	// Modules is present only in builds with modules other than the built-ins.
+	Modules map[string]string `json:"modules,omitempty"`
 }
 
 type Observed struct {
@@ -86,6 +89,7 @@ func View(event audit.Event) RequestView {
 		Operation: OptionalString(event.Operation), API: OptionalString(event.API), Subject: OptionalString(event.Subject),
 		Roles: slices.Clone(event.Roles), ClientAddress: event.ClientAddress, Status: event.Status,
 		Code: OptionalString(event.Error), Generation: event.Generation, DurationMS: event.DurationMS,
+		Modules: maps.Clone(event.Modules),
 	}
 	if view.Roles == nil {
 		view.Roles = []string{}

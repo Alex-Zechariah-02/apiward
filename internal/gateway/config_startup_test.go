@@ -142,11 +142,12 @@ func TestNativeStartupRefusesConfiguration(t *testing.T) {
 	}
 
 	// The command line names one command and its configuration file; no
-	// Caddy command or saved-configuration resume exists.
+	// Caddy command or saved-configuration resume exists, and version takes
+	// no options.
 	for _, args := range [][]string{
 		{}, {"run"}, {"start", "--config", "x"}, {"run", "--config"}, {"run", "--resume"},
 		{"run", "--config", "x", "--resume"}, {"run", "-r", "--config", "x"}, {"run", "--config", "x", "extra"}, {"run", "--config", "x", "--config", "y"},
-		{"version"}, {"list-modules"},
+		{"version", "--config", "x"}, {"list-modules"},
 	} {
 		e := newEnv(t)
 		e.launch(binaries.plain, args)

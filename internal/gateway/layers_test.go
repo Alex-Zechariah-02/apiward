@@ -35,6 +35,7 @@ var exposed = map[string][]string{
 	".":              {"gateway"},
 	"policy":         {"policy", "compile"},
 	"examples/embed": nil,
+	"module":         nil,
 }
 
 // unlayered packages are not part of the gateway's layering.

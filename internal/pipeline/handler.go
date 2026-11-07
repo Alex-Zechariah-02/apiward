@@ -14,6 +14,7 @@ import (
 	"github.com/Alex-Zechariah-02/apiward/internal/compile"
 	"github.com/Alex-Zechariah-02/apiward/internal/fault"
 	"github.com/Alex-Zechariah-02/apiward/internal/forward"
+	"github.com/Alex-Zechariah-02/apiward/module"
 )
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -26,6 +27,12 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		bodyPending:  r.ContentLength != 0 || len(r.TransferEncoding) > 0,
 	}
 	w.Header().Set("X-Request-Id", q.event.RequestID)
+	if len(h.extensions) > 0 {
+		q.event.Modules = make(map[string]string, len(h.extensions))
+		for _, info := range h.extensions {
+			q.event.Modules[info.ID] = audit.StageNotRun
+		}
+	}
 	if peer, err := netip.ParseAddrPort(r.RemoteAddr); err == nil {
 		q.event.ClientAddress = peer.Addr().Unmap().String()
 	}
@@ -54,6 +61,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	q.pass(audit.StageIngress)
+	if !h.runModules(q, r, module.Ingress, moduleView{path: r.URL.Path}) {
+		return
+	}
 
 	// Capture: the single generation used for every later decision.
 	g := h.authority.Current()
@@ -118,6 +128,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if rule.Public() {
 		q.event.Stages[audit.StageJWT] = audit.StageNotApplicable
 		q.event.Stages[audit.StageRBAC] = audit.StageNotApplicable
+		view := moduleView{path: path, rule: rule}
+		if !h.runModules(q, r, module.Identity, view) || !h.runModules(q, r, module.Authorise, view) {
+			return
+		}
 	} else {
 		q.event.SetIdentityKnown(true)
 		token, reason := bearerToken(credentials)
@@ -133,6 +147,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		q.pass(audit.StageJWT)
+		if !h.runModules(q, r, module.Identity, moduleView{path: path, rule: rule}) {
+			return
+		}
 		roles, q.event.IgnoredRoles, reason = g.Authorise(verified.roles, rule)
 		q.event.Roles = roles
 		blocked := h.authority.Blocked()
@@ -152,9 +169,12 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		q.pass(audit.StageRBAC)
+		if !h.runModules(q, r, module.Authorise, moduleView{path: path, rule: rule, roles: roles}) {
+			return
+		}
 	}
 
-	if !h.limit(q, rule) {
+	if !h.limit(q, rule) || !h.runModules(q, r, module.Traffic, moduleView{path: path, rule: rule, roles: roles}) {
 		return
 	}
 
@@ -176,6 +196,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		q.pass(audit.StageValidation)
+	}
+	if !h.runModules(q, r, module.Validate, moduleView{path: path, rule: rule, roles: roles}) {
+		return
 	}
 
 	// The API's forward rule rewrites the path only now, after every decision

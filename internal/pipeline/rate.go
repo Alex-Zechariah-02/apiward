@@ -210,7 +210,7 @@ func (h *Handler) admitRate(q *request, stage int, key counterKey, rule *compile
 		q.reject(stage, http.StatusBadRequest, "bad_request")
 		return false
 	}
-	switch h.Limiter.admit(key, rule, h.clock.now()) {
+	switch h.limiter.admit(key, rule, h.clock.now()) {
 	case rateExceeded:
 		q.event.Reason = "quota_exceeded"
 		q.reject(stage, http.StatusTooManyRequests, "rate_limited")

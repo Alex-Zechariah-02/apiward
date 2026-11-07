@@ -65,7 +65,7 @@ export function build(): string {
   const commit = run('git', ['--no-optional-locks', 'rev-parse', 'HEAD']).trim()
   const source = temporaryDir('gateway-e2e-src-')
   const bin = temporaryDir('gateway-e2e-bin-')
-  const inputs = ['cmd', 'internal', 'go.mod', 'go.sum']
+  const inputs = ['cmd', 'internal', 'module', 'go.mod', 'go.sum']
   const diffArgs = ['--no-optional-locks', 'diff', '--no-ext-diff', '--binary', commit, '--', ...inputs]
   const diff = mode === 'worktree' ? run('git', diffArgs) : ''
   const selectedPaths = () => (mode === 'head'

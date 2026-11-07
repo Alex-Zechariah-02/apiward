@@ -19,6 +19,7 @@ func (s *adminAPI) handleStatus(w http.ResponseWriter, r *http.Request, who call
 		"admission":      s.control.Admission(),
 		"audit_failed":   s.audit.Failed(),
 		"jwt_key_sha256": s.control.Verifier().Fingerprint(),
+		"build":          currentBuild(),
 	}
 	if g := s.control.Current(); g != nil {
 		status["revision"] = g.Revision

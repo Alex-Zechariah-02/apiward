@@ -32,23 +32,24 @@ type Query struct {
 // auditRequestRecord is the part of a request's audit record the search
 // reads; it is projected through requestView like the live views.
 type auditRequestRecord struct {
-	ID            string    `json:"event_id"`
-	Kind          string    `json:"kind"`
-	Time          time.Time `json:"time"`
-	RequestID     string    `json:"request_id"`
-	Stage         string    `json:"stage"`
-	Decision      string    `json:"decision"`
-	Status        int       `json:"status"`
-	Error         string    `json:"error"`
-	Method        string    `json:"method"`
-	Path          string    `json:"path"`
-	Operation     string    `json:"operation"`
-	API           string    `json:"api"`
-	Subject       string    `json:"subject"`
-	Roles         []string  `json:"roles"`
-	ClientAddress string    `json:"client_address"`
-	Generation    string    `json:"generation"`
-	DurationMS    float64   `json:"duration_ms"`
+	ID            string            `json:"event_id"`
+	Kind          string            `json:"kind"`
+	Time          time.Time         `json:"time"`
+	RequestID     string            `json:"request_id"`
+	Stage         string            `json:"stage"`
+	Decision      string            `json:"decision"`
+	Status        int               `json:"status"`
+	Error         string            `json:"error"`
+	Method        string            `json:"method"`
+	Path          string            `json:"path"`
+	Operation     string            `json:"operation"`
+	API           string            `json:"api"`
+	Subject       string            `json:"subject"`
+	Roles         []string          `json:"roles"`
+	ClientAddress string            `json:"client_address"`
+	Generation    string            `json:"generation"`
+	DurationMS    float64           `json:"duration_ms"`
+	Modules       map[string]string `json:"modules"`
 }
 
 // Cursor is where a search stopped: lines before offset in the

@@ -12,8 +12,10 @@ import (
 	"github.com/Alex-Zechariah-02/apiward/internal/compile"
 	"github.com/Alex-Zechariah-02/apiward/internal/monitor"
 	"github.com/Alex-Zechariah-02/apiward/internal/store"
+	"github.com/Alex-Zechariah-02/apiward/module"
 )
 
+// DefaultMaxBody is the global request body ceiling when none is set.
 const DefaultMaxBody = 16 << 10
 
 // Handler enforces the published policy on every request and, only when every
@@ -24,7 +26,7 @@ type Handler struct {
 	authority    Authority
 	audit        *audit.AuditLog
 	observations *monitor.Observations
-	Limiter      *Limiter
+	limiter      *Limiter
 	clock        Clock
 	auditTimeout time.Duration
 	// maxBodyBytes is the global request body ceiling. A larger declared
@@ -36,6 +38,10 @@ type Handler struct {
 	// listeners; every request is then refused at capture, so nothing is
 	// admitted before the Admin API and metrics can observe it.
 	held atomic.Bool
+	// extensions are the compiled-in modules other than the built-ins, and
+	// ingress the checks of those that run in the Ingress phase.
+	extensions []module.Info
+	ingress    []compile.ModuleCheck
 }
 
 // Forward sends an admitted request to the upstream bound in its context
@@ -84,11 +90,20 @@ func New(d Deps) (*Handler, error) {
 	if maxBodyBytes <= 0 {
 		maxBodyBytes = DefaultMaxBody
 	}
-	return &Handler{
+	extensions := module.Extensions()
+	ingress, err := compileIngress(extensions)
+	if err != nil {
+		return nil, err
+	}
+	h := &Handler{
 		authority: d.Authority, audit: d.Audit, observations: d.Observations,
-		Limiter: d.Limiter, clock: d.Clock, auditTimeout: d.AuditTimeout,
-		maxBodyBytes: maxBodyBytes, forward: d.Forward,
-	}, nil
+		limiter: d.Limiter, clock: d.Clock, auditTimeout: d.AuditTimeout,
+		maxBodyBytes: maxBodyBytes, forward: d.Forward, ingress: ingress,
+	}
+	for _, c := range extensions {
+		h.extensions = append(h.extensions, c.Info())
+	}
+	return h, nil
 }
 
 // hold refuses every request at capture while on, so an embedded gateway

@@ -25,9 +25,21 @@ type request struct {
 func (q *request) pass(stage int) { q.event.Stages[stage] = audit.StagePass }
 
 func (q *request) reject(stage int, status int, code string) {
+	q.refuse(stage, audit.StageReject, status, code, code)
+}
+
+// fail ends the request at stage with 503 gateway_unavailable because a
+// module failed; reason names the module and says why, without request data,
+// and is what the record keeps as its error.
+func (q *request) fail(stage int, reason string) {
+	q.refuse(stage, audit.StageFail, http.StatusServiceUnavailable, "gateway_unavailable", reason)
+}
+
+// refuse records the stage result and the refusal, then answers with code.
+func (q *request) refuse(stage int, result string, status int, code, recorded string) {
 	q.event.Kind, q.event.Stage, q.event.Decision = "request.rejected", audit.StageNames[stage], "reject"
-	q.event.Stages[stage] = audit.StageReject
-	q.event.Status, q.event.Error = status, code
+	q.event.Stages[stage] = result
+	q.event.Status, q.event.Error = status, recorded
 	q.event.DurationMS = float64(time.Since(q.started)) / float64(time.Millisecond)
 	q.audit.Record(q.event)
 	q.observations.Record(q.event)

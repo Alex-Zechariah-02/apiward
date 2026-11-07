@@ -29,6 +29,7 @@ const (
 )
 
 const nativeUsage = `usage: gateway run --config <file>
+  gateway version
   gateway install --config <file> --admin <name>
   gateway enrol --config <file> --admin <name> --permissions <list>
   gateway migrate --config <file>
@@ -45,6 +46,9 @@ func Main(args []string) int {
 		return exitFailed
 	}
 	command := args[0]
+	if command == "version" {
+		return printVersion(args[1:])
+	}
 	options := []string{"config"}
 	switch command {
 	case "run", "migrate":
