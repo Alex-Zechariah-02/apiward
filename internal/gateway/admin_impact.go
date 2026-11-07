@@ -11,6 +11,7 @@ import (
 
 	"github.com/Alex-Zechariah-02/apiward/internal/compile"
 	"github.com/Alex-Zechariah-02/apiward/internal/monitor"
+	"github.com/Alex-Zechariah-02/apiward/internal/pipeline"
 	"github.com/Alex-Zechariah-02/apiward/internal/policy"
 )
 
@@ -120,7 +121,7 @@ func (c *Controller) handleImpact(w http.ResponseWriter, r *http.Request, who ca
 	if unknown > 0 {
 		notPreviewed = append(notPreviewed, "unobserved_identity")
 	}
-	writeJSON(w, http.StatusOK, struct {
+	pipeline.WriteJSON(w, http.StatusOK, struct {
 		Window       window   `json:"window"`
 		Flips        []flip   `json:"flips"`
 		NotPreviewed []string `json:"not_previewed"`

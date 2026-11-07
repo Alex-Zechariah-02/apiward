@@ -109,8 +109,8 @@ func TestLifecycleUnderLoad(t *testing.T) {
 	var unexpected sync.Map
 	var forwarded, refused atomic.Int64
 	var wg sync.WaitGroup
-	bobToken := "Bearer " + issuer.tokenFor(t, "bob")
-	aliceToken := "Bearer " + issuer.tokenFor(t, "alice")
+	bobToken := "Bearer " + issuer.TokenFor(t, "bob")
+	aliceToken := "Bearer " + issuer.TokenFor(t, "alice")
 	requests := []struct {
 		method, path, body, token string
 	}{

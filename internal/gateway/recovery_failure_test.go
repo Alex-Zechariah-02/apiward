@@ -33,7 +33,7 @@ func TestFailedRollbackStopsAdmission(t *testing.T) {
 			t.Fatalf("health %q", health)
 		}
 		e.resetReceivers()
-		bobToken := "Bearer " + issuer.tokenFor(t, "bob")
+		bobToken := "Bearer " + issuer.TokenFor(t, "bob")
 		for _, probe := range []struct{ method, path string }{{"GET", "/b/x"}, {"POST", "/a/item"}, {"GET", "/a/x"}} {
 			if code, _ := e.request(probe.method, probe.path, "application/json", `{}`, "Authorization", bobToken); code != http.StatusServiceUnavailable {
 				t.Fatalf("%s %s: %d, want 503", probe.method, probe.path, code)
@@ -97,7 +97,7 @@ func TestLifecycleAuditFailure(t *testing.T) {
 	candidate := staged.Candidate.CandidateRecord
 
 	// Fields carrying a token, a key marker and a forged record.
-	token := issuer.tokenFor(t, "alice")
+	token := issuer.TokenFor(t, "alice")
 	for i, checksum := range []string{token, "-----BEGIN PRIVATE KEY-----", "x\r\n{\"kind\":\"cpa.confirmed\",\"actor\":\"forged\"}"} {
 		body := string(mustJSON(map[string]any{"candidate": candidate.ID, "checksum": checksum, "confirm_within_seconds": 60}))
 		code, data, _ := e.as(harness, http.MethodPost, "/admin/provisional", body, "If-Match", `"r1"`, "Idempotency-Key", fmt.Sprintf("hostile-fields-%02d", i))

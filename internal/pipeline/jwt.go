@@ -1,6 +1,6 @@
 // Bearer token extraction and RS256 JWT verification.
 
-package gateway
+package pipeline
 
 import (
 	"encoding/base64"
@@ -42,7 +42,7 @@ func bearerToken(fields []string) (string, string) {
 // isCompactToken accepts a bounded string of three non-empty base64url
 // segments separated by dots.
 func isCompactToken(token string) bool {
-	if len(token) > maxTokenBytes {
+	if len(token) > MaxTokenBytes {
 		return false
 	}
 	segments := strings.Split(token, ".")
@@ -68,7 +68,7 @@ func isCompactToken(token string) bool {
 // or the refusal reason. Nothing in the token is trusted until the signature
 // has been verified with the configured key; the header is inspected before
 // that only to refuse it.
-func (v *verifier) verify(token string, now time.Time) (verifiedToken, string) {
+func (v *Verifier) verify(token string, now time.Time) (verifiedToken, string) {
 	if !isCompactToken(token) {
 		return verifiedToken{}, "malformed_credential"
 	}
@@ -138,7 +138,7 @@ func checkHeader(segment string) (string, string) {
 // checkClaims applies the claim profile to a verified payload. A repeated
 // member name anywhere refuses the token. Roles are assertions by the verified
 // issuer, never policy permissions.
-func (v *verifier) checkClaims(payload []byte, now time.Time) (verifiedToken, string) {
+func (v *Verifier) checkClaims(payload []byte, now time.Time) (verifiedToken, string) {
 	var claims map[string]any
 	if err := josejson.Unmarshal(payload, &claims); err != nil || claims == nil {
 		return verifiedToken{}, "invalid_claims"
@@ -199,7 +199,7 @@ func (v *verifier) checkClaims(payload []byte, now time.Time) (verifiedToken, st
 // checkAudience accepts a string or a non-empty array of strings that names
 // this gateway. RFC 7519 requires rejecting a token whose audience does not
 // include the recipient.
-func (v *verifier) checkAudience(value any) string {
+func (v *Verifier) checkAudience(value any) string {
 	switch audience := value.(type) {
 	case string:
 		if audience != v.audience {

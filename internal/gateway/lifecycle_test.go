@@ -17,7 +17,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Alex-Zechariah-02/apiward/internal/pipeline"
 	"github.com/Alex-Zechariah-02/apiward/internal/store"
+	"github.com/Alex-Zechariah-02/apiward/internal/testissuer"
 )
 
 // These tests own the controller in the test process, as the gateway
@@ -49,7 +51,7 @@ func (e *env) controllerConfig() Config {
 		Database:    e.database,
 		AuditLog:    e.auditLog,
 		AdminListen: e.admin,
-		JWT:         testTrust(testIssuerName, testAudience, e.publicKey),
+		JWT:         testTrust(testissuer.Name, testissuer.Audience, e.publicKey),
 	}
 }
 
@@ -202,7 +204,7 @@ func TestControllerOwnedByApplication(t *testing.T) {
 // goroutine started.
 func TestControllerRefusesInvalidConfiguration(t *testing.T) {
 	privateKey := filepath.Join(t.TempDir(), "private.pem")
-	der, _ := x509.MarshalPKCS8PrivateKey(newTestIssuer(2048).key)
+	der, _ := x509.MarshalPKCS8PrivateKey(testissuer.New(2048).Key())
 	if err := os.WriteFile(privateKey, pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der}), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -217,7 +219,7 @@ func TestControllerRefusesInvalidConfiguration(t *testing.T) {
 		{"wildcard admin listener", func(e *env, cfg *Config) { cfg.AdminListen = "0.0.0.0:" + port(e.admin) }, "loopback"},
 		{"host name admin listener", func(e *env, cfg *Config) { cfg.AdminListen = "localhost:" + port(e.admin) }, "loopback"},
 		{"admin listener without a port", func(e *env, cfg *Config) { cfg.AdminListen = "127.0.0.1:0" }, "loopback"},
-		{"no trust configuration", func(e *env, cfg *Config) { cfg.JWT = TrustConfig{} }, "jwt: issuer and audience"},
+		{"no trust configuration", func(e *env, cfg *Config) { cfg.JWT = pipeline.TrustConfig{} }, "jwt: issuer and audience"},
 		{"missing key file", func(e *env, cfg *Config) { cfg.JWT.Keys[0].PublicKeyFile = filepath.Join(e.dir, "absent.pem") }, "jwt: opening public key"},
 		{"private key given as the key", func(e *env, cfg *Config) { cfg.JWT.Keys[0].PublicKeyFile = privateKey }, "exactly one PEM PUBLIC KEY block"},
 		{"audit file size below the bound", func(e *env, cfg *Config) { cfg.AuditMaxBytes = 1024 }, "audit_max_bytes must be"},

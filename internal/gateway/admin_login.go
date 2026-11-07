@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/audit"
+	"github.com/Alex-Zechariah-02/apiward/internal/pipeline"
 	"github.com/Alex-Zechariah-02/apiward/internal/session"
 	"github.com/Alex-Zechariah-02/apiward/internal/store"
 )
@@ -69,10 +70,10 @@ func (c *Controller) handleEnrol(w http.ResponseWriter, r *http.Request) {
 
 	outcome, status := c.Enrol(r.Context(), e, passwordHash)
 	if status != http.StatusOK {
-		writeJSON(w, status, outcome)
+		pipeline.WriteJSON(w, status, outcome)
 		return
 	}
-	writeJSON(w, http.StatusCreated, map[string]any{"name": e.Name, "permissions": e.Permissions.Names()})
+	pipeline.WriteJSON(w, http.StatusCreated, map[string]any{"name": e.Name, "permissions": e.Permissions.Names()})
 }
 
 func (c *Controller) handleLogin(w http.ResponseWriter, r *http.Request) {
@@ -137,7 +138,7 @@ func (c *Controller) handleLogin(w http.ResponseWriter, r *http.Request) {
 		SameSite: http.SameSiteStrictMode,
 	})
 	c.audit.Record(audit.Event{Kind: "admin.authenticated", Method: r.Method, Path: r.URL.Path, Actor: admin.Name, Session: s.Reference})
-	writeJSON(w, http.StatusCreated, sessionView(admin, s))
+	pipeline.WriteJSON(w, http.StatusCreated, sessionView(admin, s))
 }
 
 func sessionView(admin store.Administrator, s session.Session) map[string]any {
@@ -150,7 +151,7 @@ func sessionView(admin store.Administrator, s session.Session) map[string]any {
 }
 
 func (c *Controller) handleWhoAmI(w http.ResponseWriter, r *http.Request, who caller) {
-	writeJSON(w, http.StatusOK, sessionView(who.admin, who.session))
+	pipeline.WriteJSON(w, http.StatusOK, sessionView(who.admin, who.session))
 }
 
 func (c *Controller) handleLogout(w http.ResponseWriter, r *http.Request, who caller) {
@@ -201,7 +202,7 @@ func (c *Controller) handlePassword(w http.ResponseWriter, r *http.Request, who 
 
 	outcome, status := c.ChangePassword(r.Context(), who.admin, passwordHash)
 	if status != http.StatusOK {
-		writeJSON(w, status, outcome)
+		pipeline.WriteJSON(w, status, outcome)
 		return
 	}
 	clearSessionCookie(w)

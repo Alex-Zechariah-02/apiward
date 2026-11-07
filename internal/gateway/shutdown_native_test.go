@@ -187,7 +187,7 @@ func TestNativeStopReportsAuditFailure(t *testing.T) {
 			waitFor(t, time.Now().Add(10*time.Second), "the audit failure", func() bool {
 				return strings.Contains(e.output.String(), "audit log failed")
 			})
-			token := issuer.tokenFor(t, "alice")
+			token := issuer.TokenFor(t, "alice")
 			if code, _ := e.get("/a/x", "Authorization", "Bearer "+token); code != http.StatusServiceUnavailable {
 				t.Fatalf("admission with the failed audit log: %d", code)
 			}

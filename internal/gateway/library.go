@@ -15,6 +15,7 @@ import (
 
 	"github.com/Alex-Zechariah-02/apiward/internal/forward"
 	"github.com/Alex-Zechariah-02/apiward/internal/monitor"
+	"github.com/Alex-Zechariah-02/apiward/internal/pipeline"
 )
 
 // Kinds of lifecycle failure. Every error returned while loading, opening,
@@ -96,7 +97,7 @@ func (cfg nativeConfig) server() ServerSettings {
 type deployment struct {
 	config      nativeConfig
 	controller  *Controller
-	enforcement *Handler
+	enforcement *pipeline.Handler
 	// handler is the data plane: enforcement, and the website when one is
 	// configured.
 	handler http.Handler
@@ -161,4 +162,17 @@ func (d *deployment) logAdmission(logger *slog.Logger) {
 		attrs = append(attrs, "generation", current.ID, "revision", current.Revision)
 	}
 	logger.Info("protected admission", attrs...)
+}
+
+// newHandler returns the enforcement handler for the policy c publishes. A
+// maxBodyBytes of zero or less selects the default ceiling. forward is called
+// only for admitted requests.
+func newHandler(c *Controller, maxBodyBytes int64, forward pipeline.Forward) (*pipeline.Handler, error) {
+	d := pipeline.Deps{MaxBodyBytes: maxBodyBytes, Forward: forward}
+	// A nil controller leaves every dependency unset, which newPipeline refuses.
+	if c != nil {
+		d.Authority, d.Audit, d.Observations = c, c.audit, c.observations
+		d.Limiter, d.Clock, d.AuditTimeout = c.limiter, c.clock, c.config.AuditTimeout
+	}
+	return pipeline.New(d)
 }

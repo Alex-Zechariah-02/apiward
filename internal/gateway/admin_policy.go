@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/Alex-Zechariah-02/apiward/internal/pipeline"
 	"github.com/Alex-Zechariah-02/apiward/internal/policy"
 	"github.com/Alex-Zechariah-02/apiward/internal/store"
 )
@@ -19,7 +20,7 @@ func (c *Controller) handleStatus(w http.ResponseWriter, r *http.Request, who ca
 		"state":          state,
 		"admission":      c.admission(),
 		"audit_failed":   c.audit.Failed(),
-		"jwt_key_sha256": c.verifier.Load().fingerprint,
+		"jwt_key_sha256": c.verifier.Load().Fingerprint(),
 	}
 	if g := c.current.Load(); g != nil {
 		status["revision"] = g.Revision
@@ -45,7 +46,7 @@ func (c *Controller) handleStatus(w http.ResponseWriter, r *http.Request, who ca
 			status["deadline"] = a.Deadline.UTC()
 		}
 	}
-	writeJSON(w, http.StatusOK, status)
+	pipeline.WriteJSON(w, http.StatusOK, status)
 }
 
 // confirmedPolicy reads the confirmed base. It answers the request itself and
@@ -83,7 +84,7 @@ func (c *Controller) handlePolicy(w http.ResponseWriter, r *http.Request, who ca
 		return
 	}
 	w.Header().Set("ETag", policyETag(revision.ID))
-	writeJSON(w, http.StatusOK, revision)
+	pipeline.WriteJSON(w, http.StatusOK, revision)
 }
 
 func (c *Controller) handleRevisions(w http.ResponseWriter, r *http.Request, who caller) {
@@ -104,7 +105,7 @@ func (c *Controller) handleRevisions(w http.ResponseWriter, r *http.Request, who
 	if len(items) == limit {
 		result.Next = strconv.FormatInt(items[len(items)-1].ID, 10)
 	}
-	writeJSON(w, http.StatusOK, result)
+	pipeline.WriteJSON(w, http.StatusOK, result)
 }
 
 func (c *Controller) handleRevision(w http.ResponseWriter, r *http.Request, who caller) {
@@ -119,7 +120,7 @@ func (c *Controller) handleRevision(w http.ResponseWriter, r *http.Request, who 
 	case !found:
 		adminError(w, http.StatusNotFound, "not_found", "")
 	default:
-		writeJSON(w, http.StatusOK, revision)
+		pipeline.WriteJSON(w, http.StatusOK, revision)
 	}
 }
 
@@ -138,5 +139,5 @@ func (c *Controller) writePolicyOutcome(w http.ResponseWriter, r *http.Request, 
 			w.Header().Set("ETag", policyETag(a.Confirmed))
 		}
 	}
-	writeJSON(w, status, outcome)
+	pipeline.WriteJSON(w, status, outcome)
 }

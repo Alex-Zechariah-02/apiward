@@ -30,10 +30,10 @@ func (c *Controller) scheduleDeadline(g *compile.Generation) {
 	c.timer = time.AfterFunc(g.NotAfter.Sub(compile.TrustedNow()), func() { c.expire(g) })
 }
 
-// deadlinePassed is called by the request path when the generation it
+// Expired is called by the request path when the generation it
 // captured has expired. It starts at most one check at a time, so a late or
 // missing timer cannot keep the gateway refusing every request.
-func (c *Controller) deadlinePassed(g *compile.Generation) {
+func (c *Controller) Expired(g *compile.Generation) {
 	if !c.expiring.CompareAndSwap(false, true) {
 		return
 	}

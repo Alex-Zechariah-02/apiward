@@ -36,7 +36,7 @@ func TestNativeForwardingRequestIntact(t *testing.T) {
 		return true
 	}
 	body := "{ \"n\" : 1,\t\"s\":\"é\\u00e9\" }"
-	token := "Bearer " + issuer.tokenFor(t, "alice")
+	token := "Bearer " + issuer.TokenFor(t, "alice")
 	resp, reply := e.rawResponse(fmt.Sprintf("POST /a/item?q=1&q=2&x=%%20y HTTP/1.1\r\nHost: gw\r\nConnection: close\r\n"+
 		"Content-Type: application/json; charset=utf-8\r\nContent-Length: %d\r\nX-Custom: kept\r\nAccept: application/json\r\n"+
 		"Cookie: c=3\r\nUser-Agent: test-agent/1\r\nIdempotency-Key: key-0001\r\nAuthorization: %s\r\n"+

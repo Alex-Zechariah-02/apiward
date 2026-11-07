@@ -1,6 +1,6 @@
 // JWT helpers, bearer extraction, signatures and headers.
 
-package gateway
+package pipeline
 
 import (
 	"crypto/x509"
@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/Alex-Zechariah-02/apiward/internal/testissuer"
 )
 
 // These tests exercise token verification directly, at a fixed time, with
@@ -19,17 +21,13 @@ import (
 // fixedNow is the validation time of every vector below.
 var fixedNow = time.Unix(1_800_000_000, 0)
 
-func testTrust(issuer, audience, file string) TrustConfig {
-	return TrustConfig{Issuer: issuer, Audience: audience, Keys: []VerificationKey{{Kid: "test-a", PublicKeyFile: file}}}
-}
-
-func testVerifier(t *testing.T) *verifier {
+func testVerifier(t *testing.T) *Verifier {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "issuer.pem")
-	if err := os.WriteFile(path, issuer.publicPEM(), 0o600); err != nil {
+	if err := os.WriteFile(path, issuer.PublicPEM(), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	v, err := loadVerifier(testTrust(testIssuerName, testAudience, path))
+	v, err := LoadVerifier(testTrust(testissuer.Name, testissuer.Audience, path))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -41,15 +39,15 @@ func testVerifier(t *testing.T) *verifier {
 func claimsAt(changes map[string]any) map[string]any {
 	claims := map[string]any{
 		"sub": "staff-01",
-		"iss": testIssuerName,
-		"aud": testAudience,
+		"iss": testissuer.Name,
+		"aud": testissuer.Audience,
 		"exp": fixedNow.Unix() + 600,
 	}
-	return changed(claims, changes)
+	return testissuer.Changed(claims, changes)
 }
 
 // authenticate runs the whole authentication stage on Authorization fields.
-func authenticate(v *verifier, fields []string, now time.Time) (string, string) {
+func authenticate(v *Verifier, fields []string, now time.Time) (string, string) {
 	token, reason := bearerToken(fields)
 	if reason != "" {
 		return "", reason
@@ -60,7 +58,7 @@ func authenticate(v *verifier, fields []string, now time.Time) (string, string) 
 
 func TestBearerCredentialExtraction(t *testing.T) {
 	v := testVerifier(t)
-	token := issuer.token(t, claimsAt(nil))
+	token := issuer.Token(t, claimsAt(nil))
 	cases := []struct {
 		name   string
 		fields []string
@@ -84,7 +82,7 @@ func TestBearerCredentialExtraction(t *testing.T) {
 		{"two segments", []string{"Bearer " + token[:strings.LastIndex(token, ".")]}, "malformed_credential"},
 		{"four segments", []string{"Bearer " + token + ".x"}, "malformed_credential"},
 		{"empty signature", []string{"Bearer " + token[:strings.LastIndex(token, ".")+1]}, "malformed_credential"},
-		{"oversize", []string{"Bearer " + token + strings.Repeat("A", maxTokenBytes)}, "malformed_credential"},
+		{"oversize", []string{"Bearer " + token + strings.Repeat("A", MaxTokenBytes)}, "malformed_credential"},
 		{"control character", []string{"Bearer " + token + "\x00"}, "malformed_credential"},
 	}
 	for _, tc := range cases {
@@ -97,8 +95,8 @@ func TestBearerCredentialExtraction(t *testing.T) {
 
 func TestSignatureAndAlgorithm(t *testing.T) {
 	v := testVerifier(t)
-	payload := claimsJSON(claimsAt(nil))
-	valid := issuer.signRaw(`{"alg":"RS256","typ":"JWT","kid":"test-a"}`, payload)
+	payload := testissuer.ClaimsJSON(claimsAt(nil))
+	valid := issuer.SignRaw(`{"alg":"RS256","typ":"JWT","kid":"test-a"}`, payload)
 	segments := strings.Split(valid, ".")
 
 	// Flip one bit of the signature, and swap in a payload signed for
@@ -106,35 +104,35 @@ func TestSignatureAndAlgorithm(t *testing.T) {
 	signature, _ := base64.RawURLEncoding.DecodeString(segments[2])
 	signature[10] ^= 0x01
 	badSignature := segments[0] + "." + segments[1] + "." + base64.RawURLEncoding.EncodeToString(signature)
-	elevated := claimsJSON(claimsAt(map[string]any{"sub": "mgr-01"}))
-	swappedPayload := segments[0] + "." + encodeSegment(elevated) + "." + segments[2]
+	elevated := testissuer.ClaimsJSON(claimsAt(map[string]any{"sub": "mgr-01"}))
+	swappedPayload := segments[0] + "." + testissuer.EncodeSegment(elevated) + "." + segments[2]
 
-	other := newTestIssuer(2048)
+	other := testissuer.New(2048)
 
 	cases := []struct {
 		name   string
 		token  string
 		reason string
 	}{
-		{"genuine RS256 token from a standard signer", issuer.token(t, claimsAt(nil)), ""},
+		{"genuine RS256 token from a standard signer", issuer.Token(t, claimsAt(nil)), ""},
 		{"genuine RS256 token signed by hand", valid, ""},
 		{"signature bit flipped", badSignature, "invalid_signature"},
 		{"payload replaced after signing", swappedPayload, "invalid_signature"},
-		{"untrusted key named by a trusted kid", other.signRaw(`{"alg":"RS256","kid":"test-a"}`, payload), "invalid_signature"},
-		{"alg none with a fake signature", encodeSegment(`{"alg":"none"}`) + "." + encodeSegment(payload) + ".AAAA", "unsupported_header"},
-		{"alg None", encodeSegment(`{"alg":"None"}`) + "." + encodeSegment(payload) + ".AAAA", "unsupported_header"},
-		{"HS256 keyed with the public key", hmacToken(issuer.publicPEM(), payload), "unsupported_header"},
-		{"HS256 keyed with the key's DER", hmacToken(publicDER(t), payload), "unsupported_header"},
+		{"untrusted key named by a trusted kid", other.SignRaw(`{"alg":"RS256","kid":"test-a"}`, payload), "invalid_signature"},
+		{"alg none with a fake signature", testissuer.EncodeSegment(`{"alg":"none"}`) + "." + testissuer.EncodeSegment(payload) + ".AAAA", "unsupported_header"},
+		{"alg None", testissuer.EncodeSegment(`{"alg":"None"}`) + "." + testissuer.EncodeSegment(payload) + ".AAAA", "unsupported_header"},
+		{"HS256 keyed with the public key", testissuer.HMACToken(issuer.PublicPEM(), payload), "unsupported_header"},
+		{"HS256 keyed with the key's DER", testissuer.HMACToken(publicDER(t), payload), "unsupported_header"},
 		{"RS256 header over an HMAC signature", rs256HeaderOverHMAC(payload), "invalid_signature"},
-		{"PS256", other.signRaw(`{"alg":"PS256"}`, payload), "unsupported_header"},
-		{"RS512", issuer.signRaw(`{"alg":"RS512"}`, payload), "unsupported_header"},
-		{"ES256", issuer.signRaw(`{"alg":"ES256"}`, payload), "unsupported_header"},
-		{"alg in lower case", issuer.signRaw(`{"alg":"rs256"}`, payload), "unsupported_header"},
-		{"alg missing", issuer.signRaw(`{"typ":"JWT"}`, payload), "unsupported_header"},
-		{"alg not a string", issuer.signRaw(`{"alg":["RS256"]}`, payload), "unsupported_header"},
-		{"header not JSON", issuer.signRaw(`alg=RS256`, payload), "malformed_credential"},
-		{"header an array", issuer.signRaw(`["RS256"]`, payload), "malformed_credential"},
-		{"header null", issuer.signRaw(`null`, payload), "malformed_credential"},
+		{"PS256", other.SignRaw(`{"alg":"PS256"}`, payload), "unsupported_header"},
+		{"RS512", issuer.SignRaw(`{"alg":"RS512"}`, payload), "unsupported_header"},
+		{"ES256", issuer.SignRaw(`{"alg":"ES256"}`, payload), "unsupported_header"},
+		{"alg in lower case", issuer.SignRaw(`{"alg":"rs256"}`, payload), "unsupported_header"},
+		{"alg missing", issuer.SignRaw(`{"typ":"JWT"}`, payload), "unsupported_header"},
+		{"alg not a string", issuer.SignRaw(`{"alg":["RS256"]}`, payload), "unsupported_header"},
+		{"header not JSON", issuer.SignRaw(`alg=RS256`, payload), "malformed_credential"},
+		{"header an array", issuer.SignRaw(`["RS256"]`, payload), "malformed_credential"},
+		{"header null", issuer.SignRaw(`null`, payload), "malformed_credential"},
 		{"corrupt header encoding", "e" + valid, "malformed_credential"},
 		{"corrupt signature encoding", valid + "A", "invalid_signature"},
 	}
@@ -148,7 +146,7 @@ func TestSignatureAndAlgorithm(t *testing.T) {
 
 func publicDER(t *testing.T) []byte {
 	t.Helper()
-	der, err := x509.MarshalPKIXPublicKey(&issuer.key.PublicKey)
+	der, err := x509.MarshalPKIXPublicKey(&issuer.Key().PublicKey)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -158,24 +156,24 @@ func publicDER(t *testing.T) []byte {
 // rs256HeaderOverHMAC claims RS256 but carries an HMAC signature keyed with
 // the public key: the verifier must use RSA and fail.
 func rs256HeaderOverHMAC(payload string) string {
-	forged := hmacToken(issuer.publicPEM(), payload)
+	forged := testissuer.HMACToken(issuer.PublicPEM(), payload)
 	segments := strings.Split(forged, ".")
-	return encodeSegment(`{"alg":"RS256","kid":"test-a"}`) + "." + segments[1] + "." + segments[2]
+	return testissuer.EncodeSegment(`{"alg":"RS256","kid":"test-a"}`) + "." + segments[1] + "." + segments[2]
 }
 
 func TestHeaderMembers(t *testing.T) {
 	v := testVerifier(t)
-	payload := claimsJSON(claimsAt(nil))
+	payload := testissuer.ClaimsJSON(claimsAt(nil))
 
 	// A key file that a kid could name: it must never be read.
-	other := newTestIssuer(2048)
+	other := testissuer.New(2048)
 	otherKey := filepath.Join(t.TempDir(), "other.pem")
-	os.WriteFile(otherKey, other.publicPEM(), 0o600)
+	os.WriteFile(otherKey, other.PublicPEM(), 0o600)
 
 	cases := []struct {
 		name   string
 		header string
-		signer *testIssuer
+		signer *testissuer.Issuer
 		reason string
 	}{
 		{"typ JWT", `{"alg":"RS256","typ":"JWT","kid":"test-a"}`, issuer, ""},
@@ -201,7 +199,7 @@ func TestHeaderMembers(t *testing.T) {
 		{"repeated alg, same value", `{"alg":"RS256","alg":"RS256"}`, issuer, "malformed_credential"},
 	}
 	for _, tc := range cases {
-		subject, reason := v.verify(tc.signer.signRaw(tc.header, payload), fixedNow)
+		subject, reason := v.verify(tc.signer.SignRaw(tc.header, payload), fixedNow)
 		if reason != tc.reason || (reason == "" && subject.subject != "staff-01") {
 			t.Errorf("%s: subject %q reason %q, want reason %q", tc.name, subject, reason, tc.reason)
 		}

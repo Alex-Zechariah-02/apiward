@@ -52,7 +52,7 @@ func TestRejectedRequestsNeverReachFixtures(t *testing.T) {
 		}
 		extra := "Connection: close\r\n"
 		if r.subject != "" {
-			extra += "Authorization: Bearer " + issuer.tokenFor(t, r.subject) + "\r\n"
+			extra += "Authorization: Bearer " + issuer.TokenFor(t, r.subject) + "\r\n"
 		}
 		code, _ := e.raw(strings.Replace(request, "Host: gw\r\n", "Host: gw\r\n"+extra, 1))
 		if code != r.status {

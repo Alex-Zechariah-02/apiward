@@ -1,15 +1,13 @@
-// Data-plane handler and its request pipeline.
+// The data-plane request pipeline: every stage from ingress to forwarding.
 
-package gateway
+package pipeline
 
 import (
 	"context"
-	"errors"
 	"net/http"
 	"net/netip"
 	"slices"
 	"strings"
-	"sync/atomic"
 	"time"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/audit"
@@ -18,51 +16,11 @@ import (
 	"github.com/Alex-Zechariah-02/apiward/internal/forward"
 )
 
-const defaultMaxBodyBytes = 16 << 10
-
-// Handler enforces the published policy on every request and, only when every
-// stage passes, binds the permitted upstream and hands the request to its
-// forwarder. Any other outcome is answered here and never forwarded. It is an
-// http.Handler, so any net/http server can run it.
-type Handler struct {
-	controller *Controller
-	// maxBodyBytes is the global request body ceiling. A larger declared
-	// length is refused before any policy work, and the body read for an
-	// operation is bounded by it as well as by the operation's own ceiling.
-	maxBodyBytes int64
-	forward      forwardFunc
-	// held is set while an embedded gateway has not started its own
-	// listeners; every request is then refused at capture, so nothing is
-	// admitted before the Admin API and metrics can observe it.
-	held atomic.Bool
-}
-
-// forwardFunc sends an admitted request to the upstream bound in its context
-// and copies the response to w. It returns an error when the exchange failed;
-// the handler then answers with the status forwardFailure gives it, unless a
-// response was already started. A response it cannot complete after it
-// started is aborted by panicking with http.ErrAbortHandler, as net/http's
-// reverse proxy does.
-type forwardFunc func(w http.ResponseWriter, r *http.Request) error
-
-// newHandler returns the enforcement handler for the policy c publishes. A
-// maxBodyBytes of zero or less selects the default ceiling. forward is called
-// only for admitted requests.
-func newHandler(c *Controller, maxBodyBytes int64, forward forwardFunc) (*Handler, error) {
-	if c == nil || forward == nil {
-		return nil, errors.New("the enforcement handler needs a controller and a forwarder")
-	}
-	if maxBodyBytes <= 0 {
-		maxBodyBytes = defaultMaxBodyBytes
-	}
-	return &Handler{controller: c, maxBodyBytes: maxBodyBytes, forward: forward}, nil
-}
-
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	q := &request{
 		w:            w,
-		audit:        h.controller.audit,
-		observations: h.controller.observations,
+		audit:        h.audit,
+		observations: h.observations,
 		started:      time.Now(),
 		event:        audit.Event{RequestID: audit.NewRequestID(), Time: time.Now().UTC(), Method: r.Method, Path: r.URL.Path},
 		bodyPending:  r.ContentLength != 0 || len(r.TransferEncoding) > 0,
@@ -75,7 +33,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// before any ingress refusal as well as before forwarding.
 	credentials := r.Header.Values("Authorization")
 	q.event.SetIdentityKnown(len(credentials) == 0)
-	stripUntrustedHeaders(r.Header)
+	StripUntrusted(r.Header)
 
 	// Ingress: only origin-form targets, no tunnelling, bounded declared size.
 	// A protocol upgrade would turn an admitted request into a raw stream the
@@ -98,7 +56,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	q.pass(audit.StageIngress)
 
 	// Capture: the single generation used for every later decision.
-	g := h.controller.Current()
+	g := h.authority.Current()
 	if g == nil || h.held.Load() {
 		q.reject(audit.StageCapture, http.StatusServiceUnavailable, "gateway_unavailable")
 		return
@@ -107,7 +65,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// override's) admits nothing, even if the controller's timer is late; the
 	// controller is asked to end what expired now.
 	if g.Expired(compile.TrustedNow()) {
-		h.controller.deadlinePassed(g)
+		h.authority.Expired(g)
 		q.reject(audit.StageCapture, http.StatusServiceUnavailable, "gateway_unavailable")
 		return
 	}
@@ -165,7 +123,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		token, reason := bearerToken(credentials)
 		var verified verifiedToken
 		if reason == "" {
-			verified, reason = h.controller.verifier.Load().verify(token, time.Now())
+			verified, reason = h.authority.Verifier().verify(token, time.Now())
 			q.event.Subject = verified.subject
 		}
 		if reason != "" {
@@ -177,7 +135,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		q.pass(audit.StageJWT)
 		roles, q.event.IgnoredRoles, reason = g.Authorise(verified.roles, rule)
 		q.event.Roles = roles
-		blocked := h.controller.blocked.Load()
+		blocked := h.authority.Blocked()
 		if blocked == nil {
 			q.reject(audit.StageRBAC, http.StatusServiceUnavailable, "gateway_unavailable")
 			return
@@ -212,7 +170,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if rule.Body() == nil && rule.Headers() == nil {
 		q.event.Stages[audit.StageValidation] = audit.StageNotApplicable
 	} else {
-		if reason := validateRequest(r.Header, document, rule); reason != "" {
+		if reason := ValidateRequest(r.Header, document, rule); reason != "" {
 			q.event.Reason = reason
 			q.reject(audit.StageValidation, http.StatusBadRequest, "bad_request")
 			return
@@ -234,7 +192,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// Admission requires a durable audit record before anything is forwarded.
 	q.event.Kind, q.event.Stage, q.event.Decision = "request.admitted", audit.StageNames[audit.StageAudit], "admit"
-	ctx, cancel := context.WithTimeout(r.Context(), h.controller.config.AuditTimeout)
+	ctx, cancel := context.WithTimeout(r.Context(), h.auditTimeout)
 	err := q.audit.Commit(ctx, q.event)
 	cancel()
 	if err != nil {

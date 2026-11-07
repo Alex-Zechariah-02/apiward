@@ -51,7 +51,7 @@ func TestStartupRefusesUntrustedDatabase(t *testing.T) {
 			if reason := e.unavailableReason(); !strings.Contains(reason, tc.reason) {
 				t.Fatalf("reason %q, want %q", reason, tc.reason)
 			}
-			if code, _ := e.get("/a/x", "Authorization", "Bearer "+issuer.tokenFor(t, "alice")); code != http.StatusServiceUnavailable {
+			if code, _ := e.get("/a/x", "Authorization", "Bearer "+issuer.TokenFor(t, "alice")); code != http.StatusServiceUnavailable {
 				t.Fatalf("data plane: %d", code)
 			}
 			// No mutation is accepted, whether or not anyone can log in.

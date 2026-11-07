@@ -14,16 +14,18 @@ import (
 
 // layers lists, for each internal package, the internal packages it may import.
 var layers = map[string][]string{
-	"fault":   nil,
-	"policy":  nil,
-	"compile": {"fault", "policy"},
-	"forward": {"compile"},
-	"store":   {"fault", "policy"},
-	"audit":   {"fault"},
-	"session": nil,
-	"monitor": {"policy", "compile", "audit"},
-	"openapi": {"policy", "compile"},
-	"gateway": {"fault", "policy", "compile", "forward", "store", "audit", "session", "monitor"},
+	"fault":      nil,
+	"policy":     nil,
+	"compile":    {"fault", "policy"},
+	"forward":    {"compile"},
+	"store":      {"fault", "policy"},
+	"audit":      {"fault"},
+	"session":    nil,
+	"monitor":    {"policy", "compile", "audit"},
+	"testissuer": nil,
+	"pipeline":   {"fault", "policy", "compile", "forward", "store", "audit", "monitor"},
+	"openapi":    {"policy", "compile"},
+	"gateway":    {"fault", "policy", "compile", "forward", "store", "audit", "session", "monitor", "pipeline"},
 }
 
 // exposed lists, for each package outside internal/, the internal packages its
@@ -37,6 +39,10 @@ var exposed = map[string][]string{
 
 // unlayered packages are not part of the gateway's layering.
 var unlayered = []string{"demoports", "services", "services/testfixture"}
+
+// support packages exist for tests: any package's tests may import them,
+// production code never.
+var support = []string{"testissuer"}
 
 func TestPackageLayers(t *testing.T) {
 	root := filepath.Join("..", "..")
@@ -72,10 +78,16 @@ func TestPackageLayers(t *testing.T) {
 			if err != nil {
 				t.Fatalf("internal/%s: %v", name, err)
 			}
-			for _, imp := range slices.Concat(pkg.Imports, pkg.TestImports) {
+			for _, imp := range pkg.Imports {
 				dep, ok := strings.CutPrefix(imp, module+"/internal/")
 				if ok && !slices.Contains(allowed, dep) && !slices.Contains(unlayered, dep) {
 					t.Errorf("internal/%s imports internal/%s (tags %v)", name, dep, tags)
+				}
+			}
+			for _, imp := range pkg.TestImports {
+				dep, ok := strings.CutPrefix(imp, module+"/internal/")
+				if ok && !slices.Contains(allowed, dep) && !slices.Contains(unlayered, dep) && !slices.Contains(support, dep) {
+					t.Errorf("internal/%s tests import internal/%s (tags %v)", name, dep, tags)
 				}
 			}
 		}

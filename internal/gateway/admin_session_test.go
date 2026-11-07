@@ -195,12 +195,12 @@ func TestAPIClientTokenIsNotAdminCredential(t *testing.T) {
 	e := newEnv(t)
 	seed(t, e.database, e.protectedPolicy(), seedOptions{})
 	e.start(binaries.plain)
-	token := issuer.tokenFor(t, harnessAdmin)
+	token := issuer.TokenFor(t, harnessAdmin)
 	put := `{"reason":"test containment"}`
 	for _, header := range [][]string{
 		{"Authorization", "Bearer " + token},
 		{"Cookie", sessionCookie + "=" + token},
-		{"Authorization", "Bearer " + issuer.tokenFor(t, "alice")},
+		{"Authorization", "Bearer " + issuer.TokenFor(t, "alice")},
 	} {
 		if code, _, _ := e.adminSend(http.MethodGet, "/admin/status", "", header...); code != http.StatusUnauthorized {
 			t.Errorf("status with %s: %d", header[0], code)
@@ -214,7 +214,7 @@ func TestAPIClientTokenIsNotAdminCredential(t *testing.T) {
 		t.Fatalf("revision %d after the probes", s.Revision)
 	}
 	// The same token is still an ordinary API credential on the data plane.
-	if code, _ := e.get("/a/x", "Authorization", "Bearer "+issuer.tokenFor(t, "alice")); code != http.StatusOK {
+	if code, _ := e.get("/a/x", "Authorization", "Bearer "+issuer.TokenFor(t, "alice")); code != http.StatusOK {
 		t.Fatalf("data plane request with a valid token: %d", code)
 	}
 }

@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/policy"
+	"github.com/Alex-Zechariah-02/apiward/internal/testissuer"
 )
 
 func (e *env) writeConfig(opts configOptions) {
@@ -19,7 +20,7 @@ func (e *env) writeConfig(opts configOptions) {
 		opts.maxBodyBytes = 16384
 	}
 	if opts.jwt == nil {
-		opts.jwt = testTrust(testIssuerName, testAudience, e.publicKey)
+		opts.jwt = testTrust(testissuer.Name, testissuer.Audience, e.publicKey)
 	}
 	gateway := map[string]any{
 		"database":       e.database,
@@ -47,7 +48,7 @@ func (e *env) nativeSettings() map[string]any {
 			"audit_log":      e.auditLog,
 			"admin_listen":   e.admin,
 			"metrics_listen": e.metrics,
-			"jwt":            testTrust(testIssuerName, testAudience, e.publicKey),
+			"jwt":            testTrust(testissuer.Name, testissuer.Audience, e.publicKey),
 		},
 		"data": map[string]any{"listen": e.dataAddr},
 	}

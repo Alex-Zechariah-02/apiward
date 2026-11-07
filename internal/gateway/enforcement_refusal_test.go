@@ -15,6 +15,7 @@ import (
 	"github.com/Alex-Zechariah-02/apiward/internal/audit"
 	"github.com/Alex-Zechariah-02/apiward/internal/policy"
 	"github.com/Alex-Zechariah-02/apiward/internal/store"
+	"github.com/Alex-Zechariah-02/apiward/internal/testissuer"
 )
 
 // Every refusal is decided at its stage, answered with its status, error code
@@ -33,11 +34,11 @@ func TestEnforcementRefusals(t *testing.T) {
 	blocked := store.BlockedAccounts{"carol": {Subject: "carol", Reason: "test containment"}}
 	controller.blocked.Store(&blocked)
 
-	bearer := func(subject string) string { return "Bearer " + issuer.tokenFor(t, subject) }
+	bearer := func(subject string) string { return "Bearer " + issuer.TokenFor(t, subject) }
 	claims := func(changes map[string]any) string {
-		return "Bearer " + issuer.token(t, changed(validClaims("alice"), changes))
+		return "Bearer " + issuer.Token(t, testissuer.Changed(testissuer.ValidClaims("alice"), changes))
 	}
-	valid := issuer.tokenFor(t, "alice")
+	valid := issuer.TokenFor(t, "alice")
 	segments := strings.Split(valid, ".")
 	tampered := segments[0] + "." + segments[1] + ".AAAA" + segments[2][4:]
 	raw := func(request string) string { return request + "Host: gw\r\nConnection: close\r\n\r\n" }
@@ -74,14 +75,14 @@ func TestEnforcementRefusals(t *testing.T) {
 			status: 401, code: "unauthenticated", stage: "JWT", reason: "wrong_audience"},
 		{name: "signature altered", method: "GET", path: "/a/x", header: []string{"Authorization", "Bearer " + tampered},
 			status: 401, code: "unauthenticated", stage: "JWT", reason: "invalid_signature"},
-		{name: "unsigned token", method: "GET", path: "/a/x", header: []string{"Authorization", "Bearer " + encodeSegment(`{"alg":"none"}`) + "." + segments[1] + "."},
+		{name: "unsigned token", method: "GET", path: "/a/x", header: []string{"Authorization", "Bearer " + testissuer.EncodeSegment(`{"alg":"none"}`) + "." + segments[1] + "."},
 			status: 401, code: "unauthenticated", stage: "JWT", reason: "malformed_credential"},
 		{name: "unknown subject", method: "GET", path: "/a/x", header: []string{"Authorization", bearer("mallory")},
 			status: 403, code: "forbidden", stage: "RBAC", reason: "no_permit"},
 		{name: "subject without a permit", method: "POST", path: "/a/item", ctype: "application/json", body: `{"n":1}`, header: []string{"Authorization", bearer("bob")},
 			status: 403, code: "forbidden", stage: "RBAC", reason: "no_permit"},
 		{name: "unknown role claimed in the verified token", method: "POST", path: "/a/item", ctype: "application/json", body: `{"n":1}`,
-			header: []string{"Authorization", "Bearer " + issuer.token(t, changed(validClaims("bob"), map[string]any{"roles": []string{"ADMIN"}}))},
+			header: []string{"Authorization", "Bearer " + issuer.Token(t, testissuer.Changed(testissuer.ValidClaims("bob"), map[string]any{"roles": []string{"ADMIN"}}))},
 			status: 403, code: "forbidden", stage: "RBAC", reason: "no_permit"},
 		{name: "disabled subject", method: "GET", path: "/a/x", header: []string{"Authorization", bearer("carol")},
 			status: 403, code: "account_blocked", stage: "RBAC", reason: "account_blocked"},
@@ -218,7 +219,7 @@ func TestEnforcementRateLimit(t *testing.T) {
 	p.Operations[0].Rate = rate(2, 60)
 	c, _, f := e.serveEnforcement(p, 0)
 	get := func(subject string) (int, string) {
-		resp, body := e.exchange(http.MethodGet, "/a/x", "", "", "Authorization", "Bearer "+issuer.tokenFor(t, subject))
+		resp, body := e.exchange(http.MethodGet, "/a/x", "", "", "Authorization", "Bearer "+issuer.TokenFor(t, subject))
 		_, id := requestID(resp, body)
 		return resp.StatusCode, id
 	}

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/Alex-Zechariah-02/apiward/internal/pipeline"
 	"github.com/Alex-Zechariah-02/apiward/internal/policy"
 	"github.com/Alex-Zechariah-02/apiward/internal/store"
 )
@@ -40,7 +41,7 @@ func (c *Controller) handleHistory(w http.ResponseWriter, r *http.Request, who c
 	if len(items) == limit {
 		result.Next = strconv.FormatInt(items[len(items)-1].Seq, 10)
 	}
-	writeJSON(w, http.StatusOK, result)
+	pipeline.WriteJSON(w, http.StatusOK, result)
 }
 
 // maxHistoryKinds bounds the kinds one history listing may select.
@@ -105,6 +106,6 @@ func (c *Controller) handleHistoryEntry(w http.ResponseWriter, r *http.Request, 
 	case !found:
 		adminError(w, http.StatusNotFound, "not_found", "")
 	default:
-		writeJSON(w, http.StatusOK, entry)
+		pipeline.WriteJSON(w, http.StatusOK, entry)
 	}
 }

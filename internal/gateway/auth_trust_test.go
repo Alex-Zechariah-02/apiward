@@ -10,19 +10,22 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/Alex-Zechariah-02/apiward/internal/pipeline"
+	"github.com/Alex-Zechariah-02/apiward/internal/testissuer"
 )
 
 // The gateway does not start without valid trust material, and changing a
 // key file alone changes nothing: keys are replaced by a reload or restart.
 func TestTrustMaterialAtStartup(t *testing.T) {
-	other := newTestIssuer(2048)
+	other := testissuer.New(2048)
 	privateKey := filepath.Join(t.TempDir(), "private.pem")
-	der, _ := x509.MarshalPKCS8PrivateKey(other.key)
+	der, _ := x509.MarshalPKCS8PrivateKey(other.Key())
 	os.WriteFile(privateKey, pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der}), 0o600)
 
 	trust := func(e *env, changes map[string]any) map[string]any {
-		config := map[string]any{"issuer": testIssuerName, "audience": testAudience, "keys": []VerificationKey{{Kid: "test-a", PublicKeyFile: e.publicKey}}}
-		return changed(config, changes)
+		config := map[string]any{"issuer": testissuer.Name, "audience": testissuer.Audience, "keys": []pipeline.VerificationKey{{Kid: "test-a", PublicKeyFile: e.publicKey}}}
+		return testissuer.Changed(config, changes)
 	}
 	// cause is the part of the startup error that shows why it was refused.
 	// The gateway logs the error as JSON, so quotes inside it appear escaped.
@@ -33,14 +36,14 @@ func TestTrustMaterialAtStartup(t *testing.T) {
 	}{
 		{"no trust configuration", func(e *env) any { return map[string]any{} }, "gateway.jwt.issuer is required"},
 		{"missing key file", func(e *env) any {
-			return trust(e, map[string]any{"keys": []VerificationKey{{Kid: "test-a", PublicKeyFile: filepath.Join(e.dir, "absent.pem")}}})
+			return trust(e, map[string]any{"keys": []pipeline.VerificationKey{{Kid: "test-a", PublicKeyFile: filepath.Join(e.dir, "absent.pem")}}})
 		}, "jwt: opening public key"},
 		{"private key given as the key", func(e *env) any {
-			return trust(e, map[string]any{"keys": []VerificationKey{{Kid: "test-a", PublicKeyFile: privateKey}}})
+			return trust(e, map[string]any{"keys": []pipeline.VerificationKey{{Kid: "test-a", PublicKeyFile: privateKey}}})
 		}, "exactly one PEM PUBLIC KEY block"},
 		{"no issuer", func(e *env) any { return trust(e, map[string]any{"issuer": nil}) }, "gateway.jwt.issuer is required"},
 		{"no audience", func(e *env) any { return trust(e, map[string]any{"audience": nil}) }, "gateway.jwt.audience is required"},
-		{"several audiences", func(e *env) any { return trust(e, map[string]any{"audience": []string{testAudience, "other"}}) }, "gateway.jwt.audience: a JSON array is not a valid value"},
+		{"several audiences", func(e *env) any { return trust(e, map[string]any{"audience": []string{testissuer.Audience, "other"}}) }, "gateway.jwt.audience: a JSON array is not a valid value"},
 		{"remote key set", func(e *env) any { return trust(e, map[string]any{"jwks_url": "http://127.0.0.1:1/jwks"}) }, `unknown field \"jwks_url\"`},
 		{"second issuer", func(e *env) any { return trust(e, map[string]any{"issuers": []string{"https://other.test"}}) }, `unknown field \"issuers\"`},
 		{"clock leeway", func(e *env) any { return trust(e, map[string]any{"leeway": "30s"}) }, `unknown field \"leeway\"`},
@@ -70,7 +73,7 @@ func TestTrustMaterialAtStartup(t *testing.T) {
 		e := newEnv(t)
 		seed(t, e.database, e.protectedPolicy(), seedOptions{})
 		e.start(binaries.plain)
-		oldToken, newToken := issuer.tokenFor(t, "alice"), other.tokenFor(t, "alice")
+		oldToken, newToken := issuer.TokenFor(t, "alice"), other.TokenFor(t, "alice")
 		before := e.status().JWTKey
 		if code, _ := e.get("/a/x", "Authorization", "Bearer "+oldToken); code != http.StatusOK {
 			t.Fatalf("token from the configured key: %d", code)
@@ -80,7 +83,7 @@ func TestTrustMaterialAtStartup(t *testing.T) {
 		}
 
 		// Replacing the file changes nothing until the gateway restarts.
-		if err := os.WriteFile(e.publicKey, other.publicPEM(), 0o600); err != nil {
+		if err := os.WriteFile(e.publicKey, other.PublicPEM(), 0o600); err != nil {
 			t.Fatal(err)
 		}
 		if code, _ := e.get("/a/x", "Authorization", "Bearer "+newToken); code != http.StatusUnauthorized || e.status().JWTKey != before {

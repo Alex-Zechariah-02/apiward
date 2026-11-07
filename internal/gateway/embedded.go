@@ -44,7 +44,7 @@ func OpenEmbedded(settings Settings, logger *slog.Logger) (*Embedded, error) {
 	if err != nil {
 		return nil, err
 	}
-	d.enforcement.held.Store(true)
+	d.enforcement.Hold(true)
 	return &Embedded{deployment: d, logger: logger, calls: calls{idle: make(chan struct{}, 1)}}, nil
 }
 
@@ -74,7 +74,7 @@ func (e *Embedded) Start() error {
 			e.logger.Error("metrics listener failed", "error", err)
 		}
 	}()
-	e.deployment.enforcement.held.Store(false)
+	e.deployment.enforcement.Hold(false)
 	e.logger.Info("listening", "metrics", metrics.Addr().String(), "admin", e.deployment.config.controller.AdminListen,
 		"data", "served by the host program; data.listen is not bound")
 	e.deployment.logAdmission(e.logger)

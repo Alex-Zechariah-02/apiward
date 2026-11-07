@@ -36,7 +36,7 @@ func TestLifecycleNeedsAuthorisedAdministrator(t *testing.T) {
 	c := staged.Candidate.CandidateRecord
 	activation := string(mustJSON(map[string]any{"candidate": c.ID, "checksum": c.Checksum, "confirm_within_seconds": 60}))
 	resolution := `{"revision":2}`
-	apiToken := "Bearer " + issuer.tokenFor(t, "alice")
+	apiToken := "Bearer " + issuer.TokenFor(t, "alice")
 	before := e.status()
 
 	type attempt struct {

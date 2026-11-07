@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/forward"
+	"github.com/Alex-Zechariah-02/apiward/internal/pipeline"
 	"github.com/Alex-Zechariah-02/apiward/internal/policy"
 )
 
@@ -64,17 +65,17 @@ type nativeFile struct {
 // gatewaySettings are the controller's settings, under the names the legacy
 // Caddy "gateway" app used.
 type gatewaySettings struct {
-	Database             string      `json:"database"`
-	AuditLog             string      `json:"audit_log"`
-	AdminListen          string      `json:"admin_listen"`
-	MetricsListen        *string     `json:"metrics_listen"`
-	AdminIdleTimeout     *string     `json:"admin_idle_timeout"`
-	AdminSessionLifetime *string     `json:"admin_session_lifetime"`
-	AuditTimeout         *string     `json:"audit_timeout"`
-	AuditMaxBytes        *int64      `json:"audit_max_bytes"`
-	AuditMaxFiles        *int        `json:"audit_max_files"`
-	JWT                  TrustConfig `json:"jwt"`
-	AdminUI              *string     `json:"admin_ui"`
+	Database             string               `json:"database"`
+	AuditLog             string               `json:"audit_log"`
+	AdminListen          string               `json:"admin_listen"`
+	MetricsListen        *string              `json:"metrics_listen"`
+	AdminIdleTimeout     *string              `json:"admin_idle_timeout"`
+	AdminSessionLifetime *string              `json:"admin_session_lifetime"`
+	AuditTimeout         *string              `json:"audit_timeout"`
+	AuditMaxBytes        *int64               `json:"audit_max_bytes"`
+	AuditMaxFiles        *int                 `json:"audit_max_files"`
+	JWT                  pipeline.TrustConfig `json:"jwt"`
+	AdminUI              *string              `json:"admin_ui"`
 }
 
 // dataSettings are the data-plane server's settings.

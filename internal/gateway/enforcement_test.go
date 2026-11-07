@@ -15,6 +15,7 @@ import (
 
 	"github.com/Alex-Zechariah-02/apiward/internal/audit"
 	"github.com/Alex-Zechariah-02/apiward/internal/forward"
+	"github.com/Alex-Zechariah-02/apiward/internal/pipeline"
 	"github.com/Alex-Zechariah-02/apiward/internal/policy"
 )
 
@@ -82,7 +83,7 @@ func (f *memoryForwarder) setRespond(respond func(w http.ResponseWriter, r *http
 // serveEnforcement seeds e's database with policy, owns its controller and
 // serves the enforcement handler, with the global body ceiling maxBodyBytes
 // (0: the default), at e.dataAddr, where the harness request helpers send.
-func (e *env) serveEnforcement(policy policy.Policy, maxBodyBytes int64) (*Controller, *Handler, *memoryForwarder) {
+func (e *env) serveEnforcement(policy policy.Policy, maxBodyBytes int64) (*Controller, *pipeline.Handler, *memoryForwarder) {
 	e.t.Helper()
 	seed(e.t, e.database, policy, seedOptions{})
 	c, _ := e.own(e.controllerConfig())
@@ -117,8 +118,7 @@ func admittedStages(forward string) map[string]any {
 	return stages
 }
 
-// The handler needs a controller and a forwarder; a ceiling of zero selects
-// the default.
+// The handler needs a controller and a forwarder.
 func TestNewHandlerRefusesIncompleteSetup(t *testing.T) {
 	e := newEnv(t)
 	seed(t, e.database, e.policy(e.a, false), seedOptions{})
@@ -130,9 +130,8 @@ func TestNewHandlerRefusesIncompleteSetup(t *testing.T) {
 	if h, err := newHandler(c, 0, nil); h != nil || err == nil {
 		t.Fatalf("without a forwarder: %v, %v", h, err)
 	}
-	h, err := newHandler(c, 0, forward)
-	if err != nil || h.maxBodyBytes != defaultMaxBodyBytes {
-		t.Fatalf("default ceiling: %v, %v", h, err)
+	if h, err := newHandler(c, 0, forward); h == nil || err != nil {
+		t.Fatalf("complete setup: %v, %v", h, err)
 	}
 }
 
@@ -157,7 +156,7 @@ func TestEnforcementHandlerAdmits(t *testing.T) {
 		return nil
 	})
 
-	token := issuer.tokenFor(t, "alice")
+	token := issuer.TokenFor(t, "alice")
 	resp, body := e.exchange(http.MethodGet, "/a/x?q=1", "", "", "Authorization", "Bearer "+token,
 		"X-Request-Id", "forged", "X-Gateway-Subject", "admin", "X-Gateway-Roles", "ADMIN")
 	if resp.StatusCode != http.StatusCreated || body != "created" || resp.Header.Get("X-Upstream") != "memory" {
@@ -202,13 +201,13 @@ func TestEnforcementHandlerAdmits(t *testing.T) {
 func TestEnforcementAuditFailureBlocksForwarding(t *testing.T) {
 	e := newEnv(t)
 	c, _, f := e.serveEnforcement(e.protectedPolicy(), 0)
-	if code, _ := e.get("/a/x", "Authorization", "Bearer "+issuer.tokenFor(t, "alice")); code != http.StatusOK {
+	if code, _ := e.get("/a/x", "Authorization", "Bearer "+issuer.TokenFor(t, "alice")); code != http.StatusOK {
 		t.Fatalf("before the failure: %d", code)
 	}
 	// The state a failed write or sync leaves the log in.
 	c.audit.Fail(errors.New("injected write failure"))
 	lost := c.audit.Lost()
-	code, body := e.get("/a/x", "Authorization", "Bearer "+issuer.tokenFor(t, "alice"))
+	code, body := e.get("/a/x", "Authorization", "Bearer "+issuer.TokenFor(t, "alice"))
 	var reply struct {
 		Error     string `json:"error"`
 		RequestID string `json:"request_id"`

@@ -1,4 +1,6 @@
-package gateway
+// Named key sets and the claims Fetch Accounts tokens must carry.
+
+package pipeline
 
 import (
 	"encoding/json"
@@ -6,19 +8,21 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/Alex-Zechariah-02/apiward/internal/testissuer"
 )
 
 func TestFetchNamedKeySet(t *testing.T) {
 	dir := t.TempDir()
-	other := newTestIssuer(2048)
+	other := testissuer.New(2048)
 	first, second := filepath.Join(dir, "first.pem"), filepath.Join(dir, "second.pem")
-	for path, key := range map[string]*testIssuer{first: issuer, second: other} {
-		if err := os.WriteFile(path, key.publicPEM(), 0o600); err != nil {
+	for path, key := range map[string]*testissuer.Issuer{first: issuer, second: other} {
+		if err := os.WriteFile(path, key.PublicPEM(), 0o600); err != nil {
 			t.Fatal(err)
 		}
 	}
 	document, err := json.Marshal(map[string]any{
-		"issuer": testIssuerName, "audience": testAudience,
+		"issuer": testissuer.Name, "audience": testissuer.Audience,
 		"keys": []map[string]string{{"kid": "test-a", "public_key_file": first}, {"kid": "test-b", "public_key_file": second}},
 	})
 	if err != nil {
@@ -28,19 +32,19 @@ func TestFetchNamedKeySet(t *testing.T) {
 	if err := json.Unmarshal(document, &config); err != nil {
 		t.Fatal(err)
 	}
-	v, err := loadVerifier(config)
+	v, err := LoadVerifier(config)
 	if err != nil {
 		t.Fatalf("several operator-configured keys must load together: %v", err)
 	}
 	for _, tc := range []struct {
 		kid    string
-		signer *testIssuer
+		signer *testissuer.Issuer
 		ok     bool
 	}{
 		{"test-a", issuer, true}, {"test-b", other, true}, {"test-a", other, false}, {"test-b", issuer, false}, {"unknown", issuer, false},
 	} {
 		header, _ := json.Marshal(map[string]string{"alg": "RS256", "typ": "JWT", "kid": tc.kid})
-		_, reason := v.verify(tc.signer.signRaw(string(header), claimsJSON(claimsAt(nil))), fixedNow)
+		_, reason := v.verify(tc.signer.SignRaw(string(header), testissuer.ClaimsJSON(claimsAt(nil))), fixedNow)
 		if got := reason == ""; got != tc.ok {
 			t.Errorf("kid %s selected the wrong trust key: accepted=%t (%s)", tc.kid, got, reason)
 		}
@@ -67,7 +71,7 @@ func TestFetchJWTRequiredClaimsAndKid(t *testing.T) {
 		{"too many roles", `{"alg":"RS256","typ":"JWT","kid":"test-a"}`, claimsAt(map[string]any{"roles": strings.Fields(strings.Repeat("CUSTOMER ", 65))}), false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			_, reason := v.verify(issuer.signRaw(tc.header, claimsJSON(tc.claims)), fixedNow)
+			_, reason := v.verify(issuer.SignRaw(tc.header, testissuer.ClaimsJSON(tc.claims)), fixedNow)
 			if got := reason == ""; got != tc.accept {
 				t.Fatalf("accepted=%t (reason %q), want %t", got, reason, tc.accept)
 			}

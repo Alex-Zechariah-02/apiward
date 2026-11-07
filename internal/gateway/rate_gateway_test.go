@@ -15,6 +15,7 @@ import (
 	"github.com/Alex-Zechariah-02/apiward/internal/audit"
 	"github.com/Alex-Zechariah-02/apiward/internal/compile"
 	"github.com/Alex-Zechariah-02/apiward/internal/policy"
+	"github.com/Alex-Zechariah-02/apiward/internal/testissuer"
 )
 
 // ratePolicy is the protected test policy with a rate rule on each of its
@@ -62,7 +63,7 @@ func (e *env) sendAs(subject, method, path, body string, n int, header ...string
 	if body != "" {
 		contentType = "application/json"
 	}
-	token := issuer.tokenFor(e.t, subject)
+	token := issuer.TokenFor(e.t, subject)
 	statuses := make([]int, n)
 	for i := range statuses {
 		statuses[i], _ = e.request(method, path, contentType, body, append([]string{"Authorization", "Bearer " + token}, header...)...)
@@ -190,7 +191,7 @@ func TestWeightedWindowThroughGateway(t *testing.T) {
 func TestEarlierRejectionsConsumeNoQuota(t *testing.T) {
 	e, _ := newRateEnv(t, func(e *env) policy.Policy { return e.ratePolicy(rate(2, 60), rate(2, 60)) }, base)
 
-	expired := issuer.token(t, changed(validClaims("alice"), map[string]any{"exp": time.Now().Add(-time.Minute).Unix()}))
+	expired := issuer.Token(t, testissuer.Changed(testissuer.ValidClaims("alice"), map[string]any{"exp": time.Now().Add(-time.Minute).Unix()}))
 	for range 5 {
 		if code, _ := e.request(http.MethodGet, "/a/x", "", "", "Authorization", "Bearer "+expired); code != http.StatusUnauthorized {
 			t.Fatalf("expired token: %d", code)

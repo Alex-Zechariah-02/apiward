@@ -66,7 +66,7 @@ func TestValidatedHeadersWithAuthentication(t *testing.T) {
 	write := func(subject, lines string) (int, string) {
 		return e.rawExchange(fmt.Sprintf("POST /a/item HTTP/1.1\r\nHost: gw\r\nConnection: close\r\nAuthorization: Bearer %s\r\n"+
 			"Content-Type: application/json\r\nIdempotency-Key: k-123456\r\n%sContent-Length: %d\r\n\r\n%s",
-			issuer.tokenFor(t, subject), lines, len(keywordItem), keywordItem), false)
+			issuer.TokenFor(t, subject), lines, len(keywordItem), keywordItem), false)
 	}
 
 	forged := "X-Gateway-Subject: bob\r\nX-Gateway-Roles: ADMIN\r\nX-Forwarded-For: 203.0.113.9\r\n"

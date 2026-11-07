@@ -203,8 +203,8 @@ func TestOverridesUnderLoad(t *testing.T) {
 	var wg sync.WaitGroup
 	var unexpected sync.Map
 	var forwarded atomic.Int64
-	bobToken := "Bearer " + issuer.tokenFor(t, "bob")
-	aliceToken := "Bearer " + issuer.tokenFor(t, "alice")
+	bobToken := "Bearer " + issuer.TokenFor(t, "bob")
+	aliceToken := "Bearer " + issuer.TokenFor(t, "alice")
 	for i := range 6 {
 		write := i%2 == 0
 		wg.Go(func() {

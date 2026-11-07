@@ -1,6 +1,6 @@
 // Per-request stage state.
 
-package gateway
+package pipeline
 
 import (
 	"net/http"

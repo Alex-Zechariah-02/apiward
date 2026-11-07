@@ -1,6 +1,6 @@
 // Trusted issuer configuration and verification key loading.
 
-package gateway
+package pipeline
 
 import (
 	"bytes"
@@ -22,12 +22,12 @@ import (
 )
 
 const (
-	maxTokenBytes       = 4096
-	maxKeyFileBytes     = 64 << 10
-	maxTrustValue       = 256
-	minRSABits          = 2048
-	maxRSABits          = 8192
-	maxVerificationKeys = 64
+	MaxTokenBytes   = 4096
+	maxKeyFileBytes = 64 << 10
+	maxTrustValue   = 256
+	minRSABits      = 2048
+	maxRSABits      = 8192
+	MaxKeys         = 64
 	// maxNumericDate is 9999-12-31T23:59:59Z, so every accepted time claim
 	// converts to a time.Time without overflow.
 	maxNumericDate = 253402300799
@@ -46,7 +46,7 @@ type VerificationKey struct {
 	PublicKeyFile string `json:"public_key_file"`
 }
 
-type keyInfo struct {
+type KeyInfo struct {
 	Kid         string    `json:"kid"`
 	Fingerprint string    `json:"fingerprint"`
 	LoadedAt    time.Time `json:"loaded_at"`
@@ -54,29 +54,29 @@ type keyInfo struct {
 
 // A verifier is an immutable whole key set. Replacing one never mutates keys
 // that a request has already captured.
-type verifier struct {
+type Verifier struct {
 	issuer      string
 	audience    string
 	keys        map[string]*rsa.PublicKey
-	info        []keyInfo
+	info        []KeyInfo
 	fingerprint string // SHA-256 of the complete named key set
 	// uses counts verified tokens per key since the gateway started. The map
 	// is fixed when the verifier is built; a reload carries a kept key's
 	// counter over (adoptUses), so only the counters' atomics change.
-	uses map[string]*keyUse
+	uses map[string]*KeyUse
 }
 
-// keyUse counts the tokens one key verified and when it last did. It is read
+// KeyUse counts the tokens one key verified and when it last did. It is read
 // by the keys report and written by verify with atomics only, so counting
 // adds no lock to a request.
-type keyUse struct {
+type KeyUse struct {
 	verified atomic.Uint64
 	lastNano atomic.Int64
 }
 
 // adoptUses gives v the counters of the keys it shares with previous, before
 // v is published, so a reload keeps their counts.
-func (v *verifier) adoptUses(previous *verifier) {
+func (v *Verifier) AdoptUses(previous *Verifier) {
 	for kid := range v.uses {
 		if use := previous.uses[kid]; use != nil {
 			v.uses[kid] = use
@@ -84,17 +84,17 @@ func (v *verifier) adoptUses(previous *verifier) {
 	}
 }
 
-// loadVerifier reads and validates the trust configuration. The key file must
+// LoadVerifier reads and validates the trust configuration. The key file must
 // hold exactly one PEM "PUBLIC KEY" block with an RSA key, so a private key or
 // any other material is refused.
-func loadVerifier(c TrustConfig) (*verifier, error) {
+func LoadVerifier(c TrustConfig) (*Verifier, error) {
 	if !isTrustValue(c.Issuer) || !isTrustValue(c.Audience) {
 		return nil, fmt.Errorf("issuer and audience must each be 1 to %d printable ASCII characters", maxTrustValue)
 	}
-	if len(c.Keys) == 0 || len(c.Keys) > maxVerificationKeys {
-		return nil, fmt.Errorf("keys must contain 1 to %d named public keys", maxVerificationKeys)
+	if len(c.Keys) == 0 || len(c.Keys) > MaxKeys {
+		return nil, fmt.Errorf("keys must contain 1 to %d named public keys", MaxKeys)
 	}
-	v := &verifier{issuer: c.Issuer, audience: c.Audience, keys: map[string]*rsa.PublicKey{}, info: []keyInfo{}, uses: map[string]*keyUse{}}
+	v := &Verifier{issuer: c.Issuer, audience: c.Audience, keys: map[string]*rsa.PublicKey{}, info: []KeyInfo{}, uses: map[string]*KeyUse{}}
 	loaded := time.Now().UTC()
 	for _, entry := range c.Keys {
 		if policy.CheckID(entry.Kid, "kid") != nil || v.keys[entry.Kid] != nil {
@@ -105,10 +105,10 @@ func loadVerifier(c TrustConfig) (*verifier, error) {
 			return nil, err
 		}
 		v.keys[entry.Kid] = key
-		v.uses[entry.Kid] = &keyUse{}
-		v.info = append(v.info, keyInfo{Kid: entry.Kid, Fingerprint: "sha256:" + fingerprint, LoadedAt: loaded})
+		v.uses[entry.Kid] = &KeyUse{}
+		v.info = append(v.info, KeyInfo{Kid: entry.Kid, Fingerprint: "sha256:" + fingerprint, LoadedAt: loaded})
 	}
-	slices.SortFunc(v.info, func(a, b keyInfo) int { return strings.Compare(a.Kid, b.Kid) })
+	slices.SortFunc(v.info, func(a, b KeyInfo) int { return strings.Compare(a.Kid, b.Kid) })
 	hash := sha256.New()
 	for _, info := range v.info {
 		fmt.Fprintf(hash, "%s:%s\n", info.Kid, info.Fingerprint)
@@ -168,3 +168,25 @@ func isTrustValue(value string) bool {
 	}
 	return true
 }
+
+// keyList returns the loaded keys, in configuration order.
+func (v *Verifier) Keys() []KeyInfo { return v.info }
+
+// keySet is the SHA-256 of the complete named key set.
+func (v *Verifier) Fingerprint() string { return v.fingerprint }
+
+// trustedIssuer is the only issuer whose tokens verify.
+func (v *Verifier) Issuer() string { return v.issuer }
+
+// trustedAudience is the audience a token must name.
+func (v *Verifier) Audience() string { return v.audience }
+
+// use returns the counters of one key, or nil for a key not loaded.
+func (v *Verifier) Use(kid string) *KeyUse { return v.uses[kid] }
+
+// count returns the tokens the key verified since the gateway started.
+func (u *KeyUse) Count() uint64 { return u.verified.Load() }
+
+// last returns when the key last verified a token, in Unix nanoseconds; zero
+// means never.
+func (u *KeyUse) Last() int64 { return u.lastNano.Load() }

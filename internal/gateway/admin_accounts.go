@@ -13,6 +13,7 @@ import (
 	"github.com/Alex-Zechariah-02/apiward/internal/audit"
 	"github.com/Alex-Zechariah-02/apiward/internal/compile"
 	"github.com/Alex-Zechariah-02/apiward/internal/fault"
+	"github.com/Alex-Zechariah-02/apiward/internal/pipeline"
 	"github.com/Alex-Zechariah-02/apiward/internal/policy"
 	"github.com/Alex-Zechariah-02/apiward/internal/store"
 )
@@ -85,24 +86,24 @@ func (c *Controller) finishControl(ctx context.Context, t store.TransitionRecord
 // the gateway started and when it last did; counts only, no key material.
 func (c *Controller) handleKeys(w http.ResponseWriter, r *http.Request, who caller) {
 	type keyReport struct {
-		keyInfo
+		pipeline.KeyInfo
 		Verified       uint64     `json:"verified"`
 		LastVerifiedAt *time.Time `json:"last_verified_at"`
 	}
 	v := c.verifier.Load()
-	items := make([]keyReport, 0, len(v.info))
-	for _, info := range v.info {
-		report := keyReport{keyInfo: info}
-		if use := v.uses[info.Kid]; use != nil {
-			report.Verified = use.verified.Load()
-			if last := use.lastNano.Load(); last != 0 {
+	items := make([]keyReport, 0, len(v.Keys()))
+	for _, info := range v.Keys() {
+		report := keyReport{KeyInfo: info}
+		if use := v.Use(info.Kid); use != nil {
+			report.Verified = use.Count()
+			if last := use.Last(); last != 0 {
 				at := time.Unix(0, last).UTC()
 				report.LastVerifiedAt = &at
 			}
 		}
 		items = append(items, report)
 	}
-	writeJSON(w, http.StatusOK, list{Items: items})
+	pipeline.WriteJSON(w, http.StatusOK, list{Items: items})
 }
 
 func noRequestBody(w http.ResponseWriter, r *http.Request) bool {
@@ -123,7 +124,7 @@ func (c *Controller) handleReloadKeys(w http.ResponseWriter, r *http.Request, wh
 	}
 	t := adminTransition(who, key, "keys.reload", "keys", sql.NullInt64{}, nil)
 	body, status := c.reloadKeys(r.Context(), t)
-	writeJSON(w, status, body)
+	pipeline.WriteJSON(w, status, body)
 }
 
 func (c *Controller) reloadKeys(ctx context.Context, t store.TransitionRecord) (json.RawMessage, int) {
@@ -138,15 +139,15 @@ func (c *Controller) reloadKeys(ctx context.Context, t store.TransitionRecord) (
 		return c.rejectControl(ctx, t, "KEYS_INVALID", now)
 	}
 	current := c.verifier.Load()
-	if cfg.controller.JWT.Issuer != current.issuer || cfg.controller.JWT.Audience != current.audience {
+	if cfg.controller.JWT.Issuer != current.Issuer() || cfg.controller.JWT.Audience != current.Audience() {
 		return c.rejectControl(ctx, t, "KEYS_INVALID", now)
 	}
-	loaded, err := loadVerifier(cfg.controller.JWT)
+	loaded, err := pipeline.LoadVerifier(cfg.controller.JWT)
 	if err != nil {
 		return c.rejectControl(ctx, t, "KEYS_INVALID", now)
 	}
-	return c.finishControl(ctx, t, list{Items: loaded.info}, nil, func() {
-		loaded.adoptUses(c.verifier.Load())
+	return c.finishControl(ctx, t, list{Items: loaded.Keys()}, nil, func() {
+		loaded.AdoptUses(c.verifier.Load())
 		c.verifier.Store(loaded)
 	}, now)
 }
@@ -162,7 +163,7 @@ func (c *Controller) handleBlockedAccounts(w http.ResponseWriter, r *http.Reques
 		items = []store.BlockedAccount{}
 	}
 	slices.SortFunc(items, func(a, b store.BlockedAccount) int { return strings.Compare(a.Subject, b.Subject) })
-	writeJSON(w, http.StatusOK, list{Items: items})
+	pipeline.WriteJSON(w, http.StatusOK, list{Items: items})
 }
 
 func (c *Controller) handleBlockAccount(w http.ResponseWriter, r *http.Request, who caller) {
@@ -187,7 +188,7 @@ func (c *Controller) handleBlockAccount(w http.ResponseWriter, r *http.Request, 
 	}
 	t := adminTransition(who, key, "account.block", subject, sql.NullInt64{}, request)
 	body, status := c.changeBlock(r.Context(), t, request.Reason)
-	writeJSON(w, status, body)
+	pipeline.WriteJSON(w, status, body)
 }
 
 func (c *Controller) handleUnblockAccount(w http.ResponseWriter, r *http.Request, who caller) {
@@ -205,7 +206,7 @@ func (c *Controller) handleUnblockAccount(w http.ResponseWriter, r *http.Request
 	}
 	t := adminTransition(who, key, "account.unblock", subject, sql.NullInt64{}, nil)
 	body, status := c.changeBlock(r.Context(), t, "")
-	writeJSON(w, status, body)
+	pipeline.WriteJSON(w, status, body)
 }
 
 func (c *Controller) changeBlock(ctx context.Context, t store.TransitionRecord, reason string) (json.RawMessage, int) {
@@ -265,5 +266,5 @@ func (c *Controller) handleAdministrators(w http.ResponseWriter, r *http.Request
 	for _, entry := range entries {
 		items = append(items, view{Name: entry.Name, Permissions: entry.Permissions.Names(), Status: entry.Status})
 	}
-	writeJSON(w, http.StatusOK, list{Items: items})
+	pipeline.WriteJSON(w, http.StatusOK, list{Items: items})
 }

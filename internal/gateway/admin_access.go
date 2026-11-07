@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/compile"
+	"github.com/Alex-Zechariah-02/apiward/internal/pipeline"
 	"github.com/Alex-Zechariah-02/apiward/internal/policy"
 )
 
@@ -82,7 +83,7 @@ func (c *Controller) handleAccessCheck(w http.ResponseWriter, r *http.Request, w
 		_, found := (*blocked)[*check.Subject]
 		return found
 	})
-	writeJSON(w, http.StatusOK, newAccessAnswer(decision, g.ID, check.Candidate))
+	pipeline.WriteJSON(w, http.StatusOK, newAccessAnswer(decision, g.ID, check.Candidate))
 }
 
 // newAccessAnswer puts a decision in the Admin API's answer form, where an

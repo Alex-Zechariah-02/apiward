@@ -107,7 +107,7 @@ func TestExpiredOverrideAdmitsNothing(t *testing.T) {
 	harness := e.mustLogin(harnessAdmin, harnessPassword)
 
 	o := e.mustOverride(harness, permitOverride(store.OverrideException, "READER", "write-a", 2), `"r1"`, "late-timer-traffic")
-	bobToken := "Bearer " + issuer.tokenFor(t, "bob")
+	bobToken := "Bearer " + issuer.TokenFor(t, "bob")
 	e.resetReceivers()
 	var admittedBefore, refusedAfter, refusedStraddling, baseAfter int
 	for time.Now().Before(o.Expires.Add(1500 * time.Millisecond)) {

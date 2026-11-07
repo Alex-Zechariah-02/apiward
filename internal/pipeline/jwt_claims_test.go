@@ -1,6 +1,6 @@
 // JWT claim profile, time boundaries and ambiguous encodings.
 
-package gateway
+package pipeline
 
 import (
 	"strings"
@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/policy"
+	"github.com/Alex-Zechariah-02/apiward/internal/testissuer"
 )
 
 func TestClaimProfile(t *testing.T) {
@@ -22,24 +23,24 @@ func TestClaimProfile(t *testing.T) {
 		{"no iss", claimsAt(map[string]any{"iss": nil}), "invalid_claims"},
 		{"no aud", claimsAt(map[string]any{"aud": nil}), "invalid_claims"},
 		{"neither iss nor aud", claimsAt(map[string]any{"iss": nil, "aud": nil}), "invalid_claims"},
-		{"aud array naming this gateway", claimsAt(map[string]any{"aud": []string{"other", testAudience}}), ""},
+		{"aud array naming this gateway", claimsAt(map[string]any{"aud": []string{"other", testissuer.Audience}}), ""},
 		{"roles are asserted and other permission claims are ignored", claimsAt(map[string]any{"roles": []string{"ADMIN"}, "role": "MANAGER", "scope": "admin"}), ""},
 		{"iat, jti and unknown claims are ignored", claimsAt(map[string]any{"iat": "yesterday", "jti": 5, "x": []any{}}), ""},
 
 		{"wrong iss", claimsAt(map[string]any{"iss": "https://other.test"}), "wrong_issuer"},
-		{"iss with a trailing slash", claimsAt(map[string]any{"iss": testIssuerName + "/"}), "wrong_issuer"},
-		{"iss in another case", claimsAt(map[string]any{"iss": strings.ToUpper(testIssuerName)}), "wrong_issuer"},
+		{"iss with a trailing slash", claimsAt(map[string]any{"iss": testissuer.Name + "/"}), "wrong_issuer"},
+		{"iss in another case", claimsAt(map[string]any{"iss": strings.ToUpper(testissuer.Name)}), "wrong_issuer"},
 		{"empty iss", claimsAt(map[string]any{"iss": ""}), "wrong_issuer"},
 		{"iss not a string", claimsAt(map[string]any{"iss": 1}), "invalid_claims"},
-		{"iss array", claimsAt(map[string]any{"iss": []string{testIssuerName}}), "invalid_claims"},
+		{"iss array", claimsAt(map[string]any{"iss": []string{testissuer.Name}}), "invalid_claims"},
 
 		{"aud for another recipient", claimsAt(map[string]any{"aud": "other-gateway"}), "wrong_audience"},
 		{"aud array without this gateway", claimsAt(map[string]any{"aud": []string{"a", "b"}}), "wrong_audience"},
 		{"empty aud array", claimsAt(map[string]any{"aud": []string{}}), "wrong_audience"},
 		{"aud not a string", claimsAt(map[string]any{"aud": 1}), "invalid_claims"},
-		{"aud array with a number", claimsAt(map[string]any{"aud": []any{testAudience, 1}}), "invalid_claims"},
-		{"aud array with null", claimsAt(map[string]any{"aud": []any{testAudience, nil}}), "invalid_claims"},
-		{"aud object", claimsAt(map[string]any{"aud": map[string]any{"aud": testAudience}}), "invalid_claims"},
+		{"aud array with a number", claimsAt(map[string]any{"aud": []any{testissuer.Audience, 1}}), "invalid_claims"},
+		{"aud array with null", claimsAt(map[string]any{"aud": []any{testissuer.Audience, nil}}), "invalid_claims"},
+		{"aud object", claimsAt(map[string]any{"aud": map[string]any{"aud": testissuer.Audience}}), "invalid_claims"},
 
 		{"no sub", claimsAt(map[string]any{"sub": nil}), "invalid_claims"},
 		{"empty sub", claimsAt(map[string]any{"sub": ""}), "invalid_claims"},
@@ -71,7 +72,7 @@ func TestClaimProfile(t *testing.T) {
 		{"exp zero", claimsAt(map[string]any{"exp": 0}), "expired"},
 	}
 	for _, tc := range cases {
-		subject, reason := v.verify(issuer.token(t, tc.claims), fixedNow)
+		subject, reason := v.verify(issuer.Token(t, tc.claims), fixedNow)
 		if reason != tc.reason {
 			t.Errorf("%s: subject %q reason %q, want reason %q", tc.name, subject, reason, tc.reason)
 		}
@@ -85,7 +86,7 @@ func TestClaimProfile(t *testing.T) {
 func TestFractionalTimeBoundary(t *testing.T) {
 	v := testVerifier(t)
 	expires := time.Unix(fixedNow.Unix(), 500_000_000)
-	token := issuer.signRaw(`{"alg":"RS256","kid":"test-a"}`, `{"iss":"https://issuer.test","aud":"gateway.test","sub":"staff-01","exp":1800000000.5,"nbf":1800000000.25}`)
+	token := issuer.SignRaw(`{"alg":"RS256","kid":"test-a"}`, `{"iss":"https://issuer.test","aud":"gateway.test","sub":"staff-01","exp":1800000000.5,"nbf":1800000000.25}`)
 	checks := []struct {
 		at     time.Time
 		reason string
@@ -115,7 +116,7 @@ func TestAmbiguousClaimEncodings(t *testing.T) {
 	}{
 		{"repeated sub", `{"sub":"cust-001","sub":"staff-01","exp":` + exp + `}`, "invalid_claims"},
 		{"repeated exp", `{"sub":"staff-01","exp":1,"exp":` + exp + `}`, "invalid_claims"},
-		{"repeated iss", `{"sub":"staff-01","exp":` + exp + `,"iss":"x","iss":"` + testIssuerName + `"}`, "invalid_claims"},
+		{"repeated iss", `{"sub":"staff-01","exp":` + exp + `,"iss":"x","iss":"` + testissuer.Name + `"}`, "invalid_claims"},
 		{"repeated member inside an ignored claim", `{"sub":"staff-01","exp":` + exp + `,"x":{"a":1,"a":2}}`, "invalid_claims"},
 		{"sub only in another case", `{"SUB":"staff-01","exp":` + exp + `}`, "invalid_claims"},
 		{"case variant beside sub", `{"Sub":"mgr-01","sub":"staff-01","exp":` + exp + `}`, ""},
@@ -147,7 +148,7 @@ func TestAmbiguousClaimEncodings(t *testing.T) {
 				payload = `{"aud":"gateway.test",` + payload[1:]
 			}
 		}
-		_, reason := v.verify(issuer.signRaw(`{"alg":"RS256","kid":"test-a"}`, payload), fixedNow)
+		_, reason := v.verify(issuer.SignRaw(`{"alg":"RS256","kid":"test-a"}`, payload), fixedNow)
 		if reason != tc.reason {
 			t.Errorf("%s: reason %q, want %q", tc.name, reason, tc.reason)
 		}

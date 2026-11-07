@@ -9,6 +9,7 @@ import (
 	"strconv"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/monitor"
+	"github.com/Alex-Zechariah-02/apiward/internal/pipeline"
 )
 
 // handleSecurityLog searches the request records in the active and rotated
@@ -72,7 +73,7 @@ func (c *Controller) handleSecurityLog(w http.ResponseWriter, r *http.Request, w
 	if format == "json" {
 		w.Header().Set("Content-Disposition", `attachment; filename="security-log.json"`)
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
+	pipeline.WriteJSON(w, http.StatusOK, map[string]any{
 		"items":            result.Items,
 		"next":             next,
 		"complete":         next == nil,

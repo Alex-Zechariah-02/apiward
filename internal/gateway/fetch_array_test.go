@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/compile"
+	"github.com/Alex-Zechariah-02/apiward/internal/pipeline"
 	"github.com/Alex-Zechariah-02/apiward/internal/policy"
 )
 
@@ -84,7 +85,7 @@ func TestFetchArraySchemas(t *testing.T) {
 			if reason != "" {
 				t.Fatal(reason)
 			}
-			if got := validateRequest(nil, document, operation) == ""; got != tc.ok {
+			if got := pipeline.ValidateRequest(nil, document, operation) == ""; got != tc.ok {
 				t.Errorf("wrapped=%t body %s: valid=%t, want %t", wrapped, body, got, tc.ok)
 			}
 		}

@@ -1,4 +1,7 @@
-package gateway
+// The test issuer: an RS256 key held in memory, the claims tests use and the
+// tokens, well-formed or deliberately broken, signed with it.
+
+package testissuer
 
 import (
 	"crypto"
@@ -21,24 +24,28 @@ import (
 // generated in memory for each run and never written anywhere: the gateway
 // receives only the public key, through a file in the test environment.
 const (
-	testIssuerName = "https://issuer.test"
-	testAudience   = "gateway.test"
+	Name     = "https://issuer.test"
+	Audience = "gateway.test"
 )
 
-type testIssuer struct {
+type Issuer struct {
 	key *rsa.PrivateKey
 }
 
-func newTestIssuer(bits int) *testIssuer {
+// Key is the signing key, for tests that write it in a form the
+// gateway must refuse.
+func (i *Issuer) Key() *rsa.PrivateKey { return i.key }
+
+func New(bits int) *Issuer {
 	key, err := rsa.GenerateKey(rand.Reader, bits)
 	if err != nil {
 		panic(err)
 	}
-	return &testIssuer{key: key}
+	return &Issuer{key: key}
 }
 
-// publicPEM is the verification key in the form the gateway accepts.
-func (i *testIssuer) publicPEM() []byte {
+// PublicPEM is the verification key in the form the gateway accepts.
+func (i *Issuer) PublicPEM() []byte {
 	der, err := x509.MarshalPKIXPublicKey(&i.key.PublicKey)
 	if err != nil {
 		panic(err)
@@ -46,9 +53,9 @@ func (i *testIssuer) publicPEM() []byte {
 	return pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: der})
 }
 
-// changed returns a copy of base with changes applied; a nil value removes
+// Changed returns a copy of base with changes applied; a nil value removes
 // that member.
-func changed(base, changes map[string]any) map[string]any {
+func Changed(base, changes map[string]any) map[string]any {
 	result := maps.Clone(base)
 	for name, value := range changes {
 		if value == nil {
@@ -60,23 +67,23 @@ func changed(base, changes map[string]any) map[string]any {
 	return result
 }
 
-// validClaims is a claim set the gateway accepts for subject, valid for ten
+// ValidClaims is a claim set the gateway accepts for subject, valid for ten
 // minutes from now.
-func validClaims(subject string) map[string]any {
+func ValidClaims(subject string) map[string]any {
 	now := time.Now()
 	return map[string]any{
 		"sub":   subject,
-		"iss":   testIssuerName,
-		"aud":   testAudience,
+		"iss":   Name,
+		"aud":   Audience,
 		"iat":   now.Unix(),
 		"exp":   now.Add(10 * time.Minute).Unix(),
-		"roles": testRoles(subject),
+		"roles": Roles(subject),
 	}
 }
 
 // The isolated test issuer's account catalogue is independent of gateway
 // policies. Tests changing assertions sign an explicit roles claim instead.
-func testRoles(subject string) []string {
+func Roles(subject string) []string {
 	switch subject {
 	case "alice":
 		return []string{"WRITER"}
@@ -105,8 +112,8 @@ type Subject struct {
 	Roles  []string `json:"roles"`
 }
 
-// token signs claims with go-jose's own signer, as an ordinary issuer would.
-func (i *testIssuer) token(t testing.TB, claims map[string]any) string {
+// Token signs claims with go-jose's own signer, as an ordinary issuer would.
+func (i *Issuer) Token(t testing.TB, claims map[string]any) string {
 	t.Helper()
 	signer, err := jose.NewSigner(jose.SigningKey{Algorithm: jose.RS256, Key: i.key}, (&jose.SignerOptions{}).WithType("JWT").WithHeader("kid", "test-a"))
 	if err != nil {
@@ -124,17 +131,17 @@ func (i *testIssuer) token(t testing.TB, claims map[string]any) string {
 	return compact
 }
 
-// tokenFor is a valid token for subject.
-func (i *testIssuer) tokenFor(t testing.TB, subject string) string {
+// TokenFor is a valid token for subject.
+func (i *Issuer) TokenFor(t testing.TB, subject string) string {
 	t.Helper()
-	return i.token(t, validClaims(subject))
+	return i.Token(t, ValidClaims(subject))
 }
 
-// signRaw signs a hand-written header and payload with RS256, so tests can
+// SignRaw signs a hand-written header and payload with RS256, so tests can
 // produce tokens that no well-behaved signer would: repeated members, wrong
 // claim types, unusual headers.
-func (i *testIssuer) signRaw(header, payload string) string {
-	input := encodeSegment(header) + "." + encodeSegment(payload)
+func (i *Issuer) SignRaw(header, payload string) string {
+	input := EncodeSegment(header) + "." + EncodeSegment(payload)
 	digest := sha256.Sum256([]byte(input))
 	signature, err := rsa.SignPKCS1v15(rand.Reader, i.key, crypto.SHA256, digest[:])
 	if err != nil {
@@ -143,19 +150,19 @@ func (i *testIssuer) signRaw(header, payload string) string {
 	return input + "." + base64.RawURLEncoding.EncodeToString(signature)
 }
 
-// hmacToken signs with HS256, using secret as the HMAC key. With the
+// HMACToken signs with HS256, using secret as the HMAC key. With the
 // gateway's public key bytes as the secret this is the classic RSA/HMAC
 // confusion attack.
-func hmacToken(secret []byte, payload string) string {
-	input := encodeSegment(`{"alg":"HS256","typ":"JWT"}`) + "." + encodeSegment(payload)
+func HMACToken(secret []byte, payload string) string {
+	input := EncodeSegment(`{"alg":"HS256","typ":"JWT"}`) + "." + EncodeSegment(payload)
 	mac := hmac.New(sha256.New, secret)
 	mac.Write([]byte(input))
 	return input + "." + base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
 }
 
-func encodeSegment(s string) string { return base64.RawURLEncoding.EncodeToString([]byte(s)) }
+func EncodeSegment(s string) string { return base64.RawURLEncoding.EncodeToString([]byte(s)) }
 
-func claimsJSON(claims map[string]any) string {
+func ClaimsJSON(claims map[string]any) string {
 	data, _ := json.Marshal(claims)
 	return string(data)
 }

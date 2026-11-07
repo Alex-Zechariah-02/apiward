@@ -26,7 +26,7 @@ func TestMembershipRemovalDuringRequest(t *testing.T) {
 	e.start(binaries.fault, "GATEWAY_HOLD_PATH=/a/item", "GATEWAY_HOLD_FILE="+holdFile, "GATEWAY_HOLD_RELEASE="+release)
 	admin := e.mustLogin(harnessAdmin, harnessPassword)
 	before := e.status()
-	conn, captured := holdRequest(t, e, holdFile, issuer.tokenFor(t, "alice"))
+	conn, captured := holdRequest(t, e, holdFile, issuer.TokenFor(t, "alice"))
 	defer conn.Close()
 	if captured != before.Generation {
 		t.Fatalf("captured %s", captured)
@@ -68,7 +68,7 @@ func TestMembershipChangesUnderLoad(t *testing.T) {
 	e.start(binaries.plain)
 	writer, reader := e.mustLogin(harnessAdmin, harnessPassword), e.mustLogin(harnessAdmin, harnessPassword)
 	generation := e.status().Generation
-	token := issuer.tokenFor(t, "bob")
+	token := issuer.TokenFor(t, "bob")
 	stop := make(chan struct{})
 	var unexpected, reads atomic.Int64
 	var wg sync.WaitGroup

@@ -12,6 +12,7 @@ import (
 	"strconv"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/compile"
+	"github.com/Alex-Zechariah-02/apiward/internal/pipeline"
 	"github.com/Alex-Zechariah-02/apiward/internal/policy"
 	"github.com/Alex-Zechariah-02/apiward/internal/store"
 )
@@ -46,7 +47,7 @@ func (c *Controller) handleCandidates(w http.ResponseWriter, r *http.Request, wh
 	if len(records) == limit {
 		result.Next = strconv.FormatInt(records[len(records)-1].ID, 10)
 	}
-	writeJSON(w, http.StatusOK, result)
+	pipeline.WriteJSON(w, http.StatusOK, result)
 }
 
 func (c *Controller) handleCandidate(w http.ResponseWriter, r *http.Request, who caller) {
@@ -61,7 +62,7 @@ func (c *Controller) handleCandidate(w http.ResponseWriter, r *http.Request, who
 	case !found:
 		adminError(w, http.StatusNotFound, "not_found", "")
 	default:
-		writeJSON(w, http.StatusOK, candidateView{CandidateRecord: record, Document: record.Document})
+		pipeline.WriteJSON(w, http.StatusOK, candidateView{CandidateRecord: record, Document: record.Document})
 	}
 }
 
@@ -90,17 +91,17 @@ func (c *Controller) handlePostCandidate(w http.ResponseWriter, r *http.Request,
 	t := adminTransition(who, key, "candidate.create", "candidate", expected, compact.String())
 	outcome, status := c.StageCandidate(r.Context(), t, body.Policy)
 	if status != http.StatusOK {
-		writeJSON(w, status, outcome)
+		pipeline.WriteJSON(w, status, outcome)
 		return
 	}
 	record, _, err := c.store.Candidate(r.Context(), outcome.Candidate)
 	if err != nil {
 		c.logger.Error("reading committed candidate", "error", err)
 		outcome.Reason = "STORE_ERROR"
-		writeJSON(w, http.StatusServiceUnavailable, outcome)
+		pipeline.WriteJSON(w, http.StatusServiceUnavailable, outcome)
 		return
 	}
-	writeJSON(w, http.StatusCreated, map[string]any{"receipt": outcome, "candidate": candidateView{CandidateRecord: record}})
+	pipeline.WriteJSON(w, http.StatusCreated, map[string]any{"receipt": outcome, "candidate": candidateView{CandidateRecord: record}})
 }
 
 func (c *Controller) handleWithdrawCandidate(w http.ResponseWriter, r *http.Request, who caller) {
@@ -114,7 +115,7 @@ func (c *Controller) handleWithdrawCandidate(w http.ResponseWriter, r *http.Requ
 	}
 	t := adminTransition(who, key, "candidate.withdraw", fmt.Sprintf("candidate %d", id), sql.NullInt64{}, nil)
 	outcome, status := c.WithdrawCandidate(r.Context(), t, id)
-	writeJSON(w, status, outcome)
+	pipeline.WriteJSON(w, status, outcome)
 }
 
 // handleEstablish confirms a deny-all candidate as the first base (genesis)
@@ -130,7 +131,7 @@ func (c *Controller) handleEstablish(kind string) adminHandler {
 			return
 		}
 		outcome, status := c.EstablishBase(r.Context(), kind, who.admin.Name, body.Candidate, body.Checksum)
-		writeJSON(w, status, outcome)
+		pipeline.WriteJSON(w, status, outcome)
 	}
 }
 
@@ -220,7 +221,7 @@ func (c *Controller) handleProvisional(w http.ResponseWriter, r *http.Request, w
 	if g := c.current.Load(); g != nil && g.Revision == a.Provisional {
 		view["generation"] = g.ID
 	}
-	writeJSON(w, http.StatusOK, view)
+	pipeline.WriteJSON(w, http.StatusOK, view)
 }
 
 func (c *Controller) storedPolicy(ctx context.Context, id int64) (policy.Policy, error) {
@@ -253,5 +254,5 @@ func (c *Controller) handleActivations(w http.ResponseWriter, r *http.Request, w
 	if len(items) == limit {
 		result.Next = strconv.FormatInt(items[len(items)-1].Revision, 10)
 	}
-	writeJSON(w, http.StatusOK, result)
+	pipeline.WriteJSON(w, http.StatusOK, result)
 }

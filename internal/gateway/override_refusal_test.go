@@ -27,7 +27,7 @@ func TestOverrideRefusals(t *testing.T) {
 	harness := e.mustLogin(harnessAdmin, harnessPassword)
 	reader := e.mustLogin("reader", readerPassword)
 	before := e.status()
-	apiToken := issuer.tokenFor(t, "alice")
+	apiToken := issuer.TokenFor(t, "alice")
 
 	refusals := []struct {
 		name    string

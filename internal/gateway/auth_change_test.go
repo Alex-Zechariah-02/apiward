@@ -28,7 +28,7 @@ func TestRoleChangeAppliesToNewRequestsOnly(t *testing.T) {
 	holdFile, release := filepath.Join(e.dir, "hold"), filepath.Join(e.dir, "release")
 	e.start(binaries.fault, "GATEWAY_HOLD_PATH=/a/item", "GATEWAY_HOLD_FILE="+holdFile, "GATEWAY_HOLD_RELEASE="+release)
 	first := e.status().Generation
-	aliceToken, bobToken := issuer.tokenFor(t, "alice"), issuer.tokenFor(t, "bob")
+	aliceToken, bobToken := issuer.TokenFor(t, "alice"), issuer.TokenFor(t, "bob")
 
 	conn, captured := holdRequest(t, e, holdFile, aliceToken)
 	defer conn.Close()
@@ -92,7 +92,7 @@ func TestRoleSwapsUnderLoad(t *testing.T) {
 	e := newEnv(t)
 	seed(t, e.database, e.protectedPolicy(), seedOptions{})
 	e.start(binaries.fault)
-	bobToken := issuer.tokenFor(t, "bob")
+	bobToken := issuer.TokenFor(t, "bob")
 
 	// Whether bob may read /a/* under each generation.
 	permitted := map[string]bool{e.status().Generation: true}
@@ -196,7 +196,7 @@ func TestRejectedRoleChangeKeepsMembership(t *testing.T) {
 	seed(t, e.database, e.protectedPolicy(), seedOptions{})
 	e.start(binaries.fault)
 	before := e.status()
-	aliceToken := issuer.tokenFor(t, "alice")
+	aliceToken := issuer.TokenFor(t, "alice")
 
 	removal := withoutRole(e.protectedPolicy(), "WRITER")
 	invalid := e.protectedPolicy()
@@ -251,7 +251,7 @@ func TestRoleChangeSurvivesCrash(t *testing.T) {
 			e := newEnv(t)
 			seed(t, e.database, e.protectedPolicy(), seedOptions{})
 			e.start(binaries.fault, "GATEWAY_FAULT="+tc.point)
-			aliceToken, bobToken := issuer.tokenFor(t, "alice"), issuer.tokenFor(t, "bob")
+			aliceToken, bobToken := issuer.TokenFor(t, "alice"), issuer.TokenFor(t, "bob")
 
 			// Removes WRITER from policy and grants READER the write.
 			next := withoutRole(e.protectedPolicy(), "WRITER")

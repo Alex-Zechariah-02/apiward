@@ -40,7 +40,7 @@ func TestExpiredProvisionalAdmitsNothing(t *testing.T) {
 	// Traffic across the deadline. bob may write /a/item only under the
 	// candidate; no write sent at or after the deadline may be admitted.
 	_, expiring := e.provisionalFrom(harness, e.cpaCandidate(), 1, 2, "late-timer-traffic")
-	bobToken := "Bearer " + issuer.tokenFor(t, "bob")
+	bobToken := "Bearer " + issuer.TokenFor(t, "bob")
 	e.resetReceivers()
 	var admittedBefore, refusedAfter, baseAfter int
 	for time.Now().Before(expiring.Deadline.Add(1500 * time.Millisecond)) {
@@ -193,7 +193,7 @@ func TestRestartAroundDeadline(t *testing.T) {
 	e.start(binaries.plain)
 	// The very first request after the restart is decided by the base.
 	e.resetReceivers()
-	code, _ := e.request(http.MethodPost, "/a/item", "application/json", `{}`, "Authorization", "Bearer "+issuer.tokenFor(t, "bob"))
+	code, _ := e.request(http.MethodPost, "/a/item", "application/json", `{}`, "Authorization", "Bearer "+issuer.TokenFor(t, "bob"))
 	if code != http.StatusForbidden {
 		t.Fatalf("first request after restarting past the deadline: %d, want 403", code)
 	}

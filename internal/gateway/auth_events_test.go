@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/audit"
+	"github.com/Alex-Zechariah-02/apiward/internal/testissuer"
 )
 
 // Authentication and authorisation events record what actually ran, with the
@@ -27,7 +28,7 @@ func TestAuthenticationEvents(t *testing.T) {
 		status                                  int
 		stages                                  map[string]any
 	}
-	aliceToken := issuer.tokenFor(t, "alice")
+	aliceToken := issuer.TokenFor(t, "alice")
 	cases := []struct {
 		name     string
 		method   string
@@ -40,13 +41,13 @@ func TestAuthenticationEvents(t *testing.T) {
 		{"no token", http.MethodGet, "/a/x", "", "", 0, []expected{
 			{"request.rejected", "JWT", "missing_credential", "", "unauthenticated", 401, expectedStages(routed, "JWT", audit.StageReject)},
 		}},
-		{"expired token", http.MethodGet, "/a/x", "", issuer.token(t, changed(validClaims("alice"), map[string]any{"exp": time.Now().Add(-time.Minute).Unix()})), 0, []expected{
+		{"expired token", http.MethodGet, "/a/x", "", issuer.Token(t, testissuer.Changed(testissuer.ValidClaims("alice"), map[string]any{"exp": time.Now().Add(-time.Minute).Unix()})), 0, []expected{
 			{"request.rejected", "JWT", "expired", "", "unauthenticated", 401, expectedStages(routed, "JWT", audit.StageReject)},
 		}},
-		{"unknown subject", http.MethodGet, "/a/x", "", issuer.tokenFor(t, "mallory"), 0, []expected{
+		{"unknown subject", http.MethodGet, "/a/x", "", issuer.TokenFor(t, "mallory"), 0, []expected{
 			{"request.rejected", "RBAC", "no_permit", "mallory", "forbidden", 403, expectedStages(append(routed, "JWT"), "RBAC", audit.StageReject)},
 		}},
-		{"no permit", http.MethodPost, "/a/item", `{"n":1}`, issuer.tokenFor(t, "bob"), 0, []expected{
+		{"no permit", http.MethodPost, "/a/item", `{"n":1}`, issuer.TokenFor(t, "bob"), 0, []expected{
 			{"request.rejected", "RBAC", "no_permit", "bob", "forbidden", 403, expectedStages(append(routed, "JWT"), "RBAC", audit.StageReject)},
 		}},
 		{"permitted", http.MethodPost, "/a/item", `{"n":1}`, aliceToken, 1, []expected{
@@ -108,9 +109,9 @@ func TestCredentialsNeverRecorded(t *testing.T) {
 	seed(t, e.database, e.protectedPolicy(), seedOptions{})
 	e.start(binaries.plain)
 
-	valid := issuer.tokenFor(t, "alice")
-	forged := newTestIssuer(2048).tokenFor(t, "alice")
-	multiline := issuer.signRaw(`{"alg":"RS256","kid":"test-a"}`, `{"iss":"https://issuer.test","aud":"gateway.test","sub":"alice\n{\"kind\":\"forged\"}","exp":9999999999}`)
+	valid := issuer.TokenFor(t, "alice")
+	forged := testissuer.New(2048).TokenFor(t, "alice")
+	multiline := issuer.SignRaw(`{"alg":"RS256","kid":"test-a"}`, `{"iss":"https://issuer.test","aud":"gateway.test","sub":"alice\n{\"kind\":\"forged\"}","exp":9999999999}`)
 	privatePEM := "-----BEGIN PRIVATE KEY-----MIIEvQIBADANBgkqhkiG9w0BAQEFAASC-----END PRIVATE KEY-----"
 	requests := [][]string{
 		{"Authorization", "Bearer " + valid},

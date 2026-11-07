@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/Alex-Zechariah-02/apiward/internal/pipeline"
 )
 
 func TestFetchIngressDiscardsClientIdentityHeaders(t *testing.T) {
@@ -13,7 +15,7 @@ func TestFetchIngressDiscardsClientIdentityHeaders(t *testing.T) {
 		request := httptest.NewRequest(method, "http://gateway/a/x", nil)
 		request.RequestURI = "/a/x"
 		if method == "POST" {
-			request.ContentLength = defaultMaxBodyBytes + 1
+			request.ContentLength = pipeline.DefaultMaxBody + 1
 		}
 		request.Header.Set("X-Request-Id", "client-value")
 		request.Header.Set("X-Gateway-Subject", "forged")

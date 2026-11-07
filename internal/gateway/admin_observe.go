@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/monitor"
+	"github.com/Alex-Zechariah-02/apiward/internal/pipeline"
 )
 
 func knownQuery(query url.Values, names ...string) bool {
@@ -67,7 +68,7 @@ func (c *Controller) handleEvents(w http.ResponseWriter, r *http.Request, who ca
 		}
 		items = append(items, event.RequestView)
 	}
-	writeJSON(w, http.StatusOK, list{Items: items, Next: next})
+	pipeline.WriteJSON(w, http.StatusOK, list{Items: items, Next: next})
 }
 
 func (c *Controller) handleEventStream(w http.ResponseWriter, r *http.Request, who caller) {

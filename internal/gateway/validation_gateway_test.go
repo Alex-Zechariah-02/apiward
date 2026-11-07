@@ -56,8 +56,8 @@ func sha256Hex(data string) string {
 func TestValidationThroughGateway(t *testing.T) {
 	e, fixtures := newFixtureEnv(t)
 	orders, inventory := fixtures["orders"], fixtures["inventory"]
-	customer := "Authorization: Bearer " + issuer.tokenFor(t, "cust-001") + "\r\n"
-	staff := "Authorization: Bearer " + issuer.tokenFor(t, "staff-01") + "\r\n"
+	customer := "Authorization: Bearer " + issuer.TokenFor(t, "cust-001") + "\r\n"
+	staff := "Authorization: Bearer " + issuer.TokenFor(t, "staff-01") + "\r\n"
 
 	request := func(method, path, credential, headers, body string) string {
 		return fmt.Sprintf("%s %s HTTP/1.1\r\nHost: gw\r\nConnection: close\r\n%s%sContent-Length: %d\r\n\r\n%s",

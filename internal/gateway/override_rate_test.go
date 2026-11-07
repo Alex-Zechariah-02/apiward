@@ -92,7 +92,7 @@ func TestRateOverrideKeepsCounters(t *testing.T) {
 	var mu sync.Mutex
 	admitted := 0
 	start := make(chan struct{})
-	token := "Bearer " + issuer.tokenFor(t, "alice")
+	token := "Bearer " + issuer.TokenFor(t, "alice")
 	for range 20 {
 		wg.Go(func() {
 			<-start

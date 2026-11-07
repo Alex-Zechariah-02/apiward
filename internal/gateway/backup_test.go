@@ -145,7 +145,7 @@ func TestBackupIncludesWALAndRestoresElsewhere(t *testing.T) {
 	if health := other.health(); health != store.ModeRecovery {
 		t.Fatalf("health %q", health)
 	}
-	carol := issuer.tokenFor(t, "carol")
+	carol := issuer.TokenFor(t, "carol")
 	if code, _ := other.get("/a/x", "Authorization", "Bearer "+carol); code != http.StatusServiceUnavailable {
 		t.Fatalf("restored subject before the recovery base: %d", code)
 	}
@@ -230,7 +230,7 @@ func TestBackupRefusalsAndInterruption(t *testing.T) {
 		t.Fatalf("live mode %q", mode)
 	}
 	e.start(binaries.plain)
-	if code, _ := e.get("/a/x", "Authorization", "Bearer "+issuer.tokenFor(t, "alice")); code != http.StatusOK {
+	if code, _ := e.get("/a/x", "Authorization", "Bearer "+issuer.TokenFor(t, "alice")); code != http.StatusOK {
 		t.Fatalf("live gateway after the backup failures: %d", code)
 	}
 }

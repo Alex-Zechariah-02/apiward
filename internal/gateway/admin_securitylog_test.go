@@ -31,7 +31,7 @@ func TestAdminSecurityLog(t *testing.T) {
 	seed(t, e.database, e.protectedPolicy(), seedOptions{})
 	e.start(binaries.plain)
 	admin := e.mustLogin(harnessAdmin, harnessPassword)
-	resp, _ := e.exchange("GET", "/a/x", "", "", "Authorization", "Bearer "+issuer.tokenFor(t, "bob"))
+	resp, _ := e.exchange("GET", "/a/x", "", "", "Authorization", "Bearer "+issuer.TokenFor(t, "bob"))
 	ref := resp.Header.Get("X-Request-Id")
 	e.get("/a/x")
 	var page struct {

@@ -57,7 +57,7 @@ func TestAdminInputBounds(t *testing.T) {
 
 	// Secret-looking input is neither echoed nor recorded.
 	privateKey := "-----BEGIN PRIVATE KEY-----MIIEvQIBADANBgkqhkiG9w0BAQEFAASC-----END PRIVATE KEY-----"
-	token := issuer.tokenFor(t, "alice")
+	token := issuer.TokenFor(t, "alice")
 	if code := put("/admin/blocked-accounts/x", `{"status":"active","roles":[],"key":"`+privateKey+`"}`); code != http.StatusBadRequest {
 		t.Errorf("unknown field holding a key: %d", code)
 	}

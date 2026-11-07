@@ -11,6 +11,7 @@ import (
 
 	"github.com/Alex-Zechariah-02/apiward/internal/compile"
 	"github.com/Alex-Zechariah-02/apiward/internal/monitor"
+	"github.com/Alex-Zechariah-02/apiward/internal/pipeline"
 )
 
 // handleAdvice answers the configuration warnings and unused permissions for
@@ -44,7 +45,7 @@ func (c *Controller) handleAdvice(w http.ResponseWriter, r *http.Request, who ca
 		adminError(w, http.StatusServiceUnavailable, "gateway_unavailable", "")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
+	pipeline.WriteJSON(w, http.StatusOK, map[string]any{
 		"rules":          monitor.AdviceRules,
 		"generation":     g.ID,
 		"candidate":      candidate,
@@ -67,9 +68,9 @@ func (c *Controller) handleAlerts(w http.ResponseWriter, r *http.Request, who ca
 	if active, activeLimit, files, filesLimit := c.audit.Usage(); files >= filesLimit && float64(active) >= monitor.NearlyFull*float64(activeLimit) {
 		items = append(items, monitor.Finding{ID: "A3", Severity: "high", Object: "security_log", Message: "The security log is nearly full. Move earlier log files to an archive before it fills, or the gateway will stop accepting requests."})
 	}
-	if float64(c.limiter.size()) >= monitor.NearlyFull*float64(c.limiter.capacity) {
+	if float64(c.limiter.Size()) >= monitor.NearlyFull*float64(c.limiter.Capacity()) {
 		items = append(items, monitor.Finding{ID: "A4", Severity: "medium", Object: "rate_counters", Message: "Rate limit counters are nearly full. When they run out, requests that need a new counter are refused."})
 	}
 	monitor.SortFindings(items)
-	writeJSON(w, http.StatusOK, map[string]any{"rules": monitor.AdviceRules, "evaluated_at": now.UTC(), "alerts": items})
+	pipeline.WriteJSON(w, http.StatusOK, map[string]any{"rules": monitor.AdviceRules, "evaluated_at": now.UTC(), "alerts": items})
 }

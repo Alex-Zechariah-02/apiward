@@ -13,6 +13,7 @@ import (
 
 	"github.com/Alex-Zechariah-02/apiward/internal/policy"
 	"github.com/Alex-Zechariah-02/apiward/internal/store"
+	"github.com/Alex-Zechariah-02/apiward/internal/testissuer"
 )
 
 // The five controls run in the native process as in the shared enforcement
@@ -37,13 +38,13 @@ func TestNativeGatewayEnforcesControls(t *testing.T) {
 	generation := e.status().Generation
 
 	token := func(claims map[string]any) []string {
-		return []string{"Authorization", "Bearer " + issuer.token(t, claims)}
+		return []string{"Authorization", "Bearer " + issuer.Token(t, claims)}
 	}
-	expired, foreign, claimed := validClaims("alice"), validClaims("alice"), validClaims("mallory")
+	expired, foreign, claimed := testissuer.ValidClaims("alice"), testissuer.ValidClaims("alice"), testissuer.ValidClaims("mallory")
 	expired["exp"] = time.Now().Add(-time.Minute).Unix()
 	foreign["iss"] = "another-issuer"
 	claimed["roles"] = []string{"UNKNOWN"}
-	altered := issuer.tokenFor(t, "alice")
+	altered := issuer.TokenFor(t, "alice")
 	altered = altered[:len(altered)-6] + "AAAAAA"
 	asAlice := append(bearer(t, "alice"), "X-Mode", "fast")
 

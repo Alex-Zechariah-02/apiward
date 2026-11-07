@@ -1,6 +1,6 @@
 // Hop-by-hop and untrusted header removal.
 
-package gateway
+package pipeline
 
 import (
 	"net/http"
@@ -28,13 +28,13 @@ func connectionNames(header http.Header) []string {
 	return names
 }
 
-// stripUntrustedHeaders removes headers that only the gateway may set, and the
+// StripUntrusted removes headers that only the gateway may set, and the
 // client credential, which upstreams do not receive. It also removes every
 // header whose name holds '_' or '.': an upstream that maps header names to
 // CGI-style variables folds those characters and '-' alike, so such a name
 // could stand in for another header, a gateway header included. No header
 // schema may declare such a name.
-func stripUntrustedHeaders(header http.Header) {
+func StripUntrusted(header http.Header) {
 	for name := range header {
 		if compile.IsGatewayHeader(name) || strings.ContainsAny(name, "_.") {
 			delete(header, name)

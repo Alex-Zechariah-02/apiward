@@ -73,7 +73,7 @@ func TestCandidateStagingChangesNothingEnforced(t *testing.T) {
 	e.start(binaries.plain)
 	harness := e.mustLogin(harnessAdmin, harnessPassword)
 	before := e.status()
-	aliceToken := issuer.tokenFor(t, "alice")
+	aliceToken := issuer.TokenFor(t, "alice")
 
 	// The candidate moves API a from upstream A to upstream B.
 	moved := e.protectedPolicy()

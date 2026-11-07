@@ -12,6 +12,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/Alex-Zechariah-02/apiward/internal/testissuer"
 )
 
 // Integration tests run the real gateway binary as a separate process, so a
@@ -25,7 +27,7 @@ var binaries struct {
 
 // issuer signs the tokens of every test. Its public key is the trust anchor
 // of every test gateway unless a test configures another.
-var issuer = newTestIssuer(2048)
+var issuer = testissuer.New(2048)
 
 func TestMain(m *testing.M) {
 	dir, err := os.MkdirTemp("", "gateway-bin")
@@ -115,7 +117,7 @@ func newEnv(t *testing.T) *env {
 		b:         newReceiver(t, "B"),
 		c:         newReceiver(t, "C"),
 	}
-	if err := os.WriteFile(e.publicKey, issuer.publicPEM(), 0o600); err != nil {
+	if err := os.WriteFile(e.publicKey, issuer.PublicPEM(), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	e.writeConfig(configOptions{})

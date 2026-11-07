@@ -47,7 +47,7 @@ func TestDisconnectDuringOutcomeKeepsAudit(t *testing.T) {
 	if s := e.status(); s.AuditFailed {
 		t.Fatal("a client disconnect failed the audit log")
 	}
-	if code, _ := e.get("/a/x", "Authorization", "Bearer "+issuer.tokenFor(t, "alice")); code != http.StatusOK {
+	if code, _ := e.get("/a/x", "Authorization", "Bearer "+issuer.TokenFor(t, "alice")); code != http.StatusOK {
 		t.Fatalf("protected request after the disconnect: %d", code)
 	}
 }

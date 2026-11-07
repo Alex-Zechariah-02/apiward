@@ -16,6 +16,8 @@ import (
 	"os/signal"
 	"sync"
 	"syscall"
+
+	"github.com/Alex-Zechariah-02/apiward/internal/pipeline"
 )
 
 // Exit statuses of the native run command.
@@ -87,7 +89,7 @@ func Main(args []string) int {
 		err = cfg.controller.check()
 	}
 	if err == nil {
-		_, err = loadVerifier(cfg.controller.JWT)
+		_, err = pipeline.LoadVerifier(cfg.controller.JWT)
 	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "gateway:", err)

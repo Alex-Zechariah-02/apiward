@@ -1,6 +1,6 @@
 // Weighted sliding-window rate limiter and its counters.
 
-package gateway
+package pipeline
 
 import (
 	"container/heap"
@@ -97,9 +97,9 @@ const (
 	rateNoCapacity
 )
 
-// limiter holds the counters of every rate rule on this gateway node. One
+// Limiter holds the counters of every rate rule on this gateway node. One
 // mutex makes each check and increment a single atomic decision.
-type limiter struct {
+type Limiter struct {
 	mu         sync.Mutex
 	counters   map[counterKey]*counter
 	expiry     expiryQueue // the same counters, earliest removable first
@@ -107,15 +107,15 @@ type limiter struct {
 	capacity   int
 }
 
-func newLimiter() *limiter {
-	return &limiter{counters: map[counterKey]*counter{}, capacity: compile.MaxCounters}
+func NewLimiter() *Limiter {
+	return &Limiter{counters: map[counterKey]*counter{}, capacity: compile.MaxCounters}
 }
 
 // admit applies the rule at now (Unix milliseconds): with C requests admitted
 // in the current bucket, P in the previous one and offset d into the current
 // bucket, the request is admitted when C + P*(W-d)/W + 1 <= N, and only an
 // admitted request is counted.
-func (l *limiter) admit(key counterKey, rule *compile.RateRule, now int64) rateDecision {
+func (l *Limiter) admit(key counterKey, rule *compile.RateRule, now int64) rateDecision {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
@@ -159,18 +159,21 @@ func (l *limiter) admit(key counterKey, rule *compile.RateRule, now int64) rateD
 // sweep removes counters whose current and previous buckets have both ended.
 // Their estimate is zero, so removing them never changes a decision. It visits
 // only the counters it removes, so a full table of live counters costs no scan.
-func (l *limiter) sweep(now int64) {
+func (l *Limiter) sweep(now int64) {
 	for len(l.expiry) > 0 && l.expiry[0].removable() <= now {
 		c := heap.Pop(&l.expiry).(*counter)
 		delete(l.counters, c.key)
 	}
 }
 
-// rateClock reads limiter time: a wall-clock anchor taken once plus the
+// Clock reads limiter time: a wall-clock anchor taken once plus the
 // monotonic time elapsed since, so wall-clock steps do not move it.
-type rateClock struct{ anchor time.Time }
+type Clock struct{ anchor time.Time }
 
-func (c rateClock) now() int64 {
+// NewClock anchors limiter time at the wall clock now.
+func NewClock() Clock { return Clock{anchor: time.Now()} }
+
+func (c Clock) now() int64 {
 	if ms, ok := fault.RateClockFault(); ok {
 		return ms
 	}
@@ -207,7 +210,7 @@ func (h *Handler) admitRate(q *request, stage int, key counterKey, rule *compile
 		q.reject(stage, http.StatusBadRequest, "bad_request")
 		return false
 	}
-	switch h.controller.limiter.admit(key, rule, h.controller.clock.now()) {
+	switch h.Limiter.admit(key, rule, h.clock.now()) {
 	case rateExceeded:
 		q.event.Reason = "quota_exceeded"
 		q.reject(stage, http.StatusTooManyRequests, "rate_limited")
@@ -221,8 +224,11 @@ func (h *Handler) admitRate(q *request, stage int, key counterKey, rule *compile
 }
 
 // size returns the number of counters held.
-func (l *limiter) size() int {
+func (l *Limiter) Size() int {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	return len(l.counters)
 }
+
+// ceiling returns the most counters the limiter holds.
+func (l *Limiter) Capacity() int { return l.capacity }

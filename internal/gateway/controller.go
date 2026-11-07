@@ -18,6 +18,7 @@ import (
 	"github.com/Alex-Zechariah-02/apiward/internal/audit"
 	"github.com/Alex-Zechariah-02/apiward/internal/compile"
 	"github.com/Alex-Zechariah-02/apiward/internal/monitor"
+	"github.com/Alex-Zechariah-02/apiward/internal/pipeline"
 	"github.com/Alex-Zechariah-02/apiward/internal/session"
 	"github.com/Alex-Zechariah-02/apiward/internal/store"
 )
@@ -57,7 +58,7 @@ type Config struct {
 	AuditTimeout         time.Duration
 	AuditMaxBytes        int64
 	AuditMaxFiles        int
-	JWT                  TrustConfig
+	JWT                  pipeline.TrustConfig
 
 	// AdminUI is an optional directory of built dashboard files, served by
 	// the admin listener so the dashboard shares the Admin API's origin.
@@ -81,15 +82,15 @@ type Controller struct {
 	ui fs.FS
 
 	// Trust and account containment are published independently of policy.
-	verifier atomic.Pointer[verifier]
+	verifier atomic.Pointer[pipeline.Verifier]
 	blocked  atomic.Pointer[store.BlockedAccounts]
 	// addresses is the blocked address list; nil until read from the store.
 	addresses atomic.Pointer[store.BlockedAddresses]
 
 	// limiter holds the rate counters. They belong to the process, not to a
 	// generation, so publication never resets them; a restart does.
-	limiter      *limiter
-	clock        rateClock
+	limiter      *pipeline.Limiter
+	clock        pipeline.Clock
 	observations *monitor.Observations
 
 	// Administrator authentication state, in memory only.
@@ -153,7 +154,7 @@ func prepareController(cfg Config, logger *slog.Logger) (*Controller, error) {
 	}
 	// Without valid trust material no token can be verified, so the gateway
 	// refuses to start rather than run without authentication.
-	verifier, err := loadVerifier(cfg.JWT)
+	verifier, err := pipeline.LoadVerifier(cfg.JWT)
 	if err != nil {
 		return nil, fmt.Errorf("jwt: %w", err)
 	}
@@ -162,8 +163,8 @@ func prepareController(cfg Config, logger *slog.Logger) (*Controller, error) {
 	}
 	c := &Controller{
 		config:       cfg,
-		limiter:      newLimiter(),
-		clock:        rateClock{anchor: time.Now()},
+		limiter:      pipeline.NewLimiter(),
+		clock:        pipeline.NewClock(),
 		observations: monitor.New(),
 		sessions:     session.New(cfg.AdminIdleTimeout, cfg.AdminSessionLifetime),
 		throttle:     newThrottle(),
@@ -267,6 +268,15 @@ func (cfg *Config) applyDefaults() error {
 
 // Current returns the published generation, or nil when nothing may be served.
 func (c *Controller) Current() *compile.Generation { return c.current.Load() }
+
+// Verifier returns the published token verifier.
+func (c *Controller) Verifier() *pipeline.Verifier { return c.verifier.Load() }
+
+// Blocked returns the published blocked accounts.
+func (c *Controller) Blocked() *store.BlockedAccounts { return c.blocked.Load() }
+
+// Addresses returns the published blocked address list.
+func (c *Controller) Addresses() *store.BlockedAddresses { return c.addresses.Load() }
 
 // gauges reads the published policy revision, active temporary rules and
 // blocked accounts for the metrics listener.

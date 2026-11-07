@@ -1,6 +1,6 @@
 // Request body reading and validation against the captured rule.
 
-package gateway
+package pipeline
 
 import (
 	"bytes"
@@ -42,7 +42,7 @@ func readBody(r *http.Request, rule *compile.BodyRule, globalMaxBytes int64) (an
 	if r.ContentLength > maxBytes {
 		return nil, &rejection{http.StatusRequestEntityTooLarge, "payload_too_large", "too_large"}
 	}
-	if !isJSONMediaType(r.Header.Values("Content-Type")) {
+	if !IsJSONMediaType(r.Header.Values("Content-Type")) {
 		return nil, &rejection{http.StatusUnsupportedMediaType, "unsupported_media_type", "media_type"}
 	}
 	// The policy compiler bounds the operation's ceiling, so maxBytes+1
@@ -66,9 +66,9 @@ func readBody(r *http.Request, rule *compile.BodyRule, globalMaxBytes int64) (an
 	return document, nil
 }
 
-// isJSONMediaType accepts exactly one Content-Type field naming
+// IsJSONMediaType accepts exactly one Content-Type field naming
 // application/json, optionally with the parameter charset=utf-8.
-func isJSONMediaType(fields []string) bool {
+func IsJSONMediaType(fields []string) bool {
 	if len(fields) != 1 {
 		return false
 	}
@@ -84,10 +84,10 @@ func isJSONMediaType(fields []string) bool {
 	return true
 }
 
-// validateRequest checks the declared request headers and the decoded body
+// ValidateRequest checks the declared request headers and the decoded body
 // against the operation's schemas. It returns the rejection reason, or "".
 // Library error text can quote the input, so it is never returned.
-func validateRequest(header http.Header, document any, r *compile.Rule) string {
+func ValidateRequest(header http.Header, document any, r *compile.Rule) string {
 	// The proxy removes every field named in Connection, so a validated field
 	// named there would not reach the upstream as it was checked: a declared
 	// header, or the media type of a validated body. Such a request is refused

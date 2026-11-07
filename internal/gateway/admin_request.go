@@ -1,10 +1,9 @@
-// Admin API request decoding, preconditions, paging and JSON replies.
+// Admin API request decoding, preconditions and paging.
 
 package gateway
 
 import (
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -13,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/Alex-Zechariah-02/apiward/internal/pipeline"
 	"github.com/Alex-Zechariah-02/apiward/internal/policy"
 	"github.com/Alex-Zechariah-02/apiward/internal/store"
 )
@@ -21,7 +21,7 @@ import (
 // media type, an oversized body, repeated or non-lowercase members, unknown
 // fields and trailing data, and answers the request itself when it does.
 func decodeBody(w http.ResponseWriter, r *http.Request, limit int64, value any) bool {
-	if !isJSONMediaType(r.Header.Values("Content-Type")) {
+	if !pipeline.IsJSONMediaType(r.Header.Values("Content-Type")) {
 		adminError(w, http.StatusUnsupportedMediaType, "unsupported_media_type", "")
 		return false
 	}
@@ -132,11 +132,4 @@ func pathID(w http.ResponseWriter, r *http.Request) (int64, bool) {
 type list struct {
 	Items any    `json:"items"`
 	Next  string `json:"next,omitempty"`
-}
-
-func writeJSON(w http.ResponseWriter, status int, value any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Cache-Control", "no-store")
-	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(value)
 }

@@ -166,7 +166,7 @@ func TestBypassFromSeparateNetwork(t *testing.T) {
 	seed(t, e.database, e.protectedPolicy(), seedOptions{})
 	e.start(wslGatewayBinary)
 
-	token := issuer.tokenFor(t, "alice")
+	token := issuer.TokenFor(t, "alice")
 	if got := fromWSL(t, e.dataAddr, "/a/x", "Authorization: Bearer "+token); got != "200" {
 		t.Fatalf("positive control: WSL to gateway returned %q, want 200", got)
 	}

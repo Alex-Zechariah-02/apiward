@@ -90,7 +90,7 @@ func TestHistoricalRestoreQuarantinesProvisional(t *testing.T) {
 func (e *env) expectNothingServed() {
 	e.t.Helper()
 	e.resetReceivers()
-	bobToken := "Bearer " + issuer.tokenFor(e.t, "bob")
+	bobToken := "Bearer " + issuer.TokenFor(e.t, "bob")
 	for _, probe := range []struct{ method, path string }{{"GET", "/b/x"}, {"POST", "/a/item"}, {"GET", "/a/x"}, {"GET", "/d"}} {
 		code, _ := e.request(probe.method, probe.path, "application/json", `{}`, "Authorization", bobToken)
 		if code == http.StatusOK {
@@ -135,7 +135,7 @@ func TestRestoreSurvivesCrash(t *testing.T) {
 			if tc.health == store.ModeNormal {
 				want = http.StatusOK
 			}
-			if code, _ := e.get("/a/x", "Authorization", "Bearer "+issuer.tokenFor(t, "alice")); code != want {
+			if code, _ := e.get("/a/x", "Authorization", "Bearer "+issuer.TokenFor(t, "alice")); code != want {
 				t.Fatalf("data plane after the crash: %d, want %d", code, want)
 			}
 			if tc.point == "restore-after-promote" {

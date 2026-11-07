@@ -7,6 +7,7 @@ package gateway
 import (
 	"net/http"
 
+	"github.com/Alex-Zechariah-02/apiward/internal/pipeline"
 	"github.com/Alex-Zechariah-02/apiward/internal/policy"
 	"github.com/Alex-Zechariah-02/apiward/internal/store"
 )
@@ -23,6 +24,6 @@ func registerTestRoutes(c *Controller, mux *http.ServeMux) {
 			return
 		}
 		outcome, status := c.Publish(r.Context(), who.admin.Name, change)
-		writeJSON(w, status, outcome)
+		pipeline.WriteJSON(w, status, outcome)
 	})
 }

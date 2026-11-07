@@ -2,7 +2,7 @@
 // and the API's CORS and security headers on every answer once its
 // operation is known.
 
-package gateway
+package pipeline
 
 import (
 	"net/http"

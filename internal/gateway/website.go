@@ -10,6 +10,7 @@ import (
 
 	"github.com/Alex-Zechariah-02/apiward/internal/audit"
 	"github.com/Alex-Zechariah-02/apiward/internal/compile"
+	"github.com/Alex-Zechariah-02/apiward/internal/pipeline"
 )
 
 // dataPlane is the data-plane server's handler: enforcement for every request,
@@ -25,7 +26,7 @@ func dataPlane(enforcement http.Handler, website fs.FS) http.Handler {
 			enforcement.ServeHTTP(w, r)
 			return
 		}
-		stripUntrustedHeaders(r.Header)
+		pipeline.StripUntrusted(r.Header)
 		w.Header().Set("X-Request-Id", audit.NewRequestID())
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Cache-Control", "no-store")

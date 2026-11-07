@@ -1,14 +1,17 @@
 // Error replies and response status recording.
 
-package gateway
+package pipeline
 
-import "net/http"
+import (
+	"encoding/json"
+	"net/http"
+)
 
 // writeError answers a data-plane refusal; its JSON body is never sniffed
 // as another type.
 func writeError(w http.ResponseWriter, status int, code, requestID string) {
 	w.Header().Set("X-Content-Type-Options", "nosniff")
-	writeJSON(w, status, map[string]string{"error": code, "request_id": requestID})
+	WriteJSON(w, status, map[string]string{"error": code, "request_id": requestID})
 }
 
 // statusRecorder notes the final status the forwarder wrote, while passing
@@ -40,3 +43,11 @@ func (s *statusRecorder) Unwrap() http.ResponseWriter { return s.ResponseWriter 
 
 // Interface guard
 var _ http.Handler = (*Handler)(nil)
+
+// WriteJSON answers with value as JSON that no cache keeps.
+func WriteJSON(w http.ResponseWriter, status int, value any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(status)
+	json.NewEncoder(w).Encode(value)
+}

@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/policy"
+	"github.com/Alex-Zechariah-02/apiward/internal/testissuer"
 )
 
 func TestInvalidCandidateLeavesStateUnchanged(t *testing.T) {
@@ -59,9 +60,9 @@ func TestInvalidCandidateLeavesStateUnchanged(t *testing.T) {
 		{"profile without authentication", Change{Policy: withProfile(e.policy(e.a, true), "routing-only")}, 400, "UNSUPPORTED_FEATURE"},
 		{"profile claiming full enforcement", Change{Policy: withProfile(e.policy(e.a, true), "protected")}, 400, "UNSUPPORTED_FEATURE"},
 		{"permit for unknown role", Change{Policy: withPermit(e.policy(e.a, true), policy.Permit{Role: "ADMIN", Operation: "write-a"})}, 400, "UNKNOWN_REFERENCE"},
-		{"subject with unknown role", Change{Policy: withSubject(e.policy(e.a, true), Subject{ID: "s-1", Status: "active", Roles: []string{"ADMIN"}})}, 400, "UNKNOWN_FIELD"},
-		{"subject with unknown status", Change{Policy: withSubject(e.policy(e.a, true), Subject{ID: "s-1", Status: "suspended", Roles: []string{"STAFF"}})}, 400, "UNKNOWN_FIELD"},
-		{"subject with invalid identifier", Change{Policy: withSubject(e.policy(e.a, true), Subject{ID: "s 1", Status: "active", Roles: []string{"STAFF"}})}, 400, "UNKNOWN_FIELD"},
+		{"subject with unknown role", Change{Policy: withSubject(e.policy(e.a, true), testissuer.Subject{ID: "s-1", Status: "active", Roles: []string{"ADMIN"}})}, 400, "UNKNOWN_FIELD"},
+		{"subject with unknown status", Change{Policy: withSubject(e.policy(e.a, true), testissuer.Subject{ID: "s-1", Status: "suspended", Roles: []string{"STAFF"}})}, 400, "UNKNOWN_FIELD"},
+		{"subject with invalid identifier", Change{Policy: withSubject(e.policy(e.a, true), testissuer.Subject{ID: "s 1", Status: "active", Roles: []string{"STAFF"}})}, 400, "UNKNOWN_FIELD"},
 	}
 	for i, tc := range cases {
 		tc.change.ID = fmt.Sprintf("invalid-%d", i)
@@ -131,10 +132,10 @@ func withPermit(p policy.Policy, permit policy.Permit) json.RawMessage {
 	return mustJSON(p)
 }
 
-func withSubject(p policy.Policy, s Subject) json.RawMessage {
+func withSubject(p policy.Policy, s testissuer.Subject) json.RawMessage {
 	var document map[string]any
 	json.Unmarshal(mustJSON(p), &document)
-	document["subjects"] = []Subject{s}
+	document["subjects"] = []testissuer.Subject{s}
 	return mustJSON(document)
 }
 

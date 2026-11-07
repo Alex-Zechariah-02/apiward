@@ -26,7 +26,7 @@ import (
 func TestBodyCeilingAtFixtures(t *testing.T) {
 	fixtures := startFixtures(t)
 	orders := fixtures["orders"]
-	token := issuer.tokenFor(t, "cust-001")
+	token := issuer.TokenFor(t, "cust-001")
 	order := `{"customer":"cust-001","item":"ITM-001","quantity":1}`
 	authenticated := []string{"INGRESS", "CAPTURE", "CANONICAL", "ROUTE", "ACCESS", "JWT", "RBAC", "RATE"}
 

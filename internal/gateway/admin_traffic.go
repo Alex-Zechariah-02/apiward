@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/monitor"
+	"github.com/Alex-Zechariah-02/apiward/internal/pipeline"
 )
 
 func (c *Controller) handleTraffic(w http.ResponseWriter, r *http.Request, who caller) {
@@ -171,7 +172,7 @@ func (c *Controller) handleTraffic(w http.ResponseWriter, r *http.Request, who c
 	if oldest, dropped := c.observations.RetainedSince(); !dropped || !oldest.After(previousStart) {
 		earlier = &previous
 	}
-	writeJSON(w, http.StatusOK, struct {
+	pipeline.WriteJSON(w, http.StatusOK, struct {
 		Window      int                    `json:"window_seconds"`
 		Total       int                    `json:"total"`
 		Allowed     int                    `json:"allowed"`

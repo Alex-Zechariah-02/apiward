@@ -39,7 +39,7 @@ func TestNativeStopUnderLoad(t *testing.T) {
 	for c := range 8 {
 		wg.Go(func() {
 			client := &http.Client{Timeout: 10 * time.Second}
-			token := issuer.tokenFor(t, "alice")
+			token := issuer.TokenFor(t, "alice")
 			for i := 0; ; i++ {
 				select {
 				case <-stopped:

@@ -58,7 +58,7 @@ func TestHistoricalRestore(t *testing.T) {
 	}
 
 	e.start(binaries.plain)
-	aliceToken := issuer.tokenFor(t, "alice")
+	aliceToken := issuer.TokenFor(t, "alice")
 	if health := e.health(); health != store.ModeRecovery {
 		t.Fatalf("health %q", health)
 	}

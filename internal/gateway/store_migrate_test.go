@@ -27,7 +27,7 @@ func TestMigrateFromVersionOne(t *testing.T) {
 	if reason := e.unavailableReason(); !strings.Contains(reason, "schema version 1") || !strings.Contains(reason, "migrate") {
 		t.Fatalf("reason %q", reason)
 	}
-	if code, _ := e.get("/a/x", "Authorization", "Bearer "+issuer.tokenFor(t, "alice")); code != http.StatusServiceUnavailable {
+	if code, _ := e.get("/a/x", "Authorization", "Bearer "+issuer.TokenFor(t, "alice")); code != http.StatusServiceUnavailable {
 		t.Fatalf("data plane on a version 1 database: %d", code)
 	}
 	// A gateway that refused the database holds no lock on it, so, as for

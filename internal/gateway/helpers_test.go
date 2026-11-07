@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/compile"
+	"github.com/Alex-Zechariah-02/apiward/internal/pipeline"
 	"github.com/Alex-Zechariah-02/apiward/internal/policy"
 )
 
@@ -17,4 +18,10 @@ func quota(count, window int64) *compile.RateRule {
 		panic(fmt.Sprintf("quota(%d, %d): %v", count, window, err))
 	}
 	return rule
+}
+
+// testTrust trusts one issuer and audience with the single key "test-a" read
+// from file.
+func testTrust(issuer, audience, file string) pipeline.TrustConfig {
+	return pipeline.TrustConfig{Issuer: issuer, Audience: audience, Keys: []pipeline.VerificationKey{{Kid: "test-a", PublicKeyFile: file}}}
 }

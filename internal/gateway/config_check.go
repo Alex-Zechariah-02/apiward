@@ -11,6 +11,7 @@ import (
 
 	"github.com/Alex-Zechariah-02/apiward/internal/audit"
 	"github.com/Alex-Zechariah-02/apiward/internal/demoports"
+	"github.com/Alex-Zechariah-02/apiward/internal/pipeline"
 	"github.com/Alex-Zechariah-02/apiward/internal/policy"
 )
 
@@ -39,8 +40,8 @@ func (f nativeFile) check() (nativeConfig, error) {
 			return nativeConfig{}, fmt.Errorf("%s is required", required.name)
 		}
 	}
-	if len(g.JWT.Keys) == 0 || len(g.JWT.Keys) > maxVerificationKeys {
-		return nativeConfig{}, fmt.Errorf("gateway.jwt.keys must contain 1 to %d keys", maxVerificationKeys)
+	if len(g.JWT.Keys) == 0 || len(g.JWT.Keys) > pipeline.MaxKeys {
+		return nativeConfig{}, fmt.Errorf("gateway.jwt.keys must contain 1 to %d keys", pipeline.MaxKeys)
 	}
 	for i, key := range g.JWT.Keys {
 		if key.PublicKeyFile == "" || !filepath.IsAbs(key.PublicKeyFile) {
@@ -112,7 +113,7 @@ func (f nativeFile) check() (nativeConfig, error) {
 	if cfg.controller.AuditMaxFiles, err = numberSetting("gateway.audit_max_files", g.AuditMaxFiles, audit.DefaultAuditFiles, 2, maxAuditFiles); err != nil {
 		return nativeConfig{}, err
 	}
-	if cfg.maxBodyBytes, err = numberSetting("data.max_body_bytes", d.MaxBodyBytes, defaultMaxBodyBytes, 1, policy.MaxBodyLimit); err != nil {
+	if cfg.maxBodyBytes, err = numberSetting("data.max_body_bytes", d.MaxBodyBytes, pipeline.DefaultMaxBody, 1, policy.MaxBodyLimit); err != nil {
 		return nativeConfig{}, err
 	}
 	if cfg.headerLimit, err = numberSetting("data.max_header_bytes", d.MaxHeaderBytes, defaultHeaderBytes, minHeaderBytes, maxHeaderBytes); err != nil {

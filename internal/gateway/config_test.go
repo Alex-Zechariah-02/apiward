@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/forward"
+	"github.com/Alex-Zechariah-02/apiward/internal/pipeline"
 )
 
 // configDocument is a complete native configuration whose paths point into
@@ -25,7 +26,7 @@ func configDocument(t *testing.T, dir string, change func(settings map[string]an
 			"database":     filepath.Join(dir, "state.db"),
 			"audit_log":    filepath.Join(dir, "audit.log"),
 			"admin_listen": "127.0.0.1:9440",
-			"jwt":          map[string]any{"issuer": "issuer", "audience": "gateway", "keys": []VerificationKey{{Kid: "test-a", PublicKeyFile: filepath.Join(dir, "issuer.pem")}}},
+			"jwt":          map[string]any{"issuer": "issuer", "audience": "gateway", "keys": []pipeline.VerificationKey{{Kid: "test-a", PublicKeyFile: filepath.Join(dir, "issuer.pem")}}},
 		},
 		"data": map[string]any{"listen": "127.0.0.2:9480"},
 	}

@@ -1,4 +1,6 @@
-package gateway
+// Bounded refusal on a full counter table, and the limiter against a reference.
+
+package pipeline
 
 import (
 	"math/rand/v2"
@@ -13,7 +15,7 @@ import (
 // A full table of live counters refuses a new key without scanning every
 // counter under the lock.
 func TestFullTableRefusalIsBounded(t *testing.T) {
-	l := newLimiter()
+	l := NewLimiter()
 	rule := quota(10, 60_000)
 	now := int64(1_000_000)
 	for i := range compile.MaxCounters {
@@ -40,7 +42,7 @@ func TestLimiterMatchesReference(t *testing.T) {
 	for seed := range uint64(40) {
 		random := rand.New(rand.NewPCG(seed, 99))
 		capacity := []int{4, 16, 4096}[seed%3]
-		l, reference := newLimiter(), newReferenceLimiter()
+		l, reference := NewLimiter(), newReferenceLimiter()
 		l.capacity, reference.capacity = capacity, capacity
 		now := int64(random.IntN(5_000))
 		for step := range 6_000 {

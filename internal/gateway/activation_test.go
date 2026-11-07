@@ -111,10 +111,10 @@ func (e *env) cpaCandidate() policy.Policy {
 func (e *env) expectEnforced(candidate bool, generation string) {
 	e.t.Helper()
 	e.resetReceivers()
-	bobToken := "Bearer " + issuer.tokenFor(e.t, "bob")
+	bobToken := "Bearer " + issuer.TokenFor(e.t, "bob")
 	readB, _ := e.get("/b/x", "Authorization", bobToken)
 	writeA, _ := e.request(http.MethodPost, "/a/item", "application/json", `{"n":1}`, "Authorization", bobToken)
-	readA, _ := e.get("/a/x", "Authorization", "Bearer "+issuer.tokenFor(e.t, "alice"))
+	readA, _ := e.get("/a/x", "Authorization", "Bearer "+issuer.TokenFor(e.t, "alice"))
 
 	want := [3]int{http.StatusOK, http.StatusForbidden, http.StatusOK}
 	if candidate {
@@ -150,7 +150,7 @@ func TestRollbackRestoresConfirmedBase(t *testing.T) {
 	e.start(binaries.plain)
 	harness := e.mustLogin(harnessAdmin, harnessPassword)
 	baseGeneration := e.status().Generation
-	aliceToken := "Bearer " + issuer.tokenFor(t, "alice")
+	aliceToken := "Bearer " + issuer.TokenFor(t, "alice")
 
 	// alice uses two of her three reads under the confirmed base.
 	for range 2 {
@@ -196,7 +196,7 @@ func TestRollbackRestoresConfirmedBase(t *testing.T) {
 
 	// bob's permissions and the destination of /a are the confirmed base's.
 	e.resetReceivers()
-	bobToken := "Bearer " + issuer.tokenFor(t, "bob")
+	bobToken := "Bearer " + issuer.TokenFor(t, "bob")
 	if code, _ := e.get("/b/x", "Authorization", bobToken); code != http.StatusOK {
 		t.Fatalf("restored permission: %d", code)
 	}

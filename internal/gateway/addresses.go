@@ -1,5 +1,4 @@
-// The blocked address list: the ingress check of every data-plane request
-// and the Admin API that changes the list at once, without a policy change.
+// Admin API changes to the blocked address list.
 
 package gateway
 
@@ -14,34 +13,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Alex-Zechariah-02/apiward/internal/audit"
 	"github.com/Alex-Zechariah-02/apiward/internal/compile"
+	"github.com/Alex-Zechariah-02/apiward/internal/pipeline"
 	"github.com/Alex-Zechariah-02/apiward/internal/store"
 )
-
-// admitAddress refuses a request whose client address an active entry of
-// the blocked address list covers (403 address_blocked at INGRESS). An
-// address that does not parse is refused while any entry exists, since it
-// cannot be shown not to match. The list is unset only when the store could
-// not be opened; no policy is then published, so CAPTURE refuses the request.
-func (h *Handler) admitAddress(q *request) bool {
-	list := h.controller.addresses.Load()
-	if list == nil || len(*list) == 0 {
-		return true
-	}
-	addr, err := netip.ParseAddr(q.event.ClientAddress)
-	if err != nil {
-		q.event.Reason = "invalid_peer_address"
-		q.reject(audit.StageIngress, http.StatusBadRequest, "bad_request")
-		return false
-	}
-	if list.Blocks(addr, compile.TrustedNow()) {
-		q.event.Reason = "address_blocked"
-		q.reject(audit.StageIngress, http.StatusForbidden, "address_blocked")
-		return false
-	}
-	return true
-}
 
 func (c *Controller) handleBlockedAddresses(w http.ResponseWriter, r *http.Request, who caller) {
 	current := c.addresses.Load()
@@ -57,7 +32,7 @@ func (c *Controller) handleBlockedAddresses(w http.ResponseWriter, r *http.Reque
 		}
 	}
 	slices.SortFunc(items, func(a, b store.BlockedAddress) int { return strings.Compare(a.Range, b.Range) })
-	writeJSON(w, http.StatusOK, list{Items: items})
+	pipeline.WriteJSON(w, http.StatusOK, list{Items: items})
 }
 
 // addressRange reads the {range} path value: a CIDR range in canonical form,
@@ -101,7 +76,7 @@ func (c *Controller) handleBlockAddress(w http.ResponseWriter, r *http.Request, 
 	}
 	t := adminTransition(who, key, "address.block", prefix.String(), sql.NullInt64{}, request)
 	body, status := c.changeAddress(r.Context(), t, store.BlockedAddress{Range: prefix.String(), Prefix: prefix, Reason: request.Reason, ExpiresAt: request.ExpiresAt})
-	writeJSON(w, status, body)
+	pipeline.WriteJSON(w, status, body)
 }
 
 func (c *Controller) handleUnblockAddress(w http.ResponseWriter, r *http.Request, who caller) {
@@ -115,7 +90,7 @@ func (c *Controller) handleUnblockAddress(w http.ResponseWriter, r *http.Request
 	}
 	t := adminTransition(who, key, "address.unblock", prefix.String(), sql.NullInt64{}, nil)
 	body, status := c.changeAddress(r.Context(), t, store.BlockedAddress{Range: prefix.String(), Prefix: prefix})
-	writeJSON(w, status, body)
+	pipeline.WriteJSON(w, status, body)
 }
 
 // changeAddress blocks or unblocks one range. Expired entries are dropped

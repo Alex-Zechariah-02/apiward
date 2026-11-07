@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/policy"
+	"github.com/Alex-Zechariah-02/apiward/internal/testissuer"
 )
 
 // Simultaneous requests near the quota never admit more than the rule
@@ -27,7 +28,7 @@ func TestConcurrentRequestsThroughGateway(t *testing.T) {
 		results := map[string][2]int{}
 		var wg sync.WaitGroup
 		for _, subject := range subjects {
-			token := issuer.token(t, changed(validClaims(subject), map[string]any{"roles": []string{"READER"}}))
+			token := issuer.Token(t, testissuer.Changed(testissuer.ValidClaims(subject), map[string]any{"roles": []string{"READER"}}))
 			for range perSubject {
 				wg.Go(func() {
 					req, _ := http.NewRequest(http.MethodGet, "http://"+e.dataAddr+"/a/x", http.NoBody)

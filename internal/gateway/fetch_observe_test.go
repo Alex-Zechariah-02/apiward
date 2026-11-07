@@ -62,7 +62,7 @@ func TestFetchEventsAndTraffic(t *testing.T) {
 	seed(t, e.database, e.protectedPolicy(), seedOptions{})
 	e.start(binaries.plain)
 	admin := e.mustLogin(harnessAdmin, harnessPassword)
-	token := issuer.tokenFor(t, "alice")
+	token := issuer.TokenFor(t, "alice")
 	resp, _ := e.exchange("GET", "/a/first?password=never-record-this", "", "", "Authorization", "Bearer "+token)
 	ref := resp.Header.Get("X-Request-Id")
 	e.get("/a/second")

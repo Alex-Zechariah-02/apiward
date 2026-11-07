@@ -63,7 +63,7 @@ func TestCorruptLifecycleStateAdmitsNothing(t *testing.T) {
 			if reason := e.unavailableReason(); !strings.Contains(reason, tc.reason) {
 				t.Fatalf("recorded reason %q, want %q", reason, tc.reason)
 			}
-			bobToken := "Bearer " + issuer.tokenFor(t, "bob")
+			bobToken := "Bearer " + issuer.TokenFor(t, "bob")
 			for _, probe := range []struct{ method, path string }{{"GET", "/b/x"}, {"POST", "/a/item"}, {"GET", "/a/x"}} {
 				if code, _ := e.request(probe.method, probe.path, "application/json", `{}`, "Authorization", bobToken); code != http.StatusServiceUnavailable {
 					t.Fatalf("%s %s: %d, want 503", probe.method, probe.path, code)

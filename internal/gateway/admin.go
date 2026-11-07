@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/audit"
+	"github.com/Alex-Zechariah-02/apiward/internal/pipeline"
 	"github.com/Alex-Zechariah-02/apiward/internal/session"
 	"github.com/Alex-Zechariah-02/apiward/internal/store"
 )
@@ -252,7 +253,7 @@ func adminError(w http.ResponseWriter, status int, code, field string) {
 	if field != "" {
 		body["field"] = field
 	}
-	writeJSON(w, status, body)
+	pipeline.WriteJSON(w, status, body)
 }
 
 func (c *Controller) handleHealth(w http.ResponseWriter, r *http.Request) {
@@ -262,5 +263,5 @@ func (c *Controller) handleHealth(w http.ResponseWriter, r *http.Request) {
 	if state != store.ModeNormal && state != store.ModeBootstrap && state != store.ModeRecovery {
 		state = "unavailable"
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"state": state})
+	pipeline.WriteJSON(w, http.StatusOK, map[string]string{"state": state})
 }

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/Alex-Zechariah-02/apiward/internal/pipeline"
 	"github.com/Alex-Zechariah-02/apiward/internal/store"
 )
 
@@ -35,7 +36,7 @@ func (c *Controller) handleOverrides(w http.ResponseWriter, r *http.Request, who
 		view["generation_overrides"] = append([]int64{}, g.Overrides...)
 	}
 	w.Header().Set("ETag", policyETag(a.Confirmed))
-	writeJSON(w, http.StatusOK, view)
+	pipeline.WriteJSON(w, http.StatusOK, view)
 }
 
 func (c *Controller) handleOverride(w http.ResponseWriter, r *http.Request, who caller) {
@@ -50,7 +51,7 @@ func (c *Controller) handleOverride(w http.ResponseWriter, r *http.Request, who 
 	case !found:
 		adminError(w, http.StatusNotFound, "not_found", "")
 	default:
-		writeJSON(w, http.StatusOK, o)
+		pipeline.WriteJSON(w, http.StatusOK, o)
 	}
 }
 
@@ -73,7 +74,7 @@ func (c *Controller) handleOverrideHistory(w http.ResponseWriter, r *http.Reques
 	if len(items) == limit {
 		result.Next = strconv.FormatInt(items[len(items)-1].ID, 10)
 	}
-	writeJSON(w, http.StatusOK, result)
+	pipeline.WriteJSON(w, http.StatusOK, result)
 }
 
 // handleValidateOverride answers whether a proposed override would be
@@ -88,7 +89,7 @@ func (c *Controller) handleValidateOverride(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	outcome, status := c.ValidateOverride(r.Context(), who.admin.Name, expected.Int64, request)
-	writeJSON(w, status, outcome)
+	pipeline.WriteJSON(w, status, outcome)
 }
 
 // handleCreateOverride creates a temporary override of the confirmed base.
@@ -117,7 +118,7 @@ func (c *Controller) handleCreateOverride(w http.ResponseWriter, r *http.Request
 			w.Header().Set("ETag", policyETag(a.Confirmed))
 		}
 	}
-	writeJSON(w, status, outcome)
+	pipeline.WriteJSON(w, status, outcome)
 }
 
 // handleRevokeOverride ends one active override.
@@ -132,5 +133,5 @@ func (c *Controller) handleRevokeOverride(w http.ResponseWriter, r *http.Request
 	}
 	t := adminTransition(who, key, "tpo.revoke", fmt.Sprintf("override %d", id), sql.NullInt64{}, nil)
 	outcome, status := c.RevokeOverride(r.Context(), t, id)
-	writeJSON(w, status, outcome)
+	pipeline.WriteJSON(w, status, outcome)
 }
