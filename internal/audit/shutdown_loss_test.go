@@ -56,7 +56,9 @@ func TestAuditCloseReportsWriterFailure(t *testing.T) {
 	}
 	ack := make(chan error, 1)
 	go func() { ack <- a.Commit(context.Background(), Event{Kind: "request.admitted"}) }()
-	waitFor(t, time.Now().Add(5*time.Second), "the admission queued", func() bool { return a.accepted.Load() == AuditQueueSize })
+	// accepted counts an event before its send completes, so only a full
+	// queue shows the admission has taken the last slot.
+	waitFor(t, time.Now().Add(5*time.Second), "the admission queued", func() bool { return len(a.queue) == AuditQueueSize })
 	for range 3 {
 		a.Record(Event{Kind: "request.rejected"})
 	}
