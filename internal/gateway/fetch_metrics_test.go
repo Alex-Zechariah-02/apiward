@@ -1,13 +1,12 @@
+// The metrics listener end to end.
+
 package gateway
 
 import (
-	"fmt"
 	"io"
 	"net/http"
 	"strings"
 	"testing"
-
-	"github.com/Alex-Zechariah-02/apiward/internal/audit"
 )
 
 func TestFetchMetrics(t *testing.T) {
@@ -56,28 +55,5 @@ func TestFetchMetrics(t *testing.T) {
 	}
 	if code, _ := e.get("/metrics"); code != 404 {
 		t.Errorf("metrics exposed on data: %d", code)
-	}
-}
-
-func TestFetchBoundedEventWindow(t *testing.T) {
-	o := newObservations()
-	viewer := o.subscribe()
-	for i := range recentEventLimit + 7 {
-		o.record(audit.Event{RequestID: fmt.Sprint(i), Decision: "reject", Stage: "ROUTE"})
-	}
-	events := o.snapshot()
-	if len(events) != 10000 || events[0].RequestID != "10006" || events[9999].RequestID != "7" {
-		t.Fatalf("window bounds: %d %s %s", len(events), events[0].RequestID, events[len(events)-1].RequestID)
-	}
-	if dropped := o.takeDropped(viewer); dropped != recentEventLimit+7-streamQueueSize {
-		t.Errorf("dropped %d", dropped)
-	}
-	if o.takeDropped(viewer) != 0 {
-		t.Fatal("drop count was not consumed")
-	}
-	o.unsubscribe(viewer)
-	o.close()
-	if o.subscribe() != nil {
-		t.Fatal("subscribed after shutdown")
 	}
 }

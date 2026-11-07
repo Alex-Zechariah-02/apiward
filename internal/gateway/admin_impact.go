@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/compile"
+	"github.com/Alex-Zechariah-02/apiward/internal/monitor"
 	"github.com/Alex-Zechariah-02/apiward/internal/policy"
 )
 
@@ -76,12 +77,12 @@ func (c *Controller) handleImpact(w http.ResponseWriter, r *http.Request, who ca
 		AfterCode *string  `json:"after_code"`
 		Count     int      `json:"count"`
 	}
-	events := c.observations.snapshot()
+	events := c.observations.Snapshot()
 	groups := map[string]*flip{}
 	unknown := 0
 	for _, event := range events {
-		old, _, oldOperation, oldKnown := previewDecision(before, event)
-		current, code, operation, currentKnown := previewDecision(after, event)
+		old, _, oldOperation, oldKnown := monitor.PreviewDecision(before, event)
+		current, code, operation, currentKnown := monitor.PreviewDecision(after, event)
 		if !oldKnown || !currentKnown {
 			unknown++
 			continue
@@ -92,7 +93,7 @@ func (c *Controller) handleImpact(w http.ResponseWriter, r *http.Request, who ca
 		if operation == "" {
 			operation = oldOperation
 		}
-		value := flip{Operation: operation, Subject: event.Subject, Roles: event.assertedRoles, Before: old, After: current, AfterCode: optionalString(code)}
+		value := flip{Operation: operation, Subject: event.Subject, Roles: event.ClaimedRoles(), Before: old, After: current, AfterCode: monitor.OptionalString(code)}
 		key, _ := json.Marshal(value)
 		if groups[string(key)] == nil {
 			groups[string(key)] = &value

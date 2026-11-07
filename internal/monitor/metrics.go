@@ -1,4 +1,7 @@
-package gateway
+// Request counters and duration histograms, and the metrics listener that
+// exposes them with the published policy gauges.
+
+package monitor
 
 import (
 	"fmt"
@@ -26,7 +29,7 @@ type requestMetrics struct {
 
 // Called under observations.mu. Only compiler-defined identifiers and gateway
 // outcome codes reach labels; a hard cap also bounds policy churn over a run.
-func (m *requestMetrics) record(event requestEvent) {
+func (m *requestMetrics) Record(event RequestView) {
 	if m.counts == nil {
 		m.counts = map[metricLabels]uint64{}
 		m.durations = map[string]*durationMetric{}
@@ -63,7 +66,15 @@ func (m *requestMetrics) record(event requestEvent) {
 	}
 }
 
-func (c *Controller) handleMetrics(w http.ResponseWriter, r *http.Request) {
+// Metrics serves the metrics listener from the observations and the
+// published gauges, which published reads from the controller.
+func Metrics(o *Observations, published func() (revision int64, overrides, blocked int)) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		serveMetrics(w, r, o, published)
+	})
+}
+
+func serveMetrics(w http.ResponseWriter, r *http.Request, o *Observations, published func() (revision int64, overrides, blocked int)) {
 	if r.Method != "GET" || r.RequestURI != "/metrics" {
 		http.NotFound(w, r)
 		return
@@ -71,7 +82,6 @@ func (c *Controller) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
 	var body strings.Builder
 	fmt.Fprintln(&body, "# TYPE gateway_requests_total counter")
-	o := c.observations
 	o.mu.Lock()
 	labels := slices.Collect(maps.Keys(o.metrics.counts))
 	slices.SortFunc(labels, func(a, b metricLabels) int {
@@ -92,14 +102,7 @@ func (c *Controller) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	}
 	dropped := o.dropped
 	o.mu.Unlock()
-	revision, overrides := int64(0), 0
-	if generation := c.Current(); generation != nil {
-		revision, overrides = generation.Revision, len(generation.Overrides)
-	}
-	blocked := 0
-	if accounts := c.blocked.Load(); accounts != nil {
-		blocked = len(*accounts)
-	}
+	revision, overrides, blocked := published()
 	for _, gauge := range []struct {
 		name  string
 		value any

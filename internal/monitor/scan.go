@@ -1,6 +1,6 @@
 // Security log file scanning, use summaries and cursors.
 
-package gateway
+package monitor
 
 import (
 	"bytes"
@@ -18,14 +18,14 @@ import (
 	"github.com/Alex-Zechariah-02/apiward/internal/policy"
 )
 
-var errCursorGone = errors.New("the file the search stopped in is no longer present")
+var ErrCursorGone = errors.New("the file the search stopped in is no longer present")
 
-// searchSecurityLog reads the files in dir newest first from start, at most
+// Search reads the files in dir newest first from start, at most
 // scan bytes, until limit records match. Only the final record of each
 // request (request.rejected or request.forwarded) is read, as the live views
 // do. A line still being written at the end of the active file is skipped.
-func searchSecurityLog(dir string, files []string, start *securityLogCursor, query securityLogQuery, limit int, scan int64) (securityLogResult, error) {
-	result := securityLogResult{items: []requestEvent{}, searched: []string{}}
+func Search(dir string, files []string, start *Cursor, query Query, limit int, scan int64) (Result, error) {
+	result := Result{Items: []RequestView{}, Searched: []string{}}
 	index, offset := 0, int64(-1) // -1 reads a file from its end
 	if start != nil {
 		index = -1
@@ -42,7 +42,7 @@ func searchSecurityLog(dir string, files []string, start *securityLogCursor, que
 			}
 		}
 		if index < 0 {
-			return result, errCursorGone
+			return result, ErrCursorGone
 		}
 	}
 	budget := scan
@@ -56,10 +56,10 @@ func searchSecurityLog(dir string, files []string, start *securityLogCursor, que
 			return result, err
 		}
 		if budget <= 0 {
-			result.next = &securityLogCursor{File: name, First: first, Offset: offset}
+			result.Next = &Cursor{File: name, First: first, Offset: offset}
 			return result, nil
 		}
-		result.searched = append(result.searched, name)
+		result.Searched = append(result.Searched, name)
 		done, err := scanSecurityLogFile(filepath.Join(dir, name), name, first, offset, query, limit, &budget, &result)
 		if err != nil || done {
 			return result, err
@@ -71,11 +71,11 @@ func searchSecurityLog(dir string, files []string, start *securityLogCursor, que
 // scanSecurityLogFile searches one file backwards from end (-1: its current
 // size). It reports done when the search stops inside the file, with
 // result.next set where it stopped.
-func scanSecurityLogFile(path, name, first string, end int64, query securityLogQuery, limit int, budget *int64, result *securityLogResult) (bool, error) {
+func scanSecurityLogFile(path, name, first string, end int64, query Query, limit int, budget *int64, result *Result) (bool, error) {
 	stop, stopped, err := scanLinesBackward(path, end, budget, func(line []byte, _ int64) bool {
 		if view, ok := securityLogRecord(line, query, result); ok {
-			result.items = append(result.items, view)
-			return len(result.items) >= limit
+			result.Items = append(result.Items, view)
+			return len(result.Items) >= limit
 		}
 		return false
 	})
@@ -83,7 +83,7 @@ func scanSecurityLogFile(path, name, first string, end int64, query securityLogQ
 		return false, err
 	}
 	if stopped {
-		result.next = &securityLogCursor{File: name, First: first, Offset: stop}
+		result.Next = &Cursor{File: name, First: first, Offset: stop}
 	}
 	return stopped, nil
 }
@@ -142,21 +142,21 @@ func scanLinesBackward(path string, end int64, budget *int64, visit func(line []
 	return 0, false, nil
 }
 
-// logUse is what the security log shows about permission use: the role and
+// LogUse is what the security log shows about permission use: the role and
 // endpoint pairs of allowed requests, how many request records were read and
 // how far back they reach.
-type logUse struct {
+type LogUse struct {
 	used     map[[2]string]bool
 	requests int
 	oldest   time.Time
 	complete bool
-	searched []string
+	Searched []string
 }
 
-// permitUse reads the request records of the security log files newest
+// PermitUse reads the request records of the security log files newest
 // first, at most scan bytes.
-func permitUse(dir string, files []string, scan int64) (logUse, error) {
-	use := logUse{used: map[[2]string]bool{}, searched: []string{}, complete: true}
+func PermitUse(dir string, files []string, scan int64) (LogUse, error) {
+	use := LogUse{used: map[[2]string]bool{}, Searched: []string{}, complete: true}
 	budget := scan
 	for _, name := range files {
 		if budget <= 0 {
@@ -188,7 +188,7 @@ func permitUse(dir string, files []string, scan int64) (logUse, error) {
 		if err != nil {
 			return use, err
 		}
-		use.searched = append(use.searched, name)
+		use.Searched = append(use.Searched, name)
 		if stopped {
 			use.complete = false
 			break
@@ -204,19 +204,19 @@ var (
 
 // securityLogRecord decodes a request's final record and applies the
 // filters. A request record that cannot be decoded is counted, not hidden.
-func securityLogRecord(line []byte, query securityLogQuery, result *securityLogResult) (requestEvent, bool) {
+func securityLogRecord(line []byte, query Query, result *Result) (RequestView, bool) {
 	if !bytes.Contains(line, rejectedKind) && !bytes.Contains(line, forwardedKind) {
-		return requestEvent{}, false
+		return RequestView{}, false
 	}
 	if query.ref != "" && !bytes.Contains(line, []byte(query.ref)) {
-		return requestEvent{}, false
+		return RequestView{}, false
 	}
 	var record auditRequestRecord
 	if err := json.Unmarshal(line, &record); err != nil || record.RequestID == "" {
-		result.unreadable++
-		return requestEvent{}, false
+		result.Unreadable++
+		return RequestView{}, false
 	}
-	view := requestView(audit.Event{
+	view := View(audit.Event{
 		Time: record.Time, RequestID: record.RequestID, Stage: record.Stage, Decision: record.Decision, Status: record.Status,
 		Error: record.Error, Method: record.Method, Path: record.Path, Operation: record.Operation, API: record.API,
 		Subject: record.Subject, Roles: record.Roles, ClientAddress: record.ClientAddress, Generation: record.Generation,
@@ -248,14 +248,14 @@ func firstRecordID(path string) (string, error) {
 	return record.ID, nil
 }
 
-func encodeSecurityLogCursor(c securityLogCursor) string {
+func EncodeCursor(c Cursor) string {
 	data, _ := json.Marshal(c)
 	return base64.RawURLEncoding.EncodeToString(data)
 }
 
-func decodeSecurityLogCursor(text string) *securityLogCursor {
+func DecodeCursor(text string) *Cursor {
 	data, err := base64.RawURLEncoding.DecodeString(text)
-	var c securityLogCursor
+	var c Cursor
 	if err != nil || len(data) > 512 || policy.DecodeStrict(data, &c) != nil {
 		return nil
 	}

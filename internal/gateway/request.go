@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/audit"
+	"github.com/Alex-Zechariah-02/apiward/internal/monitor"
 )
 
 // request tracks one request through the stages for its security event.
@@ -14,7 +15,7 @@ type request struct {
 	event        audit.Event
 	w            http.ResponseWriter
 	audit        *audit.AuditLog
-	observations *observations
+	observations *monitor.Observations
 	started      time.Time
 	// bodyPending is true while a declared request body has not been
 	// consumed by validation.
@@ -29,7 +30,7 @@ func (q *request) reject(stage int, status int, code string) {
 	q.event.Status, q.event.Error = status, code
 	q.event.DurationMS = float64(time.Since(q.started)) / float64(time.Millisecond)
 	q.audit.Record(q.event)
-	q.observations.record(q.event)
+	q.observations.Record(q.event)
 	if q.bodyPending {
 		// Closing the connection stops net/http from reading the unread body
 		// before it writes the rejection, which a client that declares a body
@@ -50,7 +51,7 @@ func (q *request) forwarded(status int, decision, code string) {
 	q.event.Decision, q.event.Status, q.event.Error = decision, status, code
 	q.event.DurationMS = float64(time.Since(q.started)) / float64(time.Millisecond)
 	q.audit.Record(q.event)
-	q.observations.record(q.event)
+	q.observations.Record(q.event)
 }
 
 // answerPreflight records and answers a CORS preflight: 204, with whatever
@@ -63,6 +64,6 @@ func (q *request) answerPreflight(allowed bool) {
 	}
 	q.event.DurationMS = float64(time.Since(q.started)) / float64(time.Millisecond)
 	q.audit.Record(q.event)
-	q.observations.record(q.event)
+	q.observations.Record(q.event)
 	q.w.WriteHeader(http.StatusNoContent)
 }

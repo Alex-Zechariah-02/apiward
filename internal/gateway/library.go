@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/forward"
+	"github.com/Alex-Zechariah-02/apiward/internal/monitor"
 )
 
 // Kinds of lifecycle failure. Every error returned while loading, opening,
@@ -128,7 +129,7 @@ func openDeployment(cfg nativeConfig, logger *slog.Logger) (*deployment, error) 
 		enforcement: enforcement,
 		handler:     dataPlane(enforcement, cfg.website),
 		metrics: &http.Server{
-			Handler:           http.HandlerFunc(c.handleMetrics),
+			Handler:           monitor.Metrics(c.observations, c.gauges),
 			ReadHeaderTimeout: 5 * time.Second,
 			WriteTimeout:      5 * time.Second,
 			IdleTimeout:       30 * time.Second,

@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/Alex-Zechariah-02/apiward/internal/monitor"
 )
 
 var securityLogColumns = []string{"time", "request_id", "decision", "status", "code", "stage", "method", "path", "operation", "api", "subject", "roles", "client_address", "generation", "duration_ms"}
@@ -15,14 +17,14 @@ var securityLogColumns = []string{"time", "request_id", "decision", "status", "c
 // writeSecurityLogCSV writes the rows as CSV, with coverage in headers. A
 // value a spreadsheet would read as a formula is prefixed with an apostrophe:
 // paths and account IDs come from clients.
-func writeSecurityLogCSV(w http.ResponseWriter, result securityLogResult, next *string, missing []string) {
+func writeSecurityLogCSV(w http.ResponseWriter, result monitor.Result, next *string, missing []string) {
 	header := w.Header()
 	header.Set("Content-Type", "text/csv; charset=utf-8")
 	header.Set("Content-Disposition", `attachment; filename="security-log.csv"`)
 	header.Set("X-Security-Log-Complete", strconv.FormatBool(next == nil))
-	header.Set("X-Security-Log-Files-Searched", strings.Join(result.searched, ","))
+	header.Set("X-Security-Log-Files-Searched", strings.Join(result.Searched, ","))
 	header.Set("X-Security-Log-Files-Missing", strings.Join(missing, ","))
-	header.Set("X-Security-Log-Unreadable-Lines", strconv.Itoa(result.unreadable))
+	header.Set("X-Security-Log-Unreadable-Lines", strconv.Itoa(result.Unreadable))
 	if next != nil {
 		header.Set("X-Security-Log-Next", *next)
 	}
@@ -35,7 +37,7 @@ func writeSecurityLogCSV(w http.ResponseWriter, result securityLogResult, next *
 		}
 		return *value
 	}
-	for _, v := range result.items {
+	for _, v := range result.Items {
 		out.Write([]string{
 			v.Time.UTC().Format(time.RFC3339Nano), v.RequestID, v.Decision, strconv.Itoa(v.Status), text(v.Code), v.Stage,
 			v.Method, safeCell(v.Path), text(v.Operation), text(v.API), safeCell(text(v.Subject)), safeCell(strings.Join(v.Roles, " ")),

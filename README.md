@@ -158,6 +158,7 @@ Each package under `internal/` imports only the packages listed before it; a tes
 - `internal/store`: the one SQLite database (policy versions, draft changes, temporary rules, blocked accounts, administrators, change receipts); the only code that runs SQL, holding the database exclusively.
 - `internal/audit`: the durable security log; an admitted request is acknowledged only after its record is synced to disk, and the writer never deletes a file.
 - `internal/session`: administrator sessions, held only in memory as token hashes and bounded in number, and the random tokens the Admin API and operator commands hand out.
+- `internal/monitor`: observes without deciding: the window of recent requests and its live views, request metrics, traffic summaries, advice checks, impact previews and the security log search.
 - `internal/openapi`: the offline OpenAPI import and export; it turns a description into a candidate policy, checks it with the compiler, and writes one API of a policy back as a description.
 - `internal/gateway`: the gateway itself, which uses the packages above.
 - `examples/embed`: a host program that embeds the gateway, using only the public packages.

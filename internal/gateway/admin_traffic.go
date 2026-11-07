@@ -9,62 +9,10 @@ import (
 	"net/url"
 	"slices"
 	"strconv"
-	"strings"
 	"time"
+
+	"github.com/Alex-Zechariah-02/apiward/internal/monitor"
 )
-
-// trafficGroup counts the requests of one API or one endpoint and keeps
-// their durations for the percentiles.
-type trafficGroup struct {
-	API       string  `json:"api"`
-	Operation string  `json:"operation,omitempty"`
-	Total     int     `json:"total"`
-	Allowed   int     `json:"allowed"`
-	Refused   int     `json:"refused"`
-	P50       float64 `json:"p50_ms"`
-	P95       float64 `json:"p95_ms"`
-	durations []float64
-}
-
-func (g *trafficGroup) add(event requestEvent) {
-	g.Total++
-	g.durations = append(g.durations, event.DurationMS)
-	if wasAllowed(event) {
-		g.Allowed++
-	} else {
-		g.Refused++
-	}
-}
-
-// percentiles returns the median and the 95th percentile of durations, which
-// it sorts in place; both are zero when there are none.
-func percentiles(durations []float64) (float64, float64) {
-	n := len(durations)
-	if n == 0 {
-		return 0, 0
-	}
-	slices.Sort(durations)
-	return durations[(n-1)/2], durations[(95*n+99)/100-1]
-}
-
-func (g *trafficGroup) settle() trafficGroup {
-	g.P50, g.P95 = percentiles(g.durations)
-	return *g
-}
-
-// trafficTop keeps the groups with the most requests, at most limit of them,
-// ties broken by name so the order is stable between readings.
-func trafficTop[T any](items []T, count func(T) int, name func(T) string, limit int) []T {
-	slices.SortFunc(items, func(a, b T) int {
-		if count(a) != count(b) {
-			return count(b) - count(a)
-		}
-		return strings.Compare(name(a), name(b))
-	})
-	return items[:min(len(items), limit)]
-}
-
-const trafficTopLimit = 10
 
 func (c *Controller) handleTraffic(w http.ResponseWriter, r *http.Request, who caller) {
 	query, err := url.ParseQuery(r.URL.RawQuery)
@@ -117,8 +65,8 @@ func (c *Controller) handleTraffic(w http.ResponseWriter, r *http.Request, who c
 	// Latency intervals match the chart's: window/60 seconds, on whole
 	// multiples of their length on the clock.
 	step := int64(window / 60)
-	apis := map[string]*trafficGroup{}
-	operations := map[string]*trafficGroup{}
+	apis := map[string]*monitor.TrafficGroup{}
+	operations := map[string]*monitor.TrafficGroup{}
 	refusers := map[string]*refusedBy{}
 	reasons := map[string]int{}
 	seconds := map[int64]*second{}
@@ -126,11 +74,11 @@ func (c *Controller) handleTraffic(w http.ResponseWriter, r *http.Request, who c
 	current, previous := totals{}, totals{}
 	// The ring is newest first, so the latest refusal code of each account or
 	// address is the first one seen.
-	for _, entry := range c.observations.recent(func(event *observedRequest) bool {
+	for _, entry := range c.observations.Recent(func(event *monitor.Observed) bool {
 		return !event.Time.Before(previousStart) && !event.Time.After(now)
 	}, 0) {
-		event := entry.requestEvent
-		allowed := wasAllowed(event)
+		event := entry.RequestView
+		allowed := monitor.WasAllowed(event)
 		if event.Time.Before(start) {
 			previous.Total++
 			if allowed {
@@ -146,14 +94,14 @@ func (c *Controller) handleTraffic(w http.ResponseWriter, r *http.Request, who c
 			api = *event.API
 		}
 		if apis[api] == nil {
-			apis[api] = &trafficGroup{API: api}
+			apis[api] = &monitor.TrafficGroup{API: api}
 		}
-		apis[api].add(event)
+		apis[api].Add(event)
 		if event.Operation != nil {
 			if operations[*event.Operation] == nil {
-				operations[*event.Operation] = &trafficGroup{API: api, Operation: *event.Operation}
+				operations[*event.Operation] = &monitor.TrafficGroup{API: api, Operation: *event.Operation}
 			}
-			operations[*event.Operation].add(event)
+			operations[*event.Operation].Add(event)
 		}
 		at := event.Time.Unix()
 		if seconds[at] == nil {
@@ -189,20 +137,20 @@ func (c *Controller) handleTraffic(w http.ResponseWriter, r *http.Request, who c
 		}
 		refusers[key].Refused++
 	}
-	byAPI := []trafficGroup{}
+	byAPI := []monitor.TrafficGroup{}
 	for _, name := range slices.Sorted(maps.Keys(apis)) {
-		byAPI = append(byAPI, apis[name].settle())
+		byAPI = append(byAPI, apis[name].Settle())
 	}
-	byOperation := []trafficGroup{}
+	byOperation := []monitor.TrafficGroup{}
 	for _, group := range operations {
-		byOperation = append(byOperation, group.settle())
+		byOperation = append(byOperation, group.Settle())
 	}
-	byOperation = trafficTop(byOperation, func(g trafficGroup) int { return g.Total }, func(g trafficGroup) string { return g.Operation }, trafficTopLimit)
+	byOperation = monitor.TrafficTop(byOperation, func(g monitor.TrafficGroup) int { return g.Total }, func(g monitor.TrafficGroup) string { return g.Operation }, monitor.TopLimit)
 	topRefused := []refusedBy{}
 	for _, entry := range refusers {
 		topRefused = append(topRefused, *entry)
 	}
-	topRefused = trafficTop(topRefused, func(e refusedBy) int { return e.Refused }, func(e refusedBy) string { return e.Kind + " " + e.ID }, trafficTopLimit)
+	topRefused = monitor.TrafficTop(topRefused, func(e refusedBy) int { return e.Refused }, func(e refusedBy) string { return e.Kind + " " + e.ID }, monitor.TopLimit)
 	refusalReasons := []reason{}
 	for _, code := range slices.Sorted(maps.Keys(reasons)) {
 		refusalReasons = append(refusalReasons, reason{code, reasons[code]})
@@ -214,26 +162,26 @@ func (c *Controller) handleTraffic(w http.ResponseWriter, r *http.Request, who c
 	latency := []interval{}
 	for _, at := range slices.Sorted(maps.Keys(intervals)) {
 		entry := intervals[at]
-		entry.P50, entry.P95 = percentiles(entry.durations)
+		entry.P50, entry.P95 = monitor.Percentiles(entry.durations)
 		latency = append(latency, *entry)
 	}
 	// A comparison needs the whole previous window: when the ring has dropped
 	// requests from inside it, the count would be too low, so none is given.
 	var earlier *totals
-	if oldest, dropped := c.observations.retainedSince(); !dropped || !oldest.After(previousStart) {
+	if oldest, dropped := c.observations.RetainedSince(); !dropped || !oldest.After(previousStart) {
 		earlier = &previous
 	}
 	writeJSON(w, http.StatusOK, struct {
-		Window      int            `json:"window_seconds"`
-		Total       int            `json:"total"`
-		Allowed     int            `json:"allowed"`
-		Refused     int            `json:"refused"`
-		ByAPI       []trafficGroup `json:"by_api"`
-		Reasons     []reason       `json:"refusal_reasons"`
-		Seconds     []second       `json:"per_second"`
-		ByOperation []trafficGroup `json:"by_operation"`
-		TopRefused  []refusedBy    `json:"top_refused"`
-		Previous    *totals        `json:"previous"`
-		Latency     []interval     `json:"latency"`
+		Window      int                    `json:"window_seconds"`
+		Total       int                    `json:"total"`
+		Allowed     int                    `json:"allowed"`
+		Refused     int                    `json:"refused"`
+		ByAPI       []monitor.TrafficGroup `json:"by_api"`
+		Reasons     []reason               `json:"refusal_reasons"`
+		Seconds     []second               `json:"per_second"`
+		ByOperation []monitor.TrafficGroup `json:"by_operation"`
+		TopRefused  []refusedBy            `json:"top_refused"`
+		Previous    *totals                `json:"previous"`
+		Latency     []interval             `json:"latency"`
 	}{window, current.Total, current.Allowed, current.Refused, byAPI, refusalReasons, perSecond, byOperation, topRefused, earlier, latency})
 }

@@ -17,6 +17,7 @@ import (
 
 	"github.com/Alex-Zechariah-02/apiward/internal/audit"
 	"github.com/Alex-Zechariah-02/apiward/internal/compile"
+	"github.com/Alex-Zechariah-02/apiward/internal/monitor"
 	"github.com/Alex-Zechariah-02/apiward/internal/session"
 	"github.com/Alex-Zechariah-02/apiward/internal/store"
 )
@@ -89,7 +90,7 @@ type Controller struct {
 	// generation, so publication never resets them; a restart does.
 	limiter      *limiter
 	clock        rateClock
-	observations *observations
+	observations *monitor.Observations
 
 	// Administrator authentication state, in memory only.
 	sessions *session.Table
@@ -163,7 +164,7 @@ func prepareController(cfg Config, logger *slog.Logger) (*Controller, error) {
 		config:       cfg,
 		limiter:      newLimiter(),
 		clock:        rateClock{anchor: time.Now()},
-		observations: newObservations(),
+		observations: monitor.New(),
 		sessions:     session.New(cfg.AdminIdleTimeout, cfg.AdminSessionLifetime),
 		throttle:     newThrottle(),
 		hashing:      make(chan struct{}, maxHashing),
@@ -266,3 +267,15 @@ func (cfg *Config) applyDefaults() error {
 
 // Current returns the published generation, or nil when nothing may be served.
 func (c *Controller) Current() *compile.Generation { return c.current.Load() }
+
+// gauges reads the published policy revision, active temporary rules and
+// blocked accounts for the metrics listener.
+func (c *Controller) gauges() (revision int64, overrides, blocked int) {
+	if generation := c.Current(); generation != nil {
+		revision, overrides = generation.Revision, len(generation.Overrides)
+	}
+	if accounts := c.blocked.Load(); accounts != nil {
+		blocked = len(*accounts)
+	}
+	return revision, overrides, blocked
+}

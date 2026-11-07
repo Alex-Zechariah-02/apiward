@@ -219,3 +219,10 @@ func (h *Handler) admitRate(q *request, stage int, key counterKey, rule *compile
 	}
 	return true
 }
+
+// size returns the number of counters held.
+func (l *limiter) size() int {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return len(l.counters)
+}

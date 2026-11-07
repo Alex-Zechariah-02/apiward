@@ -59,7 +59,7 @@ func (c *Controller) beginStop() {
 		return
 	}
 	c.stopping = true
-	c.observations.close()
+	c.observations.Close()
 	c.state = stateStopping
 	c.current.Store(nil)
 	if c.timer != nil {

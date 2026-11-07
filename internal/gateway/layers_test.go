@@ -21,8 +21,9 @@ var layers = map[string][]string{
 	"store":   {"fault", "policy"},
 	"audit":   {"fault"},
 	"session": nil,
+	"monitor": {"policy", "compile", "audit"},
 	"openapi": {"policy", "compile"},
-	"gateway": {"fault", "policy", "compile", "forward", "store", "audit", "session"},
+	"gateway": {"fault", "policy", "compile", "forward", "store", "audit", "session", "monitor"},
 }
 
 // exposed lists, for each package outside internal/, the internal packages its
