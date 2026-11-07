@@ -3,7 +3,6 @@
 package gateway
 
 import (
-	"errors"
 	"go/build"
 	"os"
 	"path/filepath"
@@ -14,20 +13,14 @@ import (
 
 // layers lists, for each internal package, the internal packages it may import.
 var layers = map[string][]string{
-	"fault":        nil,
-	"policy":       nil,
-	"compile":      {"fault", "policy"},
-	"forward":      {"compile"},
-	"store":        {"fault", "policy"},
-	"audit":        {"fault"},
-	"openapi":      {"policy", "compile"},
-	"exchange":     {"policy"},
-	"semantics":    {"exchange"},
-	"overlay":      {"exchange"},
-	"convert/kong": {"policy", "exchange", "semantics", "openapi"},
-	"probe":        {"policy", "exchange", "semantics"},
-	"migrate":      {"policy", "compile", "openapi", "exchange", "semantics", "overlay", "convert/kong", "probe"},
-	"gateway":      {"fault", "policy", "compile", "forward", "store", "audit"},
+	"fault":   nil,
+	"policy":  nil,
+	"compile": {"fault", "policy"},
+	"forward": {"compile"},
+	"store":   {"fault", "policy"},
+	"audit":   {"fault"},
+	"openapi": {"policy", "compile"},
+	"gateway": {"fault", "policy", "compile", "forward", "store", "audit"},
 }
 
 // unlayered packages are not part of the gateway's layering.
@@ -46,10 +39,6 @@ func TestPackageLayers(t *testing.T) {
 			return filepath.SkipDir
 		}
 		rel, _ := filepath.Rel(filepath.Join(root, "internal"), path)
-		// A directory that only groups packages, such as convert, holds no package.
-		if _, err := build.Default.ImportDir(path, 0); errors.As(err, new(*build.NoGoError)) {
-			return nil
-		}
 		found = append(found, filepath.ToSlash(rel))
 		return nil
 	})

@@ -32,8 +32,6 @@ func TestRouting(t *testing.T) {
 		args          []string
 		want, notWant string
 	}{
-		{[]string{"migrate", "import"}, "--from is required\nusage: gateway migrate import", ""},
-		{[]string{"migrate", "policy", "--exchange"}, "gateway migrate policy", ""},
 		{[]string{"migrate", "--config", missing}, "missing.json", "is required"},
 		{[]string{"policy", "export-openapi"}, "--policy is required\nusage: gateway policy export-openapi", ""},
 	}

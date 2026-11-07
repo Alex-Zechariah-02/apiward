@@ -8,8 +8,8 @@ package policy
 // matches any name ending in "."+domain) and every header condition holds.
 // Conditions only select an operation; they never grant access.
 //
-// In an OpenAPI description or exchange file the conditions are the
-// operation member named WhenExtension.
+// In an OpenAPI description the conditions are the operation member named
+// WhenExtension.
 type When struct {
 	Hosts   []string          `json:"hosts,omitempty"`
 	Headers []HeaderCondition `json:"headers,omitempty"`

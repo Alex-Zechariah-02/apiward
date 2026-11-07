@@ -23,8 +23,8 @@ const (
 // MaxSpecBytes is the largest description accepted, checked before parsing.
 const MaxSpecBytes = 1 << 20
 
-// FormatOf chooses the format from the file extension alone.
-func FormatOf(path string) (Format, error) {
+// formatOf chooses the format from the file extension alone.
+func formatOf(path string) (Format, error) {
 	switch strings.ToLower(filepath.Ext(path)) {
 	case ".json":
 		return JSON, nil
@@ -34,14 +34,14 @@ func FormatOf(path string) (Format, error) {
 	return "", errors.New("unsupported file type: use .json, .yaml or .yml")
 }
 
-// Decode returns a file of at most limit bytes as maps, slices,
+// decode returns a description of at most MaxSpecBytes as maps, slices,
 // json.Number, strings, booleans and nil. YAML is converted and then re-read
 // through the same bounded JSON decoder, so both formats pass one gate: valid
 // UTF-8, unique member names, bounded numbers and nesting at most
-// policy.MaxJSONDepth. limit is a whole number of MiB.
-func Decode(data []byte, format Format, limit int) (any, error) {
-	if len(data) > limit {
-		return nil, fmt.Errorf("the description is larger than %d MiB", limit>>20)
+// policy.MaxJSONDepth.
+func decode(data []byte, format Format) (any, error) {
+	if len(data) > MaxSpecBytes {
+		return nil, errors.New("the description is larger than 1 MiB")
 	}
 	if format == YAML {
 		value, err := readYAML(data)
@@ -54,7 +54,7 @@ func Decode(data []byte, format Format, limit int) (any, error) {
 	}
 	// Every value takes at least one byte, so the size limit bounds the
 	// value count; each schema is held to policy.MaxJSONValues later.
-	value, reason := policy.DecodeBounded(data, policy.MaxJSONDepth, limit)
+	value, reason := policy.DecodeBounded(data, policy.MaxJSONDepth, MaxSpecBytes)
 	if reason != "" {
 		return nil, fmt.Errorf("the description is not accepted: %s", reason)
 	}

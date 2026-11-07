@@ -40,8 +40,7 @@ const nativeUsage = `usage: gateway run --config <file>
   gateway backup --config <file> --output <file>
   gateway restore --config <file> --backup <file>
   gateway policy import-openapi --spec <file> --api <id> --upstream <id> --base <file> --out <file> --report <file>
-  gateway policy export-openapi --policy <file> --api <id> --out <file> --report <file>
-  gateway migrate inventory|import|policy|export|probes <flags> (run without flags to see them)`
+  gateway policy export-openapi --policy <file> --api <id> --out <file> --report <file>`
 
 // Main runs the native gateway command line and returns the exit status.
 func Main(args []string) int {

@@ -21,8 +21,8 @@ type API struct {
 // inbound path without StripPrefix, after AddPrefix. Every decision is made
 // on the inbound path; the rewrite applies only to the outbound request.
 //
-// In an OpenAPI description or exchange file the rule is the root member
-// named ForwardExtension.
+// In an OpenAPI description the rule is the root member named
+// ForwardExtension.
 type Forward struct {
 	StripPrefix string `json:"strip_prefix,omitempty"`
 	AddPrefix   string `json:"add_prefix,omitempty"`
@@ -63,8 +63,8 @@ const (
 	MaxAllowAddresses = 256
 )
 
-// Exchange file root members (OpenAPI extensions) carrying an API's
-// settings; one API per file.
+// OpenAPI root members carrying an API's settings; one API per
+// description.
 const (
 	ForwardExtension         = "x-apiward-forward"
 	CORSExtension            = "x-apiward-cors"

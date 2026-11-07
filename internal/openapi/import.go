@@ -45,7 +45,7 @@ func (o Options) check() error {
 // which the real decoder and compiler have accepted, and the report; or an
 // error, in which case nothing may be written. It has no side effects.
 func Import(spec []byte, format Format, options Options) (policy.Policy, *Report, error) {
-	value, err := Decode(spec, format, MaxSpecBytes)
+	value, err := decode(spec, format)
 	if err != nil {
 		return policy.Policy{}, nil, err
 	}
@@ -53,11 +53,6 @@ func Import(spec []byte, format Format, options Options) (policy.Policy, *Report
 	if !ok {
 		return policy.Policy{}, nil, errors.New("the description is not a JSON object")
 	}
-	return ImportDocument(root, format, options)
-}
-
-// ImportDocument is Import for a description already passed through Decode.
-func ImportDocument(root map[string]any, format Format, options Options) (policy.Policy, *Report, error) {
 	if err := options.check(); err != nil {
 		return policy.Policy{}, nil, err
 	}
@@ -69,28 +64,6 @@ func ImportDocument(root map[string]any, format Format, options Options) (policy
 		return policy.Policy{}, nil, err
 	}
 	return result, report, nil
-}
-
-// classifyAPI and classifyUpstream stand in for the administrator's choices
-// when a description is classified without a base policy.
-const (
-	classifyAPI      = "x"
-	classifyUpstream = "upstream"
-)
-
-// Classify reports what an import would do with each operation of a
-// description already passed through Decode, without a base policy and
-// without the limits on a whole policy. Operations are named by operationId
-// alone and the report's api is empty.
-func Classify(root map[string]any, format Format) (*Report, error) {
-	options := Options{API: classifyAPI, Upstream: classifyUpstream, MaxBodyBytes: DefaultBodyBytes, WithPermits: true,
-		Base: policy.Policy{Upstreams: []policy.Upstream{{ID: classifyUpstream, Dial: "127.0.0.1:1"}}}}
-	_, report, err := assemble(root, format, options)
-	if err != nil {
-		return nil, err
-	}
-	report.unprefix(classifyAPI + ".")
-	return report, nil
 }
 
 // assemble maps every operation onto the base without the API being

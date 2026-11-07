@@ -184,10 +184,10 @@ func integer(digits string, base int) (any, error) {
 	return json.Number(number.String()), nil
 }
 
-// Encode writes a description as 2-space JSON, or as block YAML
+// encode writes a description as 2-space JSON, or as block YAML
 // made from that JSON text, so both formats hold the same values and the
 // import reads either back alike.
-func Encode(document map[string]any, format Format) ([]byte, error) {
+func encode(document map[string]any, format Format) ([]byte, error) {
 	data, err := json.MarshalIndent(document, "", "  ")
 	if err != nil {
 		return nil, err
