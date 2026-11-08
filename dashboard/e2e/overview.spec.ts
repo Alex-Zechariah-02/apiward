@@ -137,11 +137,11 @@ test.describe.serial('dashboard', () => {
     // requests carry the roles their verified tokens held.
     expect((await adminCall('GET', '/admin/blocked-accounts')).body.items).toEqual([])
     expect((await summary('ops-01')).status).toBe(200)
-    await go(admin, 'Accounts')
+    await go(admin, 'Blocking')
     // One table lists every known account; none carries a Blocked badge yet.
     await expect(main.getByRole('row').filter({ has: admin.getByText('Blocked', { exact: true }) })).toHaveCount(0)
     await expect(main.getByRole('row').filter({ hasText: 'ops-01' })).toContainText('OPERATIONS')
-    await shot(admin, '10-accounts')
+    await shot(admin, '10-blocking')
 
     // Team lists the administrators and signing keys exactly as the Admin
     // API reports them.

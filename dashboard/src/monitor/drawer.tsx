@@ -59,10 +59,10 @@ export function RequestDrawer({ admin }: { admin: Admin }) {
   const valid = ref !== null && fullRef.test(ref)
   const history = can('read_history')
   const manage = can('manage_subjects')
-  // handOff opens the Accounts page with a block dialog for value.
+  // handOff opens the Blocking page with a block dialog for value.
   const handOff = (key: string, value: string) => () => {
     memory?.set(key, value)
-    navigate?.('accounts')
+    navigate?.('blocking')
   }
   const found = useResource<Found | null>((signal) => (valid ? findRequest(admin, ref, history, signal) : Promise.resolve(nothing)), [ref, history])
   const blocked = useResource<{ items: { subject: string }[] } | null>(

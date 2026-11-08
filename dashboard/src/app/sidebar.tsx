@@ -46,7 +46,7 @@ const navigation: { label: string; items: NavItem[] }[] = [
   {
     label: 'Access',
     items: [
-      { id: 'accounts', label: 'Accounts', icon: 'accounts', needs: 'read' },
+      { id: 'blocking', label: 'Blocking', icon: 'blocking', needs: 'read' },
       { id: 'access-checker', label: 'Access Checker', icon: 'access', needs: 'read' },
     ],
   },

@@ -22,7 +22,7 @@ test.describe.serial('dashboard', () => {
     expect((await adjust('ops-01', -1)).status).toBe(200)
 
     // The Recently seen shortcut fills in the account; the block needs a reason.
-    await go(admin, 'Accounts')
+    await go(admin, 'Blocking')
     const main = admin.getByRole('main')
     const blockedList = main.getByRole('region', { name: 'Account List', exact: true })
     await main.getByRole('button', { name: 'Block… ops-01' }).click()
@@ -51,8 +51,8 @@ test.describe.serial('dashboard', () => {
     // The refusal's Ref finds the request and the check that decided it.
     await admin.getByRole('searchbox', { name: 'Search', exact: true }).fill(event.request_id)
     await admin.getByRole('searchbox', { name: 'Search', exact: true }).press('Enter')
-    await expect(admin.getByRole('heading', { level: 1, name: 'Accounts' })).toBeVisible()
-    expect(admin.url()).toContain(`#/accounts?ref=${event.request_id}`)
+    await expect(admin.getByRole('heading', { level: 1, name: 'Blocking' })).toBeVisible()
+    expect(admin.url()).toContain(`#/blocking?ref=${event.request_id}`)
     await expect(admin.getByRole('dialog').getByRole('heading', { name: 'PATCH /inventory/stock/ITM-501' })).toBeVisible()
     const checks = admin.getByRole('dialog').getByRole('list', { name: "The gateway's checks, in order" })
     await expect(checks.getByRole('listitem').filter({ hasText: 'Blocked List' })).toContainText('Refused Here')
@@ -108,10 +108,10 @@ test.describe.serial('dashboard', () => {
     // confirmation; the second session's unblock of the same account is then
     // refused, and its Refresh shows the current list.
     const other = await signedInPage(browser, 'admin')
-    await go(other.page, 'Accounts')
+    await go(other.page, 'Blocking')
     const otherMain = other.page.getByRole('main')
     await expect(otherMain.getByRole('row').filter({ hasText: 'ops-01' }).getByText('Blocked', { exact: true })).toBeVisible()
-    await go(admin, 'Accounts')
+    await go(admin, 'Blocking')
     await blockedList.getByRole('button', { name: 'Unblock ops-01' }).click()
     await expect(admin.getByRole('dialog')).toContainText('ops-01 can use Fetch again at once')
     await dialogButton(admin, 'Unblock').click()
@@ -168,7 +168,7 @@ test.describe.serial('dashboard', () => {
 
   test('a change whose answer is lost stays listed on every page and after signing in again, and is resolved from its exact history record without being sent again', async () => {
     const subject = 'cust-004'
-    await go(admin, 'Accounts')
+    await go(admin, 'Blocking')
     // The gateway acts on the block but its answer is lost, and the
     // history look-up is held back too, so the outcome stays unknown.
     await admin.route('**/admin/blocked-accounts/*', async (route) => {
@@ -225,8 +225,8 @@ test.describe.serial('dashboard', () => {
   test('an address blocked from a request is refused before any service until unblocked, and conditions show on the APIs page', async () => {
     expect((await adjust('ops-01', 1)).status).toBe(200)
     const [seen] = (await adminCall('GET', '/admin/events?subject=ops-01&limit=1')).body.items
-    await go(admin, 'Accounts')
-    await admin.evaluate((ref) => (window.location.hash = `#/accounts?ref=${ref}`), seen.request_id)
+    await go(admin, 'Blocking')
+    await admin.evaluate((ref) => (window.location.hash = `#/blocking?ref=${ref}`), seen.request_id)
     await admin.getByRole('dialog').getByRole('button', { name: 'Block This Address…' }).click()
     const dialog = admin.getByRole('dialog', { name: 'Block an Address' })
     await expect(dialog.getByLabel('Address or Range')).toHaveValue(seen.client_address)

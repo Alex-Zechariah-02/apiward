@@ -7,11 +7,11 @@ import { MutationResult, Problem } from '../shared/replies'
 import { Time, Zone } from '../shared/time'
 import type { ViewProps } from '../app/views'
 
-// The Addresses view of the Accounts page: client address ranges the
+// The Addresses view of the Blocking page: client address ranges the
 // gateway refuses at once, before any other check, with no policy change.
 
 // addressHandoff is the page memory's key for an address another page asks
-// to block; the Accounts page then opens this view and its block dialog.
+// to block; the Blocking page then opens this view and its block dialog.
 export const addressHandoff = 'block-address'
 
 interface BlockedAddress {
@@ -39,7 +39,7 @@ export function asRange(text: string): string {
 }
 
 // useHandoff takes a value another page left under key in the page memory,
-// when the Accounts page opens and whenever its address changes: a request
+// when the Blocking page opens and whenever its address changes: a request
 // drawer over this page hands off without the page being opened again.
 export function useHandoff(key: string, take: (value: string) => void) {
   const memory = useContext(ViewMemory)
@@ -55,7 +55,7 @@ export function useHandoff(key: string, take: (value: string) => void) {
   }, [])
 }
 
-// BlockedSwitch chooses what the Accounts page lists: accounts or addresses.
+// BlockedSwitch chooses what the Blocking page lists: accounts or addresses.
 export function BlockedSwitch({ view, onView }: { view: 'accounts' | 'addresses'; onView: (view: 'accounts' | 'addresses') => void }) {
   return (
     <div className="segmented page-switch" role="group" aria-label="Show Blocked">

@@ -124,7 +124,7 @@ test.describe.serial('motion', () => {
   test('a confirmation dialog fades in while its buttons keep their colours', async () => {
     // The confirmation the accessibility scan reads, opened with the pointer.
     expect((await adminCall('PUT', '/admin/blocked-accounts/cust-002', { reason: 'Motion check' }, { 'Idempotency-Key': crypto.randomUUID() })).status).toBe(200)
-    await go(admin, 'Accounts')
+    await go(admin, 'Blocking')
     const sampled = admin.evaluate(async () => {
       const seen = { dialog: new Set<string>(), buttons: new Set<string>() }
       const start = performance.now()

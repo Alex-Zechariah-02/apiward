@@ -12,7 +12,7 @@ import type { ViewProps } from '../app/views'
 import { reasonOf, type RequestEvent } from '../monitor/requests'
 import { addressHandoff, AddressesPanel, BlockedSwitch, useHandoff } from './addresses'
 
-// The Accounts page: blocked accounts and accounts seen in traffic, and the
+// The Blocking page: blocked accounts and accounts seen in traffic, and the
 // blocked client addresses.
 
 // blockHandoff is the page memory's key for an account another page asks to
@@ -25,11 +25,11 @@ interface BlockedAccount {
   blocked_by: string
   blocked_at: string
 }
-// AccountsView blocks and unblocks accounts instantly. A block is not a
+// BlockingView blocks and unblocks accounts instantly. A block is not a
 // policy change: no trial, no rollback, and it lasts until an explicit unblock.
 // Accounts recently seen in traffic, with the roles their tokens carried, are
 // listed so an administrator can act on what is happening.
-export function AccountsView(props: ViewProps) {
+export function BlockingView(props: ViewProps) {
   const { admin, can } = props
   const id = useId()
   const [view, setView] = useState<'accounts' | 'addresses'>('accounts')
@@ -92,7 +92,7 @@ export function AccountsView(props: ViewProps) {
 
   return (
     <>
-      <PageHeader title="Accounts" lede="Block or unblock accounts and client addresses; a block applies at every endpoint at once.">
+      <PageHeader title="Blocking" lede="Block or unblock accounts and client addresses; a block applies at every endpoint at once.">
         <ReadStamp okAt={list.last?.at ?? null} failed={list.failed} loading={list.loading} onRefresh={refresh} />
         {manage && view === 'accounts' ? (
           <button type="button" className="btn btn-primary btn-small" onClick={() => openBlock()}>

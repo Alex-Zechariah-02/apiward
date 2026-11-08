@@ -62,7 +62,7 @@ test.describe.serial('request drawer links', () => {
   test('Block is offered only for an account not yet blocked and only with the Block Accounts permission; it opens the usual confirmation', async ({ browser }) => {
     await openAt(admin, 'overview', refused.request_id)
     await drawer(admin).getByRole('button', { name: 'Block Account…' }).click()
-    await expect(admin.getByRole('heading', { level: 1, name: 'Accounts' })).toBeVisible()
+    await expect(admin.getByRole('heading', { level: 1, name: 'Blocking' })).toBeVisible()
     await expect(admin.getByRole('dialog').getByRole('heading', { name: 'Block an Account' })).toBeVisible()
     await expect(admin.getByLabel('Account ID')).toHaveValue('cust-001')
     await admin.getByRole('dialog').getByRole('button', { name: 'Cancel', exact: true }).click()

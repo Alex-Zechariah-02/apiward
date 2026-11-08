@@ -21,7 +21,7 @@ The views are grouped by job.
 - **Roles:** what each role can do under the policy in force, in plain sentences, with any temporary rule that changes it listed beside it and the accounts seen with it in recent requests. The page only reads.
 - **Changes:** the guided way a change goes live. A draft starts on the Policy page or from the active version; pasting or loading a whole JSON document is under **Advanced**. Saving a draft change runs the gateway's own compiler over the whole document; the review lists the differences member by member; an impact preview replays recent requests to show which would now be decided differently; the change then goes on trial with a deadline and is undone by itself unless someone keeps it. Before a trial starts, its dialog says in plain sentences what the change adds, changes and removes; a draft that denies every request or removes a whole API is confirmed by typing “deny all” or the API's ID, and establishing a first policy by typing “deny all”. Past trials are listed with how each ended.
 - **Temporary rules:** allow or restrict something temporarily for a fixed lifetime, checked with the gateway before the rule is added, plus incident quick actions such as freezing ordering for 10 minutes.
-- **Accounts:** block an account instantly, unblock it, and see the accounts and roles in recent traffic. A block is not a policy change: undoing a change never lifts it.
+- **Blocking:** block an account instantly, unblock it, and see the accounts and roles in recent traffic. A block is not a policy change: undoing a change never lifts it.
 
 **Admin**
 
@@ -30,7 +30,7 @@ The views are grouped by job.
 - **Team:** the gateway's administrators and their permissions, the token signing keys it trusts, with a reload from the operator's settings, and the running build (version, Go toolchain and every compiled-in control with the phase it runs at). Adding an administrator stays an operator command.
 - **My account:** session details, your permissions in plain words, the gateway's address, and password change.
 
-The Changes, Temporary rules, Accounts, Roles and APIs pages open with the same list toolbar: a **Filter** box that narrows the rows already read (it sends nothing to the gateway), how many rows it leaves ("2 of 5 roles"; a paged list says "loaded"), and the list's main action at the right. **Add a temporary rule** there opens a step-by-step version of the rule form that ends on a review and then asks the usual confirmation.
+The Changes, Temporary rules, Blocking, Roles and APIs pages open with the same list toolbar: a **Filter** box that narrows the rows already read (it sends nothing to the gateway), how many rows it leaves ("2 of 5 roles"; a paged list says "loaded"), and the list's main action at the right. **Add a temporary rule** there opens a step-by-step version of the rule form that ends on a review and then asks the usual confirmation.
 
 The sidebar starts wide, with its group names, the environment ("Local gateway" when the Dashboard is served from this computer) and its exact address; narrowing it to a strip of icons is one click away and remembered in the browser. Controls move briefly and subtly when their state changes, and only colour and opacity change when the operating system asks for reduced motion.
 

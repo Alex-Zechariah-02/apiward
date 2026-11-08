@@ -15,7 +15,7 @@ export type View =
   | 'versions'
   | 'changes'
   | 'temporary-rules'
-  | 'accounts'
+  | 'blocking'
   | 'history'
   | 'team'
   | 'my-account'

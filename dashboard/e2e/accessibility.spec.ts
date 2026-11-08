@@ -71,7 +71,7 @@ test.describe.serial('dashboard', () => {
     await expect(page.getByRole('heading', { level: 1, name: 'Changes' })).toBeFocused()
 
     // Every view in the navigation.
-    const views = ['Overview', 'Live Traffic', 'APIs', 'Policy', 'Versions', 'Changes', 'Temporary Rules', 'Accounts', 'History', 'Team', 'My Account']
+    const views = ['Overview', 'Live Traffic', 'APIs', 'Policy', 'Versions', 'Changes', 'Temporary Rules', 'Blocking', 'History', 'Team', 'My Account']
     for (const view of views) {
       await go(page, view)
       await scan(page, view)
@@ -96,8 +96,8 @@ test.describe.serial('dashboard', () => {
     // A confirmation dialog takes focus and Escape cancels it without acting.
     const before = await status()
     expect((await adminCall('PUT', '/admin/blocked-accounts/cust-002', { reason: 'Keyboard check' }, { 'Idempotency-Key': crypto.randomUUID() })).status).toBe(200)
-    await go(page, 'Accounts')
-    await scan(page, 'Accounts with a blocked account')
+    await go(page, 'Blocking')
+    await scan(page, 'Blocking with a blocked account')
     await page.getByRole('button', { name: 'Unblock cust-002' }).click()
     await expect(page.getByRole('dialog')).toBeVisible()
     await scan(page, 'confirmation dialog')

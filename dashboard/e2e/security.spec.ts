@@ -151,7 +151,7 @@ test.describe.serial('dashboard', () => {
     await demo.start({ fault: 'audit-fail-published' })
     await admin.reload()
     await signIn(admin, 'admin', password)
-    await go(admin, 'Accounts')
+    await go(admin, 'Blocking')
     await admin.getByRole('main').getByRole('button', { name: 'Block an Account' }).click()
     await admin.getByLabel('Account ID').fill(subject)
     await admin.getByLabel('Reason').fill('audit pending test')

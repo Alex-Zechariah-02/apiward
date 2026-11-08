@@ -26,7 +26,7 @@ import { Candidates } from '../deploy/candidates'
 import { Overrides } from '../deploy/overrides'
 import { History } from '../admin/history'
 import { Account } from '../admin/account'
-import { AccountsView } from '../access/blocking'
+import { BlockingView } from '../access/blocking'
 import { ApisView } from '../policy/catalog'
 import { LiveTraffic } from '../monitor/traffic'
 import { RequestDrawer } from '../monitor/drawer'
@@ -54,7 +54,7 @@ const titles: Record<View, string> = {
   versions: 'Versions',
   changes: 'Changes',
   'temporary-rules': 'Temporary Rules',
-  accounts: 'Accounts',
+  blocking: 'Blocking',
   history: 'History',
   team: 'Team',
   'my-account': 'My Account',
@@ -239,7 +239,7 @@ export function Shell(props: {
           {view === 'versions' ? <PolicyView {...viewProps} /> : null}
           {view === 'changes' ? <Candidates {...viewProps} draft={draft} candidate={candidate} /> : null}
           {view === 'temporary-rules' ? <Overrides {...viewProps} /> : null}
-          {view === 'accounts' ? <AccountsView {...viewProps} /> : null}
+          {view === 'blocking' ? <BlockingView {...viewProps} /> : null}
           {view === 'history' ? <History {...viewProps} /> : null}
           {view === 'team' ? <TeamView {...viewProps} /> : null}
           {view === 'security-log' ? <SecurityLogView {...viewProps} /> : null}

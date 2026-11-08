@@ -133,9 +133,9 @@ test.describe.serial('dashboard', () => {
   test('signing out ends the session in every tab and back navigation shows no privileged view', async () => {
     const cookie = await sessionCookie()
     const second = await adminContext.newPage()
-    await second.goto(adminURL + '/#/accounts')
+    await second.goto(adminURL + '/#/blocking')
     await expect(second.getByText('Signed in as admin')).toBeAttached()
-    await expect(second.getByRole('heading', { level: 1, name: 'Accounts' })).toBeVisible()
+    await expect(second.getByRole('heading', { level: 1, name: 'Blocking' })).toBeVisible()
     await expect(second.getByRole('button', { name: 'Block an Account' })).toBeVisible()
 
     await admin.getByRole('button', { name: 'Sign Out' }).click()
@@ -207,7 +207,7 @@ test.describe.serial('dashboard', () => {
     await expect(viewer.getByRole('button', { name: 'Start a Change from This' })).toHaveCount(0)
     // No block form, Block or Unblock button, quick action or key reload
     // without the permissions.
-    await go(viewer, 'Accounts')
+    await go(viewer, 'Blocking')
     await expect(viewer.getByRole('region', { name: 'Accounts', exact: true })).toBeVisible()
     await expect(viewer.getByRole('button', { name: 'Block an Account' })).toHaveCount(0)
     // The Blocked filter only narrows the list; no action to block or unblock is offered.

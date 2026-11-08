@@ -1,6 +1,6 @@
-/* Access pages: Accounts, the Security Log search, the Access Checker and Limits. */
+/* Access pages: Blocking, the Security Log search, the Access Checker and Limits. */
 
-/* Accounts: one table of every known account, filtered by status. */
+/* Blocking: one table of every known account, filtered by status. */
 .accounts-head {
   flex-wrap: wrap;
   gap: 12px 16px;

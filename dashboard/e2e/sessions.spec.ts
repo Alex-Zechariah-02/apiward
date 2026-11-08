@@ -37,7 +37,7 @@ test.describe.serial('dashboard', () => {
       return { release, done }
     }
     async function block(subject: string) {
-      await go(admin, 'Accounts')
+      await go(admin, 'Blocking')
       await admin.getByRole('main').getByRole('button', { name: 'Block an Account' }).click()
       await admin.getByLabel('Account ID').fill(subject)
       await admin.getByLabel('Reason').fill('sign-out race test')
@@ -60,7 +60,7 @@ test.describe.serial('dashboard', () => {
       await lost.done
       await admin.waitForTimeout(settleTime)
       await signIn(admin, 'admin', password)
-      await go(admin, 'Accounts')
+      await go(admin, 'Blocking')
       await expect(unresolved).toHaveCount(0)
       // Forgetting it here did not undo it: the gateway applied the block once.
       const lostBlocks = (await listAll<{ kind: string; target: string }>('/admin/history')).filter((h) => h.kind === 'account.block' && h.target === lostSubject)

@@ -21,7 +21,7 @@ const icons = {
   overview: SquaresFour,
   traffic: Pulse,
   apis: Plugs,
-  accounts: UserMinus,
+  blocking: UserMinus,
   candidates: GitDiff,
   overrides: Timer,
   history: ClockCounterClockwise,
