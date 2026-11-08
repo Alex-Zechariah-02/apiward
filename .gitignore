@@ -1,0 +1,2 @@
+# The Dashboard build copied in for a release build (go build -tags embedui).
+/internal/adminui/dist/

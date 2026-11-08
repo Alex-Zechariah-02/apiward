@@ -17,6 +17,7 @@ import (
 // layers lists, for each internal package, the internal packages it may import.
 var layers = map[string][]string{
 	"fault":       nil,
+	"adminui":     nil,
 	"policy":      nil,
 	"compile":     {"fault", "policy"},
 	"forward":     {"compile"},
@@ -32,7 +33,7 @@ var layers = map[string][]string{
 	"operator":    {"fault", "policy", "store", "audit", "session"},
 	"gatewaytest": {"policy", "store", "audit", "session", "pipeline", "controller", "issuertest"},
 	"openapi":     {"policy", "compile"},
-	"gateway":     {"fault", "policy", "compile", "forward", "store", "audit", "session", "monitor", "pipeline", "controller", "admin", "operator"},
+	"gateway":     {"fault", "policy", "compile", "forward", "store", "audit", "session", "monitor", "pipeline", "controller", "admin", "operator", "adminui"},
 	// integration tests reach the gateway only through its processes.
 	"integration": {"policy", "compile", "store", "audit", "session", "monitor", "pipeline", "controller"},
 }
@@ -65,6 +66,10 @@ func TestPackageLayers(t *testing.T) {
 		// The go tool ignores these directories, so they hold no package.
 		if name := d.Name(); name == "testdata" || strings.HasPrefix(name, ".") || strings.HasPrefix(name, "_") {
 			return filepath.SkipDir
+		}
+		// A folder of data, such as a copied web build, holds no package.
+		if !hasGoFiles(path) {
+			return nil
 		}
 		rel, _ := filepath.Rel(filepath.Join(root, "internal"), path)
 		found = append(found, filepath.ToSlash(rel))
@@ -163,6 +168,12 @@ func TestNoExampleImports(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+}
+
+// hasGoFiles reports whether dir directly holds a Go file.
+func hasGoFiles(dir string) bool {
+	entries, _ := os.ReadDir(dir)
+	return slices.ContainsFunc(entries, func(e os.DirEntry) bool { return !e.IsDir() && strings.HasSuffix(e.Name(), ".go") })
 }
 
 // modulePath reads the module path from go.mod.

@@ -4,6 +4,7 @@
 package gateway
 
 import (
+	"errors"
 	"fmt"
 	"io/fs"
 	"net/http"
@@ -59,12 +60,34 @@ func serveFrontendFile(w http.ResponseWriter, r *http.Request, files fs.FS, name
 	w.Write(data)
 }
 
-// frontendFiles returns the built frontend in dir, which must hold its
-// index.html; setting names the configuration field in the error.
-func frontendFiles(setting, dir string) (fs.FS, error) {
-	files := os.DirFS(dir)
-	if info, err := fs.Stat(files, "index.html"); err != nil || !info.Mode().IsRegular() {
-		return nil, fmt.Errorf("%s %q must be a directory holding index.html", setting, dir)
+// Where the dashboard's files come from, as the start log names it.
+const (
+	uiDirectory = "directory"
+	uiEmbedded  = "embedded"
+	uiNone      = "none"
+)
+
+// dashboardFiles picks the dashboard's files: the admin_ui directory when the
+// operator set one, else the build embedded in this binary, else none. It
+// returns the files (nil for none) and their source.
+func dashboardFiles(dir string, embedded fs.FS) (fs.FS, string, error) {
+	switch {
+	case dir != "":
+		files := os.DirFS(dir)
+		if !hasIndex(files) {
+			return nil, "", fmt.Errorf("admin_ui %q must be a directory holding index.html", dir)
+		}
+		return files, uiDirectory, nil
+	case embedded != nil:
+		if !hasIndex(embedded) {
+			return nil, "", errors.New("the embedded dashboard has no index.html")
+		}
+		return embedded, uiEmbedded, nil
 	}
-	return files, nil
+	return nil, uiNone, nil
+}
+
+func hasIndex(files fs.FS) bool {
+	info, err := fs.Stat(files, "index.html")
+	return err == nil && info.Mode().IsRegular()
 }

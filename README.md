@@ -202,7 +202,19 @@ go build -trimpath -o <out-dir>/demo.exe ./cmd/demo
 go build -trimpath -o <out-dir>/measure.exe ./cmd/measure
 ```
 
-`-trimpath` keeps local build directory names out of the programs. Reproducing an identical binary also requires the same source, toolchain, dependencies, build flags and environment.
+### Building a release
+
+A release binary carries the Dashboard, so one file serves the gateway and its admin interface. Build the Dashboard, copy its build into `internal/adminui/dist` (ignored by Git), then build with the `embedui` tag:
+
+```
+cd dashboard && npm ci && npm run build && cd ..
+rm -rf internal/adminui/dist && cp -r dashboard/dist internal/adminui/dist
+go build -trimpath -tags embedui -o <out-dir>/gateway ./cmd/gateway
+```
+
+A build without the tag needs no Node.js and serves no Dashboard unless `gateway.admin_ui` names a directory of built files. When `admin_ui` is set it is used instead of the embedded build; the start log line `dashboard files` names the source (`directory`, `embedded` or `none`). Either way the Dashboard is served only on the Admin API listener.
+
+`-trimpath` keeps local build directory names out of the programs. Reproducing an identical binary also requires the same source, toolchain, dependencies, build flags and environment; a release binary also needs the same Dashboard build, made with `npm ci` from `dashboard/package-lock.json`.
 
 Run the required Go checks from the repository root. In PowerShell, give backend verification its isolated port offset:
 

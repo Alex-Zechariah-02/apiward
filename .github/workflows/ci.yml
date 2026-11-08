@@ -82,6 +82,10 @@ jobs:
       - run: npm ci
       - run: npm run check
       - run: npm run build
+      # A release binary embeds this build: prove the embedui build carries it.
+      - run: cp -r dist ../internal/adminui/dist
+      - run: go -C .. vet -tags embedui ./...
+      - run: go -C .. test -tags embedui ./internal/adminui -count=1
       - run: npm audit --audit-level=high
       # The tests run in the installed Chrome (playwright.config.ts).
       - run: npx playwright install --with-deps chrome

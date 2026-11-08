@@ -1,14 +1,18 @@
-// Dashboard files on the admin listener: the page and flat assets with a
-// strict content policy, and nothing else.
+// Dashboard files on the admin listener: where they come from (the admin_ui
+// directory, the build embedded in a release binary, or none), and the page
+// and flat assets served with a strict content policy, and nothing else.
 
 package gateway
 
 import (
+	"io/fs"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"testing/fstest"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/gatewaytest"
 )
@@ -110,5 +114,36 @@ func TestDashboardFiles(t *testing.T) {
 	}
 	if code, _ := e.Get("/"); code == http.StatusOK {
 		t.Errorf("data plane serves the dashboard: %d", code)
+	}
+}
+
+// TestEmbeddedUI: the operator's admin_ui directory wins over an embedded
+// build, an embedded build is served when no directory is set, a binary with
+// neither serves no dashboard, and an embedded build without its page is
+// refused at start.
+func TestEmbeddedUI(t *testing.T) {
+	dir := writeDashboard(t)
+	embedded := fstest.MapFS{"index.html": {Data: []byte("embedded page")}}
+	files, source, err := dashboardFiles(dir, embedded)
+	if err != nil || source != uiDirectory {
+		t.Fatalf("directory and embedded: %q %v", source, err)
+	}
+	if page, _ := fs.ReadFile(files, "index.html"); string(page) == "embedded page" {
+		t.Error("the embedded build overrode the operator's directory")
+	}
+	files, source, err = dashboardFiles("", embedded)
+	if err != nil || source != uiEmbedded {
+		t.Fatalf("embedded only: %q %v", source, err)
+	}
+	w := httptest.NewRecorder()
+	dashboard(files).ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/", nil))
+	if w.Code != http.StatusOK || w.Body.String() != "embedded page" || w.Header().Get("Content-Security-Policy") != uiPolicy {
+		t.Errorf("embedded page: %d %q %v", w.Code, w.Body, w.Header())
+	}
+	if files, source, err = dashboardFiles("", nil); files != nil || source != uiNone || err != nil {
+		t.Errorf("neither: %v %q %v", files, source, err)
+	}
+	if _, _, err = dashboardFiles("", fstest.MapFS{"assets/app.js": {}}); err == nil {
+		t.Error("an embedded build without index.html was accepted")
 	}
 }

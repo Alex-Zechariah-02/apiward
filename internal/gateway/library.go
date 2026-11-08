@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/admin"
+	"github.com/Alex-Zechariah-02/apiward/internal/adminui"
 	"github.com/Alex-Zechariah-02/apiward/internal/controller"
 	"github.com/Alex-Zechariah-02/apiward/internal/forward"
 	"github.com/Alex-Zechariah-02/apiward/internal/monitor"
@@ -161,12 +162,11 @@ func openController(cfg controller.Config, ui string, logger *slog.Logger) (*con
 	if err != nil {
 		return nil, nil, classify(ErrConfig, err)
 	}
-	var files fs.FS
-	if ui != "" {
-		if files, err = frontendFiles("admin_ui", ui); err != nil {
-			return nil, nil, classify(ErrConfig, err)
-		}
+	files, source, err := dashboardFiles(ui, adminui.Files)
+	if err != nil {
+		return nil, nil, classify(ErrConfig, err)
 	}
+	logger.Info("dashboard files", "source", source)
 	if err := c.Open(); err != nil {
 		if errors.Is(err, store.ErrHeld) {
 			return nil, nil, classify(ErrLocked, err)
