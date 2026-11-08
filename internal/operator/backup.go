@@ -1,6 +1,6 @@
 // Operator backup command and backup manifest.
 
-package gateway
+package operator
 
 import (
 	"context"

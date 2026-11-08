@@ -27,7 +27,7 @@ func TestNativeOperatorWindowsAccess(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	paths := []string{e.dir, e.config, e.publicKey, e.database, e.database + "-wal", e.database + "-shm", e.auditLog, backup, manifestPath(backup)}
+	paths := []string{e.dir, e.config, e.publicKey, e.database, e.database + "-wal", e.database + "-shm", e.auditLog, backup, manifestOf(backup)}
 	for _, path := range paths {
 		if _, err := os.Stat(path); err != nil {
 			t.Fatal(err)

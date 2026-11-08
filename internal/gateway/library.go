@@ -18,6 +18,7 @@ import (
 	"github.com/Alex-Zechariah-02/apiward/internal/controller"
 	"github.com/Alex-Zechariah-02/apiward/internal/forward"
 	"github.com/Alex-Zechariah-02/apiward/internal/monitor"
+	"github.com/Alex-Zechariah-02/apiward/internal/operator"
 	"github.com/Alex-Zechariah-02/apiward/internal/pipeline"
 	"github.com/Alex-Zechariah-02/apiward/internal/store"
 )
@@ -59,7 +60,7 @@ type Settings struct{ native *nativeConfig }
 func LoadSettings(path string) (Settings, error) {
 	cfg, err := loadNativeConfig(path)
 	if err == nil {
-		err = operatorPaths(path, cfg.controller, "run", nil)
+		err = operator.CheckPaths(path, operatorConfig(cfg.controller), "run", nil)
 	}
 	if err != nil {
 		return Settings{}, classify(ErrConfig, err)

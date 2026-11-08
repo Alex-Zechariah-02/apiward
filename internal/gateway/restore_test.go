@@ -110,7 +110,7 @@ func TestRestoreRefusals(t *testing.T) {
 	good := filepath.Join(e.dir, "good.db")
 	e.backup(good)
 	goodData, _ := os.ReadFile(good)
-	goodManifest, _ := os.ReadFile(manifestPath(good))
+	goodManifest, _ := os.ReadFile(manifestOf(good))
 
 	// Each case builds a backup file and its manifest.
 	write := func(name string, data []byte, manifest []byte) string {
@@ -119,7 +119,7 @@ func TestRestoreRefusals(t *testing.T) {
 			t.Fatal(err)
 		}
 		if manifest != nil {
-			if err := os.WriteFile(manifestPath(path), manifest, 0o600); err != nil {
+			if err := os.WriteFile(manifestOf(path), manifest, 0o600); err != nil {
 				t.Fatal(err)
 			}
 		}
@@ -127,15 +127,15 @@ func TestRestoreRefusals(t *testing.T) {
 	}
 	// seal writes a manifest that matches the file, with an optional change,
 	// so only the database checks can refuse the file.
-	seal := func(path string, change func(*backupManifest)) string {
-		m := fromJSON[backupManifest](t, string(goodManifest))
+	seal := func(path string, change func(*manifestFile)) string {
+		m := fromJSON[manifestFile](t, string(goodManifest))
 		m.SHA256 = fileSHA256(t, path)
 		info, _ := os.Stat(path)
 		m.Bytes = info.Size()
 		if change != nil {
 			change(&m)
 		}
-		if err := os.WriteFile(manifestPath(path), mustJSON(m), 0o600); err != nil {
+		if err := os.WriteFile(manifestOf(path), mustJSON(m), 0o600); err != nil {
 			t.Fatal(err)
 		}
 		return path
@@ -164,7 +164,7 @@ func TestRestoreRefusals(t *testing.T) {
 		{"truncated", write("truncated.db", goodData[:len(goodData)/2], goodManifest), "does not match its manifest"},
 		{"missing manifest", write("bare.db", goodData, nil), "reading the backup manifest"},
 		{"not a manifest", write("odd.db", goodData, []byte(`{"format":"other"}`)), "not a gateway backup manifest"},
-		{"manifest with another schema version", seal(write("future.db", goodData, nil), func(m *backupManifest) { m.SchemaVersion = store.DatabaseVersion + 1 }), fmt.Sprintf("schema version %d", store.DatabaseVersion+1)},
+		{"manifest with another schema version", seal(write("future.db", goodData, nil), func(m *manifestFile) { m.SchemaVersion = store.DatabaseVersion + 1 }), fmt.Sprintf("schema version %d", store.DatabaseVersion+1)},
 		{"database with another schema version", alter("version.db", fmt.Sprintf(`PRAGMA user_version = %d`, store.DatabaseVersion+1)), fmt.Sprintf("schema version %d", store.DatabaseVersion+1)},
 		{"altered schema", alter("altered.db", `CREATE INDEX extra ON revision (actor)`), "schema differs"},
 		{"another installation", otherInstallation, "belongs to installation"},

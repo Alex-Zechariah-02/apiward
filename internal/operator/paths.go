@@ -1,6 +1,6 @@
 // Path checks for operator commands.
 
-package gateway
+package operator
 
 import (
 	"errors"
@@ -9,7 +9,6 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/Alex-Zechariah-02/apiward/internal/controller"
 	"github.com/Alex-Zechariah-02/apiward/internal/store"
 )
 
@@ -22,7 +21,11 @@ func pathsAlias(a, b string) bool {
 	return sameFile(a, b)
 }
 
-func operatorPaths(configPath string, cfg controller.Config, command string, flags map[string]string) error {
+// CheckPaths refuses a deployment whose files (the configuration at
+// configPath, the database and its companions, the audit log and the trust
+// keys) are not distinct regular paths, and operator files of command that
+// would overwrite any of them.
+func CheckPaths(configPath string, cfg Config, command string, flags map[string]string) error {
 	protected := []struct{ name, path string }{
 		{"configuration", configPath},
 		{"database", cfg.Database},
@@ -32,8 +35,8 @@ func operatorPaths(configPath string, cfg controller.Config, command string, fla
 		{"database SHM", cfg.Database + "-shm"},
 		{"database journal", cfg.Database + "-journal"},
 	}
-	for _, key := range cfg.JWT.Keys {
-		protected = append(protected, struct{ name, path string }{"JWT public key", key.PublicKeyFile})
+	for _, file := range cfg.KeyFiles {
+		protected = append(protected, struct{ name, path string }{"JWT public key", file})
 	}
 	for i, file := range protected {
 		if err := store.RegularPath(file.path); err != nil {

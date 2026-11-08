@@ -1,6 +1,6 @@
 // Operator restore command and its checks.
 
-package gateway
+package operator
 
 import (
 	"context"

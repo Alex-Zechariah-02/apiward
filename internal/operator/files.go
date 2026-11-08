@@ -1,6 +1,6 @@
 // Operator file checks, digests and exclusive writes.
 
-package gateway
+package operator
 
 import (
 	"crypto/sha256"

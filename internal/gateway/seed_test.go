@@ -2,7 +2,9 @@ package gateway
 
 import (
 	"context"
+	"crypto/rand"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"testing"
@@ -43,7 +45,7 @@ func seed(t *testing.T, path string, policy policy.Policy, opts seedOptions) {
 	}
 	var episode any
 	if opts.mode == store.ModeRecovery {
-		episode = randomHex(16)
+		episode = randomID(16)
 	}
 	db, err := sql.Open("sqlite", store.DatabaseURI(path)+"?_pragma=journal_mode(WAL)&_pragma=foreign_keys(ON)")
 	if err != nil {
@@ -69,7 +71,7 @@ func seed(t *testing.T, path string, policy policy.Policy, opts seedOptions) {
 	}
 	statements := []statement{
 		{`INSERT INTO deployment (id, installation, mode, recovery_episode, high_water) VALUES (1, ?, ?, ?, ?)`,
-			[]any{randomHex(16), opts.mode, episode, opts.highWater.UnixMilli()}},
+			[]any{randomID(16), opts.mode, episode, opts.highWater.UnixMilli()}},
 		{`INSERT INTO revision VALUES (1, NULL, 'genesis', ?, ?, 'seed', ?)`, revisionArgs(policy)},
 		{`INSERT INTO base VALUES (1, 1, NULL, NULL)`, nil},
 		{`INSERT INTO administrator VALUES (?, ?, ?, 'active', 1, ?)`, []any{harnessAdmin, store.PermAll, harnessHash(), time.Now().UnixMilli()}},
@@ -186,4 +188,11 @@ func count(t *testing.T, db *sql.DB, query string, args ...any) int {
 		t.Fatalf("%s: %v", query, err)
 	}
 	return n
+}
+
+// randomID is n random bytes in hex.
+func randomID(n int) string {
+	b := make([]byte, n)
+	rand.Read(b)
+	return hex.EncodeToString(b)
 }

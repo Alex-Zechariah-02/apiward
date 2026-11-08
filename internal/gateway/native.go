@@ -19,6 +19,7 @@ import (
 
 	"github.com/Alex-Zechariah-02/apiward/internal/admin"
 	"github.com/Alex-Zechariah-02/apiward/internal/controller"
+	"github.com/Alex-Zechariah-02/apiward/internal/operator"
 	"github.com/Alex-Zechariah-02/apiward/internal/pipeline"
 )
 
@@ -101,7 +102,7 @@ func Main(args []string) int {
 		fmt.Fprintln(os.Stderr, "gateway:", err)
 		return exitFailed
 	}
-	code, err := executeOperator(command, &operatorContext{config: cfg.controller}, values)
+	code, err := operator.Run(command, operatorConfig(cfg.controller), values)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "gateway:", err)
 	}

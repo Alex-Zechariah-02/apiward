@@ -8,23 +8,24 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/controller"
 	"github.com/Alex-Zechariah-02/apiward/internal/store"
 )
 
 // backup runs the backup command and returns the backup's manifest.
-func (e *env) backup(output string) backupManifest {
+func (e *env) backup(output string) manifestFile {
 	e.t.Helper()
 	out, code := e.runOperator(binaries.plain, nil, "backup", "--output", output)
 	if code != 0 {
 		e.t.Fatalf("backup exited %d: %s", code, out)
 	}
-	data, err := os.ReadFile(manifestPath(output))
+	data, err := os.ReadFile(manifestOf(output))
 	if err != nil {
 		e.t.Fatal(err)
 	}
-	return fromJSON[backupManifest](e.t, string(data))
+	return fromJSON[manifestFile](e.t, string(data))
 }
 
 // recoverAdministrator enrols root on a stopped gateway, starts it and logs
@@ -93,7 +94,7 @@ func TestBackupIncludesWALAndRestoresElsewhere(t *testing.T) {
 
 	output := filepath.Join(e.dir, "backup.db")
 	manifest := e.backup(output)
-	if manifest.Revision != 2 || manifest.Mode != store.ModeNormal || manifest.SchemaVersion != store.DatabaseVersion || manifest.Format != backupFormat {
+	if manifest.Revision != 2 || manifest.Mode != store.ModeNormal || manifest.SchemaVersion != store.DatabaseVersion || manifest.Format != backupFormatName {
 		t.Fatalf("manifest %+v", manifest)
 	}
 	if manifest.SHA256 != fileSHA256(t, output) || manifest.Installation != queryString(t, e.database, `SELECT installation FROM deployment`) {
@@ -198,7 +199,7 @@ func TestBackupRefusalsAndInterruption(t *testing.T) {
 	if out, code := e.runOperator(binaries.plain, nil, "backup", "--output", unwritable); code == 0 {
 		t.Fatalf("backup into a missing directory: %s", out)
 	}
-	if _, err := os.Stat(manifestPath(unwritable)); err == nil {
+	if _, err := os.Stat(manifestOf(unwritable)); err == nil {
 		t.Fatal("a failed backup wrote a manifest")
 	}
 
@@ -206,7 +207,7 @@ func TestBackupRefusalsAndInterruption(t *testing.T) {
 	if _, code := e.runOperator(binaries.fault, []string{"GATEWAY_FAULT=backup-before-verify"}, "backup", "--output", interrupted); code != crashExit {
 		t.Fatalf("interrupted backup exit code %d", code)
 	}
-	for path, present := range map[string]bool{interrupted + ".partial": true, interrupted: false, manifestPath(interrupted): false} {
+	for path, present := range map[string]bool{interrupted + ".partial": true, interrupted: false, manifestOf(interrupted): false} {
 		if _, err := os.Stat(path); (err == nil) != present {
 			t.Errorf("%s present = %v, want %v", filepath.Base(path), err == nil, present)
 		}
@@ -235,3 +236,22 @@ func TestBackupRefusalsAndInterruption(t *testing.T) {
 		t.Fatalf("live gateway after the backup failures: %d", code)
 	}
 }
+
+// manifestFile is the manifest a backup writes beside itself, as the restore
+// command and an operator read it.
+type manifestFile struct {
+	Format        string    `json:"format"`
+	Installation  string    `json:"installation"`
+	SchemaVersion int       `json:"schema_version"`
+	Mode          string    `json:"mode"`
+	Revision      int64     `json:"confirmed_revision"`
+	CreatedAt     time.Time `json:"created_at"`
+	SHA256        string    `json:"sha256"`
+	Bytes         int64     `json:"bytes"`
+}
+
+// backupFormatName names the manifest format.
+const backupFormatName = "gateway-backup-1"
+
+// manifestOf is the manifest path of the backup at path.
+func manifestOf(backup string) string { return backup + ".manifest.json" }

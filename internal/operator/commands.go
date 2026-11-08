@@ -1,6 +1,6 @@
 // Operator commands: install, enrol, migrate and dispatch.
 
-package gateway
+package operator
 
 import (
 	"context"
@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/audit"
-	"github.com/Alex-Zechariah-02/apiward/internal/controller"
 	"github.com/Alex-Zechariah-02/apiward/internal/session"
 	"github.com/Alex-Zechariah-02/apiward/internal/store"
 )
@@ -27,9 +26,21 @@ const (
 	backupFormat      = "gateway-backup-1"
 )
 
+// Config is the part of the gateway's settings an operator command needs:
+// the deployment's files, audit log limits and the trust key files, which no
+// command may overwrite.
+type Config struct {
+	Database      string
+	AuditLog      string
+	AuditMaxBytes int64
+	AuditMaxFiles int
+	AuditTimeout  time.Duration
+	KeyFiles      []string
+}
+
 // operatorContext is the deployment an operator command acts on.
 type operatorContext struct {
-	config controller.Config
+	config Config
 	audit  *audit.AuditLog
 }
 
@@ -170,9 +181,13 @@ func runMigrate(o *operatorContext) (int, error) {
 	return 0, nil
 }
 
-// executeOperator holds ownership across restore's SQLite file replacement.
-func executeOperator(command string, o *operatorContext, flags map[string]string) (int, error) {
-	if err := operatorPaths(flags["config"], o.config, command, flags); err != nil {
+// Run runs the operator command with its flags on the deployment cfg names;
+// flags["config"] is the configuration file's path. It holds the
+// deployment's lock for the whole command, across restore's SQLite file
+// replacement, and returns the exit code.
+func Run(command string, cfg Config, flags map[string]string) (int, error) {
+	o := &operatorContext{config: cfg}
+	if err := CheckPaths(flags["config"], o.config, command, flags); err != nil {
 		return 1, err
 	}
 	lock, err := store.LockDeployment(o.config.Database)

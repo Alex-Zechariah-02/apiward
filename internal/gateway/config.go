@@ -16,6 +16,7 @@ import (
 
 	"github.com/Alex-Zechariah-02/apiward/internal/controller"
 	"github.com/Alex-Zechariah-02/apiward/internal/forward"
+	"github.com/Alex-Zechariah-02/apiward/internal/operator"
 	"github.com/Alex-Zechariah-02/apiward/internal/pipeline"
 	"github.com/Alex-Zechariah-02/apiward/internal/policy"
 )
@@ -116,6 +117,17 @@ type nativeConfig struct {
 	// website holds the built Fetch website served at /; nil when
 	// none is configured.
 	website fs.FS
+}
+
+// operatorConfig is what the operator commands need of the controller's
+// settings.
+func operatorConfig(c controller.Config) operator.Config {
+	keys := make([]string, len(c.JWT.Keys))
+	for i, key := range c.JWT.Keys {
+		keys[i] = key.PublicKeyFile
+	}
+	return operator.Config{Database: c.Database, AuditLog: c.AuditLog, AuditMaxBytes: c.AuditMaxBytes,
+		AuditMaxFiles: c.AuditMaxFiles, AuditTimeout: c.AuditTimeout, KeyFiles: keys}
 }
 
 // loadNativeConfig reads and checks the configuration file at path. The
