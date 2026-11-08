@@ -17,7 +17,7 @@ func adviceGeneration(t *testing.T) *compile.Generation {
 	g, err := compile.Compile(policy.Policy{
 		SchemaVersion: policy.SchemaVersion, Profile: policy.ProfileCore,
 		Upstreams: []policy.Upstream{{ID: "A", Dial: "127.0.0.1:9"}},
-		APIs:      []policy.API{{ID: "a", Upstream: "A"}},
+		APIs:      []policy.API{{ID: "a", Upstream: "A", ResponseHeaders: &policy.ResponseHeaders{HSTS: true}}},
 		Operations: []policy.Operation{
 			{ID: "open", API: "a", Method: "GET", Target: "/open", Access: "allow", Auth: "none"},
 			{ID: "limited", API: "a", Method: "GET", Target: "/limited", Access: "allow", Auth: "none", Rate: &policy.RateRule{Algorithm: "sliding-window", Count: 5, WindowSeconds: 60, Key: "client_address"}},
@@ -43,12 +43,19 @@ func ids(items []Finding) []string {
 }
 
 // The configuration warnings follow the fixed rules, in the fixed order, and
-// a switched-off endpoint raises none.
+// a switched-off endpoint raises none. HSTS is reported once per API, and only
+// when the gateway serves plain HTTP itself.
 func TestConfigurationWarnings(t *testing.T) {
-	got := ids(ConfigurationWarnings(adviceGeneration(t)))
-	want := []string{"W1:open", "W2:orphan", "W3:IDLE", "W4:read"}
+	g := adviceGeneration(t)
+	got := ids(ConfigurationWarnings(g, true))
+	want := []string{"W1:open", "W2:orphan", "W5:a", "W3:IDLE", "W4:read"}
 	if !slices.Equal(got, want) {
-		t.Errorf("warnings %v, want %v", got, want)
+		t.Errorf("plain HTTP: warnings %v, want %v", got, want)
+	}
+	got = ids(ConfigurationWarnings(g, false))
+	want = []string{"W1:open", "W2:orphan", "W3:IDLE", "W4:read"}
+	if !slices.Equal(got, want) {
+		t.Errorf("host listener: warnings %v, want %v", got, want)
 	}
 }
 

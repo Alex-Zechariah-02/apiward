@@ -12,13 +12,13 @@ import (
 	"github.com/Alex-Zechariah-02/apiward/internal/compile"
 )
 
-// The fixed checks, rule set version "checks-0.2": static
+// The fixed checks, rule set version "checks-0.3": static
 // configuration warnings, unused permissions from observed traffic, and
 // alerts. They advise only: nothing here blocks, changes or activates
 // anything, and nothing runs on the request path. Each answer names the
 // rule set version so findings can be traced to the rules that made them.
 const (
-	AdviceRules = "checks-0.2"
+	AdviceRules = "checks-0.3"
 
 	// Unused permissions are withheld until the request records read from
 	// the security log span this long and number this many.
@@ -55,13 +55,21 @@ func SortFindings(items []Finding) {
 	})
 }
 
-// ConfigurationWarnings reads the compiled generation only.
-func ConfigurationWarnings(g *compile.Generation) []Finding {
+// ConfigurationWarnings reads the compiled generation and, for HSTS, whether
+// the gateway serves the data plane itself over plain HTTP (plain). A host
+// program's listener may use TLS, which the gateway cannot see, so plain is
+// false there and HSTS raises nothing.
+func ConfigurationWarnings(g *compile.Generation, plain bool) []Finding {
 	items := []Finding{}
 	usedRoles := map[string]bool{}
+	hstsAPIs := map[string]bool{}
 	for _, r := range g.Rules() {
 		for _, role := range r.Roles() {
 			usedRoles[role] = true
+		}
+		if plain && r.Response() != nil && r.Response().HSTS() && !hstsAPIs[r.API()] {
+			hstsAPIs[r.API()] = true
+			items = append(items, Finding{"W5", "medium", r.API(), "The API tells browsers to use HTTPS only (HSTS), but the gateway receives plain HTTP, so the header is never sent. Set HSTS where TLS ends, such as on the proxy in front of the gateway."})
 		}
 		if !r.Permitted() {
 			continue

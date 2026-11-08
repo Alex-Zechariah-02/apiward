@@ -194,7 +194,7 @@ func startNative(cfg nativeConfig, logger *slog.Logger) (*nativeGateway, error) 
 	if err != nil {
 		return nil, errors.Join(classify(ErrListen, fmt.Errorf("data listener: %w", err)), c.Stop())
 	}
-	metricsListener, err := d.listen()
+	metricsListener, err := d.listen(true)
 	if err != nil {
 		listener.Close()
 		return nil, errors.Join(err, c.Stop())

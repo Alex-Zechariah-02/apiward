@@ -63,7 +63,7 @@ func (e *Embedded) Start() error {
 	case e.started:
 		return classify(ErrStarted, errors.New("the gateway was already started"))
 	}
-	metrics, err := e.deployment.listen()
+	metrics, err := e.deployment.listen(false)
 	if err != nil {
 		e.stopping = true
 		ctx, cancel := context.WithTimeout(context.Background(), controller.ShutdownWait)

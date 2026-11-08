@@ -180,9 +180,10 @@ func openController(cfg controller.Config, ui string, logger *slog.Logger) (*con
 	return c, files, nil
 }
 
-// listen binds the metrics address and starts the Admin API. On an error
-// neither stays bound; the caller releases the deployment.
-func (d *deployment) listen() (net.Listener, error) {
+// listen binds the metrics address and starts the Admin API. plain is true
+// when the gateway serves the data plane itself, over plain HTTP. On an
+// error neither stays bound; the caller releases the deployment.
+func (d *deployment) listen(plain bool) (net.Listener, error) {
 	metrics, err := net.Listen("tcp", d.config.metricsListen)
 	if err != nil {
 		return nil, classify(ErrListen, fmt.Errorf("metrics listener: %w", err))
@@ -191,7 +192,7 @@ func (d *deployment) listen() (net.Listener, error) {
 	if d.ui != nil {
 		ui = dashboard(d.ui)
 	}
-	if err := d.controller.Start(admin.New(admin.Deps{Control: d.controller, Limiter: d.limiter, UI: ui, Logger: d.logger}).Handler()); err != nil {
+	if err := d.controller.Start(admin.New(admin.Deps{Control: d.controller, Limiter: d.limiter, UI: ui, Plain: plain, Logger: d.logger}).Handler()); err != nil {
 		metrics.Close()
 		return nil, classify(ErrListen, fmt.Errorf("admin listener: %w", err))
 	}

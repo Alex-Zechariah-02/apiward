@@ -52,16 +52,19 @@ type Server struct {
 	throttle     *throttle
 	hashing      chan struct{} // bounds concurrent password hashing
 	ui           http.Handler  // the dashboard files; nil when none are configured
+	plain        bool          // the gateway serves the data plane itself over plain HTTP
 	logger       *slog.Logger
 }
 
 // Deps is what the Admin API serves: an opened controller, the data plane's
 // rate counters (for the limits view), the dashboard files (nil: none) and
-// the logger.
+// the logger. Plain is true when the gateway serves the data plane itself
+// over plain HTTP, so HSTS is never sent; false when a host program owns it.
 type Deps struct {
 	Control *controller.Controller
 	Limiter *pipeline.Limiter
 	UI      http.Handler
+	Plain   bool
 	Logger  *slog.Logger
 }
 
@@ -71,7 +74,7 @@ func New(d Deps) *Server {
 	return &Server{
 		control: c, config: c.Settings(), store: c.Reads(), audit: c.Audit(),
 		observations: c.Observations(), limiter: d.Limiter, sessions: c.Sessions(),
-		throttle: newThrottle(), hashing: make(chan struct{}, maxHashing), ui: d.UI, logger: d.Logger,
+		throttle: newThrottle(), hashing: make(chan struct{}, maxHashing), ui: d.UI, plain: d.Plain, logger: d.Logger,
 	}
 }
 

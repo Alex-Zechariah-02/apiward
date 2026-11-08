@@ -214,6 +214,9 @@ func compileResponse(h *policy.ResponseHeaders, i int) (*ResponseRule, error) {
 	return out, nil
 }
 
+// HSTS reports whether the API asks for Strict-Transport-Security.
+func (r *ResponseRule) HSTS() bool { return r.hsts }
+
 // Apply removes the listed headers and adds each security header the
 // response does not already have. Strict-Transport-Security is added only
 // to a response sent over TLS.

@@ -49,7 +49,7 @@ func (s *Server) handleAdvice(w http.ResponseWriter, r *http.Request, who caller
 		"rules":          monitor.AdviceRules,
 		"generation":     g.ID,
 		"candidate":      candidate,
-		"warnings":       monitor.ConfigurationWarnings(g),
+		"warnings":       monitor.ConfigurationWarnings(g, s.plain),
 		"unused_permits": monitor.UnusedPermissions(g, use, missing, time.Now()),
 	})
 }
