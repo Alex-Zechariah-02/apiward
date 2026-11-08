@@ -2,15 +2,16 @@ import { spawn, spawnSync, type ChildProcess } from 'node:child_process'
 import { cpSync, existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { request as httpRequest } from 'node:http'
 import { join, resolve } from 'node:path'
-import { build, buildApplication, temporaryDir, httpOrigin, offsetPort } from '../../examples/fetch/e2e/backend'
-import { Demo as SharedDemo, enrolmentSecret } from '../../examples/fetch/e2e/demo'
-export type { Receipt } from '../../examples/fetch/e2e/demo'
-export { adminURL, build, controls, gatewayIdentity, siteURL } from '../../examples/fetch/e2e/backend'
+// The shared helpers come from the Fetch repository checked out beside this one.
+import { build, buildApplication, fetchRoot, temporaryDir, httpOrigin, offsetPort } from '../../../fetch/e2e/backend'
+import { Demo as SharedDemo, enrolmentSecret } from '../../../fetch/e2e/demo'
+export type { Receipt } from '../../../fetch/e2e/demo'
+export { adminURL, build, controls, gatewayIdentity, siteURL } from '../../../fetch/e2e/backend'
 
 export const applicationDist = resolve(process.env.E2E_APP_DIST ?? 'dist')
 
 // The end-to-end tests drive the real programs as an operator would: the
-// gateway repository's demo tool sets up and runs the gateway, the Fetch
+// Fetch demo tool sets up and runs the gateway, the Fetch
 // services and Fetch Accounts, issues test tokens and resets the services. The
 // tests read the services' own receipts and the gateway's audit events as evidence
 // independent of what the browser shows.
@@ -19,14 +20,14 @@ const exe = process.platform === 'win32' ? '.exe' : ''
 
 // webRoot lays out the frontend directory the demo tool needs, with this
 // repository's build as admin/ and a client build as demo/. The client build
-// is WEBSITE_DIST when given, or else a fresh build of the repository's
-// client folder.
+// is WEBSITE_DIST when given, or else a fresh build of the Fetch
+// repository's client folder.
 export function webRoot(): string {
   const dashboard = applicationDist
   if (!existsSync(join(dashboard, 'index.html'))) throw new Error('build the dashboard first (npm run build)')
   const root = temporaryDir('dashboard-e2e-web-')
   cpSync(dashboard, join(root, 'admin'), { recursive: true })
-  cpSync(process.env.WEBSITE_DIST ?? buildApplication('examples/fetch/client'), join(root, 'demo'), { recursive: true })
+  cpSync(process.env.WEBSITE_DIST ?? buildApplication(join(fetchRoot, 'client')), join(root, 'demo'), { recursive: true })
   return root
 }
 

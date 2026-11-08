@@ -77,7 +77,7 @@ The gateway serves the dashboard under a strict content policy (`default-src 'no
 
 ## Browser tests
 
-The tests in `e2e/` run the gateway, Fetch services and Fetch Accounts through the repository's demo tool with the Fetch baseline policy. They check what the dashboard shows against the Admin API, the services' own receipts and the gateway's security events, including the content policy, session cookie, CSRF, Origin and Host rules, unknown outcomes, storage and accessibility at phone, tablet and desktop widths.
+The tests in `e2e/` run the gateway, Fetch services and Fetch Accounts through the Fetch demo tool (the Fetch repository checked out beside this one, `../fetch`) with the Fetch baseline policy. They check what the dashboard shows against the Admin API, the services' own receipts and the gateway's security events, including the content policy, session cookie, CSRF, Origin and Host rules, unknown outcomes, storage and accessibility at phone, tablet and desktop widths.
 
 By default, the backend is built from an isolated export of `HEAD`; uncommitted Go changes are excluded. Set `E2E_BACKEND_SOURCE=worktree` to snapshot the current `cmd/`, `internal/`, `go.mod` and `go.sum`, including non-ignored new files. The shared helpers in the root `e2e/` directory record the selected commit, source mode, input-file hashes and diff hash, and refuse a worktree snapshot that changes during copying.
 
@@ -93,4 +93,4 @@ npm run e2e
 
 Each spec file starts its own gateway and builds the state its tests read. One file or one test can be rerun alone with `npx playwright test e2e/<file>.spec.ts [-g "<test name>"]`, with `E2E_BACKEND_SOURCE` and `EAT_PORT_OFFSET` set as above.
 
-The tests serve `dist/`, or the existing build named by `E2E_APP_DIST`. The demo tool also needs a website build; the helper builds `../examples/fetch/client`, unless `WEBSITE_DIST` names a built client to use instead. Optional: `E2E_EVIDENCE` names a file for JSON-lines evidence (backend source manifests, statuses, receipts and event fields, never secrets), and `E2E_SHOTS` a directory for screenshots. Pages taller than 16,000 pixels are captured as viewport images with a JSON manifest of their scroll positions, avoiding Chrome's tall-image repetition.
+The tests serve `dist/`, or the existing build named by `E2E_APP_DIST`. The demo tool also needs a website build; the helper builds `../fetch/client` (the Fetch shop), unless `WEBSITE_DIST` names a built client to use instead. Optional: `E2E_EVIDENCE` names a file for JSON-lines evidence (backend source manifests, statuses, receipts and event fields, never secrets), and `E2E_SHOTS` a directory for screenshots. Pages taller than 16,000 pixels are captured as viewport images with a JSON manifest of their scroll positions, avoiding Chrome's tall-image repetition.

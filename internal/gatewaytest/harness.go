@@ -42,11 +42,11 @@ const (
 )
 
 // programs is the import path prefix of the gateway's programs the harness
-// builds; the Fetch programs are built in the Fetch module's folder.
+// builds; the Fetch programs are built in the Fetch checkout.
 const programs = "github.com/Alex-Zechariah-02/apiward/cmd/"
 
-// fetchFolder is the Fetch example module's folder in the repository.
-var fetchFolder = filepath.Join("examples", "fetch")
+// fetchFolder is the Fetch checkout beside this repository, as in CI.
+var fetchFolder = filepath.Join("..", "fetch")
 
 // Main builds the binaries, runs the tests and removes the binaries.
 // Each test package's TestMain calls it with its own block of test ports,
@@ -75,12 +75,15 @@ func Main(m *testing.M, first, last int) {
 		Binaries.race = true
 	}
 	root, err := repositoryRoot()
+	fetch := filepath.Join(root, fetchFolder)
+	if _, missing := os.Stat(filepath.Join(fetch, "cmd", "demo")); err == nil && missing != nil {
+		err = fmt.Errorf("the Fetch repository is not checked out at %s: clone github.com/Alex-Zechariah-02/fetch there", fetch)
+	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.RemoveAll(dir)
 		os.Exit(1)
 	}
-	fetch := filepath.Join(root, fetchFolder)
 	builds := []struct{ out, tags, dir, pkg string }{
 		{Binaries.Plain, "", root, programs + "gateway"},
 		{Binaries.Fault, "faultinject", root, programs + "gateway"},

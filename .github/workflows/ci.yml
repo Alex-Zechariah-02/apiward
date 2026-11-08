@@ -1,4 +1,6 @@
-# Checks the gateway, its vulnerability status and both web apps on every change.
+# Checks the gateway, its vulnerability status and the Dashboard on every
+# change. The stack and browser tests run the Fetch demonstration from its
+# own repository, checked out beside this one at FETCH_REF.
 name: CI
 
 on:
@@ -13,34 +15,42 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  # The Fetch commit these tests are known to pass with; move it on purpose.
+  FETCH_REF: e00416de0b417b9915fe37a6962cddc399a46044
+
 jobs:
   go:
     runs-on: ubuntu-24.04
     timeout-minutes: 75
     env:
       EAT_PORT_OFFSET: "1000"
+    defaults:
+      run:
+        working-directory: apiward
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          path: apiward
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: Alex-Zechariah-02/fetch
+          ref: ${{ env.FETCH_REF }}
+          path: fetch
           persist-credentials: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version-file: go.mod
+          go-version-file: apiward/go.mod
+          cache-dependency-path: |
+            apiward/go.sum
+            fetch/go.sum
       - run: go mod verify
       - run: test -z "$(gofmt -l $(git ls-files '*.go'))"
       - run: go vet ./...
       - run: go vet -tags faultinject ./...
       - run: go test ./... -count=1
       - run: go test -race ./... -count=1 -timeout 60m
-      # The Fetch example is a module of its own.
-      - run: go mod verify
-        working-directory: examples/fetch
-      - run: go vet ./...
-        working-directory: examples/fetch
-      - run: go test ./... -count=1
-        working-directory: examples/fetch
-      - run: go test -race ./... -count=1 -timeout 30m
-        working-directory: examples/fetch
 
   vuln:
     runs-on: ubuntu-24.04
@@ -53,8 +63,6 @@ jobs:
         with:
           go-version-file: go.mod
       - run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
-      - run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
-        working-directory: examples/fetch
 
   dashboard:
     runs-on: ubuntu-24.04
@@ -63,22 +71,32 @@ jobs:
       EAT_PORT_OFFSET: "2000"
     defaults:
       run:
-        working-directory: dashboard
+        working-directory: apiward/dashboard
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          path: apiward
+          persist-credentials: false
+      # The browser tests run the Fetch demo tool and build its shop.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: Alex-Zechariah-02/fetch
+          ref: ${{ env.FETCH_REF }}
+          path: fetch
           persist-credentials: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version-file: go.mod
+          go-version-file: apiward/go.mod
+          cache-dependency-path: |
+            apiward/go.sum
+            fetch/go.sum
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
           cache: npm
-          # The browser tests also build the client app.
           cache-dependency-path: |
-            dashboard/package-lock.json
-            examples/fetch/client/package-lock.json
+            apiward/dashboard/package-lock.json
+            fetch/client/package-lock.json
       - run: npm ci
       - run: npm run check
       - run: npm run build
@@ -91,37 +109,6 @@ jobs:
       - run: npx playwright install --with-deps chrome
       # Failure traces hold page contents and test credentials, so they stay
       # on the machine that ran the tests and are not uploaded.
-      - run: npx playwright test
-
-  client:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 30
-    env:
-      EAT_PORT_OFFSET: "3000"
-    defaults:
-      run:
-        working-directory: examples/fetch/client
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: go.mod
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: 24
-          cache: npm
-          # The browser tests also build the dashboard.
-          cache-dependency-path: |
-            examples/fetch/client/package-lock.json
-            dashboard/package-lock.json
-      - run: npm ci
-      - run: npm run check
-      - run: npm run build
-      - run: npm audit --audit-level=high
-      # The tests run in the installed Chrome (playwright.config.ts).
-      - run: npx playwright install --with-deps chrome
       - run: npx playwright test
 
   deps:

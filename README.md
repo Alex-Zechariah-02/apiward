@@ -151,7 +151,7 @@ A module adds a check to the request pipeline at build time. It implements `modu
 - The Dashboard's header search by Ref and the live events use an in-memory window of the latest 10,000 API outcomes. A security log search reads the active and rotated audit files, newest first and bounded per page, and exports matching requests as CSV or JSON; it names any log file that has been moved away. Event streams have bounded queues, disclose dropped events and stop with the administrator's session. Traffic summaries and a separate loopback Prometheus listener expose bounded operational measurements without token, subject or address labels.
 - Local commands set up the first administrator, add or reset administrators, make and restore checked database backups, and upgrade a database made by an earlier version. A restored backup serves nothing until an administrator confirms a new policy that allows nothing, and a provisional policy in the backup never comes back.
 - A web dashboard for administrators (in `dashboard/`) is served by the admin listener itself, so it uses the same sign-in, origin and CSRF checks as the admin API. It shows the confirmed policy, any provisional policy and its deadline, the temporary overrides in force and the change history. It stages and activates new policies, confirms or rolls them back and creates or revokes overrides. It also has pages for the security log search, the access checker, limits and advice, and shows active alerts on its overview. Each change is shown as done only when the gateway's receipt arrives, and a request with no answer is shown as having an unknown outcome.
-- Fetch, the demonstration application in `examples/fetch/client/`, is reached on a second loopback address, so the administrator's session cookie never reaches it. The gateway serves no website of its own: the demo tool serves the shop's built files as one more upstream, and the baseline policy exposes its pages and assets as public `GET` operations of the API `web`, so every request to the shop is checked, rate-limited and audited like an API call. Customers, merchants, riders, support agents and operations staff sign in through Fetch Accounts. Application calls go through the gateway to Inventory, Orders, Reports, Support and Accounts. Business ownership, stock, wallet and order transitions stay in those services.
+- [Fetch](https://github.com/Alex-Zechariah-02/fetch), the demonstration application (its own repository), is reached on a second loopback address, so the administrator's session cookie never reaches it. The gateway serves no website of its own: the demo tool serves the shop's built files as one more upstream, and the baseline policy exposes its pages and assets as public `GET` operations of the API `web`, so every request to the shop is checked, rate-limited and audited like an API call. Customers, merchants, riders, support agents and operations staff sign in through Fetch Accounts. Application calls go through the gateway to Inventory, Orders, Reports, Support and Accounts. Business ownership, stock, wallet and order transitions stay in those services.
 
 ### Code layout
 
@@ -183,23 +183,13 @@ Each package under `internal/` imports only the packages listed before it; a tes
 
 ## Build and test
 
-You need Go 1.26 or newer. `go.mod` selects the Go 1.27.3 toolchain; with `GOTOOLCHAIN=auto`, Go uses or downloads that toolchain when needed. The gateway's programs live in `cmd/`, its code in `internal/`, and the preserved controlled APIs for gateway regression tests in `internal/testfixture`. The Fetch demonstration is a separate module in `examples/fetch`: its programs in `examples/fetch/cmd/`, its services in `examples/fetch/internal/services`, its website in `examples/fetch/client/`. It reaches the gateway only through the gateway's programs and public packages. The Dashboard is in `dashboard/`.
+You need Go 1.26 or newer. `go.mod` selects the Go 1.27.3 toolchain; with `GOTOOLCHAIN=auto`, Go uses or downloads that toolchain when needed. The gateway's programs live in `cmd/`, its code in `internal/`, and the preserved controlled APIs for gateway regression tests in `internal/testfixture`. The Fetch demonstration is its own repository; the gateway's stack and browser tests build its programs from a checkout beside this one (`../fetch`), which CI checks out at the commit named by `FETCH_REF` in `.github/workflows/ci.yml`. Fetch reaches the gateway only through the gateway's programs and public packages. The Dashboard is in `dashboard/`.
 
 - `cmd/gateway` runs the gateway from one strict JSON configuration file. It has the commands `run`, `install`, `enrol`, `backup`, `restore` and `migrate`, each with `--config <file>`, and the offline `policy import-openapi` and `policy export-openapi` (see above). The local commands `install`, `enrol`, `backup`, `restore` and `migrate` run while the gateway is stopped.
-- `examples/fetch/cmd/services -service inventory|orders|reports|support -secret-file <service.secret>` runs a Fetch business API, with independent authenticated receipts, state and reset. Defaults honor `EAT_PORT_OFFSET`; `-listen` and `-control` select explicit loopback addresses. Orders uses `-inventory <http-origin>` and Reports uses `-orders <http-origin>` for authenticated internal calls.
-- `examples/fetch/cmd/accounts -secret-file <service.secret> -signing-settings <accounts.json>` runs Fetch Accounts. Signing settings contain `kid` and an absolute `private_key_file`. Only Accounts signs application tokens, which last 15 minutes. Account and signing secrets stay in the private demonstration state.
-- `cmd/testfixture` preserves the three earlier controlled APIs for gateway regression tests. The Fetch demonstration does not build or run it.
-- `examples/fetch/cmd/demo` builds, sets up and runs the full local stack with `up`. `setup` writes `gateway.json`, complete baseline and deny-all policies, `service.secret`, a signing key pair and `accounts.json` into a new identified private directory, then installs the first administrator. `run` starts the five services and gateway, reports protected admission separately from listening, and stops its own children gracefully. `token` is an optional client of Accounts for a seeded subject; it cannot change the fixed 15-minute lifetime. `reset` restores every service's seed and clears its receipts. `events` prints request events from the active audit file; retained rotated files are not searched.
-- `examples/fetch/cmd/measure -samples 30 -account cust-001` collects preliminary paired wallet latency against an isolated running Fetch stack, directly and through the gateway. It honors `EAT_PORT_OFFSET`, keeps credentials out of output, checks equivalent successful responses, and emits raw observations and aggregate JSON.
 
 ```
 go build -trimpath -o <out-dir>/gateway.exe ./cmd/gateway
 go build -trimpath -o <out-dir>/testfixture.exe ./cmd/testfixture
-cd examples/fetch
-go build -trimpath -o <out-dir>/services.exe ./cmd/services
-go build -trimpath -o <out-dir>/accounts.exe ./cmd/accounts
-go build -trimpath -o <out-dir>/demo.exe ./cmd/demo
-go build -trimpath -o <out-dir>/measure.exe ./cmd/measure
 ```
 
 ### Building a release
@@ -227,50 +217,13 @@ go vet -tags faultinject ./...
 go test ./... -count=1
 ```
 
-Run `go mod verify`, `go vet ./...` and `go test ./... -count=1` again in `examples/fetch` for the Fetch module. `gofmt -l` must print nothing. The gateway regression tests start real gateway and controlled API processes and check independent request receipts. The Fetch integration test starts all five services and walks the role flows, refusals, policy changes, blocks, keys and resets. Tests use isolated synthetic identities and temporary state: the controlled-test issuer is in memory, while real Accounts tests create private signing files in temporary directories. No application signing key is shipped in source. Race and optional WSL checks have separate evidence; an unrun platform check is not implied by a passing Windows suite.
+`gofmt -l` must print nothing. The Fetch stack tests need the Fetch repository checked out as `../fetch`. The gateway regression tests start real gateway and controlled API processes and check independent request receipts. The Fetch integration test starts all five services and walks the role flows, refusals, policy changes, blocks, keys and resets. Tests use isolated synthetic identities and temporary state: the controlled-test issuer is in memory, while real Accounts tests create private signing files in temporary directories. No application signing key is shipped in source. Race and optional WSL checks have separate evidence; an unrun platform check is not implied by a passing Windows suite.
 
-The dashboard is in `dashboard/` and the website in `examples/fetch/client/` (React and TypeScript, built with Vite). Each has its own browser tests, which drive a real demonstration made by the Fetch demo tool (see their READMEs). To run the demonstration by hand, put the dashboard build in `<web-dir>/admin` and the website build in `<web-dir>/demo`, then:
+The dashboard is in `dashboard/` (React and TypeScript, built with Vite). Its browser tests drive a real demonstration made by the Fetch demo tool from `../fetch` (see `dashboard/README.md`).
 
-```
-demo setup -dir <new-dir> -web <web-dir> -gateway <out-dir>/gateway.exe
-demo run -dir <new-dir> -web <web-dir> -gateway <out-dir>/gateway.exe -services <out-dir>/services.exe -accounts <out-dir>/accounts.exe
-```
+### Demonstration
 
-The dashboard is at `http://127.0.0.1:9440/` and the website at `http://127.0.0.2:9480/`, through the gateway; `run` serves the shop's files itself on `127.0.0.1:9506`, the website's upstream. Metrics are at `http://127.0.0.1:9450/metrics` on a separate loopback listener. `EAT_PORT_OFFSET` shifts the demonstration ports; for example, `1000` selects data port 10480, admin port 10440 and metrics port 10450.
-
-### One command
-
-With Go and Node.js installed, run from the repository's `examples/fetch` folder:
-
-```
-go run ./cmd/demo up
-```
-
-Each run builds the gateway, services, Accounts and both websites from the current sources. It prints all fourteen fictional demo accounts; their shared public password is `FetchDemo2026!`. The first run asks you to choose a separate password for the Dashboard administrator `root`, then establishes deny-all genesis and confirms the Fetch baseline through the Admin API. Later runs keep the administrator and policy; service business data starts from its deterministic seed on restart. Programs, builds and state are kept in `EAT40005-demo` in the user cache folder (`%LOCALAPPDATA%` on Windows); `-home <dir>` chooses another folder. `-fresh` replaces identified earlier state and creates a fresh version 4 deployment; it never migrates a version 3 policy. Press Ctrl+C to stop everything. `-stdin` also stops when standard input closes, after any password prompts.
-
-If an earlier native setup stopped before any administrator, candidate or policy existed, `up` recognizes that unfinished state, asks for the initial Dashboard password and preserves the complete earlier directory under `state-before-fetch-<id>` in the same home before creating the Fetch setup at `state/`. This needs no alternate home or reset flag. An earlier deployment with saved authority, mismatched files, a corrupt database or another process holding it is refused before building. Current Fetch deployments continue to reuse their administrator and policy.
-
-At the default offset, Inventory, Orders, Reports, Support and Accounts listen on `127.0.0.1:9501` through `9505`, with protected control listeners on `9601` through `9605`. Orders reserves Inventory stock and Reports reads Orders history through fixed `/internal/` endpoints with `X-Service-Key` from `service.secret`. Those endpoints have no gateway routes. Every service response carries `X-Service`; gateway refusals do not. The controls expose `/state`, `/receipts` and `/reset` with a separate bearer secret. Keep the state directory and all service/control listeners private to the local demonstration.
-
-While the stack is running, these commands, run from `examples/fetch`, use its identified `state` directory:
-
-```
-go run ./cmd/demo reset -dir <home>/state
-go run ./cmd/demo attack -dir <home>/state -scenario flood-search -from 127.0.0.50 -count 65
-go run ./cmd/demo attack -dir <home>/state -scenario flood-login -from 127.0.0.51 -count 12
-go run ./cmd/demo attack -dir <home>/state -scenario flood-orders -from 127.0.0.52 -count 12
-go run ./cmd/demo keys rotate -dir <home>/state
-go run ./cmd/demo keys retire -dir <home>/state -kid <old-key-id>
-go run ./cmd/demo policy export -dir <home>/state -out <new-policy-file>
-go run ./cmd/demo policy stage -dir <home>/state -file <policy-file>
-go run ./cmd/demo events -dir <home>/state -last 20
-```
-
-The order flood signs in as Customer 2 (`cust-002`), keeping Customer 1's (`cust-001`) checkout quota separate. It consumes Customer 2's per-account quota, including any checkout requests from its lab tab. It creates real demonstration cash orders until limited; reset the isolated demo afterwards. Different source addresses isolate the public search and login quotas.
-
-Key and policy commands prompt for the `root` Dashboard password and use its session, Origin and CSRF protections. Rotation writes a new pair locally, adds public trust and reloads it before switching Accounts; the old key remains trusted until retirement. The current Accounts key cannot be retired. A failed or unconfirmed reload leaves Accounts signing unchanged and reports the uncertainty. Retirement removes public trust but retains key files for the operator. Policy export writes only to a new file. Policy staging validates a complete candidate against the current confirmed revision and does not activate it. No command automatically repeats a write without an answer.
-
-Flood commands send bounded serial traffic from the chosen IPv4 loopback address and print response counts. Search and login exercise per-address quotas; checkout exercises the signed-in customer's quota and creates real synthetic cash orders until it is limited. Reset afterwards for another demonstration. Money uses integer sen, wallets start at 10000 sen and checkout keys replay the first exact result without repeating the charge or reservation. Business state is in memory; policy, administrators, blocks and change receipts remain in the gateway's single SQLite controller.
+The Fetch repository runs the whole local demonstration, the gateway and this Dashboard included, with one command (`go run ./cmd/demo up` in a Fetch checkout beside this one); its README lists the demo accounts, addresses and commands. The dashboard is then at `http://127.0.0.1:9440/` and the shop at `http://127.0.0.2:9480/`, through the gateway; metrics are at `http://127.0.0.1:9450/metrics`. `EAT_PORT_OFFSET` shifts every port.
 
 The gateway rejects a Caddy JSON configuration file and never converts one by itself. Keep the gateway stopped when running local operator commands; a deployment lock prevents two processes from sharing a database. Successful operator commands exit 0; refusals and failures exit 1. `install` and `enrol` print a one-time secret intentionally: keep that output private. On Windows, file modes do not establish confidentiality. Existing deployment and backup directories need operator-managed DACLs. New demonstration directories receive a protected DACL for the current user, SYSTEM and administrators; this does not isolate them from a privileged host administrator.
 

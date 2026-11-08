@@ -126,13 +126,13 @@ func TestPublicImports(t *testing.T) {
 	}
 }
 
-// TestNoExampleImports keeps the two modules apart: no gateway package imports
-// the Fetch example, and the example reaches the gateway only through its
-// public packages, never its internal ones.
+// TestNoExampleImports keeps the gateway apart from its examples: no gateway
+// package imports the Fetch application or a package under examples/. (Go's
+// internal rule already keeps Fetch out of the gateway's internal packages.)
 func TestNoExampleImports(t *testing.T) {
 	root := filepath.Join("..", "..")
 	module := modulePath(t, root)
-	fetch := filepath.Join(root, "examples", "fetch")
+	banned := []string{module + "/examples/", "github.com/Alex-Zechariah-02/fetch"}
 	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
 		if err != nil || !d.IsDir() {
 			return err
@@ -140,11 +140,6 @@ func TestNoExampleImports(t *testing.T) {
 		switch name := d.Name(); {
 		case name == "node_modules", name == "testdata", name == "dashboard", path != root && (strings.HasPrefix(name, ".") || strings.HasPrefix(name, "_")):
 			return filepath.SkipDir
-		}
-		inFetch := path == fetch || strings.HasPrefix(path, fetch+string(filepath.Separator))
-		banned, rule := module+"/examples/", "imports the Fetch example"
-		if inFetch {
-			banned, rule = module+"/internal/", "imports a gateway internal package"
 		}
 		for _, tags := range [][]string{nil, {"faultinject"}} {
 			ctx := build.Default
@@ -158,8 +153,8 @@ func TestNoExampleImports(t *testing.T) {
 				return err
 			}
 			for _, imp := range slices.Concat(pkg.Imports, pkg.TestImports, pkg.XTestImports) {
-				if strings.HasPrefix(imp, banned) {
-					t.Errorf("%s %s: %s", filepath.ToSlash(path), rule, imp)
+				if slices.ContainsFunc(banned, func(prefix string) bool { return strings.HasPrefix(imp, prefix) }) {
+					t.Errorf("%s imports an example: %s", filepath.ToSlash(path), imp)
 				}
 			}
 		}

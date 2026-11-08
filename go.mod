@@ -4,8 +4,7 @@ go 1.26.0
 
 toolchain go1.27.3
 
-// The Dashboard has no Go code. The Fetch example under examples/fetch is a
-// module of its own, so the go command leaves it out of this one.
+// The Dashboard has no Go code.
 ignore ./dashboard
 
 require (
