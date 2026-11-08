@@ -80,13 +80,16 @@ func TestUpRecognizesUnfinishedEarlierSetupBeforeBuilding(t *testing.T) {
 	// No application source is needed: an unfinished setup must ask for its
 	// initial password before any build or state change. EOF cancels it.
 	repository := t.TempDir()
-	if err := os.WriteFile(filepath.Join(repository, "go.mod"), []byte("module startup-test\n\ngo 1.26.0\n"), 0600); err != nil {
+	fetch := filepath.Join(repository, fetchFolder)
+	for _, dir := range []string{filepath.Join(repository, "cmd", "gateway"), filepath.Join(fetch, "cmd", "demo")} {
+		if err := os.MkdirAll(dir, 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(fetch, "go.mod"), []byte("module startup-test\n\ngo 1.26.0\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(filepath.Join(repository, "cmd", "gateway"), 0700); err != nil {
-		t.Fatal(err)
-	}
-	t.Chdir(repository)
+	t.Chdir(fetch)
 	previousInput := stdinLines
 	stdinLines = bufio.NewReader(strings.NewReader(""))
 	t.Cleanup(func() { stdinLines = previousInput })

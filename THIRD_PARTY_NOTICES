@@ -47,8 +47,8 @@ distributed under its own licence, reproduced in full after the list.
 - Hanken Grotesk (dashboard) (OFL-1.1)
 - Plus Jakarta Sans (client) (OFL-1.1)
 
-The photos in client/src/photos are used under the Unsplash License
-(https://unsplash.com/license); client/src/photos/CREDITS.md credits each one.
+The photos in examples/fetch/client/src/photos are used under the Unsplash License
+(https://unsplash.com/license); examples/fetch/client/src/photos/CREDITS.md credits each one.
 
 ========================================================================
 Go standard library and runtime go1.27.3

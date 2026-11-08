@@ -41,8 +41,12 @@ const (
 	ConfigVersion  = 1
 )
 
-// programs is the import path prefix of the programs the harness builds.
+// programs is the import path prefix of the gateway's programs the harness
+// builds; the Fetch programs are built in the Fetch module's folder.
 const programs = "github.com/Alex-Zechariah-02/apiward/cmd/"
+
+// fetchFolder is the Fetch example module's folder in the repository.
+var fetchFolder = filepath.Join("examples", "fetch")
 
 // Main builds the binaries, runs the tests and removes the binaries.
 // Each test package's TestMain calls it with its own block of test ports,
@@ -70,18 +74,26 @@ func Main(m *testing.M, first, last int) {
 		race = []string{"-race"}
 		Binaries.race = true
 	}
-	builds := []struct{ out, tags, pkg string }{
-		{Binaries.Plain, "", programs + "gateway"},
-		{Binaries.Fault, "faultinject", programs + "gateway"},
-		{Binaries.Fixture, "", programs + "testfixture"},
-		{Binaries.FixtureFault, "faultinject", programs + "testfixture"},
-		{Binaries.Demo, "", programs + "demo"},
-		{Binaries.Services, "", programs + "services"},
-		{Binaries.Accounts, "", programs + "accounts"},
+	root, err := repositoryRoot()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.RemoveAll(dir)
+		os.Exit(1)
+	}
+	fetch := filepath.Join(root, fetchFolder)
+	builds := []struct{ out, tags, dir, pkg string }{
+		{Binaries.Plain, "", root, programs + "gateway"},
+		{Binaries.Fault, "faultinject", root, programs + "gateway"},
+		{Binaries.Fixture, "", root, programs + "testfixture"},
+		{Binaries.FixtureFault, "faultinject", root, programs + "testfixture"},
+		{Binaries.Demo, "", fetch, "./cmd/demo"},
+		{Binaries.Services, "", fetch, "./cmd/services"},
+		{Binaries.Accounts, "", fetch, "./cmd/accounts"},
 	}
 	for _, build := range builds {
 		args := append([]string{"build", "-tags", build.tags, "-o", build.out}, race...)
 		cmd := exec.Command("go", append(args, build.pkg)...)
+		cmd.Dir = build.dir
 		if out, err := cmd.CombinedOutput(); err != nil {
 			fmt.Fprintf(os.Stderr, "building %s: %v\n%s", build.pkg, err, out)
 			os.RemoveAll(dir)
@@ -91,6 +103,16 @@ func Main(m *testing.M, first, last int) {
 	code := m.Run()
 	os.RemoveAll(dir)
 	os.Exit(code)
+}
+
+// repositoryRoot is the folder of the gateway module that holds the running
+// test package.
+func repositoryRoot() (string, error) {
+	output, err := exec.Command("go", "env", "GOMOD").Output()
+	if err != nil {
+		return "", fmt.Errorf("finding the gateway module: %w", err)
+	}
+	return filepath.Dir(strings.TrimSpace(string(output))), nil
 }
 
 // Env is one disposable gateway deployment.

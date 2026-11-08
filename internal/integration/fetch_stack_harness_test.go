@@ -17,7 +17,22 @@ import (
 
 	"github.com/Alex-Zechariah-02/apiward/internal/gatewaytest"
 	"github.com/Alex-Zechariah-02/apiward/internal/policy"
-	"github.com/Alex-Zechariah-02/apiward/internal/services"
+)
+
+// The fields of the Fetch services' answers that the stack scenarios read; the
+// services belong to the Fetch module, which the gateway never imports.
+type (
+	stackReceipt struct {
+		Subject string `json:"subject"`
+		Status  int    `json:"status"`
+	}
+	stackState struct {
+		SHA256 string `json:"sha256"`
+	}
+	stackOrder struct {
+		ID    string `json:"id"`
+		Total int64  `json:"total_sen"`
+	}
 )
 
 type fetchStack struct {
@@ -143,7 +158,7 @@ func (s *fetchStack) control(index int, path string) []byte {
 func (s *fetchStack) receiptCount(index int) int {
 	s.t.Helper()
 	var view struct {
-		Receipts []services.Receipt `json:"receipts"`
+		Receipts []stackReceipt `json:"receipts"`
 	}
 	if json.Unmarshal(s.control(index, "/receipts"), &view) != nil {
 		s.t.Fatal("invalid receipts")

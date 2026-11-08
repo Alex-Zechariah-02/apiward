@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/gatewaytest"
-	fixture "github.com/Alex-Zechariah-02/apiward/internal/services/testfixture"
+	fixture "github.com/Alex-Zechariah-02/apiward/internal/testfixture"
 )
 
 func resetFixture(f *gatewaytest.FixtureProcess) fixture.State {

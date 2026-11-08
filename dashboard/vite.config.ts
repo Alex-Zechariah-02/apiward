@@ -1,6 +1,6 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
-import { adminURL, developmentPort } from '../e2e/ports.ts'
+import { adminURL, developmentPort } from '../examples/fetch/e2e/ports.ts'
 
 // The dashboard is served by the gateway's admin listener at /, which serves
 // only index.html and flat files under /assets/.

@@ -9,7 +9,7 @@ import (
 	"maps"
 	"testing"
 
-	fixture "github.com/Alex-Zechariah-02/apiward/internal/services/testfixture"
+	fixture "github.com/Alex-Zechariah-02/apiward/internal/testfixture"
 )
 
 // StepResult is what one catalogue step produced, as seen by the client, the

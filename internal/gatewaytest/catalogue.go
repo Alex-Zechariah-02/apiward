@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/policy"
-	fixture "github.com/Alex-Zechariah-02/apiward/internal/services/testfixture"
+	fixture "github.com/Alex-Zechariah-02/apiward/internal/testfixture"
 )
 
 // Body schemas of the fixture writes. They state the request shape the

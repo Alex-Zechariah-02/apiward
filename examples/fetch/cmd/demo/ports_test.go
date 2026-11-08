@@ -3,7 +3,7 @@ package main
 import (
 	"testing"
 
-	"github.com/Alex-Zechariah-02/apiward/internal/demoports"
+	"github.com/Alex-Zechariah-02/apiward/examples/fetch/internal/ports"
 )
 
 func TestDemoAddressesRespectOffset(t *testing.T) {
@@ -16,7 +16,7 @@ func TestDemoAddressesRespectOffset(t *testing.T) {
 		{"127.0.0.1:9505", fetchServices[4].listen}, {"127.0.0.1:9605", fetchServices[4].control},
 		{"127.0.0.1:9450", metricsListen},
 	} {
-		want, err := demoports.Offset(entry.base)
+		want, err := ports.Offset(entry.base)
 		if err != nil || entry.got != want {
 			t.Errorf("demo address %s: %s, want %s (%v)", entry.base, entry.got, want, err)
 		}

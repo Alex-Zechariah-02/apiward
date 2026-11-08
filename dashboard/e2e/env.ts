@@ -2,10 +2,10 @@ import { spawn, spawnSync, type ChildProcess } from 'node:child_process'
 import { cpSync, existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { request as httpRequest } from 'node:http'
 import { join, resolve } from 'node:path'
-import { build, buildApplication, temporaryDir, httpOrigin, offsetPort } from '../../e2e/backend'
-import { Demo as SharedDemo, enrolmentSecret } from '../../e2e/demo'
-export type { Receipt } from '../../e2e/demo'
-export { adminURL, build, controls, gatewayIdentity, siteURL } from '../../e2e/backend'
+import { build, buildApplication, temporaryDir, httpOrigin, offsetPort } from '../../examples/fetch/e2e/backend'
+import { Demo as SharedDemo, enrolmentSecret } from '../../examples/fetch/e2e/demo'
+export type { Receipt } from '../../examples/fetch/e2e/demo'
+export { adminURL, build, controls, gatewayIdentity, siteURL } from '../../examples/fetch/e2e/backend'
 
 export const applicationDist = resolve(process.env.E2E_APP_DIST ?? 'dist')
 
@@ -26,7 +26,7 @@ export function webRoot(): string {
   if (!existsSync(join(dashboard, 'index.html'))) throw new Error('build the dashboard first (npm run build)')
   const root = temporaryDir('dashboard-e2e-web-')
   cpSync(dashboard, join(root, 'admin'), { recursive: true })
-  cpSync(process.env.WEBSITE_DIST ?? buildApplication('client'), join(root, 'demo'), { recursive: true })
+  cpSync(process.env.WEBSITE_DIST ?? buildApplication('examples/fetch/client'), join(root, 'demo'), { recursive: true })
   return root
 }
 

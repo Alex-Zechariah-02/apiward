@@ -14,8 +14,8 @@ import (
 	"slices"
 	"time"
 
-	"github.com/Alex-Zechariah-02/apiward/internal/demoports"
-	"github.com/Alex-Zechariah-02/apiward/internal/services"
+	"github.com/Alex-Zechariah-02/apiward/examples/fetch/internal/ports"
+	"github.com/Alex-Zechariah-02/apiward/examples/fetch/internal/services"
 )
 
 const warmupPairs = 3
@@ -67,11 +67,11 @@ func run(args []string, output io.Writer) error {
 	if email == "" {
 		return errors.New("choose cust-001, cust-002 or cust-003")
 	}
-	data, err := demoports.Offset("127.0.0.2:9480")
+	data, err := ports.Offset("127.0.0.2:9480")
 	if err != nil {
 		return err
 	}
-	orders, err := demoports.Offset("127.0.0.1:9502")
+	orders, err := ports.Offset("127.0.0.1:9502")
 	if err != nil {
 		return err
 	}

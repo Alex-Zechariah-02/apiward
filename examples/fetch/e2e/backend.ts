@@ -6,7 +6,9 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 export { adminURL, controls, httpOrigin, offsetPort, siteURL } from './ports'
 
-const repository = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+// The gateway repository: this folder is examples/fetch/e2e in it.
+const repository = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
+const fetchModule = 'examples/fetch'
 const executable = process.platform === 'win32' ? '.exe' : ''
 const temporary: string[] = []
 
@@ -65,7 +67,7 @@ export function build(): string {
   const commit = run('git', ['--no-optional-locks', 'rev-parse', 'HEAD']).trim()
   const source = temporaryDir('gateway-e2e-src-')
   const bin = temporaryDir('gateway-e2e-bin-')
-  const inputs = ['cmd', 'internal', 'module', 'go.mod', 'go.sum']
+  const inputs = ['cmd', 'internal', 'module', 'go.mod', 'go.sum', ...['cmd', 'internal', 'go.mod', 'go.sum'].map((path) => `${fetchModule}/${path}`)]
   const diffArgs = ['--no-optional-locks', 'diff', '--no-ext-diff', '--binary', commit, '--', ...inputs]
   const diff = mode === 'worktree' ? run('git', diffArgs) : ''
   const selectedPaths = () => (mode === 'head'
@@ -94,14 +96,14 @@ export function build(): string {
   if (commit !== run('git', ['--no-optional-locks', 'rev-parse', 'HEAD']).trim()) throw new Error('HEAD changed during the snapshot')
   const identity: BackendIdentity = { commit, source: mode, source_sha256: digest(JSON.stringify(files)), diff_sha256: digest(diff), files }
   const programs = [
-    { name: 'gateway', args: ['./cmd/gateway'] },
-    { name: 'services', args: ['./cmd/services'] },
-    { name: 'accounts', args: ['./cmd/accounts'] },
-    { name: 'demo', args: ['./cmd/demo'] },
-    { name: 'gateway-fault', args: ['-tags', 'faultinject', './cmd/gateway'] },
+    { name: 'gateway', dir: '.', args: ['./cmd/gateway'] },
+    { name: 'services', dir: fetchModule, args: ['./cmd/services'] },
+    { name: 'accounts', dir: fetchModule, args: ['./cmd/accounts'] },
+    { name: 'demo', dir: fetchModule, args: ['./cmd/demo'] },
+    { name: 'gateway-fault', dir: '.', args: ['-tags', 'faultinject', './cmd/gateway'] },
   ]
   try {
-    for (const program of programs) run('go', ['build', '-trimpath', '-o', join(bin, program.name + executable), ...program.args], source)
+    for (const program of programs) run('go', ['build', '-trimpath', '-o', join(bin, program.name + executable), ...program.args], join(source, program.dir))
     writeFileSync(join(bin, 'source.json'), JSON.stringify(identity, null, 2))
     if (process.env.E2E_EVIDENCE) appendFileSync(process.env.E2E_EVIDENCE, JSON.stringify({ kind: 'backend-build', ...identity }) + '\n')
     builtIdentity = identity

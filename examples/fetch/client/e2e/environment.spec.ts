@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test'
 import { resolveConfig } from 'vite'
 import { adminURL, build, controls, Demo, gatewayIdentity, siteURL } from './env'
-import { Demo as DashboardDemo } from '../../dashboard/e2e/env'
+import { Demo as DashboardDemo } from '../../../../dashboard/e2e/env'
 
 test('the browser harness and development proxy honor the selected isolation ports', async () => {
   // Independent expectations keep an offset accidentally omitted by the helper

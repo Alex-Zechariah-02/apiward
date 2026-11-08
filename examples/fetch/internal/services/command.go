@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/Alex-Zechariah-02/apiward/internal/demoports"
+	"github.com/Alex-Zechariah-02/apiward/examples/fetch/internal/ports"
 )
 
 // Command starts one service. Explicit addresses are already resolved by the
@@ -32,19 +32,19 @@ func Command(ctx context.Context, fixedName string, args []string, output io.Wri
 	if flags.NArg() != 0 {
 		return fmt.Errorf("unexpected arguments")
 	}
-	ports := map[string]int{"inventory": 9501, "orders": 9502, "reports": 9503, "support": 9504, "accounts": 9505}
-	base, found := ports[name]
+	bases := map[string]int{"inventory": 9501, "orders": 9502, "reports": 9503, "support": 9504, "accounts": 9505}
+	base, found := bases[name]
 	if !found {
 		return fmt.Errorf("choose a known service")
 	}
 	if fixedName == "" && name == "accounts" {
 		return fmt.Errorf("use the accounts command for Fetch Accounts")
 	}
-	defaultAddress, err := demoports.Offset("127.0.0.1:" + strconv.Itoa(base))
+	defaultAddress, err := ports.Offset("127.0.0.1:" + strconv.Itoa(base))
 	if err != nil {
 		return err
 	}
-	defaultControl, err := demoports.Offset("127.0.0.1:" + strconv.Itoa(base+100))
+	defaultControl, err := ports.Offset("127.0.0.1:" + strconv.Itoa(base+100))
 	if err != nil {
 		return err
 	}
@@ -55,14 +55,14 @@ func Command(ctx context.Context, fixedName string, args []string, output io.Wri
 		*control = defaultControl
 	}
 	if name == "orders" && *inventoryURL == "" {
-		address, err := demoports.Offset("127.0.0.1:9501")
+		address, err := ports.Offset("127.0.0.1:9501")
 		if err != nil {
 			return err
 		}
 		*inventoryURL = "http://" + address
 	}
 	if name == "reports" && *ordersURL == "" {
-		address, err := demoports.Offset("127.0.0.1:9502")
+		address, err := ports.Offset("127.0.0.1:9502")
 		if err != nil {
 			return err
 		}

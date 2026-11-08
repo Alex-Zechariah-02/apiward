@@ -43,7 +43,7 @@ npm audit
 
 ## Local development
 
-- `npm run dev` serves the app at `http://localhost:5174/` and forwards the API paths to a running gateway at `http://127.0.0.2:9480` (start it with `go run ./cmd/demo up -home <folder>` from the repository root).
+- `npm run dev` serves the app at `http://localhost:5174/` and forwards the API paths to a running gateway at `http://127.0.0.2:9480` (start it with `go run ./cmd/demo up -home <folder>` from `examples/fetch`).
 - `npm run dev:mock` runs the app on a development stand-in for the gateway and services (`src/dev/`), for building screens without the backend. It is never part of a production build and is never test evidence.
 - `npx vite preview` serves an existing build at `http://127.0.0.1:5175/` with the gateway's exact content policy header, to catch policy violations early. There is no `preview` npm script; this invokes the locally installed Vite command.
 
@@ -67,4 +67,4 @@ npm run e2e
 - Every one of these files starts its own gateway, so any file runs alone. After its tests, each checks that no page met a content-policy violation or script dialog. The role files also check for page errors and that the account password never left the sign-in form; the other two check that nothing secret reached a request or console line.
 - `dev.spec.ts` checks that the development server sends API paths to the gateway; it is a development observation, not acceptance.
 
-The tests serve `dist/`, or the existing build named by `E2E_APP_DIST`. They also build `../dashboard` for the admin listener, unless `DASHBOARD_DIST` names a built dashboard to use instead. Optional: `E2E_EVIDENCE` names a file for JSON-lines evidence (backend source manifests, statuses, references and receipts, never secrets), and `E2E_SHOTS` a directory for screenshots.
+The tests serve `dist/`, or the existing build named by `E2E_APP_DIST`. They also build the repository's `dashboard/` for the admin listener, unless `DASHBOARD_DIST` names a built dashboard to use instead. Optional: `E2E_EVIDENCE` names a file for JSON-lines evidence (backend source manifests, statuses, references and receipts, never secrets), and `E2E_SHOTS` a directory for screenshots.

@@ -22,17 +22,20 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/Alex-Zechariah-02/apiward/internal/services"
+	"github.com/Alex-Zechariah-02/apiward/examples/fetch/internal/services"
 )
 
 // The administrator enrolled by the one-command launcher.
 const upAdmin = "root"
 
-// The two frontends: their folders in this repository, and the folders of the
-// web directory the gateway serves them from.
+// The Fetch module's folder in the gateway repository.
+var fetchFolder = filepath.Join("examples", "fetch")
+
+// The two frontends: their folders in the gateway repository, and the folders
+// of the web directory the gateway serves them from.
 var websites = []struct{ page, folder string }{
 	{"admin", "dashboard"},
-	{"demo", "client"},
+	{"demo", filepath.Join(fetchFolder, "client")},
 }
 
 // up runs the whole local demonstration with one command. It builds the
@@ -165,8 +168,8 @@ func defaultHome() string {
 	return filepath.Join(cache, "EAT40005-demo")
 }
 
-// gatewayRepository finds the root of this Go module from the working
-// directory, so up builds the sources it is run from.
+// gatewayRepository finds the gateway repository that holds this Fetch module,
+// from the working directory, so up builds the sources it is run from.
 func gatewayRepository() (string, error) {
 	output, err := exec.Command("go", "env", "GOMOD").Output()
 	if err != nil {
@@ -174,9 +177,12 @@ func gatewayRepository() (string, error) {
 	}
 	mod := strings.TrimSpace(string(output))
 	if mod == "" || mod == os.DevNull {
-		return "", errors.New("run up from the gateway repository: go run ./cmd/demo up")
+		return "", errors.New("run up from the Fetch example: go run ./cmd/demo up in " + fetchFolder)
 	}
-	root := filepath.Dir(mod)
+	root := filepath.Join(filepath.Dir(mod), "..", "..")
+	if _, err := os.Stat(filepath.Join(root, fetchFolder, "cmd", "demo")); err != nil {
+		return "", fmt.Errorf("%s is not the Fetch example of the gateway repository", filepath.Dir(mod))
+	}
 	if _, err := os.Stat(filepath.Join(root, "cmd", "gateway")); err != nil {
 		return "", fmt.Errorf("%s is not the gateway repository", root)
 	}
@@ -252,11 +258,14 @@ func buildPrograms(repository, bin string) (builtPrograms, error) {
 		return builtPrograms{}, err
 	}
 	var built []string
-	for _, name := range []string{"gateway", "services", "accounts"} {
+	// The gateway is its own module at the repository root; the services and
+	// Accounts belong to the Fetch module.
+	for _, program := range []struct{ name, folder string }{{"gateway", "."}, {"services", fetchFolder}, {"accounts", fetchFolder}} {
+		name := program.name
 		fmt.Println("Building the", name, "program...")
 		output := filepath.Join(bin, executable(name))
 		build := exec.Command("go", "build", "-trimpath", "-o", output, "./cmd/"+name)
-		build.Dir = repository
+		build.Dir = filepath.Join(repository, program.folder)
 		if log, err := build.CombinedOutput(); err != nil {
 			return builtPrograms{}, fmt.Errorf("building %s: %w\n%s", name, err, log)
 		}

@@ -11,7 +11,7 @@ import (
 
 	"github.com/Alex-Zechariah-02/apiward/internal/audit"
 	"github.com/Alex-Zechariah-02/apiward/internal/gatewaytest"
-	fixture "github.com/Alex-Zechariah-02/apiward/internal/services/testfixture"
+	fixture "github.com/Alex-Zechariah-02/apiward/internal/testfixture"
 )
 
 // Every catalogue subject, and one the policy does not know, calls every

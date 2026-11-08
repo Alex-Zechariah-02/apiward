@@ -32,6 +32,15 @@ jobs:
       - run: go vet -tags faultinject ./...
       - run: go test ./... -count=1
       - run: go test -race ./... -count=1 -timeout 60m
+      # The Fetch example is a module of its own.
+      - run: go mod verify
+        working-directory: examples/fetch
+      - run: go vet ./...
+        working-directory: examples/fetch
+      - run: go test ./... -count=1
+        working-directory: examples/fetch
+      - run: go test -race ./... -count=1 -timeout 30m
+        working-directory: examples/fetch
 
   vuln:
     runs-on: ubuntu-24.04
@@ -44,6 +53,8 @@ jobs:
         with:
           go-version-file: go.mod
       - run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
+      - run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
+        working-directory: examples/fetch
 
   dashboard:
     runs-on: ubuntu-24.04
@@ -67,7 +78,7 @@ jobs:
           # The browser tests also build the client app.
           cache-dependency-path: |
             dashboard/package-lock.json
-            client/package-lock.json
+            examples/fetch/client/package-lock.json
       - run: npm ci
       - run: npm run check
       - run: npm run build
@@ -85,7 +96,7 @@ jobs:
       EAT_PORT_OFFSET: "3000"
     defaults:
       run:
-        working-directory: client
+        working-directory: examples/fetch/client
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -99,7 +110,7 @@ jobs:
           cache: npm
           # The browser tests also build the dashboard.
           cache-dependency-path: |
-            client/package-lock.json
+            examples/fetch/client/package-lock.json
             dashboard/package-lock.json
       - run: npm ci
       - run: npm run check

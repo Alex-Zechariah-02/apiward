@@ -7,14 +7,14 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/Alex-Zechariah-02/apiward/internal/services"
+	"github.com/Alex-Zechariah-02/apiward/examples/fetch/internal/services"
 )
 
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	if err := services.Command(ctx, "", os.Args[1:], os.Stdout); err != nil {
-		fmt.Fprintln(os.Stderr, "services:", err)
+	if err := services.Command(ctx, "accounts", os.Args[1:], os.Stdout); err != nil {
+		fmt.Fprintln(os.Stderr, "accounts:", err)
 		os.Exit(1)
 	}
 }

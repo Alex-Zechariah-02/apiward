@@ -151,7 +151,7 @@ A module adds a check to the request pipeline at build time. It implements `modu
 - The Dashboard's header search by Ref and the live events use an in-memory window of the latest 10,000 API outcomes. A security log search reads the active and rotated audit files, newest first and bounded per page, and exports matching requests as CSV or JSON; it names any log file that has been moved away. Event streams have bounded queues, disclose dropped events and stop with the administrator's session. Traffic summaries and a separate loopback Prometheus listener expose bounded operational measurements without token, subject or address labels.
 - Local commands set up the first administrator, add or reset administrators, make and restore checked database backups, and upgrade a database made by an earlier version. A restored backup serves nothing until an administrator confirms a new policy that allows nothing, and a provisional policy in the backup never comes back.
 - A web dashboard for administrators (in `dashboard/`) is served by the admin listener itself, so it uses the same sign-in, origin and CSRF checks as the admin API. It shows the confirmed policy, any provisional policy and its deadline, the temporary overrides in force and the change history. It stages and activates new policies, confirms or rolls them back and creates or revokes overrides. It also has pages for the security log search, the access checker, limits and advice, and shows active alerts on its overview. Each change is shown as done only when the gateway's receipt arrives, and a request with no answer is shown as having an unknown outcome.
-- Fetch, the demonstration application in `client/`, is served on a second loopback address, so the administrator's session cookie never reaches it. Customers, merchants, riders, support agents and operations staff sign in through Fetch Accounts. Application calls go through the gateway to Inventory, Orders, Reports, Support and Accounts. Business ownership, stock, wallet and order transitions stay in those services.
+- Fetch, the demonstration application in `examples/fetch/client/`, is served on a second loopback address, so the administrator's session cookie never reaches it. Customers, merchants, riders, support agents and operations staff sign in through Fetch Accounts. Application calls go through the gateway to Inventory, Orders, Reports, Support and Accounts. Business ownership, stock, wallet and order transitions stay in those services.
 
 ### Code layout
 
@@ -183,20 +183,21 @@ Each package under `internal/` imports only the packages listed before it; a tes
 
 ## Build and test
 
-You need Go 1.26 or newer. `go.mod` selects the Go 1.27.3 toolchain; with `GOTOOLCHAIN=auto`, Go uses or downloads that toolchain when needed. Programs live in `cmd/`, with shared code in `internal/gateway` and `internal/services`. The preserved controlled APIs for gateway regression tests live in `internal/services/testfixture`. The two web applications are in `dashboard/` and `client/`.
+You need Go 1.26 or newer. `go.mod` selects the Go 1.27.3 toolchain; with `GOTOOLCHAIN=auto`, Go uses or downloads that toolchain when needed. The gateway's programs live in `cmd/`, its code in `internal/`, and the preserved controlled APIs for gateway regression tests in `internal/testfixture`. The Fetch demonstration is a separate module in `examples/fetch`: its programs in `examples/fetch/cmd/`, its services in `examples/fetch/internal/services`, its website in `examples/fetch/client/`. It reaches the gateway only through the gateway's programs and public packages. The Dashboard is in `dashboard/`.
 
 - `cmd/gateway` runs the gateway from one strict JSON configuration file. It has the commands `run`, `install`, `enrol`, `backup`, `restore` and `migrate`, each with `--config <file>`, and the offline `policy import-openapi` and `policy export-openapi` (see above). The local commands `install`, `enrol`, `backup`, `restore` and `migrate` run while the gateway is stopped.
-- `cmd/services -service inventory|orders|reports|support -secret-file <service.secret>` runs a Fetch business API, with independent authenticated receipts, state and reset. Defaults honor `EAT_PORT_OFFSET`; `-listen` and `-control` select explicit loopback addresses. Orders uses `-inventory <http-origin>` and Reports uses `-orders <http-origin>` for authenticated internal calls.
-- `cmd/accounts -secret-file <service.secret> -signing-settings <accounts.json>` runs Fetch Accounts. Signing settings contain `kid` and an absolute `private_key_file`. Only Accounts signs application tokens, which last 15 minutes. Account and signing secrets stay in the private demonstration state.
+- `examples/fetch/cmd/services -service inventory|orders|reports|support -secret-file <service.secret>` runs a Fetch business API, with independent authenticated receipts, state and reset. Defaults honor `EAT_PORT_OFFSET`; `-listen` and `-control` select explicit loopback addresses. Orders uses `-inventory <http-origin>` and Reports uses `-orders <http-origin>` for authenticated internal calls.
+- `examples/fetch/cmd/accounts -secret-file <service.secret> -signing-settings <accounts.json>` runs Fetch Accounts. Signing settings contain `kid` and an absolute `private_key_file`. Only Accounts signs application tokens, which last 15 minutes. Account and signing secrets stay in the private demonstration state.
 - `cmd/testfixture` preserves the three earlier controlled APIs for gateway regression tests. The Fetch demonstration does not build or run it.
-- `cmd/demo` builds, sets up and runs the full local stack with `up`. `setup` writes `gateway.json`, complete baseline and deny-all policies, `service.secret`, a signing key pair and `accounts.json` into a new identified private directory, then installs the first administrator. `run` starts the five services and gateway, reports protected admission separately from listening, and stops its own children gracefully. `token` is an optional client of Accounts for a seeded subject; it cannot change the fixed 15-minute lifetime. `reset` restores every service's seed and clears its receipts. `events` prints request events from the active audit file; retained rotated files are not searched.
-- `cmd/measure -samples 30 -account cust-001` collects preliminary paired wallet latency against an isolated running Fetch stack, directly and through the gateway. It honors `EAT_PORT_OFFSET`, keeps credentials out of output, checks equivalent successful responses, and emits raw observations and aggregate JSON.
+- `examples/fetch/cmd/demo` builds, sets up and runs the full local stack with `up`. `setup` writes `gateway.json`, complete baseline and deny-all policies, `service.secret`, a signing key pair and `accounts.json` into a new identified private directory, then installs the first administrator. `run` starts the five services and gateway, reports protected admission separately from listening, and stops its own children gracefully. `token` is an optional client of Accounts for a seeded subject; it cannot change the fixed 15-minute lifetime. `reset` restores every service's seed and clears its receipts. `events` prints request events from the active audit file; retained rotated files are not searched.
+- `examples/fetch/cmd/measure -samples 30 -account cust-001` collects preliminary paired wallet latency against an isolated running Fetch stack, directly and through the gateway. It honors `EAT_PORT_OFFSET`, keeps credentials out of output, checks equivalent successful responses, and emits raw observations and aggregate JSON.
 
 ```
 go build -trimpath -o <out-dir>/gateway.exe ./cmd/gateway
+go build -trimpath -o <out-dir>/testfixture.exe ./cmd/testfixture
+cd examples/fetch
 go build -trimpath -o <out-dir>/services.exe ./cmd/services
 go build -trimpath -o <out-dir>/accounts.exe ./cmd/accounts
-go build -trimpath -o <out-dir>/testfixture.exe ./cmd/testfixture
 go build -trimpath -o <out-dir>/demo.exe ./cmd/demo
 go build -trimpath -o <out-dir>/measure.exe ./cmd/measure
 ```
@@ -214,9 +215,9 @@ go vet -tags faultinject ./...
 go test ./... -count=1
 ```
 
-`gofmt -l` must print nothing. The gateway regression tests start real gateway and controlled API processes and check independent request receipts. The Fetch integration test starts all five services and walks the role flows, refusals, policy changes, blocks, keys and resets. Tests use isolated synthetic identities and temporary state: the controlled-test issuer is in memory, while real Accounts tests create private signing files in temporary directories. No application signing key is shipped in source. Race and optional WSL checks have separate evidence; an unrun platform check is not implied by a passing Windows suite.
+Run `go mod verify`, `go vet ./...` and `go test ./... -count=1` again in `examples/fetch` for the Fetch module. `gofmt -l` must print nothing. The gateway regression tests start real gateway and controlled API processes and check independent request receipts. The Fetch integration test starts all five services and walks the role flows, refusals, policy changes, blocks, keys and resets. Tests use isolated synthetic identities and temporary state: the controlled-test issuer is in memory, while real Accounts tests create private signing files in temporary directories. No application signing key is shipped in source. Race and optional WSL checks have separate evidence; an unrun platform check is not implied by a passing Windows suite.
 
-The dashboard is in `dashboard/` and the website in `client/` (React and TypeScript, built with Vite). Each has its own browser tests, which drive a real demonstration made by `cmd/demo` (see their READMEs). To run the demonstration by hand, put the dashboard build in `<web-dir>/admin` and the website build in `<web-dir>/demo`, then:
+The dashboard is in `dashboard/` and the website in `examples/fetch/client/` (React and TypeScript, built with Vite). Each has its own browser tests, which drive a real demonstration made by the Fetch demo tool (see their READMEs). To run the demonstration by hand, put the dashboard build in `<web-dir>/admin` and the website build in `<web-dir>/demo`, then:
 
 ```
 demo setup -dir <new-dir> -web <web-dir> -gateway <out-dir>/gateway.exe
@@ -227,7 +228,7 @@ The dashboard is at `http://127.0.0.1:9440/` and the website at `http://127.0.0.
 
 ### One command
 
-With Go and Node.js installed, run from the repository root:
+With Go and Node.js installed, run from the repository's `examples/fetch` folder:
 
 ```
 go run ./cmd/demo up
@@ -239,7 +240,7 @@ If an earlier native setup stopped before any administrator, candidate or policy
 
 At the default offset, Inventory, Orders, Reports, Support and Accounts listen on `127.0.0.1:9501` through `9505`, with protected control listeners on `9601` through `9605`. Orders reserves Inventory stock and Reports reads Orders history through fixed `/internal/` endpoints with `X-Service-Key` from `service.secret`. Those endpoints have no gateway routes. Every service response carries `X-Service`; gateway refusals do not. The controls expose `/state`, `/receipts` and `/reset` with a separate bearer secret. Keep the state directory and all service/control listeners private to the local demonstration.
 
-While the stack is running, these commands use its identified `state` directory:
+While the stack is running, these commands, run from `examples/fetch`, use its identified `state` directory:
 
 ```
 go run ./cmd/demo reset -dir <home>/state

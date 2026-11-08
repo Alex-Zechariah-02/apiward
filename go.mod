@@ -4,11 +4,9 @@ go 1.26.0
 
 toolchain go1.27.3
 
-// The two web applications have no Go code.
-ignore (
-	./client
-	./dashboard
-)
+// The Dashboard has no Go code. The Fetch example under examples/fetch is a
+// module of its own, so the go command leaves it out of this one.
+ignore ./dashboard
 
 require (
 	github.com/go-jose/go-jose/v4 v4.1.9

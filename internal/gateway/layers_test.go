@@ -1,9 +1,11 @@
-// Layering of the internal packages (none imports a package above it) and
-// the internal packages each public package may reach.
+// Layering of the internal packages (none imports a package above it), the
+// internal packages each public package may reach, and the boundary between
+// the gateway and the Fetch example module.
 
 package gateway
 
 import (
+	"errors"
 	"go/build"
 	"os"
 	"path/filepath"
@@ -46,7 +48,7 @@ var exposed = map[string][]string{
 }
 
 // unlayered packages are not part of the gateway's layering.
-var unlayered = []string{"demoports", "services", "services/testfixture"}
+var unlayered = []string{"demoports", "testfixture"}
 
 // support packages exist for tests: any package's tests may import them,
 // production code never.
@@ -116,6 +118,50 @@ func TestPublicImports(t *testing.T) {
 				t.Errorf("%s imports internal/%s", name, dep)
 			}
 		}
+	}
+}
+
+// TestNoExampleImports keeps the two modules apart: no gateway package imports
+// the Fetch example, and the example reaches the gateway only through its
+// public packages, never its internal ones.
+func TestNoExampleImports(t *testing.T) {
+	root := filepath.Join("..", "..")
+	module := modulePath(t, root)
+	fetch := filepath.Join(root, "examples", "fetch")
+	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil || !d.IsDir() {
+			return err
+		}
+		switch name := d.Name(); {
+		case name == "node_modules", name == "testdata", name == "dashboard", path != root && (strings.HasPrefix(name, ".") || strings.HasPrefix(name, "_")):
+			return filepath.SkipDir
+		}
+		inFetch := path == fetch || strings.HasPrefix(path, fetch+string(filepath.Separator))
+		banned, rule := module+"/examples/", "imports the Fetch example"
+		if inFetch {
+			banned, rule = module+"/internal/", "imports a gateway internal package"
+		}
+		for _, tags := range [][]string{nil, {"faultinject"}} {
+			ctx := build.Default
+			ctx.BuildTags = tags
+			pkg, err := ctx.ImportDir(path, 0)
+			var none *build.NoGoError
+			if errors.As(err, &none) {
+				return nil
+			}
+			if err != nil {
+				return err
+			}
+			for _, imp := range slices.Concat(pkg.Imports, pkg.TestImports, pkg.XTestImports) {
+				if strings.HasPrefix(imp, banned) {
+					t.Errorf("%s %s: %s", filepath.ToSlash(path), rule, imp)
+				}
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
 }
 

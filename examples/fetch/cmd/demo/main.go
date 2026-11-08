@@ -29,8 +29,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/Alex-Zechariah-02/apiward/internal/demoports"
-	"github.com/Alex-Zechariah-02/apiward/internal/services"
+	"github.com/Alex-Zechariah-02/apiward/examples/fetch/internal/ports"
+	"github.com/Alex-Zechariah-02/apiward/examples/fetch/internal/services"
 )
 
 // The demonstration addresses. The administrator dashboard and the data plane
@@ -72,7 +72,7 @@ func applyDemoPortOffset() error {
 		addresses = append(addresses, &fetchServices[i].listen, &fetchServices[i].control)
 	}
 	for _, address := range addresses {
-		value, err := demoports.Offset(*address)
+		value, err := ports.Offset(*address)
 		if err != nil {
 			return err
 		}

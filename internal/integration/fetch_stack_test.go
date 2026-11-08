@@ -17,7 +17,6 @@ import (
 
 	"github.com/Alex-Zechariah-02/apiward/internal/gatewaytest"
 	"github.com/Alex-Zechariah-02/apiward/internal/policy"
-	"github.com/Alex-Zechariah-02/apiward/internal/services"
 	"github.com/Alex-Zechariah-02/apiward/internal/store"
 )
 
@@ -31,7 +30,7 @@ func TestFetchStackScenarios(t *testing.T) {
 	customer, merchant, rider, support, ops := login("customer1@fetch.test"), login("merchant1@fetch.test"), login("rider1@fetch.test"), login("support1@fetch.test"), login("admin1@fetch.test")
 	seedHashes := make([]string, 5)
 	for i := range seedHashes {
-		var state services.State
+		var state stackState
 		if json.Unmarshal(control(i, "/state"), &state) != nil {
 			t.Fatal("invalid state")
 		}
@@ -60,7 +59,7 @@ func TestFetchStackScenarios(t *testing.T) {
 		t.Fatalf("checkout: %d %s", response.StatusCode, created)
 	}
 	var order struct {
-		Order services.Order `json:"order"`
+		Order stackOrder `json:"order"`
 	}
 	if json.Unmarshal([]byte(created), &order) != nil || order.Order.ID != "ORD-1005" || order.Order.Total != 3329 {
 		t.Fatalf("incorrect priced checkout: %s", created)
@@ -154,7 +153,7 @@ func TestFetchStackScenarios(t *testing.T) {
 		}
 	}
 	var floodReceipts struct {
-		Receipts []services.Receipt `json:"receipts"`
+		Receipts []stackReceipt `json:"receipts"`
 	}
 	if err := json.Unmarshal(control(1, "/receipts"), &floodReceipts); err != nil {
 		t.Fatal(err)
@@ -263,7 +262,7 @@ func TestFetchStackScenarios(t *testing.T) {
 	call("GET", "/accounts/me", "", newToken.Token, 200)
 	cli(false, "reset", "-dir", dir)
 	for i, want := range seedHashes {
-		var state services.State
+		var state stackState
 		if json.Unmarshal(control(i, "/state"), &state) != nil || state.SHA256 != want {
 			t.Fatalf("service %d seed hash changed after reset", i)
 		}
