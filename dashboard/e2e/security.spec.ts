@@ -44,8 +44,11 @@ test.describe.serial('dashboard', () => {
     expect((await raw('GET', adminURL + '/admin/status', { Authorization: `Bearer ${token('ops-01')}` })).status).toBe(401)
     for (const reply of Object.values(cases)) expect(reply.headers['access-control-allow-origin']).toBeUndefined()
 
-    // A page on another site, in the browser that holds the session.
-    const attackStarted = Date.now()
+    // A page on another site, in the browser that holds the session. Its
+    // requests are the audit events after the token probe's own refusal: the
+    // file's order separates them, where a clock comparison could not.
+    await expect.poll(() => auditEvents().some((e) => e.path === '/admin/status' && e.kind === 'admin.rejected')).toBe(true)
+    const attackStarted = auditEvents().length
     const otherSite = createServer((_, response) => {
       response.writeHead(200, { 'Content-Type': 'text/html' })
       response.end('<!doctype html><title>Another site</title>')
@@ -86,7 +89,8 @@ test.describe.serial('dashboard', () => {
     // the answer.
     const fromAttacker = (path: string) =>
       auditEvents()
-        .filter((e) => e.path === path && e.kind !== 'admin.read' && Date.parse(String(e.time)) >= attackStarted)
+        .slice(attackStarted)
+        .filter((e) => e.path === path && e.kind !== 'admin.read')
         .map((e) => `${e.kind} ${e.reason}`)
     await expect.poll(() => fromAttacker('/admin/provisional/rollback')).toEqual(['admin.rejected no_session'])
     await expect.poll(() => fromAttacker('/admin/status')).toEqual(['admin.rejected no_session'])
