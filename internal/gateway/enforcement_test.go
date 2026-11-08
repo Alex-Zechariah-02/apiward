@@ -17,6 +17,7 @@ import (
 	"github.com/Alex-Zechariah-02/apiward/internal/compile"
 	"github.com/Alex-Zechariah-02/apiward/internal/controller"
 	"github.com/Alex-Zechariah-02/apiward/internal/forward"
+	"github.com/Alex-Zechariah-02/apiward/internal/gatewaytest"
 	"github.com/Alex-Zechariah-02/apiward/internal/pipeline"
 	"github.com/Alex-Zechariah-02/apiward/internal/policy"
 	"github.com/Alex-Zechariah-02/apiward/internal/store"
@@ -85,41 +86,41 @@ func (f *memoryForwarder) setRespond(respond func(w http.ResponseWriter, r *http
 
 // serveEnforcement seeds e's database with policy, owns its controller and
 // serves the enforcement handler, with the global body ceiling maxBodyBytes
-// (0: the default), at e.dataAddr, where the harness request helpers send.
-func (e *env) serveEnforcement(policy policy.Policy, maxBodyBytes int64) (*controller.Controller, *pipeline.Handler, *memoryForwarder) {
-	e.t.Helper()
-	seed(e.t, e.database, policy, seedOptions{})
-	c, _ := e.own(e.controllerConfig())
+// (0: the default), at e.DataAddr, where the harness request helpers send.
+func serveEnforcement(e *gatewaytest.Env, policy policy.Policy, maxBodyBytes int64) (*controller.Controller, *pipeline.Handler, *memoryForwarder) {
+	e.T.Helper()
+	gatewaytest.Seed(e.T, e.Database, policy, gatewaytest.SeedOptions{})
+	c, _ := own(e, controllerConfig(e))
 	f := &memoryForwarder{}
 	h, err := newHandler(c, pipeline.NewLimiter(), maxBodyBytes, f.forward)
 	if err != nil {
-		e.t.Fatal(err)
+		e.T.Fatal(err)
 	}
-	e.serve(h)
+	serve(e, h)
 	return c, h, f
 }
 
-// serveAuthority serves at e.dataAddr the enforcement handler of c that reads
+// serveAuthority serves at e.DataAddr the enforcement handler of c that reads
 // its published state from authority instead of c.
-func (e *env) serveAuthority(c *controller.Controller, authority pipeline.Authority) *memoryForwarder {
-	e.t.Helper()
+func serveAuthority(e *gatewaytest.Env, c *controller.Controller, authority pipeline.Authority) *memoryForwarder {
+	e.T.Helper()
 	f := &memoryForwarder{}
 	h, err := pipeline.New(pipeline.Deps{
 		Authority: authority, Audit: c.Audit(), Observations: c.Observations(),
 		Limiter: pipeline.NewLimiter(), Clock: pipeline.NewClock(), AuditTimeout: c.Settings().AuditTimeout, Forward: f.forward,
 	})
 	if err != nil {
-		e.t.Fatal(err)
+		e.T.Fatal(err)
 	}
-	e.serve(h)
+	serve(e, h)
 	return f
 }
 
-// serve serves h at e.dataAddr until the test ends.
-func (e *env) serve(h http.Handler) {
+// serve serves h at e.DataAddr until the test ends.
+func serve(e *gatewaytest.Env, h http.Handler) {
 	server := httptest.NewServer(h)
-	e.t.Cleanup(server.Close)
-	e.dataAddr = server.Listener.Addr().String()
+	e.T.Cleanup(server.Close)
+	e.DataAddr = server.Listener.Addr().String()
 }
 
 // fixedAuthority is a controller whose published generation or blocked
@@ -146,11 +147,11 @@ func (a fixedAuthority) Blocked() *store.BlockedAccounts {
 
 // eventOf returns the last event of the request with the given identifier,
 // waiting for want events of it.
-func (e *env) eventOf(requestID string, want int) map[string]any {
-	e.t.Helper()
-	events := e.requestEvents(requestID, want)
+func eventOf(e *gatewaytest.Env, requestID string, want int) map[string]any {
+	e.T.Helper()
+	events := e.RequestEvents(requestID, want)
 	if len(events) != want {
-		e.t.Fatalf("request %s has %d events, want %d: %v", requestID, len(events), want, events)
+		e.T.Fatalf("request %s has %d events, want %d: %v", requestID, len(events), want, events)
 	}
 	return events[want-1]
 }
@@ -158,7 +159,7 @@ func (e *env) eventOf(requestID string, want int) map[string]any {
 // admittedStages is the stage map of a forwarded request to an operation
 // without a rate rule, body or header schema.
 func admittedStages(forward string) map[string]any {
-	stages := expectedStages([]string{"INGRESS", "CAPTURE", "CANONICAL", "ROUTE", "ACCESS", "JWT", "RBAC", "BODY", "AUDIT", "BIND"}, "FORWARD", forward)
+	stages := gatewaytest.ExpectedStages([]string{"INGRESS", "CAPTURE", "CANONICAL", "ROUTE", "ACCESS", "JWT", "RBAC", "BODY", "AUDIT", "BIND"}, "FORWARD", forward)
 	stages["RATE"] = audit.StageNotApplicable
 	stages["VALIDATION"] = audit.StageNotApplicable
 	return stages
@@ -166,9 +167,9 @@ func admittedStages(forward string) map[string]any {
 
 // The handler needs a controller and a forwarder.
 func TestNewHandlerRefusesIncompleteSetup(t *testing.T) {
-	e := newEnv(t)
-	seed(t, e.database, e.policy(e.a, false), seedOptions{})
-	c, _ := e.own(e.controllerConfig())
+	e := gatewaytest.NewEnv(t)
+	gatewaytest.Seed(t, e.Database, e.Policy(e.A, false), gatewaytest.SeedOptions{})
+	c, _ := own(e, controllerConfig(e))
 	forward := (&memoryForwarder{}).forward
 	if h, err := newHandler(nil, nil, 0, forward); h != nil || err == nil {
 		t.Fatalf("without a controller: %v, %v", h, err)
@@ -186,14 +187,14 @@ func TestNewHandlerRefusesIncompleteSetup(t *testing.T) {
 // own metadata and no credential, after a durable admission record; no real
 // upstream is contacted.
 func TestEnforcementHandlerAdmits(t *testing.T) {
-	e := newEnv(t)
-	c, _, f := e.serveEnforcement(e.protectedPolicy(), 0)
+	e := gatewaytest.NewEnv(t)
+	c, _, f := serveEnforcement(e, e.ProtectedPolicy(), 0)
 	g := c.Current()
 	admittedFirst := false
 	f.setRespond(func(w http.ResponseWriter, r *http.Request) error {
 		// The admission record is durable before the forwarder runs.
 		id := r.Header.Get("X-Request-Id")
-		for _, ev := range e.auditEvents() {
+		for _, ev := range e.AuditEvents() {
 			admittedFirst = admittedFirst || (ev["kind"] == "request.admitted" && ev["request_id"] == id)
 		}
 		w.Header().Set("X-Upstream", "memory")
@@ -202,8 +203,8 @@ func TestEnforcementHandlerAdmits(t *testing.T) {
 		return nil
 	})
 
-	token := issuer.TokenFor(t, "alice")
-	resp, body := e.exchange(http.MethodGet, "/a/x?q=1", "", "", "Authorization", "Bearer "+token,
+	token := gatewaytest.Issuer.TokenFor(t, "alice")
+	resp, body := e.Exchange(http.MethodGet, "/a/x?q=1", "", "", "Authorization", "Bearer "+token,
 		"X-Request-Id", "forged", "X-Gateway-Subject", "admin", "X-Gateway-Roles", "ADMIN")
 	if resp.StatusCode != http.StatusCreated || body != "created" || resp.Header.Get("X-Upstream") != "memory" {
 		t.Fatalf("admitted request: %d %q %v", resp.StatusCode, body, resp.Header)
@@ -214,8 +215,8 @@ func TestEnforcementHandlerAdmits(t *testing.T) {
 	}
 	h := got[0]
 	switch {
-	case !h.bound || h.dial != e.a.addr:
-		t.Fatalf("binding %v %q, want %q", h.bound, h.dial, e.a.addr)
+	case !h.bound || h.dial != e.A.Addr:
+		t.Fatalf("binding %v %q, want %q", h.bound, h.dial, e.A.Addr)
 	case h.method != http.MethodGet || h.target != "/a/x?q=1":
 		t.Fatalf("handed %s %s", h.method, h.target)
 	case h.header.Get("X-Gateway-Generation") != g.ID:
@@ -229,31 +230,31 @@ func TestEnforcementHandlerAdmits(t *testing.T) {
 	case !admittedFirst:
 		t.Fatal("the admission record was not durable before forwarding")
 	}
-	ev := e.eventOf(h.header.Get("X-Request-Id"), 2)
+	ev := eventOf(e, h.header.Get("X-Request-Id"), 2)
 	if ev["kind"] != "request.forwarded" || ev["decision"] != "forwarded" || ev["status"] != float64(201) ||
 		ev["generation"] != g.ID || ev["upstream"] != "A" || ev["subject"] != "alice" ||
-		!sameStages(ev["stages"], admittedStages(audit.StagePass)) {
+		!gatewaytest.SameStages(ev["stages"], admittedStages(audit.StagePass)) {
 		t.Fatalf("outcome event %v", ev)
 	}
-	if audit := e.auditEvents(); strings.Contains(fmt.Sprint(audit), token[:40]) || strings.Contains(fmt.Sprint(audit), "q=1") {
+	if audit := e.AuditEvents(); strings.Contains(fmt.Sprint(audit), token[:40]) || strings.Contains(fmt.Sprint(audit), "q=1") {
 		t.Fatal("the audit log holds the token or the query")
 	}
-	e.assertReceipts(0, 0, 0)
+	e.AssertReceipts(0, 0, 0)
 }
 
 // When the audit log cannot durably record an admission, nothing is
 // forwarded: the request is refused at the AUDIT stage, after every other
 // stage passed, and the refusal it cannot record is counted as lost.
 func TestEnforcementAuditFailureBlocksForwarding(t *testing.T) {
-	e := newEnv(t)
-	c, _, f := e.serveEnforcement(e.protectedPolicy(), 0)
-	if code, _ := e.get("/a/x", "Authorization", "Bearer "+issuer.TokenFor(t, "alice")); code != http.StatusOK {
+	e := gatewaytest.NewEnv(t)
+	c, _, f := serveEnforcement(e, e.ProtectedPolicy(), 0)
+	if code, _ := e.Get("/a/x", "Authorization", "Bearer "+gatewaytest.Issuer.TokenFor(t, "alice")); code != http.StatusOK {
 		t.Fatalf("before the failure: %d", code)
 	}
 	// The state a failed write or sync leaves the log in.
 	c.Audit().Fail(errors.New("injected write failure"))
 	lost := c.Audit().Lost()
-	code, body := e.get("/a/x", "Authorization", "Bearer "+issuer.TokenFor(t, "alice"))
+	code, body := e.Get("/a/x", "Authorization", "Bearer "+gatewaytest.Issuer.TokenFor(t, "alice"))
 	var reply struct {
 		Error     string `json:"error"`
 		RequestID string `json:"request_id"`
@@ -270,8 +271,8 @@ func TestEnforcementAuditFailureBlocksForwarding(t *testing.T) {
 	}
 	// A refusal before the AUDIT stage needs no acknowledgement and is
 	// answered as before.
-	if code, _ := e.get("/a/x"); code != http.StatusUnauthorized {
+	if code, _ := e.Get("/a/x"); code != http.StatusUnauthorized {
 		t.Fatalf("unauthenticated with a failed audit log: %d", code)
 	}
-	e.assertReceipts(0, 0, 0)
+	e.AssertReceipts(0, 0, 0)
 }

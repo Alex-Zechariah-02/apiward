@@ -10,13 +10,14 @@ import (
 	"time"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/compile"
+	"github.com/Alex-Zechariah-02/apiward/internal/gatewaytest"
 	"github.com/Alex-Zechariah-02/apiward/internal/policy"
 )
 
 // schemaPolicy is threeAPIPolicy with the given body schema on orders.create.
 func schemaPolicy(schema string) policy.Policy {
 	p := threeAPIPolicy()
-	p.Operations[2].Body = jsonBody(1024, schema)
+	p.Operations[2].Body = gatewaytest.JSONBody(1024, schema)
 	return p
 }
 
@@ -24,9 +25,9 @@ func schemaPolicy(schema string) policy.Policy {
 // subset, or inconsistent, rejects the whole policy and is never ignored.
 func TestSchemaCompilation(t *testing.T) {
 	valid := []string{
-		ordersCreateSchema,
-		inventoryAdjustSchema,
-		anyObject,
+		gatewaytest.OrdersCreateSchema,
+		gatewaytest.InventoryAdjustSchema,
+		gatewaytest.AnyObject,
 		`{"type":"object","additionalProperties":false}`,
 		`{"type":"object","additionalProperties":false,"properties":{"note":{"type":["string","null"],"maxLength":8}}}`,
 		`{"type":"object","additionalProperties":false,"properties":{"kind":{"type":"string","enum":["a","b"]},"n":{"type":"number","minimum":-1.5,"maximum":1e3}}}`,
@@ -161,7 +162,7 @@ func TestSchemaCompilation(t *testing.T) {
 		{"camel-case keywords", document(`{"type":"object","additionalProperties":false,"properties":{"MixedCase":{"type":"string","maxLength":3}}}`), ""},
 		{"repeated schema member", document(`{"type":"object","additionalProperties":false,"additionalProperties":true}`), "DUPLICATE_MEMBER"},
 		{"repeated property name", document(`{"type":"object","additionalProperties":true,"properties":{"a":{"type":"string"},"a":{"type":"integer"}}}`), "DUPLICATE_MEMBER"},
-		{"upper-case member outside a schema", strings.Replace(document(anyObject), `"max_bytes"`, `"Max_bytes"`, 1), "UNKNOWN_FIELD"},
+		{"upper-case member outside a schema", strings.Replace(document(gatewaytest.AnyObject), `"max_bytes"`, `"Max_bytes"`, 1), "UNKNOWN_FIELD"},
 		// nested(n) places its innermost schema at policy depth 5+2n.
 		{"nesting above the policy bound", document(nested(6)), "LIMIT_EXCEEDED"},
 		{"nesting within the bound", document(nested(5)), ""},

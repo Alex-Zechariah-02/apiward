@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/compile"
+	"github.com/Alex-Zechariah-02/apiward/internal/gatewaytest"
 	"github.com/Alex-Zechariah-02/apiward/internal/issuertest"
 	"github.com/Alex-Zechariah-02/apiward/internal/policy"
 )
@@ -73,7 +74,7 @@ func TestPolicySubjectsRejected(t *testing.T) {
 		{ID: "café", Status: "active"},
 		{ID: strings.Repeat("s", policy.MaxSubjectLength+1), Status: "active"},
 	} {
-		if _, err := policy.DecodePolicy(withSubject(threeAPIPolicy(), subject)); errorCode(err) != "UNKNOWN_FIELD" {
+		if _, err := policy.DecodePolicy(gatewaytest.WithSubject(threeAPIPolicy(), subject)); errorCode(err) != "UNKNOWN_FIELD" {
 			t.Errorf("legacy membership %+v: %v", subject, err)
 		}
 	}

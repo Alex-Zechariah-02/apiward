@@ -9,19 +9,16 @@ import (
 	"time"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/compile"
+	"github.com/Alex-Zechariah-02/apiward/internal/gatewaytest"
 	"github.com/Alex-Zechariah-02/apiward/internal/policy"
 )
-
-func rate(count, windowSeconds int64) *policy.RateRule {
-	return &policy.RateRule{Algorithm: "sliding-window", Count: count, WindowSeconds: windowSeconds, Key: "subject"}
-}
 
 // Rate rules compile only with a supported algorithm and key, a positive
 // bounded count and window, and a per-account key only on an authenticated
 // operation. Any invalid rule rejects the whole policy.
 func TestRateRuleCompilation(t *testing.T) {
 	p := threeAPIPolicy()
-	p.Operations[0].Rate = rate(10, 60)
+	p.Operations[0].Rate = gatewaytest.Rate(10, 60)
 	g, err := compile.Compile(p, 1, time.Time{})
 	if err != nil {
 		t.Fatalf("valid rate rule rejected: %v", err)
@@ -65,14 +62,14 @@ func TestRateRuleCompilation(t *testing.T) {
 
 	// A public operation has no verified subject to count per account.
 	p = threeAPIPolicy()
-	p.Operations[3].Rate = rate(10, 60)
+	p.Operations[3].Rate = gatewaytest.Rate(10, 60)
 	if err := compileErr(p); errorCode(err) != "INVALID_VALUE" || err.(*policy.PolicyError).Field != "operations[3].rate" {
 		t.Errorf("rate rule on a public operation: %v", err)
 	}
 
 	// A valid rate rule next to an invalid body schema: nothing compiles.
 	p = threeAPIPolicy()
-	p.Operations[0].Rate = rate(10, 60)
+	p.Operations[0].Rate = gatewaytest.Rate(10, 60)
 	p.Operations[2].Body.Schema = []byte(`{"type":"object","additionalProperties":true,"$ref":"#"}`)
 	if g, err := compile.Compile(p, 1, time.Time{}); g != nil || errorCode(err) != "UNSUPPORTED_FEATURE" {
 		t.Errorf("valid rate rule with an invalid schema: generation %v error %v", g != nil, err)

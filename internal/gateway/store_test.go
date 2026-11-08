@@ -1,4 +1,4 @@
-// Installed schema and database constraints.
+// Database connection checks and schema constraints.
 
 package gateway
 
@@ -6,109 +6,21 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"slices"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/Alex-Zechariah-02/apiward/internal/gatewaytest"
 	"github.com/Alex-Zechariah-02/apiward/internal/store"
 )
-
-// An installed database has exactly the current schema: the eleven STRICT
-// tables, their keys and constraints, the activation and override indexes and
-// triggers, WAL journaling and user_version 5, and nothing else.
-func TestInstalledSchema(t *testing.T) {
-	e := newEnv(t)
-	if out, code := e.runOperator(binaries.plain, nil, "install", "--admin", "root"); code != 0 {
-		t.Fatalf("install exited %d: %s", code, out)
-	}
-	db := inspect(t, e.database)
-
-	rows, err := db.Query(`SELECT name, strict FROM pragma_table_list WHERE schema = 'main' AND name NOT LIKE 'sqlite_%' ORDER BY name`)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var tables []string
-	for rows.Next() {
-		var name string
-		var strict int
-		if err := rows.Scan(&name, &strict); err != nil {
-			t.Fatal(err)
-		}
-		if strict != 1 {
-			t.Errorf("table %s is not STRICT", name)
-		}
-		tables = append(tables, name)
-	}
-	if err := rows.Err(); err != nil {
-		t.Fatal(err)
-	}
-	rows.Close()
-	want := []string{"activation", "administrator", "base", "blocked_account", "blocked_address", "candidate", "control_result", "deployment", "enrolment", "override", "revision", "transition"}
-	if !slices.Equal(tables, want) {
-		t.Fatalf("tables %v, want %v", tables, want)
-	}
-	// Besides those SQLite creates for primary keys and UNIQUE, the only
-	// indexes and triggers guard the provisional and override lifecycles.
-	explicit, err := db.Query(`SELECT name FROM sqlite_schema WHERE type IN ('index', 'trigger', 'view') AND sql IS NOT NULL ORDER BY name`)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var names []string
-	for explicit.Next() {
-		var name string
-		explicit.Scan(&name)
-		names = append(names, name)
-	}
-	if err := explicit.Err(); err != nil {
-		t.Fatal(err)
-	}
-	explicit.Close()
-	if want := []string{"activation_final", "activation_fixed", "activation_kept", "activation_unresolved", "base_provisional",
-		"override_active_target", "override_final", "override_fixed", "override_kept", "override_resolution", "override_shared"}; !slices.Equal(names, want) {
-		t.Fatalf("explicit indexes and triggers %v, want %v", names, want)
-	}
-	// Of the override's UNIQUE constraints only creation remains on its
-	// column; a resolution is unique only among revocations and expiries.
-	if n := count(t, db, `SELECT COUNT(*) FROM pragma_index_list('override') WHERE origin = 'u'`); n != 1 {
-		t.Fatalf("override has %d UNIQUE column constraints, want 1", n)
-	}
-	if n := count(t, db, `SELECT COUNT(*) FROM pragma_index_info('sqlite_autoindex_override_1') WHERE name = 'creation'`); n != 1 {
-		t.Fatal("the override UNIQUE column constraint is not on creation")
-	}
-	foreignKeys := map[string]int{"revision": 1, "base": 2, "candidate": 1, "transition": 2, "activation": 4, "override": 3, "blocked_account": 1, "blocked_address": 1, "control_result": 1}
-	for table, want := range foreignKeys {
-		if n := count(t, db, `SELECT COUNT(*) FROM pragma_foreign_key_list(?)`, table); n != want {
-			t.Errorf("table %s has %d foreign keys, want %d", table, n, want)
-		}
-	}
-	if n := count(t, db, `PRAGMA user_version`); n != 6 {
-		t.Fatalf("user_version %d", n)
-	}
-	var journal string
-	if err := db.QueryRow(`PRAGMA journal_mode`).Scan(&journal); err != nil || journal != "wal" {
-		t.Fatalf("journal mode %q %v", journal, err)
-	}
-	var check string
-	if err := db.QueryRow(`PRAGMA integrity_check`).Scan(&check); err != nil || check != "ok" {
-		t.Fatalf("integrity check %q %v", check, err)
-	}
-	if n := count(t, db, `SELECT COUNT(*) FROM pragma_foreign_key_check`); n != 0 {
-		t.Fatalf("%d foreign key violations", n)
-	}
-	// The install transition is recorded and audited.
-	if n := count(t, db, `SELECT COUNT(*) FROM transition WHERE kind = 'operator.install' AND outcome = 'committed' AND audited_at IS NOT NULL`); n != 1 {
-		t.Fatalf("%d audited install transitions", n)
-	}
-}
 
 // verify refuses a connection without foreign key enforcement, and
 // the schema's constraints reject invalid rows on a production connection.
 func TestConnectionAndConstraints(t *testing.T) {
-	e := newEnv(t)
-	seed(t, e.database, e.protectedPolicy(), seedOptions{})
+	e := gatewaytest.NewEnv(t)
+	gatewaytest.Seed(t, e.Database, e.ProtectedPolicy(), gatewaytest.SeedOptions{})
 
-	plain, err := sql.Open("sqlite", store.DatabaseURI(e.database))
+	plain, err := sql.Open("sqlite", store.DatabaseURI(e.Database))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -118,7 +30,7 @@ func TestConnectionAndConstraints(t *testing.T) {
 	}
 	plain.Close()
 
-	db, err := store.Connect(e.database, "WAL")
+	db, err := store.Connect(e.Database, "WAL")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -145,7 +57,7 @@ func TestConnectionAndConstraints(t *testing.T) {
 			VALUES ('t', 'k', 'a', 't', 'd', 'rejected', 'STALE', 1, 0)`, "CHECK", nil},
 		{"committed transition with a reason", `INSERT INTO transition (id, kind, actor, target, digest, outcome, reason, committed_at)
 			VALUES ('t', 'k', 'a', 't', 'd', 'committed', 'STALE', 0)`, "CHECK", nil},
-		{"duplicate administrator", `INSERT INTO administrator VALUES (?, 1, ?, 'active', 1, 0)`, "UNIQUE", []any{harnessAdmin, harnessHash()}},
+		{"duplicate administrator", `INSERT INTO administrator VALUES (?, 1, ?, 'active', 1, 0)`, "UNIQUE", []any{gatewaytest.HarnessAdmin, gatewaytest.HarnessHash()}},
 		{"duplicate revision", `INSERT INTO revision SELECT * FROM revision WHERE id = 1`, "UNIQUE", nil},
 		{"shared enrolment secret", `INSERT INTO enrolment VALUES ('a', ?, 1, 0, 0), ('b', ?, 1, 0, 0)`, "UNIQUE", []any{strings.Repeat("f", 64), strings.Repeat("f", 64)}},
 	}
@@ -155,7 +67,7 @@ func TestConnectionAndConstraints(t *testing.T) {
 			t.Errorf("%s: %v, want a %s constraint failure", v.name, err, v.failure)
 		}
 	}
-	if n := count(t, db, `SELECT COUNT(*) FROM revision`); n != 1 {
+	if n := gatewaytest.Count(t, db, `SELECT COUNT(*) FROM revision`); n != 1 {
 		t.Fatalf("%d revisions after the refused statements", n)
 	}
 }
@@ -166,9 +78,9 @@ func TestConnectionAndConstraints(t *testing.T) {
 // and a refused change leaves nothing behind. overrideOf finds the one
 // override a temporary-override transition created or ended.
 func TestOverrideResolutionConstraints(t *testing.T) {
-	e := newEnv(t)
-	seed(t, e.database, e.protectedPolicy(), seedOptions{})
-	db, err := store.Connect(e.database, "WAL")
+	e := gatewaytest.NewEnv(t)
+	gatewaytest.Seed(t, e.Database, e.ProtectedPolicy(), gatewaytest.SeedOptions{})
+	db, err := store.Connect(e.Database, "WAL")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -178,12 +90,12 @@ func TestOverrideResolutionConstraints(t *testing.T) {
 	now := time.Now()
 	create := func(id int64, o store.Override) {
 		t.Helper()
-		o.ID, o.Base, o.CreatedAt, o.ExpiresAt, o.Actor = id, 1, now, now.Add(time.Hour), harnessAdmin
+		o.ID, o.Base, o.CreatedAt, o.ExpiresAt, o.Actor = id, 1, now, now.Add(time.Hour), gatewaytest.HarnessAdmin
 		o.Target = o.Control + ":" + o.Operation // the stored target format
 		if o.Control == store.ControlPermit {
 			o.Target = o.Control + ":" + o.Role + ":" + o.Operation
 		}
-		creation := store.TransitionRecord{ID: fmt.Sprintf("create-%d", id), Kind: "tpo.create", Actor: harnessAdmin, Target: "override", Digest: "d"}
+		creation := store.TransitionRecord{ID: fmt.Sprintf("create-%d", id), Kind: "tpo.create", Actor: gatewaytest.HarnessAdmin, Target: "override", Digest: "d"}
 		if err := s.CommitOverride(ctx, creation, o, now); err != nil {
 			t.Fatalf("creating override %d: %v", id, err)
 		}
@@ -192,7 +104,7 @@ func TestOverrideResolutionConstraints(t *testing.T) {
 	create(1, grant)
 	create(2, store.Override{Type: store.OverrideContainment, Control: store.ControlOperation, Operation: "read-b"})
 	create(3, store.Override{Type: store.OverrideContainment, Control: store.ControlOperation, Operation: "read-a"})
-	revoke := store.TransitionRecord{ID: "revoke-1", Kind: "tpo.revoke", Actor: harnessAdmin, Target: "override 1", Digest: "d"}
+	revoke := store.TransitionRecord{ID: "revoke-1", Kind: "tpo.revoke", Actor: gatewaytest.HarnessAdmin, Target: "override 1", Digest: "d"}
 	if err := s.CommitOverrideEnd(ctx, revoke, 1, store.OverrideRevoked, now); err != nil {
 		t.Fatal(err)
 	}
@@ -215,7 +127,7 @@ func TestOverrideResolutionConstraints(t *testing.T) {
 	refused("revoked override changed", "exactly one final disposition", `UPDATE override SET status = 'expired' WHERE id = 1`)
 	refused("quarantined override moved to another transition", "exactly one final disposition", `UPDATE override SET resolution = 'create-3' WHERE id = 2`)
 	refused("override deleted", "history is kept", `DELETE FROM override WHERE id = 3`)
-	again := store.TransitionRecord{ID: "revoke-2", Kind: "tpo.revoke", Actor: harnessAdmin, Target: "override 2", Digest: "d"}
+	again := store.TransitionRecord{ID: "revoke-2", Kind: "tpo.revoke", Actor: gatewaytest.HarnessAdmin, Target: "override 2", Digest: "d"}
 	if err := s.CommitOverrideEnd(ctx, again, 2, store.OverrideRevoked, now); !errors.Is(err, store.ErrNotUpdated) {
 		t.Errorf("revoking a quarantined override: %v", err)
 	}
@@ -231,7 +143,7 @@ func TestOverrideResolutionConstraints(t *testing.T) {
 			t.Errorf("override %d: %s by %q", o.ID, o.Status, o.Resolution)
 		}
 	}
-	if n := count(t, db, `SELECT COUNT(*) FROM transition WHERE id = 'revoke-2'`); n != 0 {
+	if n := gatewaytest.Count(t, db, `SELECT COUNT(*) FROM transition WHERE id = 'revoke-2'`); n != 0 {
 		t.Error("the refused revocation left its transition")
 	}
 	for transition, want := range map[string]int64{"create-1": 1, "revoke-1": 1, "create-2": 2, "create-4": 4, restore.ID: 0} {
@@ -240,7 +152,7 @@ func TestOverrideResolutionConstraints(t *testing.T) {
 			t.Errorf("overrideOf(%s) = %d %v %v, want %d", transition, o.ID, found, err, want)
 		}
 	}
-	if n := count(t, db, `SELECT COUNT(*) FROM pragma_foreign_key_check`); n != 0 {
+	if n := gatewaytest.Count(t, db, `SELECT COUNT(*) FROM pragma_foreign_key_check`); n != 0 {
 		t.Fatalf("%d foreign key violations", n)
 	}
 }

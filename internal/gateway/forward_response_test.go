@@ -14,6 +14,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/Alex-Zechariah-02/apiward/internal/gatewaytest"
 )
 
 // Responses pass through as the upstream sent them, without the upstream's
@@ -22,11 +24,11 @@ import (
 // arrive, and encoded bodies (never decoded). An upstream that switches
 // protocols is not followed into a tunnel.
 func TestNativeForwardingResponses(t *testing.T) {
-	e := newEnv(t)
-	e.serveNative(e.policy(e.a, false), forwardTimeouts)
+	e := gatewaytest.NewEnv(t)
+	serveNative(e, e.Policy(e.A, false), forwardTimeouts)
 	var respond func(w http.ResponseWriter, r *http.Request)
 	var mu sync.Mutex
-	e.a.handle = func(w http.ResponseWriter, r *http.Request) bool {
+	e.A.Handle = func(w http.ResponseWriter, r *http.Request) bool {
 		mu.Lock()
 		f := respond
 		mu.Unlock()
@@ -51,7 +53,7 @@ func TestNativeForwardingResponses(t *testing.T) {
 			w.WriteHeader(http.StatusAccepted)
 			w.Write(binary)
 		})
-		resp, body := e.exchange(http.MethodGet, "/a/x", "", "")
+		resp, body := e.Exchange(http.MethodGet, "/a/x", "", "")
 		if resp.StatusCode != http.StatusAccepted || body != string(binary) || resp.ContentLength != int64(len(binary)) || resp.Header.Get("X-Upstream") != "kept" {
 			t.Fatalf("response %d, %d bytes (intact %v), headers %v", resp.StatusCode, len(body), body == string(binary), resp.Header)
 		}
@@ -64,7 +66,7 @@ func TestNativeForwardingResponses(t *testing.T) {
 			w.WriteHeader(http.StatusOK)
 			io.WriteString(w, "final")
 		})
-		resp, conn := e.openResponse("GET /a/x HTTP/1.1\r\nHost: gw\r\nConnection: close\r\n\r\n")
+		resp, conn := e.OpenResponse("GET /a/x HTTP/1.1\r\nHost: gw\r\nConnection: close\r\n\r\n")
 		if resp.StatusCode != http.StatusEarlyHints || resp.Header.Get("Link") == "" {
 			t.Fatalf("first response %d %v", resp.StatusCode, resp.Header)
 		}
@@ -76,11 +78,11 @@ func TestNativeForwardingResponses(t *testing.T) {
 
 	t.Run("redirect not followed", func(t *testing.T) {
 		set(func(w http.ResponseWriter, r *http.Request) {
-			http.Redirect(w, r, "http://"+e.c.addr+"/a/x", http.StatusFound)
+			http.Redirect(w, r, "http://"+e.C.Addr+"/a/x", http.StatusFound)
 		})
-		resp, _ := e.rawResponse("GET /a/x HTTP/1.1\r\nHost: gw\r\nConnection: close\r\n\r\n")
-		if resp.StatusCode != http.StatusFound || resp.Header.Get("Location") != "http://"+e.c.addr+"/a/x" || e.c.count() != 0 {
-			t.Fatalf("redirect: %d, Location %q, receipts at C %d", resp.StatusCode, resp.Header.Get("Location"), e.c.count())
+		resp, _ := e.RawResponse("GET /a/x HTTP/1.1\r\nHost: gw\r\nConnection: close\r\n\r\n")
+		if resp.StatusCode != http.StatusFound || resp.Header.Get("Location") != "http://"+e.C.Addr+"/a/x" || e.C.Count() != 0 {
+			t.Fatalf("redirect: %d, Location %q, receipts at C %d", resp.StatusCode, resp.Header.Get("Location"), e.C.Count())
 		}
 	})
 
@@ -90,7 +92,7 @@ func TestNativeForwardingResponses(t *testing.T) {
 			io.WriteString(w, "body")
 			w.Header().Set("X-Checksum", "c0ffee")
 		})
-		resp, body := e.exchange(http.MethodGet, "/a/x", "", "")
+		resp, body := e.Exchange(http.MethodGet, "/a/x", "", "")
 		if resp.StatusCode != http.StatusOK || body != "body" || resp.Trailer.Get("X-Checksum") != "c0ffee" {
 			t.Fatalf("response %d %q, trailers %v", resp.StatusCode, body, resp.Trailer)
 		}
@@ -107,7 +109,7 @@ func TestNativeForwardingResponses(t *testing.T) {
 			}
 			io.WriteString(w, "second\n")
 		})
-		resp, _ := e.openResponse("GET /a/x HTTP/1.1\r\nHost: gw\r\nConnection: close\r\n\r\n")
+		resp, _ := e.OpenResponse("GET /a/x HTTP/1.1\r\nHost: gw\r\nConnection: close\r\n\r\n")
 		reader := bufio.NewReader(resp.Body)
 		if line, err := reader.ReadString('\n'); err != nil || line != "first\n" {
 			t.Fatalf("first part: %q %v", line, err)
@@ -132,7 +134,7 @@ func TestNativeForwardingResponses(t *testing.T) {
 			w.Header().Set("Content-Length", fmt.Sprint(compressed.Len()))
 			w.Write(compressed.Bytes())
 		})
-		resp, body := e.rawResponse("GET /a/x HTTP/1.1\r\nHost: gw\r\nAccept-Encoding: gzip\r\nConnection: close\r\n\r\n")
+		resp, body := e.RawResponse("GET /a/x HTTP/1.1\r\nHost: gw\r\nAccept-Encoding: gzip\r\nConnection: close\r\n\r\n")
 		if resp.StatusCode != http.StatusOK || resp.Header.Get("Content-Encoding") != "gzip" || body != compressed.String() ||
 			resp.ContentLength != int64(compressed.Len()) {
 			t.Fatalf("response %d, Content-Encoding %q, %d bytes (identical %v)", resp.StatusCode, resp.Header.Get("Content-Encoding"), len(body), body == compressed.String())
@@ -151,10 +153,10 @@ func TestNativeForwardingResponses(t *testing.T) {
 				close(closed)
 			}
 		})
-		resp, body := e.rawResponse("GET /a/x HTTP/1.1\r\nHost: gw\r\nConnection: close\r\n\r\n")
-		_, id := requestID(resp, body)
-		if resp.StatusCode != http.StatusBadGateway || !failedOutcome(e.outcomeOf(id), http.StatusBadGateway, "upstream_unavailable", "outcome_unknown") {
-			t.Fatalf("upstream switching protocols: %d %s, outcome %v", resp.StatusCode, body, e.outcomeOf(id))
+		resp, body := e.RawResponse("GET /a/x HTTP/1.1\r\nHost: gw\r\nConnection: close\r\n\r\n")
+		_, id := gatewaytest.RequestID(resp, body)
+		if resp.StatusCode != http.StatusBadGateway || !failedOutcome(outcomeOf(e, id), http.StatusBadGateway, "upstream_unavailable", "outcome_unknown") {
+			t.Fatalf("upstream switching protocols: %d %s, outcome %v", resp.StatusCode, body, outcomeOf(e, id))
 		}
 		select {
 		case <-closed:

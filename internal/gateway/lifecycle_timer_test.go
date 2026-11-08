@@ -6,6 +6,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/Alex-Zechariah-02/apiward/internal/gatewaytest"
 )
 
 // Stop racing the deadline timer leaves the rollback either complete,
@@ -14,11 +16,11 @@ import (
 func TestStopRacesDeadline(t *testing.T) {
 	outcomes := map[string]int{}
 	for round := range 10 {
-		e := newEnv(t)
-		provisional := e.policy(e.a, true)
+		e := gatewaytest.NewEnv(t)
+		provisional := e.Policy(e.A, true)
 		deadline := time.UnixMilli(time.Now().Add(400 * time.Millisecond).UnixMilli())
-		seed(t, e.database, e.policy(e.a, false), seedOptions{provisional: &provisional, deadline: deadline})
-		c, _ := e.own(e.controllerConfig())
+		gatewaytest.Seed(t, e.Database, e.Policy(e.A, false), gatewaytest.SeedOptions{Provisional: &provisional, Deadline: deadline})
+		c, _ := own(e, controllerConfig(e))
 
 		// Stop lands from a few milliseconds before to a few after the timer.
 		time.Sleep(time.Until(deadline.Add(time.Duration(round-5) * time.Millisecond)))
@@ -34,9 +36,9 @@ func TestStopRacesDeadline(t *testing.T) {
 			}
 		}
 
-		rolledBack := queryInt(t, e.database, `SELECT count(*) FROM transition WHERE id = 'auto-rollback:2' AND outcome = 'committed'`)
-		base := queryInt(t, e.database, `SELECT coalesce(provisional, 0) FROM base`)
-		unaudited := queryInt(t, e.database, `SELECT count(*) FROM transition WHERE outcome = 'committed' AND audited_at IS NULL`)
+		rolledBack := gatewaytest.QueryInt(t, e.Database, `SELECT count(*) FROM transition WHERE id = 'auto-rollback:2' AND outcome = 'committed'`)
+		base := gatewaytest.QueryInt(t, e.Database, `SELECT coalesce(provisional, 0) FROM base`)
+		unaudited := gatewaytest.QueryInt(t, e.Database, `SELECT count(*) FROM transition WHERE outcome = 'committed' AND audited_at IS NULL`)
 		switch {
 		case rolledBack == 1 && base == 0 && unaudited == 0:
 			outcomes["rolled back before the stop"]++
@@ -46,14 +48,14 @@ func TestStopRacesDeadline(t *testing.T) {
 			t.Fatalf("round %d: rollback %d, provisional %d, unaudited %d", round, rolledBack, base, unaudited)
 		}
 
-		again, _ := e.own(e.controllerConfig())
+		again, _ := own(e, controllerConfig(e))
 		if g := again.Current(); g == nil || g.Revision != 1 {
 			t.Fatalf("round %d: after restart %+v", round, g)
 		}
 		if err := again.Stop(); err != nil {
 			t.Fatal(err)
 		}
-		if n := queryInt(t, e.database, `SELECT count(*) FROM transition WHERE id = 'auto-rollback:2'`); n != 1 {
+		if n := gatewaytest.QueryInt(t, e.Database, `SELECT count(*) FROM transition WHERE id = 'auto-rollback:2'`); n != 1 {
 			t.Fatalf("round %d: %d rollbacks", round, n)
 		}
 	}

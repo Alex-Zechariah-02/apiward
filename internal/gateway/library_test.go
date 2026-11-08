@@ -14,30 +14,31 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Alex-Zechariah-02/apiward/internal/gatewaytest"
 	"github.com/Alex-Zechariah-02/apiward/internal/store"
 )
 
 // openEmbedded opens e's seeded deployment as an embedded gateway.
-func (e *env) openEmbedded() *Embedded {
-	e.t.Helper()
-	seed(e.t, e.database, e.policy(e.a, false), seedOptions{})
-	settings, err := LoadSettings(e.config)
+func openEmbedded(e *gatewaytest.Env) *Embedded {
+	e.T.Helper()
+	gatewaytest.Seed(e.T, e.Database, e.Policy(e.A, false), gatewaytest.SeedOptions{})
+	settings, err := LoadSettings(e.Config)
 	if err != nil {
-		e.t.Fatal(err)
+		e.T.Fatal(err)
 	}
-	lib, err := OpenEmbedded(settings, slog.New(slog.NewJSONHandler(&logBuffer{}, nil)))
+	lib, err := OpenEmbedded(settings, slog.New(slog.NewJSONHandler(&gatewaytest.LogBuffer{}, nil)))
 	if err != nil {
-		e.t.Fatal(err)
+		e.T.Fatal(err)
 	}
-	e.t.Cleanup(func() { lib.Stop(context.Background()) })
+	e.T.Cleanup(func() { lib.Stop(context.Background()) })
 	return lib
 }
 
 // auditRecord returns the record of kind for request id, or nil.
-func (e *env) auditRecord(id, kind string) map[string]any {
-	e.t.Helper()
+func auditRecord(e *gatewaytest.Env, id, kind string) map[string]any {
+	e.T.Helper()
 	match := func(ev map[string]any) bool { return ev["request_id"] == id && ev["kind"] == kind }
-	events := e.eventsWhen(func(events []map[string]any) bool { return slices.ContainsFunc(events, match) })
+	events := e.EventsWhen(func(events []map[string]any) bool { return slices.ContainsFunc(events, match) })
 	if i := slices.IndexFunc(events, match); i >= 0 {
 		return events[i]
 	}
@@ -48,20 +49,20 @@ func (e *env) auditRecord(id, kind string) map[string]any {
 // Stop each happen once; Stop waits for requests in progress before the
 // audit log closes, and releases the deployment.
 func TestLibraryLifecycle(t *testing.T) {
-	e := newEnv(t)
-	lib := e.openEmbedded()
+	e := gatewaytest.NewEnv(t)
+	lib := openEmbedded(e)
 	host := httptest.NewServer(lib)
 	defer host.Close()
 
 	early := httptest.NewRecorder()
 	lib.ServeHTTP(early, httptest.NewRequest(http.MethodGet, "/a/x", nil))
-	if early.Code != http.StatusServiceUnavailable || e.a.count() != 0 {
-		t.Fatalf("before Start: %d, %d forwarded", early.Code, e.a.count())
+	if early.Code != http.StatusServiceUnavailable || e.A.Count() != 0 {
+		t.Fatalf("before Start: %d, %d forwarded", early.Code, e.A.Count())
 	}
 	if err := lib.Start(); err != nil {
 		t.Fatal(err)
 	}
-	if ev := e.auditRecord(early.Header().Get("X-Request-Id"), "request.rejected"); ev == nil || ev["stage"] != "CAPTURE" {
+	if ev := auditRecord(e, early.Header().Get("X-Request-Id"), "request.rejected"); ev == nil || ev["stage"] != "CAPTURE" {
 		t.Fatalf("refusal before Start recorded as %v", ev)
 	}
 	if err := lib.Start(); !errors.Is(err, ErrStarted) {
@@ -69,7 +70,7 @@ func TestLibraryLifecycle(t *testing.T) {
 	}
 
 	held, release := make(chan struct{}), make(chan struct{})
-	e.a.handle = func(w http.ResponseWriter, r *http.Request) bool {
+	e.A.Handle = func(w http.ResponseWriter, r *http.Request) bool {
 		if r.URL.Path != "/a/held" {
 			return false
 		}
@@ -88,7 +89,7 @@ func TestLibraryLifecycle(t *testing.T) {
 	<-held
 	stopped := make(chan error, 1)
 	go func() { stopped <- lib.Stop(context.Background()) }()
-	waitFor(t, time.Now().Add(5*time.Second), "refusals once Stop began", func() bool {
+	gatewaytest.WaitFor(t, time.Now().Add(5*time.Second), "refusals once Stop began", func() bool {
 		resp, err := http.Get(host.URL + "/a/x")
 		if err != nil {
 			return false
@@ -110,13 +111,13 @@ func TestLibraryLifecycle(t *testing.T) {
 	if err := <-stopped; err != nil {
 		t.Fatalf("Stop: %v", err)
 	}
-	if ev := e.auditRecord(resp.Header.Get("X-Request-Id"), "request.forwarded"); ev == nil || ev["status"] != float64(http.StatusOK) {
+	if ev := auditRecord(e, resp.Header.Get("X-Request-Id"), "request.forwarded"); ev == nil || ev["status"] != float64(http.StatusOK) {
 		t.Fatalf("drained request recorded as %v", ev)
 	}
 	if err := lib.Start(); !errors.Is(err, ErrStopped) {
 		t.Fatalf("Start after Stop: %v", err)
 	}
-	st, err := store.OpenStore(e.database)
+	st, err := store.OpenStore(e.Database)
 	if err != nil {
 		t.Fatalf("the database is still held: %v", err)
 	}
@@ -126,8 +127,8 @@ func TestLibraryLifecycle(t *testing.T) {
 // Mounted under a prefix, the path checked, recorded and forwarded is the
 // stripped path, and encodings refused at the root stay refused.
 func TestPrefixMount(t *testing.T) {
-	e := newEnv(t)
-	lib := e.openEmbedded()
+	e := gatewaytest.NewEnv(t)
+	lib := openEmbedded(e)
 	if err := lib.Start(); err != nil {
 		t.Fatal(err)
 	}
@@ -141,11 +142,11 @@ func TestPrefixMount(t *testing.T) {
 		t.Fatal(err)
 	}
 	resp.Body.Close()
-	got := e.a.receipts()
+	got := e.A.Receipts()
 	if resp.StatusCode != http.StatusOK || len(got) != 1 || got[0].Path != "/a/A" {
 		t.Fatalf("prefixed request: %d, receipts %+v", resp.StatusCode, got)
 	}
-	if ev := e.auditRecord(resp.Header.Get("X-Request-Id"), "request.forwarded"); ev == nil || ev["path"] != "/a/A" {
+	if ev := auditRecord(e, resp.Header.Get("X-Request-Id"), "request.forwarded"); ev == nil || ev["path"] != "/a/A" {
 		t.Fatalf("prefixed request recorded as %v", ev)
 	}
 	resp, err = http.Get(host.URL + "/api/a%2Fx")
@@ -153,23 +154,23 @@ func TestPrefixMount(t *testing.T) {
 		t.Fatal(err)
 	}
 	resp.Body.Close()
-	if resp.StatusCode != http.StatusBadRequest || e.a.count() != 1 {
-		t.Fatalf("encoded slash under the prefix: %d, %d forwarded", resp.StatusCode, e.a.count())
+	if resp.StatusCode != http.StatusBadRequest || e.A.Count() != 1 {
+		t.Fatalf("encoded slash under the prefix: %d, %d forwarded", resp.StatusCode, e.A.Count())
 	}
 }
 
 // The host's server takes the configured data-plane limits.
 func TestServerSettings(t *testing.T) {
-	e := newEnv(t)
-	settings := e.nativeSettings()
-	data := section(settings, "data")
+	e := gatewaytest.NewEnv(t)
+	settings := e.NativeSettings()
+	data := gatewaytest.Section(settings, "data")
 	data["max_header_bytes"] = 32768
 	data["read_header_timeout"] = "3s"
 	data["read_timeout"] = "7s"
 	data["write_timeout"] = "11s"
 	data["idle_timeout"] = "13s"
-	e.writeNative(settings)
-	lib := e.openEmbedded()
+	e.WriteNative(settings)
+	lib := openEmbedded(e)
 	var server http.Server
 	lib.ServerSettings().Apply(&server)
 	if server.MaxHeaderBytes != 32768 || server.ReadHeaderTimeout != 3*time.Second || server.ReadTimeout != 7*time.Second ||
@@ -193,18 +194,18 @@ func kinds(err error) []error {
 // Each refusal while loading, opening and starting has one kind, and a
 // failed Start releases the deployment.
 func TestLibraryErrors(t *testing.T) {
-	e := newEnv(t)
-	logger := slog.New(slog.NewJSONHandler(&logBuffer{}, nil))
+	e := gatewaytest.NewEnv(t)
+	logger := slog.New(slog.NewJSONHandler(&gatewaytest.LogBuffer{}, nil))
 	if _, err := OpenEmbedded(Settings{}, logger); !slices.Equal(kinds(err), []error{ErrConfig}) {
 		t.Fatalf("zero settings: %v", err)
 	}
-	e.writeNativeFile([]byte(`{"version": 1}`))
-	if _, err := LoadSettings(e.config); !slices.Equal(kinds(err), []error{ErrConfig}) {
+	e.WriteNativeFile([]byte(`{"version": 1}`))
+	if _, err := LoadSettings(e.Config); !slices.Equal(kinds(err), []error{ErrConfig}) {
 		t.Fatalf("incomplete file: %v", err)
 	}
-	e.writeNative(e.nativeSettings())
-	first := e.openEmbedded()
-	settings, err := LoadSettings(e.config)
+	e.WriteNative(e.NativeSettings())
+	first := openEmbedded(e)
+	settings, err := LoadSettings(e.Config)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -214,7 +215,7 @@ func TestLibraryErrors(t *testing.T) {
 	if _, err := OpenEmbedded(settings, logger); !slices.Equal(kinds(err), []error{ErrLocked}) {
 		t.Fatalf("second gateway for one deployment: %v", err)
 	}
-	busy, err := net.Listen("tcp", e.admin)
+	busy, err := net.Listen("tcp", e.Admin)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -225,10 +226,10 @@ func TestLibraryErrors(t *testing.T) {
 	if err := first.Start(); !slices.Equal(kinds(err), []error{ErrStopped}) {
 		t.Fatalf("Start after a failed Start: %v", err)
 	}
-	if dialable(e.metrics) {
+	if gatewaytest.Dialable(e.Metrics) {
 		t.Fatal("the metrics listener stayed open")
 	}
-	st, err := store.OpenStore(e.database)
+	st, err := store.OpenStore(e.Database)
 	if err != nil {
 		t.Fatalf("the database is still held: %v", err)
 	}

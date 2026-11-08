@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Alex-Zechariah-02/apiward/internal/gatewaytest"
 	"github.com/Alex-Zechariah-02/apiward/internal/policy"
 )
 
@@ -20,10 +21,10 @@ import (
 // without the client credential, the proxy credential or any field the
 // gateway did not receive; the upstream response returns unchanged.
 func TestNativeForwardingRequestIntact(t *testing.T) {
-	e := newEnv(t)
-	c, logs := e.serveNative(e.policy(e.a, false), forwardTimeouts)
+	e := gatewaytest.NewEnv(t)
+	c, logs := serveNative(e, e.Policy(e.A, false), forwardTimeouts)
 	g := c.Current().ID
-	e.a.handle = func(w http.ResponseWriter, r *http.Request) bool {
+	e.A.Handle = func(w http.ResponseWriter, r *http.Request) bool {
 		if r.Method != http.MethodPost {
 			return false
 		}
@@ -36,8 +37,8 @@ func TestNativeForwardingRequestIntact(t *testing.T) {
 		return true
 	}
 	body := "{ \"n\" : 1,\t\"s\":\"é\\u00e9\" }"
-	token := "Bearer " + issuer.TokenFor(t, "alice")
-	resp, reply := e.rawResponse(fmt.Sprintf("POST /a/item?q=1&q=2&x=%%20y HTTP/1.1\r\nHost: gw\r\nConnection: close\r\n"+
+	token := "Bearer " + gatewaytest.Issuer.TokenFor(t, "alice")
+	resp, reply := e.RawResponse(fmt.Sprintf("POST /a/item?q=1&q=2&x=%%20y HTTP/1.1\r\nHost: gw\r\nConnection: close\r\n"+
 		"Content-Type: application/json; charset=utf-8\r\nContent-Length: %d\r\nX-Custom: kept\r\nAccept: application/json\r\n"+
 		"Cookie: c=3\r\nUser-Agent: test-agent/1\r\nIdempotency-Key: key-0001\r\nAuthorization: %s\r\n"+
 		"Proxy-Authorization: Basic c2VjcmV0\r\n\r\n%s", len(body), token, body))
@@ -45,7 +46,7 @@ func TestNativeForwardingRequestIntact(t *testing.T) {
 		strings.Join(resp.Header.Values("Set-Cookie"), "|") != "a=1|b=2" || resp.Header.Get("Content-Type") != "application/json" {
 		t.Fatalf("response %d %v %q", resp.StatusCode, resp.Header, reply)
 	}
-	got := e.a.receipts()
+	got := e.A.Receipts()
 	if len(got) != 1 {
 		t.Fatalf("%d receipts, want 1", len(got))
 	}
@@ -69,18 +70,18 @@ func TestNativeForwardingRequestIntact(t *testing.T) {
 
 	// Without a User-Agent or Accept-Encoding from the client, the upstream
 	// receives none.
-	if code, _ := e.raw("GET /a/x HTTP/1.1\r\nHost: gw\r\nConnection: close\r\n\r\n"); code != http.StatusOK {
+	if code, _ := e.Raw("GET /a/x HTTP/1.1\r\nHost: gw\r\nConnection: close\r\n\r\n"); code != http.StatusOK {
 		t.Fatalf("plain request: %d", code)
 	}
-	if h := e.a.receipts()[1].Headers; h.Get("User-Agent") != "" || h.Get("Accept-Encoding") != "" {
+	if h := e.A.Receipts()[1].Headers; h.Get("User-Agent") != "" || h.Get("Accept-Encoding") != "" {
 		t.Errorf("fields the client did not send: User-Agent %q, Accept-Encoding %q", h.Get("User-Agent"), h.Get("Accept-Encoding"))
 	}
-	for name, text := range map[string]string{"audit log": fmt.Sprint(e.auditEvents()), "proxy log": logs.String()} {
+	for name, text := range map[string]string{"audit log": fmt.Sprint(e.AuditEvents()), "proxy log": logs.String()} {
 		if strings.Contains(text, token[7:]) || strings.Contains(text, "c2VjcmV0") {
 			t.Errorf("the %s holds a credential", name)
 		}
 	}
-	e.assertReceipts(2, 0, 0)
+	e.AssertReceipts(2, 0, 0)
 }
 
 // The forwarding metadata as the upstream and the client receive it: the
@@ -94,13 +95,13 @@ func TestNativeForwardingRequestIntact(t *testing.T) {
 // response keeps the upstream's Server field, loses its hop-by-hop fields,
 // including those it names in Connection, and gains Via.
 func TestNativeForwardingMetadata(t *testing.T) {
-	e := newEnv(t)
-	e.serveNative(e.policy(e.a, false), forwardTimeouts)
+	e := gatewaytest.NewEnv(t)
+	serveNative(e, e.Policy(e.A, false), forwardTimeouts)
 	// Written raw: net/http would replace the Connection field of a handler's
 	// response to a request that asked to close. The field does not say close
 	// either: net/http drops the whole Connection field of a response that
 	// does, so the proxy could not see a field it names.
-	e.a.handle = func(w http.ResponseWriter, r *http.Request) bool {
+	e.A.Handle = func(w http.ResponseWriter, r *http.Request) bool {
 		conn, buffered, _ := http.NewResponseController(w).Hijack()
 		defer conn.Close()
 		buffered.WriteString("HTTP/1.1 200 OK\r\nServer: upstream-server\r\nKeep-Alive: timeout=99\r\nConnection: X-Hop\r\n" +
@@ -118,11 +119,11 @@ func TestNativeForwardingMetadata(t *testing.T) {
 		{"forwarding fields named in Connection", "close, X-Forwarded-For, x-forwarded-host,Via, X-Forwarded-Proto, Forwarded", "1.1 gateway"},
 	}
 	for i, tc := range cases {
-		resp, body := e.rawResponse("GET /a/x?b=1;c=2&d=%zz HTTP/1.1\r\nHost: gw.example:8443\r\n" + forged + "Connection: " + tc.connection + "\r\n\r\n")
+		resp, body := e.RawResponse("GET /a/x?b=1;c=2&d=%zz HTTP/1.1\r\nHost: gw.example:8443\r\n" + forged + "Connection: " + tc.connection + "\r\n\r\n")
 		if resp.StatusCode != http.StatusOK || body != "A ok" {
 			t.Fatalf("%s: response %d %q", tc.name, resp.StatusCode, body)
 		}
-		got := e.a.receipts()[i]
+		got := e.A.Receipts()[i]
 		h := got.Headers
 		checks := []struct {
 			name, got, want string
@@ -150,7 +151,7 @@ func TestNativeForwardingMetadata(t *testing.T) {
 			}
 		}
 	}
-	e.assertReceipts(2, 0, 0)
+	e.AssertReceipts(2, 0, 0)
 }
 
 // Request bodies on the native path: the effective ceiling, the smaller of
@@ -160,14 +161,14 @@ func TestNativeForwardingMetadata(t *testing.T) {
 // body's trailer fields stay behind. Expect: 100-continue behaves as before.
 // Conflicting framing cannot carry a second request upstream.
 func TestNativeForwardingBodies(t *testing.T) {
-	e := newEnv(t)
-	p := e.policy(e.a, false)
+	e := gatewaytest.NewEnv(t)
+	p := e.Policy(e.A, false)
 	p.Operations = append(p.Operations,
-		policy.Operation{ID: "large", API: "a", Method: "POST", Target: "/a/large", Access: "allow", Auth: "none", Body: jsonBody(32768, anyObject)},
-		policy.Operation{ID: "small", API: "a", Method: "POST", Target: "/a/small", Access: "allow", Auth: "none", Body: jsonBody(8192, anyObject)},
-		policy.Operation{ID: "equal", API: "a", Method: "POST", Target: "/a/equal", Access: "allow", Auth: "none", Body: jsonBody(16384, anyObject)},
+		policy.Operation{ID: "large", API: "a", Method: "POST", Target: "/a/large", Access: "allow", Auth: "none", Body: gatewaytest.JSONBody(32768, gatewaytest.AnyObject)},
+		policy.Operation{ID: "small", API: "a", Method: "POST", Target: "/a/small", Access: "allow", Auth: "none", Body: gatewaytest.JSONBody(8192, gatewaytest.AnyObject)},
+		policy.Operation{ID: "equal", API: "a", Method: "POST", Target: "/a/equal", Access: "allow", Auth: "none", Body: gatewaytest.JSONBody(16384, gatewaytest.AnyObject)},
 	)
-	e.serveNative(p, forwardTimeouts)
+	serveNative(e, p, forwardTimeouts)
 	const global = 16384
 	ceilings := []struct {
 		path    string
@@ -178,16 +179,16 @@ func TestNativeForwardingBodies(t *testing.T) {
 		for _, framing := range []string{"declared", "chunked"} {
 			for _, size := range []int{op.ceiling, op.ceiling + 1} {
 				name := fmt.Sprintf("%s, %s, %d bytes", op.path, framing, size)
-				body := sizedBody("", size)
-				status, reply := e.sendBody(framing, op.path, body)
+				body := gatewaytest.SizedBody("", size)
+				status, reply := e.SendBody(framing, op.path, body)
 				if size > op.ceiling {
-					if status != http.StatusRequestEntityTooLarge || e.a.count() != received {
-						t.Errorf("%s: %d (%s) with %d receipts, want 413 and none new", name, status, reply, e.a.count())
+					if status != http.StatusRequestEntityTooLarge || e.A.Count() != received {
+						t.Errorf("%s: %d (%s) with %d receipts, want 413 and none new", name, status, reply, e.A.Count())
 					}
 					continue
 				}
 				received++
-				got := e.a.receipts()
+				got := e.A.Receipts()
 				if status != http.StatusOK || len(got) != received {
 					t.Fatalf("%s: %d (%s) with %d receipts, want 200 and %d", name, status, reply, len(got), received)
 				}
@@ -199,15 +200,15 @@ func TestNativeForwardingBodies(t *testing.T) {
 			}
 		}
 	}
-	e.resetReceivers()
+	e.ResetReceivers()
 
 	body := `{"n":1}`
-	status, reply := e.rawExchange("POST /a/item HTTP/1.1\r\nHost: gw\r\nConnection: close\r\nContent-Type: application/json\r\n"+
+	status, reply := e.RawExchange("POST /a/item HTTP/1.1\r\nHost: gw\r\nConnection: close\r\nContent-Type: application/json\r\n"+
 		"Transfer-Encoding: chunked\r\nTrailer: X-Trailer\r\n\r\n"+fmt.Sprintf("%x\r\n%s\r\n", len(body), body)+"0\r\nX-Trailer: t\r\n\r\n", false)
 	if status != http.StatusOK {
 		t.Fatalf("chunked request with a trailer: %d (%s)", status, reply)
 	}
-	first := e.a.receipts()[0]
+	first := e.A.Receipts()[0]
 	if first.Body != body || first.Headers.Get("Content-Length") != "7" || len(first.Trailer) != 0 || first.Headers.Get("Trailer") != "" {
 		t.Errorf("upstream received body %q, Content-Length %q, trailers %v, Trailer field %q",
 			first.Body, first.Headers.Get("Content-Length"), first.Trailer, first.Headers.Get("Trailer"))
@@ -215,7 +216,7 @@ func TestNativeForwardingBodies(t *testing.T) {
 
 	// The client receives the gateway's 100 Continue, then the upstream's,
 	// relayed, then the final response, as with the legacy runtime.
-	resp, conn := e.openResponse("POST /a/item HTTP/1.1\r\nHost: gw\r\nConnection: close\r\nContent-Type: application/json\r\nExpect: 100-continue\r\nContent-Length: 7\r\n\r\n")
+	resp, conn := e.OpenResponse("POST /a/item HTTP/1.1\r\nHost: gw\r\nConnection: close\r\nContent-Type: application/json\r\nExpect: 100-continue\r\nContent-Length: 7\r\n\r\n")
 	if resp.StatusCode != http.StatusContinue {
 		t.Fatalf("interim response %d", resp.StatusCode)
 	}
@@ -230,7 +231,7 @@ func TestNativeForwardingBodies(t *testing.T) {
 	if err != nil || final.StatusCode != http.StatusOK || interims != 2 {
 		t.Fatalf("final response %v after %d interim responses: %v", final, interims, err)
 	}
-	if second := e.a.receipts()[1]; second.Body != body || second.Headers.Get("Expect") != "100-continue" {
+	if second := e.A.Receipts()[1]; second.Body != body || second.Headers.Get("Expect") != "100-continue" {
 		t.Errorf("upstream received body %q with Expect %q", second.Body, second.Headers.Get("Expect"))
 	}
 
@@ -239,7 +240,7 @@ func TestNativeForwardingBodies(t *testing.T) {
 	// one validated body, and the bytes after the chunked body are no part of
 	// it. If they are read at all, they are a request of their own to the
 	// gateway, which refuses GET /d.
-	kept, err := net.DialTimeout("tcp", e.dataAddr, 5*time.Second)
+	kept, err := net.DialTimeout("tcp", e.DataAddr, 5*time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -257,7 +258,7 @@ func TestNativeForwardingBodies(t *testing.T) {
 		io.Copy(io.Discard, resp.Body)
 		statuses = append(statuses, resp.StatusCode)
 	}
-	got := e.a.receipts()
+	got := e.A.Receipts()
 	t.Logf("declared length with chunked framing: responses %v, %d receipts", statuses, len(got)-2)
 	if len(got) > 3 || len(got) == 3 && (got[2].Body != body || got[2].Path != "/a/item" || got[2].Headers.Get("Content-Length") != "7") {
 		t.Errorf("upstream received %+v after the two earlier requests", got[2:])
@@ -266,12 +267,12 @@ func TestNativeForwardingBodies(t *testing.T) {
 		"POST /a/item HTTP/1.1\r\nHost: gw\r\nConnection: close\r\nContent-Type: application/json\r\nContent-Length: 7\r\nContent-Length: 8\r\n\r\n" + body,
 		"POST /a/item HTTP/1.1\r\nHost: gw\r\nConnection: close\r\nContent-Type: application/json\r\nTransfer-Encoding: chunked\r\n\r\nzz\r\n" + body + "\r\n0\r\n\r\n",
 	} {
-		before := e.a.count()
-		if status, _ := e.rawExchange(request, false); status != http.StatusBadRequest || e.a.count() != before {
-			t.Errorf("malformed framing %q: %d with %d new receipts", request, status, e.a.count()-before)
+		before := e.A.Count()
+		if status, _ := e.RawExchange(request, false); status != http.StatusBadRequest || e.A.Count() != before {
+			t.Errorf("malformed framing %q: %d with %d new receipts", request, status, e.A.Count()-before)
 		}
 	}
-	if e.b.count()+e.c.count() != 0 {
+	if e.B.Count()+e.C.Count() != 0 {
 		t.Fatal("a body request reached another upstream")
 	}
 }

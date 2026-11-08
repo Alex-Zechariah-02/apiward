@@ -7,12 +7,14 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+
+	"github.com/Alex-Zechariah-02/apiward/internal/gatewaytest"
 )
 
 // These tests check, on the native proxy and real loopback upstreams, that
 // every end-to-end header property the gateway validated reaches the
 // upstream as validated, or that the request is refused before anything is
-// forwarded. They use keywordPolicy: GET /a/probe requires X-Probe "on";
+// forwarded. They use Env.KeywordPolicy: GET /a/probe requires X-Probe "on";
 // POST /a/item requires Idempotency-Key, allows X-Mode "safe" or "fast" and
 // validates a JSON body.
 
@@ -35,8 +37,8 @@ func itemRequest(lines string) string {
 // invalid and repeated values are refused, and a comma-separated value is
 // one value, checked as a whole, as before.
 func TestValidatedHeadersReachUpstream(t *testing.T) {
-	e := newEnv(t)
-	e.serveNative(e.keywordPolicy(), forwardTimeouts)
+	e := gatewaytest.NewEnv(t)
+	serveNative(e, e.KeywordPolicy(), forwardTimeouts)
 
 	admitted := []struct {
 		name, request string
@@ -51,12 +53,12 @@ func TestValidatedHeadersReachUpstream(t *testing.T) {
 			map[string]string{"Content-Type": "Application/JSON; charset=UTF-8", "Idempotency-Key": "k-123456"}},
 	}
 	for _, tc := range admitted {
-		before := e.a.count()
-		if status, body := e.rawExchange(tc.request, false); status != http.StatusOK || e.a.count() != before+1 {
-			t.Errorf("%s: %d %s with %d new receipts", tc.name, status, body, e.a.count()-before)
+		before := e.A.Count()
+		if status, body := e.RawExchange(tc.request, false); status != http.StatusOK || e.A.Count() != before+1 {
+			t.Errorf("%s: %d %s with %d new receipts", tc.name, status, body, e.A.Count()-before)
 			continue
 		}
-		got := e.a.receipts()[before]
+		got := e.A.Receipts()[before]
 		for name, value := range tc.want {
 			if values := got.Headers.Values(name); len(values) != 1 || values[0] != value {
 				t.Errorf("%s: upstream received %s %q, want %q", tc.name, name, values, value)
@@ -81,19 +83,19 @@ func TestValidatedHeadersReachUpstream(t *testing.T) {
 		{"media type repeated", itemRequest("Content-Type: application/json\r\n"), 415, "BODY", "media_type"},
 		{"other media type", strings.Replace(itemRequest(""), "application/json", "text/plain", 1), 415, "BODY", "media_type"},
 	}
-	before := e.a.count()
+	before := e.A.Count()
 	for _, tc := range refused {
-		status, body := e.rawExchange(tc.request, false)
-		_, id := requestID(&http.Response{StatusCode: status}, body)
-		ev := e.eventOf(id, 1)
+		status, body := e.RawExchange(tc.request, false)
+		_, id := gatewaytest.RequestID(&http.Response{StatusCode: status}, body)
+		ev := eventOf(e, id, 1)
 		reason, _ := ev["reason"].(string)
 		if status != tc.status || ev["stage"] != tc.stage || reason != tc.reason {
 			t.Errorf("%s: %d %s, event %v, want %d at %s (%s)", tc.name, status, body, ev, tc.status, tc.stage, tc.reason)
 		}
 		t.Logf("%s: %d, %s at %s (%s)", tc.name, status, ev["kind"], ev["stage"], reason)
 	}
-	if e.a.count() != before || e.b.count()+e.c.count() != 0 {
-		t.Fatalf("a refused request reached an upstream: receipts A %d -> %d", before, e.a.count())
+	if e.A.Count() != before || e.B.Count()+e.C.Count() != 0 {
+		t.Fatalf("a refused request reached an upstream: receipts A %d -> %d", before, e.A.Count())
 	}
 }
 
@@ -106,8 +108,8 @@ func TestValidatedHeadersReachUpstream(t *testing.T) {
 // leave every validated value in place, and those requests are forwarded with
 // the values checked.
 func TestConnectionCannotRemoveValidatedFields(t *testing.T) {
-	e := newEnv(t)
-	e.serveNative(e.keywordPolicy(), forwardTimeouts)
+	e := gatewaytest.NewEnv(t)
+	serveNative(e, e.KeywordPolicy(), forwardTimeouts)
 
 	nominations := []struct {
 		name, request string
@@ -130,53 +132,57 @@ func TestConnectionCannotRemoveValidatedFields(t *testing.T) {
 		{"media type, other case, second line", itemRequest("Connection: close\r\nConnection: content-TYPE\r\n")},
 	}
 	for _, tc := range nominations {
-		status, body := e.rawExchange(tc.request, false)
-		_, id := requestID(&http.Response{StatusCode: status}, body)
-		ev := e.eventOf(id, 1)
+		status, body := e.RawExchange(tc.request, false)
+		_, id := gatewaytest.RequestID(&http.Response{StatusCode: status}, body)
+		ev := eventOf(e, id, 1)
 		reason, _ := ev["reason"].(string)
 		if status != http.StatusBadRequest || !strings.Contains(body, `"bad_request"`) ||
 			ev["kind"] != "request.rejected" || ev["stage"] != "VALIDATION" || reason != "connection_nominated" {
 			t.Errorf("%s: %d %s, event %v", tc.name, status, body, ev)
 		}
-		t.Logf("%s: %d, %s at %s (%s), receipts A %d", tc.name, status, ev["kind"], ev["stage"], reason, e.a.count())
+		t.Logf("%s: %d, %s at %s (%s), receipts A %d", tc.name, status, ev["kind"], ev["stage"], reason, e.A.Count())
 	}
-	e.assertReceipts(0, 0, 0)
+	e.AssertReceipts(0, 0, 0)
 
 	forwarded := []struct {
 		name, request string
-		check         func(r receipt) bool
+		check         func(r gatewaytest.Receipt) bool
 	}{
 		{"connection options only", probeRequest("Connection: keep-alive, close\r\n"),
-			func(r receipt) bool { return r.Headers.Get("X-Probe") == "on" }},
+			func(r gatewaytest.Receipt) bool { return r.Headers.Get("X-Probe") == "on" }},
 		{"another field named", probeRequest("X-Other: o\r\nConnection: X-Other\r\n"),
-			func(r receipt) bool { return r.Headers.Get("X-Probe") == "on" && r.Headers.Get("X-Other") == "" }},
+			func(r gatewaytest.Receipt) bool {
+				return r.Headers.Get("X-Probe") == "on" && r.Headers.Get("X-Other") == ""
+			}},
 		{"a parameter after the name", probeRequest("Connection: X-Probe;q=1\r\n"),
-			func(r receipt) bool { return r.Headers.Get("X-Probe") == "on" }},
+			func(r gatewaytest.Receipt) bool { return r.Headers.Get("X-Probe") == "on" }},
 		{"a quoted name", probeRequest("Connection: \"X-Probe\"\r\n"),
-			func(r receipt) bool { return r.Headers.Get("X-Probe") == "on" }},
+			func(r gatewaytest.Receipt) bool { return r.Headers.Get("X-Probe") == "on" }},
 		{"a name with a space inside", probeRequest("Connection: X-Probe x\r\n"),
-			func(r receipt) bool { return r.Headers.Get("X-Probe") == "on" }},
+			func(r gatewaytest.Receipt) bool { return r.Headers.Get("X-Probe") == "on" }},
 		{"media type of an operation without a body", probeRequest("Content-Type: text/plain\r\nConnection: Content-Type\r\n"),
-			func(r receipt) bool { return r.Headers.Get("X-Probe") == "on" && r.Headers.Get("Content-Type") == "" }},
+			func(r gatewaytest.Receipt) bool {
+				return r.Headers.Get("X-Probe") == "on" && r.Headers.Get("Content-Type") == ""
+			}},
 		{"the gateway's forwarding fields", probeRequest("X-Forwarded-For: 203.0.113.9\r\nVia: 1.0 spoof\r\nConnection: X-Forwarded-For, Via, X-Forwarded-Host, X-Forwarded-Proto\r\n"),
-			func(r receipt) bool {
+			func(r gatewaytest.Receipt) bool {
 				return r.Headers.Get("X-Probe") == "on" && strings.Join(r.Headers.Values("X-Forwarded-For"), "|") == "127.0.0.1" &&
 					strings.Join(r.Headers.Values("Via"), "|") == "1.1 gateway" && r.Headers.Get("X-Forwarded-Host") == "gw" &&
 					r.Headers.Get("X-Forwarded-Proto") == "http"
 			}},
 		{"an unvalidated field of a write", itemRequest("X-Trace: t\r\nConnection: X-Trace\r\n"),
-			func(r receipt) bool {
+			func(r gatewaytest.Receipt) bool {
 				return r.Body == keywordItem && r.Headers.Get("Content-Type") == "application/json" &&
 					r.Headers.Get("Idempotency-Key") == "k-123456" && r.Headers.Get("X-Trace") == ""
 			}},
 	}
 	for i, tc := range forwarded {
-		status, body := e.rawExchange(tc.request, false)
-		if status != http.StatusOK || e.a.count() != i+1 {
-			t.Errorf("%s: %d %s with %d receipts, want 200 and %d", tc.name, status, body, e.a.count(), i+1)
+		status, body := e.RawExchange(tc.request, false)
+		if status != http.StatusOK || e.A.Count() != i+1 {
+			t.Errorf("%s: %d %s with %d receipts, want 200 and %d", tc.name, status, body, e.A.Count(), i+1)
 			continue
 		}
-		got := e.a.receipts()[i]
+		got := e.A.Receipts()[i]
 		if !tc.check(got) {
 			t.Errorf("%s: upstream received %v", tc.name, got.Headers)
 		}
@@ -186,10 +192,10 @@ func TestConnectionCannotRemoveValidatedFields(t *testing.T) {
 	}
 
 	// A gateway header named in Connection is refused at ingress, as before.
-	if code, _ := e.raw(probeRequest("Connection: X-Gateway-Generation\r\n")); code != http.StatusBadRequest {
+	if code, _ := e.Raw(probeRequest("Connection: X-Gateway-Generation\r\n")); code != http.StatusBadRequest {
 		t.Errorf("gateway header named in Connection: %d", code)
 	}
-	if e.a.count() != len(forwarded) || e.b.count()+e.c.count() != 0 {
-		t.Fatalf("receipts A=%d B=%d C=%d, want %d at A only", e.a.count(), e.b.count(), e.c.count(), len(forwarded))
+	if e.A.Count() != len(forwarded) || e.B.Count()+e.C.Count() != 0 {
+		t.Fatalf("receipts A=%d B=%d C=%d, want %d at A only", e.A.Count(), e.B.Count(), e.C.Count(), len(forwarded))
 	}
 }

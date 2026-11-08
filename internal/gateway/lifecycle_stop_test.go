@@ -17,18 +17,19 @@ import (
 	"time"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/controller"
+	"github.com/Alex-Zechariah-02/apiward/internal/gatewaytest"
 )
 
 // Stop waits a bounded time for an admin request in progress, then closes its
 // connection and reports the incomplete shutdown rather than a clean one.
 func TestStopIsBoundedByStuckAdminRequest(t *testing.T) {
-	e := newEnv(t)
-	seed(t, e.database, e.policy(e.a, false), seedOptions{})
-	c, _ := e.own(e.controllerConfig())
+	e := gatewaytest.NewEnv(t)
+	gatewaytest.Seed(t, e.Database, e.Policy(e.A, false), gatewaytest.SeedOptions{})
+	c, _ := own(e, controllerConfig(e))
 	if err := c.Start(testAdmin(c)); err != nil {
 		t.Fatal(err)
 	}
-	conn, err := net.Dial("tcp", e.admin)
+	conn, err := net.Dial("tcp", e.Admin)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -36,7 +37,7 @@ func TestStopIsBoundedByStuckAdminRequest(t *testing.T) {
 	// The handler waits for a body that never arrives, up to the admin read
 	// timeout, twice the shutdown wait.
 	fmt.Fprintf(conn, "POST /admin/session HTTP/1.1\r\nHost: %s\r\nOrigin: %s\r\nContent-Type: application/json\r\nContent-Length: 100\r\n\r\n{",
-		e.admin, e.adminOrigin())
+		e.Admin, e.AdminOrigin())
 	time.Sleep(300 * time.Millisecond)
 
 	started := time.Now()
@@ -55,16 +56,16 @@ func TestStopIsBoundedByStuckAdminRequest(t *testing.T) {
 	if again := c.Stop(); again == nil || again.Error() != err.Error() {
 		t.Fatalf("repeated Stop: %v, want the first result %v", again, err)
 	}
-	assertReleased(t, c, e.controllerConfig())
+	assertReleased(t, c, controllerConfig(e))
 }
 
 // A mutation in progress when Stop is called completes, published and
 // audited, and every later one is refused as unavailable; concurrent Stop
 // calls share one result. The next owner serves the last committed revision.
 func TestStopWaitsForMutations(t *testing.T) {
-	e := newEnv(t)
-	seed(t, e.database, e.policy(e.a, false), seedOptions{})
-	c, _ := e.own(e.controllerConfig())
+	e := gatewaytest.NewEnv(t)
+	gatewaytest.Seed(t, e.Database, e.Policy(e.A, false), gatewaytest.SeedOptions{})
+	c, _ := own(e, controllerConfig(e))
 
 	type result struct {
 		outcome controller.Outcome
@@ -78,7 +79,7 @@ func TestStopWaitsForMutations(t *testing.T) {
 			outcome, status := c.Publish(context.Background(), "test", controller.Change{
 				ID:       fmt.Sprintf("during-stop-%d", i),
 				Expected: expected,
-				Policy:   mustJSON(e.policy(e.a, i%2 == 0)),
+				Policy:   gatewaytest.MustJSON(e.Policy(e.A, i%2 == 0)),
 			})
 			results <- result{outcome, status}
 			if status != http.StatusOK {
@@ -87,7 +88,7 @@ func TestStopWaitsForMutations(t *testing.T) {
 			expected = outcome.Revision
 		}
 	}()
-	waitFor(t, time.Now().Add(10*time.Second), "three publications", func() bool {
+	gatewaytest.WaitFor(t, time.Now().Add(10*time.Second), "three publications", func() bool {
 		g := c.Current()
 		return g != nil && g.Revision >= 4
 	})
@@ -118,17 +119,17 @@ func TestStopWaitsForMutations(t *testing.T) {
 		t.Fatalf("publication after Stop: %d %+v", last.status, last.outcome)
 	}
 
-	again, _ := e.own(e.controllerConfig())
+	again, _ := own(e, controllerConfig(e))
 	if g := again.Current(); g == nil || g.Revision != committed {
 		t.Fatalf("after restart %+v, want revision %d", g, committed)
 	}
 	if err := again.Stop(); err != nil {
 		t.Fatal(err)
 	}
-	if n := queryInt(t, e.database, `SELECT count(*) FROM revision`); int64(n) != committed {
+	if n := gatewaytest.QueryInt(t, e.Database, `SELECT count(*) FROM revision`); int64(n) != committed {
 		t.Fatalf("%d revisions, want %d", n, committed)
 	}
-	if n := queryInt(t, e.database, `SELECT count(*) FROM transition WHERE outcome = 'committed' AND audited_at IS NULL`); n != 0 {
+	if n := gatewaytest.QueryInt(t, e.Database, `SELECT count(*) FROM transition WHERE outcome = 'committed' AND audited_at IS NULL`); n != 0 {
 		t.Fatalf("%d committed transitions without their audit receipt", n)
 	}
 }
@@ -139,8 +140,8 @@ func TestStopWaitsForMutations(t *testing.T) {
 // CAPTURE; a mutation is refused, Start is refused and the controller reports
 // it is stopping. The stop that follows writes every event of both requests.
 func TestBeginStopEndsAdmission(t *testing.T) {
-	e := newEnv(t)
-	c, _, f := e.serveEnforcement(e.policy(e.a, true), 0)
+	e := gatewaytest.NewEnv(t)
+	c, _, f := serveEnforcement(e, e.Policy(e.A, true), 0)
 	held, proceed := make(chan struct{}), make(chan struct{})
 	release := sync.OnceFunc(func() { close(proceed) })
 	// Registered after the server's cleanup, so it runs first: a failure
@@ -155,7 +156,7 @@ func TestBeginStopEndsAdmission(t *testing.T) {
 		io.WriteString(w, "forwarded")
 		return nil
 	})
-	conn, err := net.Dial("tcp", e.dataAddr)
+	conn, err := net.Dial("tcp", e.DataAddr)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -167,12 +168,12 @@ func TestBeginStopEndsAdmission(t *testing.T) {
 	if got := c.Admission(); got != "stopping" || c.Current() != nil {
 		t.Fatalf("after BeginStop: admission %q, generation %v", got, c.Current())
 	}
-	resp, body := e.exchange(http.MethodGet, "/a/x", "", "")
-	_, refused := requestID(resp, body)
-	if resp.StatusCode != http.StatusServiceUnavailable || e.eventOf(refused, 1)["stage"] != "CAPTURE" {
+	resp, body := e.Exchange(http.MethodGet, "/a/x", "", "")
+	_, refused := gatewaytest.RequestID(resp, body)
+	if resp.StatusCode != http.StatusServiceUnavailable || eventOf(e, refused, 1)["stage"] != "CAPTURE" {
 		t.Fatalf("request after BeginStop: %d %s", resp.StatusCode, body)
 	}
-	if outcome, status := c.Publish(context.Background(), "test", controller.Change{ID: "after-begin-stop", Expected: 1, Policy: mustJSON(e.policy(e.a, false))}); status != http.StatusServiceUnavailable || outcome.Reason != "UNAVAILABLE" {
+	if outcome, status := c.Publish(context.Background(), "test", controller.Change{ID: "after-begin-stop", Expected: 1, Policy: gatewaytest.MustJSON(e.Policy(e.A, false))}); status != http.StatusServiceUnavailable || outcome.Reason != "UNAVAILABLE" {
 		t.Fatalf("publication after BeginStop: %d %+v", status, outcome)
 	}
 	if err := c.Start(testAdmin(c)); err == nil {
@@ -196,7 +197,7 @@ func TestBeginStopEndsAdmission(t *testing.T) {
 		t.Fatal(err)
 	}
 	data, _ = io.ReadAll(second.Body)
-	_, later := requestID(second, string(data))
+	_, later := gatewaytest.RequestID(second, string(data))
 	if second.StatusCode != http.StatusServiceUnavailable || len(f.handed()) != 1 {
 		t.Fatalf("request on the kept connection after BeginStop: %d %s", second.StatusCode, data)
 	}
@@ -204,11 +205,11 @@ func TestBeginStopEndsAdmission(t *testing.T) {
 	if err := c.Stop(); err != nil {
 		t.Fatalf("Stop: %v", err)
 	}
-	events := e.auditEvents()
+	events := e.AuditEvents()
 	for _, want := range []struct{ kind, id string }{
 		{"request.admitted", heldID}, {"request.forwarded", heldID}, {"request.rejected", refused}, {"request.rejected", later},
 	} {
-		if findEvent(events, want.kind, want.id) == nil {
+		if gatewaytest.FindEvent(events, want.kind, want.id) == nil {
 			t.Errorf("no %s record for %s", want.kind, want.id)
 		}
 	}

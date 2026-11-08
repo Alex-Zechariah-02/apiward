@@ -3,11 +3,9 @@
 package gateway
 
 import (
-	"bufio"
 	"context"
 	"io"
 	"log/slog"
-	"net"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -15,6 +13,7 @@ import (
 
 	"github.com/Alex-Zechariah-02/apiward/internal/controller"
 	"github.com/Alex-Zechariah-02/apiward/internal/forward"
+	"github.com/Alex-Zechariah-02/apiward/internal/gatewaytest"
 	"github.com/Alex-Zechariah-02/apiward/internal/pipeline"
 	"github.com/Alex-Zechariah-02/apiward/internal/policy"
 )
@@ -32,51 +31,31 @@ var forwardTimeouts = forward.UpstreamTimeouts{Dial: 2 * time.Second, ResponseHe
 
 // serveNative seeds e's database with policy, owns and starts its controller,
 // and serves the enforcement handler with the native proxy, bounded by
-// timeouts, at e.dataAddr, where the harness request helpers send. It returns
+// timeouts, at e.DataAddr, where the harness request helpers send. It returns
 // the controller and the proxy's log.
-func (e *env) serveNative(policy policy.Policy, timeouts forward.UpstreamTimeouts) (*controller.Controller, *logBuffer) {
-	e.t.Helper()
-	seed(e.t, e.database, policy, seedOptions{})
-	c, _ := e.own(e.controllerConfig())
+func serveNative(e *gatewaytest.Env, policy policy.Policy, timeouts forward.UpstreamTimeouts) (*controller.Controller, *gatewaytest.LogBuffer) {
+	e.T.Helper()
+	gatewaytest.Seed(e.T, e.Database, policy, gatewaytest.SeedOptions{})
+	c, _ := own(e, controllerConfig(e))
 	if err := c.Start(testAdmin(c)); err != nil {
-		e.t.Fatal(err)
+		e.T.Fatal(err)
 	}
-	logs := &logBuffer{}
+	logs := &gatewaytest.LogBuffer{}
 	p, err := forward.NewUpstreamProxy(timeouts, slog.New(slog.NewJSONHandler(logs, nil)))
 	if err != nil {
-		e.t.Fatal(err)
+		e.T.Fatal(err)
 	}
 	h, err := newHandler(c, pipeline.NewLimiter(), 0, p.Forward)
 	if err != nil {
-		e.t.Fatal(err)
+		e.T.Fatal(err)
 	}
 	// As in production, "OPTIONS *" reaches enforcement instead of net/http.
 	server := httptest.NewUnstartedServer(h)
 	server.Config.DisableGeneralOptionsHandler = true
 	server.Start()
-	e.t.Cleanup(server.Close)
-	e.dataAddr = server.Listener.Addr().String()
+	e.T.Cleanup(server.Close)
+	e.DataAddr = server.Listener.Addr().String()
 	return c, logs
-}
-
-// openResponse sends request byte for byte and reads the response head,
-// leaving the body to the caller. The connection closes when the test ends.
-func (e *env) openResponse(request string) (*http.Response, net.Conn) {
-	e.t.Helper()
-	conn, err := net.DialTimeout("tcp", e.dataAddr, 5*time.Second)
-	if err != nil {
-		e.t.Fatal(err)
-	}
-	e.t.Cleanup(func() { conn.Close() })
-	conn.SetDeadline(time.Now().Add(30 * time.Second))
-	if _, err := io.WriteString(conn, request); err != nil {
-		e.t.Fatal(err)
-	}
-	resp, err := http.ReadResponse(bufio.NewReader(conn), nil)
-	if err != nil {
-		e.t.Fatalf("reading the response to %q: %v", request, err)
-	}
-	return resp, conn
 }
 
 // fetch sends one GET from a goroutine other than the test's own, reporting
@@ -93,9 +72,9 @@ func fetch(addr, path string) (int, string, error) {
 }
 
 // outcomeOf returns the outcome event of an admitted request.
-func (e *env) outcomeOf(requestID string) map[string]any {
-	e.t.Helper()
-	return e.eventOf(requestID, 2)
+func outcomeOf(e *gatewaytest.Env, requestID string) map[string]any {
+	e.T.Helper()
+	return eventOf(e, requestID, 2)
 }
 
 // failedOutcome reports whether ev records a forwarding failure answered
@@ -112,12 +91,12 @@ func failedOutcome(ev map[string]any, status int, code, reason string) bool {
 // sees the gateway's identity headers, and every step the gateway refuses
 // reaches no fixture.
 func TestNativeForwardingThroughFixtures(t *testing.T) {
-	fixtures := startFixtures(t)
-	e := newEnv(t)
-	e.serveNative(fixturePolicy(fixtures), forwardTimeouts)
-	c := loadCatalogue(t)
+	fixtures := gatewaytest.StartFixtures(t)
+	e := gatewaytest.NewEnv(t)
+	serveNative(e, gatewaytest.FixturePolicy(fixtures), forwardTimeouts)
+	c := gatewaytest.LoadCatalogue(t)
 
-	results := runScenarios(t, e, fixtures, c)
+	results := gatewaytest.RunScenarios(t, e, fixtures, c)
 	if len(results) != len(c.Scenarios) {
 		t.Fatalf("%d of %d steps ran", len(results), len(c.Scenarios))
 	}
@@ -130,7 +109,7 @@ func TestNativeForwardingThroughFixtures(t *testing.T) {
 			t.Errorf("catalogue operation %s was never exercised", op.ID)
 		}
 	}
-	e.assertReceipts(0, 0, 0)
+	e.AssertReceipts(0, 0, 0)
 }
 
 // The destination is the binding the handler made from the captured
@@ -139,27 +118,27 @@ func TestNativeForwardingThroughFixtures(t *testing.T) {
 // missing, forged or not a literal loopback address is sent nowhere: no
 // fallback destination exists.
 func TestNativeForwardingBinding(t *testing.T) {
-	e := newEnv(t)
-	e.serveNative(e.policy(e.a, true), forwardTimeouts)
+	e := gatewaytest.NewEnv(t)
+	serveNative(e, e.Policy(e.A, true), forwardTimeouts)
 
 	// Every field a client could use to name a destination names C.
-	forged := "Host: " + e.c.addr + "\r\nX-Forwarded-Host: " + e.c.addr + "\r\nForwarded: host=" + e.c.addr +
-		"\r\nX-Gateway-Upstream: C\r\nX-Gateway-Dial: " + e.c.addr + "\r\nConnection: close\r\n\r\n"
-	for _, target := range []string{"/a/x", "/a/x?upstream=C&dial=" + e.c.addr, "/a/" + e.c.addr} {
-		if code, body := e.raw("GET " + target + " HTTP/1.1\r\n" + forged); code != http.StatusOK || body != "A ok" {
+	forged := "Host: " + e.C.Addr + "\r\nX-Forwarded-Host: " + e.C.Addr + "\r\nForwarded: host=" + e.C.Addr +
+		"\r\nX-Gateway-Upstream: C\r\nX-Gateway-Dial: " + e.C.Addr + "\r\nConnection: close\r\n\r\n"
+	for _, target := range []string{"/a/x", "/a/x?upstream=C&dial=" + e.C.Addr, "/a/" + e.C.Addr} {
+		if code, body := e.Raw("GET " + target + " HTTP/1.1\r\n" + forged); code != http.StatusOK || body != "A ok" {
 			t.Errorf("%s with forged destination fields: %d %q", target, code, body)
 		}
 	}
-	if code, body := e.raw("GET /b/x HTTP/1.1\r\nHost: " + e.a.addr + "\r\nConnection: close\r\n\r\n"); code != http.StatusOK || body != "B ok" {
+	if code, body := e.Raw("GET /b/x HTTP/1.1\r\nHost: " + e.A.Addr + "\r\nConnection: close\r\n\r\n"); code != http.StatusOK || body != "B ok" {
 		t.Errorf("/b/x with a Host naming A: %d %q", code, body)
 	}
-	if code, _ := e.raw("GET http://" + e.c.addr + "/a/x HTTP/1.1\r\nHost: " + e.c.addr + "\r\nConnection: close\r\n\r\n"); code != http.StatusBadRequest {
+	if code, _ := e.Raw("GET http://" + e.C.Addr + "/a/x HTTP/1.1\r\nHost: " + e.C.Addr + "\r\nConnection: close\r\n\r\n"); code != http.StatusBadRequest {
 		t.Errorf("absolute-form target naming C: %d", code)
 	}
-	e.assertReceipts(3, 1, 0)
-	for _, r := range e.a.receipts() {
-		if r.Host != e.c.addr || r.Headers.Get("X-Gateway-Upstream") != "" || r.Headers.Get("X-Gateway-Dial") != "" ||
-			r.Headers.Get("Forwarded") != "" || r.Headers.Get("X-Forwarded-Host") != e.c.addr {
+	e.AssertReceipts(3, 1, 0)
+	for _, r := range e.A.Receipts() {
+		if r.Host != e.C.Addr || r.Headers.Get("X-Gateway-Upstream") != "" || r.Headers.Get("X-Gateway-Dial") != "" ||
+			r.Headers.Get("Forwarded") != "" || r.Headers.Get("X-Forwarded-Host") != e.C.Addr {
 			t.Errorf("A received Host %q and headers %v", r.Host, r.Headers)
 		}
 	}
@@ -169,11 +148,11 @@ func TestNativeForwardingBinding(t *testing.T) {
 // another generation is published during its exchange; the next request
 // uses the new one.
 func TestNativeForwardingKeepsCapturedDestination(t *testing.T) {
-	e := newEnv(t)
-	c, _ := e.serveNative(e.policy(e.a, false), forwardTimeouts)
+	e := gatewaytest.NewEnv(t)
+	c, _ := serveNative(e, e.Policy(e.A, false), forwardTimeouts)
 	captured := c.Current().ID
 	entered, release := make(chan struct{}), make(chan struct{})
-	e.a.handle = func(w http.ResponseWriter, r *http.Request) bool {
+	e.A.Handle = func(w http.ResponseWriter, r *http.Request) bool {
 		if r.URL.Path == "/a/slow" {
 			close(entered)
 			<-release
@@ -187,11 +166,11 @@ func TestNativeForwardingKeepsCapturedDestination(t *testing.T) {
 	}
 	slow := make(chan result, 1)
 	go func() {
-		code, body, err := fetch(e.dataAddr, "/a/slow")
+		code, body, err := fetch(e.DataAddr, "/a/slow")
 		slow <- result{code, body, err}
 	}()
 	<-entered
-	outcome, status := c.Publish(context.Background(), "test", controller.Change{ID: "move-a", Expected: 1, Policy: mustJSON(e.policy(e.b, false))})
+	outcome, status := c.Publish(context.Background(), "test", controller.Change{ID: "move-a", Expected: 1, Policy: gatewaytest.MustJSON(e.Policy(e.B, false))})
 	close(release)
 	if status != http.StatusOK {
 		t.Fatalf("publication during the exchange: %d %+v", status, outcome)
@@ -199,11 +178,11 @@ func TestNativeForwardingKeepsCapturedDestination(t *testing.T) {
 	if r := <-slow; r.err != nil || r.code != http.StatusOK || r.body != "A ok" {
 		t.Fatalf("request in progress during the publication: %d %q %v", r.code, r.body, r.err)
 	}
-	if code, body := e.get("/a/x"); code != http.StatusOK || body != "B ok" {
+	if code, body := e.Get("/a/x"); code != http.StatusOK || body != "B ok" {
 		t.Fatalf("request after the publication: %d %q", code, body)
 	}
-	e.assertReceipts(1, 1, 0)
-	if a, b := e.a.receipts()[0], e.b.receipts()[0]; a.Generation != captured || b.Generation != outcome.Generation {
+	e.AssertReceipts(1, 1, 0)
+	if a, b := e.A.Receipts()[0], e.B.Receipts()[0]; a.Generation != captured || b.Generation != outcome.Generation {
 		t.Fatalf("A received generation %s (want %s), B %s (want %s)", a.Generation, captured, b.Generation, outcome.Generation)
 	}
 }

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/compile"
+	"github.com/Alex-Zechariah-02/apiward/internal/gatewaytest"
 	"github.com/Alex-Zechariah-02/apiward/internal/policy"
 )
 
@@ -38,7 +39,7 @@ func threeAPIPolicy() policy.Policy {
 		Operations: []policy.Operation{
 			{ID: "orders.list", API: "orders", Method: "GET", Target: "/orders", Access: "allow", Auth: "required"},
 			{ID: "orders.get", API: "orders", Method: "GET", Target: "/orders/*", Access: "allow", Auth: "required"},
-			{ID: "orders.create", API: "orders", Method: "POST", Target: "/orders", Access: "allow", Auth: "required", Body: jsonBody(1024, anyObject)},
+			{ID: "orders.create", API: "orders", Method: "POST", Target: "/orders", Access: "allow", Auth: "required", Body: gatewaytest.JSONBody(1024, gatewaytest.AnyObject)},
 			{ID: "inventory.health", API: "inventory", Method: "GET", Target: "/inventory/health", Access: "allow", Auth: "none"},
 			{ID: "inventory.get", API: "inventory", Method: "GET", Target: "/inventory/items/*", Access: "allow", Auth: "required"},
 			{ID: "reports.summary", API: "reports", Method: "GET", Target: "/reports/summary", Access: "deny", Auth: "required"},

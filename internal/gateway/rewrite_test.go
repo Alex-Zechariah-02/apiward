@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/compile"
+	"github.com/Alex-Zechariah-02/apiward/internal/gatewaytest"
 	"github.com/Alex-Zechariah-02/apiward/internal/policy"
 )
 
@@ -55,26 +56,26 @@ func TestRewriteCompile(t *testing.T) {
 // admission record keeps the inbound path beside it, and the rewritten path
 // itself matches nothing, since every decision is made on the inbound path.
 func TestRewriteForward(t *testing.T) {
-	e := newEnv(t)
-	p := e.policy(e.a, false)
+	e := gatewaytest.NewEnv(t)
+	p := e.Policy(e.A, false)
 	p.APIs[0].Forward = &policy.Forward{StripPrefix: "/a", AddPrefix: "/v1"}
-	e.serveNative(p, forwardTimeouts)
+	serveNative(e, p, forwardTimeouts)
 
-	resp, _ := e.exchange(http.MethodGet, "/a/x?q=1", "", "")
+	resp, _ := e.Exchange(http.MethodGet, "/a/x?q=1", "", "")
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("rewritten request: %d", resp.StatusCode)
 	}
-	got := e.a.receipts()
+	got := e.A.Receipts()
 	if len(got) != 1 || got[0].Target != "/v1/x?q=1" {
 		t.Fatalf("upstream received %+v", got)
 	}
-	admitted := e.eventOf(got[0].RequestID, 2)
+	admitted := eventOf(e, got[0].RequestID, 2)
 	if admitted["path"] != "/a/x" || admitted["forwarded_path"] != "/v1/x" || admitted["operation"] != "read-a" {
 		t.Fatalf("outcome event %v", admitted)
 	}
 
-	if resp, _ := e.exchange(http.MethodGet, "/v1/x", "", ""); resp.StatusCode != http.StatusNotFound {
+	if resp, _ := e.Exchange(http.MethodGet, "/v1/x", "", ""); resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("the rewritten path was routed: %d", resp.StatusCode)
 	}
-	e.assertReceipts(1, 0, 0)
+	e.AssertReceipts(1, 0, 0)
 }

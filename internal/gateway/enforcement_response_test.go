@@ -15,6 +15,7 @@ import (
 
 	"github.com/Alex-Zechariah-02/apiward/internal/audit"
 	"github.com/Alex-Zechariah-02/apiward/internal/forward"
+	"github.com/Alex-Zechariah-02/apiward/internal/gatewaytest"
 )
 
 // The forwarder's response and failures reach the client and the outcome
@@ -22,9 +23,9 @@ import (
 // with its mapped status, an aborted response stays aborted, and a cancelled
 // request is not recorded as forwarded.
 func TestEnforcementResponses(t *testing.T) {
-	e := newEnv(t)
-	_, _, f := e.serveEnforcement(e.policy(e.a, false), 0)
-	forwardedEvent := func(id string) map[string]any { return e.eventOf(id, 2) }
+	e := gatewaytest.NewEnv(t)
+	_, _, f := serveEnforcement(e, e.Policy(e.A, false), 0)
+	forwardedEvent := func(id string) map[string]any { return eventOf(e, id, 2) }
 
 	t.Run("informational then final", func(t *testing.T) {
 		f.setRespond(func(w http.ResponseWriter, r *http.Request) error {
@@ -34,7 +35,7 @@ func TestEnforcementResponses(t *testing.T) {
 			io.WriteString(w, "accepted")
 			return nil
 		})
-		resp, body := e.exchange(http.MethodGet, "/a/x", "", "", "")
+		resp, body := e.Exchange(http.MethodGet, "/a/x", "", "", "")
 		id := f.handed()[len(f.handed())-1].header.Get("X-Request-Id")
 		if ev := forwardedEvent(id); resp.StatusCode != http.StatusAccepted || body != "accepted" || ev["status"] != float64(202) || ev["decision"] != "forwarded" {
 			t.Fatalf("%d %q, event %v", resp.StatusCode, body, ev)
@@ -54,11 +55,11 @@ func TestEnforcementResponses(t *testing.T) {
 	for _, tc := range failures {
 		t.Run(tc.name, func(t *testing.T) {
 			f.setRespond(func(w http.ResponseWriter, r *http.Request) error { return tc.err })
-			resp, body := e.exchange(http.MethodGet, "/a/x", "", "", "")
-			_, id := requestID(resp, body)
+			resp, body := e.Exchange(http.MethodGet, "/a/x", "", "", "")
+			_, id := gatewaytest.RequestID(resp, body)
 			ev := forwardedEvent(id)
 			if resp.StatusCode != tc.status || !strings.Contains(body, `"error":"`+tc.code+`"`) || ev["decision"] != "upstream_failure" ||
-				ev["error"] != tc.code || ev["status"] != float64(tc.status) || !sameStages(ev["stages"], publicAdmitted(audit.StageFail)) {
+				ev["error"] != tc.code || ev["status"] != float64(tc.status) || !gatewaytest.SameStages(ev["stages"], publicAdmitted(audit.StageFail)) {
 				t.Fatalf("%d %s, event %v", resp.StatusCode, body, ev)
 			}
 			if strings.Contains(body, "connection refused") || strings.Contains(body, "source failed") {
@@ -75,7 +76,7 @@ func TestEnforcementResponses(t *testing.T) {
 			http.NewResponseController(w).Flush()
 			panic(http.ErrAbortHandler)
 		})
-		conn, err := net.Dial("tcp", e.dataAddr)
+		conn, err := net.Dial("tcp", e.DataAddr)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -103,7 +104,7 @@ func TestEnforcementResponses(t *testing.T) {
 			return r.Context().Err()
 		})
 		ctx, cancel := context.WithCancel(context.Background())
-		req, _ := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+e.dataAddr+"/a/x", nil)
+		req, _ := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+e.DataAddr+"/a/x", nil)
 		result := make(chan error, 1)
 		go func() {
 			resp, err := http.DefaultClient.Do(req)
@@ -122,7 +123,7 @@ func TestEnforcementResponses(t *testing.T) {
 			t.Fatalf("event %v", ev)
 		}
 	})
-	e.assertReceipts(0, 0, 0)
+	e.AssertReceipts(0, 0, 0)
 }
 
 // publicAdmitted is admittedStages for a public operation.
@@ -137,24 +138,24 @@ func publicAdmitted(forward string) map[string]any {
 // field can choose or change the destination. The forwarder sends a request
 // without a binding nowhere (TestNativeForwardingBinding).
 func TestEnforcementTrustedBinding(t *testing.T) {
-	e := newEnv(t)
-	_, _, f := e.serveEnforcement(e.policy(e.a, true), 0)
+	e := gatewaytest.NewEnv(t)
+	_, _, f := serveEnforcement(e, e.Policy(e.A, true), 0)
 	// Every field a client could use to name a destination names B.
-	forged := "Host: " + e.b.addr + "\r\nX-Forwarded-Host: " + e.b.addr + "\r\nForwarded: host=" + e.b.addr +
-		"\r\nX-Gateway-Upstream: B\r\nX-Gateway-Dial: " + e.b.addr + "\r\nConnection: close\r\n\r\n"
-	if code, _ := e.raw("GET /a/x HTTP/1.1\r\n" + forged); code != http.StatusOK {
+	forged := "Host: " + e.B.Addr + "\r\nX-Forwarded-Host: " + e.B.Addr + "\r\nForwarded: host=" + e.B.Addr +
+		"\r\nX-Gateway-Upstream: B\r\nX-Gateway-Dial: " + e.B.Addr + "\r\nConnection: close\r\n\r\n"
+	if code, _ := e.Raw("GET /a/x HTTP/1.1\r\n" + forged); code != http.StatusOK {
 		t.Fatalf("request with forged destination fields: %d", code)
 	}
-	if code, _ := e.raw("GET /b/x HTTP/1.1\r\nHost: " + e.a.addr + "\r\nConnection: close\r\n\r\n"); code != http.StatusOK {
+	if code, _ := e.Raw("GET /b/x HTTP/1.1\r\nHost: " + e.A.Addr + "\r\nConnection: close\r\n\r\n"); code != http.StatusOK {
 		t.Fatalf("request to /b: %d", code)
 	}
 	got := f.handed()
-	if len(got) != 2 || !got[0].bound || got[0].dial != e.a.addr || !got[1].bound || got[1].dial != e.b.addr {
+	if len(got) != 2 || !got[0].bound || got[0].dial != e.A.Addr || !got[1].bound || got[1].dial != e.B.Addr {
 		t.Fatalf("bindings %+v, want A then B", got)
 	}
 	// The inbound Host is kept for the upstream, as before, but decides nothing.
-	if got[0].host != e.b.addr || got[0].header.Get("X-Gateway-Upstream") != "" || got[0].header.Get("X-Gateway-Dial") != "" {
+	if got[0].host != e.B.Addr || got[0].header.Get("X-Gateway-Upstream") != "" || got[0].header.Get("X-Gateway-Dial") != "" {
 		t.Fatalf("handed host %q, headers %v", got[0].host, got[0].header)
 	}
-	e.assertReceipts(0, 0, 0)
+	e.AssertReceipts(0, 0, 0)
 }

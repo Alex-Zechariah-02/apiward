@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Alex-Zechariah-02/apiward/internal/gatewaytest"
 	"github.com/Alex-Zechariah-02/apiward/internal/policy"
 )
 
@@ -58,8 +59,8 @@ func TestBrowserCompile(t *testing.T) {
 
 // browserPolicy gives API a browser access from one origin, response
 // headers and a public rate rule that also limits its preflights.
-func (e *env) browserPolicy() policy.Policy {
-	p := e.policy(e.a, false)
+func browserPolicy(e *gatewaytest.Env) policy.Policy {
+	p := e.Policy(e.A, false)
 	maxAge := int64(60)
 	p.APIs[0].CORS = &policy.CORS{Origins: []string{"https://shop.example"}, Methods: []string{"GET", "POST"},
 		Headers: []string{"Content-Type"}, Expose: []string{"X-Total"}, Credentials: true, MaxAgeSeconds: &maxAge}
@@ -69,17 +70,17 @@ func (e *env) browserPolicy() policy.Policy {
 }
 
 func TestCORS(t *testing.T) {
-	e := newEnv(t)
-	e.a.handle = func(w http.ResponseWriter, r *http.Request) bool {
+	e := gatewaytest.NewEnv(t)
+	e.A.Handle = func(w http.ResponseWriter, r *http.Request) bool {
 		w.Header().Set("Access-Control-Allow-Origin", "https://evil.example")
 		w.Header().Set("Server", "upstream/1.0")
 		w.Header().Set("Referrer-Policy", "same-origin")
 		return false
 	}
-	e.serveNative(e.browserPolicy(), forwardTimeouts)
+	serveNative(e, browserPolicy(e), forwardTimeouts)
 	origin := []string{"Origin", "https://shop.example"}
 	preflight := func(extra ...string) http.Header {
-		resp, _ := e.exchange(http.MethodOptions, "/a/x", "", "", append(slices.Clone(extra), "Access-Control-Request-Method", "GET")...)
+		resp, _ := e.Exchange(http.MethodOptions, "/a/x", "", "", append(slices.Clone(extra), "Access-Control-Request-Method", "GET")...)
 		if resp.StatusCode != http.StatusNoContent {
 			t.Fatalf("preflight %v: %d", extra, resp.StatusCode)
 		}
@@ -102,16 +103,16 @@ func TestCORS(t *testing.T) {
 	// Preflights have their own counter under the API's public rate rule:
 	// the fifth from one address is refused.
 	preflight(origin...)
-	if resp, _ := e.exchange(http.MethodOptions, "/a/x", "", "", append(slices.Clone(origin), "Access-Control-Request-Method", "GET")...); resp.StatusCode != http.StatusTooManyRequests {
+	if resp, _ := e.Exchange(http.MethodOptions, "/a/x", "", "", append(slices.Clone(origin), "Access-Control-Request-Method", "GET")...); resp.StatusCode != http.StatusTooManyRequests {
 		t.Fatalf("fifth preflight: %d", resp.StatusCode)
 	}
-	if e.a.count() != 0 {
+	if e.A.Count() != 0 {
 		t.Fatalf("a preflight reached the upstream")
 	}
 
 	// The upstream's CORS headers are replaced, listed headers removed and
 	// missing security headers added; HSTS needs TLS.
-	resp, _ := e.exchange(http.MethodGet, "/a/x", "", "", origin...)
+	resp, _ := e.Exchange(http.MethodGet, "/a/x", "", "", origin...)
 	h := resp.Header
 	if resp.StatusCode != http.StatusOK || h.Get("Access-Control-Allow-Origin") != "https://shop.example" || h.Get("Access-Control-Expose-Headers") != "X-Total" ||
 		h.Get("Server") != "" || h.Get("X-Frame-Options") != "DENY" || h.Get("X-Content-Type-Options") != "nosniff" ||
@@ -119,14 +120,14 @@ func TestCORS(t *testing.T) {
 		t.Fatalf("actual response %d %v", resp.StatusCode, h)
 	}
 	// A refusal carries them too; another origin gets no CORS header.
-	refusal, _ := e.exchange(http.MethodPost, "/a/item", "application/json", "[]", origin...)
+	refusal, _ := e.Exchange(http.MethodPost, "/a/item", "application/json", "[]", origin...)
 	if refusal.StatusCode != http.StatusBadRequest || refusal.Header.Get("Access-Control-Allow-Origin") != "https://shop.example" {
 		t.Fatalf("refusal %d %v", refusal.StatusCode, refusal.Header)
 	}
-	if other, _ := e.exchange(http.MethodGet, "/a/y", "", "", "Origin", "https://evil.example"); other.Header.Get("Access-Control-Allow-Origin") != "" {
+	if other, _ := e.Exchange(http.MethodGet, "/a/y", "", "", "Origin", "https://evil.example"); other.Header.Get("Access-Control-Allow-Origin") != "" {
 		t.Fatalf("other origin answered %v", other.Header)
 	}
-	events := e.eventsWhen(func(events []map[string]any) bool { return countKind(events, "request.preflight") >= 4 })
+	events := e.EventsWhen(func(events []map[string]any) bool { return gatewaytest.CountKind(events, "request.preflight") >= 4 })
 	codes := map[string]int{}
 	for _, ev := range events {
 		if ev["kind"] == "request.preflight" && ev["stage"] == "ROUTE" && ev["status"] == float64(http.StatusNoContent) {
@@ -139,20 +140,20 @@ func TestCORS(t *testing.T) {
 }
 
 func TestAddressLists(t *testing.T) {
-	e := newEnv(t)
-	p := e.policy(e.a, true)
+	e := gatewaytest.NewEnv(t)
+	p := e.Policy(e.A, true)
 	p.APIs[0].AllowAddresses = []string{"10.0.0.0/8"}
 	p.APIs[1].AllowAddresses = []string{"127.0.0.0/8", "::1/128"}
-	c, _ := e.serveNative(p, forwardTimeouts)
-	if status, body := e.get("/a/x"); status != http.StatusForbidden || !strings.Contains(body, "address_not_allowed") {
+	c, _ := serveNative(e, p, forwardTimeouts)
+	if status, body := e.Get("/a/x"); status != http.StatusForbidden || !strings.Contains(body, "address_not_allowed") {
 		t.Fatalf("address outside the allow list: %d %s", status, body)
 	}
-	if status, _ := e.get("/b/x"); status != http.StatusOK {
+	if status, _ := e.Get("/b/x"); status != http.StatusOK {
 		t.Fatalf("address inside the allow list: %d", status)
 	}
 
 	block := func(method, cidr, body, key string) (int, string) {
-		code, data, _ := e.harnessCall(method, "/admin/blocked-addresses/"+strings.ReplaceAll(cidr, "/", "%2F"), body, "Idempotency-Key", key)
+		code, data, _ := e.HarnessCall(method, "/admin/blocked-addresses/"+strings.ReplaceAll(cidr, "/", "%2F"), body, "Idempotency-Key", key)
 		return code, data
 	}
 	for _, bad := range []struct{ cidr, body string }{
@@ -167,20 +168,22 @@ func TestAddressLists(t *testing.T) {
 	if code, data := block(http.MethodPut, "::ffff:127.0.0.1/128", `{"reason":"scan"}`, "block-address-key-0001"); code != http.StatusOK || !strings.Contains(data, `"range":"127.0.0.1/32"`) {
 		t.Fatalf("block: %d %s", code, data)
 	}
-	if status, body := e.get("/b/x"); status != http.StatusForbidden || !strings.Contains(body, "address_blocked") {
+	if status, body := e.Get("/b/x"); status != http.StatusForbidden || !strings.Contains(body, "address_blocked") {
 		t.Fatalf("blocked address: %d %s", status, body)
 	}
-	if code, data, _ := e.harnessCall(http.MethodGet, "/admin/blocked-addresses", ""); code != http.StatusOK || !strings.Contains(data, `"expires_at":null`) {
+	if code, data, _ := e.HarnessCall(http.MethodGet, "/admin/blocked-addresses", ""); code != http.StatusOK || !strings.Contains(data, `"expires_at":null`) {
 		t.Fatalf("list: %d %s", code, data)
 	}
 	if code, _ := block(http.MethodDelete, "127.0.0.1/32", "", "unblock-address-key-0001"); code != http.StatusOK {
 		t.Fatalf("unblock: %d", code)
 	}
-	if status, _ := e.get("/b/x"); status != http.StatusOK {
+	if status, _ := e.Get("/b/x"); status != http.StatusOK {
 		t.Fatalf("after unblocking: %d", status)
 	}
-	events := e.eventsWhen(func(events []map[string]any) bool { return hasKinds(events, "address.block", "address.unblock") })
-	if !hasKinds(events, "address.block", "address.unblock") {
+	events := e.EventsWhen(func(events []map[string]any) bool {
+		return gatewaytest.HasKinds(events, "address.block", "address.unblock")
+	})
+	if !gatewaytest.HasKinds(events, "address.block", "address.unblock") {
 		t.Fatal("block and unblock were not recorded")
 	}
 	// An entry stays in the store; one with an expiry ends by itself.
@@ -190,10 +193,10 @@ func TestAddressLists(t *testing.T) {
 	if err := c.Stop(); err != nil {
 		t.Fatal(err)
 	}
-	if n := queryInt(t, e.database, `SELECT COUNT(*) FROM blocked_address WHERE cidr = '203.0.113.0/24' AND blocked_by = '`+harnessAdmin+`' AND expires_at IS NOT NULL`); n != 1 {
+	if n := gatewaytest.QueryInt(t, e.Database, `SELECT COUNT(*) FROM blocked_address WHERE cidr = '203.0.113.0/24' AND blocked_by = '`+gatewaytest.HarnessAdmin+`' AND expires_at IS NOT NULL`); n != 1 {
 		t.Fatalf("%d stored entries", n)
 	}
-	if n := queryInt(t, e.database, `SELECT COUNT(*) FROM blocked_address`); n != 1 {
+	if n := gatewaytest.QueryInt(t, e.Database, `SELECT COUNT(*) FROM blocked_address`); n != 1 {
 		t.Fatalf("%d entries after unblocking one of two", n)
 	}
 }

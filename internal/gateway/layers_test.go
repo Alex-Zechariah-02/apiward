@@ -14,22 +14,25 @@ import (
 
 // layers lists, for each internal package, the internal packages it may import.
 var layers = map[string][]string{
-	"fault":      nil,
-	"policy":     nil,
-	"compile":    {"fault", "policy"},
-	"forward":    {"compile"},
-	"store":      {"fault", "policy"},
-	"audit":      {"fault"},
-	"session":    nil,
-	"monitor":    {"policy", "compile", "audit"},
-	"issuertest": nil,
-	"storetest":  {"policy", "store"},
-	"pipeline":   {"fault", "policy", "compile", "forward", "store", "audit", "monitor"},
-	"controller": {"fault", "policy", "compile", "store", "audit", "session", "monitor", "pipeline"},
-	"admin":      {"policy", "compile", "store", "audit", "session", "monitor", "pipeline", "controller"},
-	"operator":   {"fault", "policy", "store", "audit", "session"},
-	"openapi":    {"policy", "compile"},
-	"gateway":    {"fault", "policy", "compile", "forward", "store", "audit", "session", "monitor", "pipeline", "controller", "admin", "operator"},
+	"fault":       nil,
+	"policy":      nil,
+	"compile":     {"fault", "policy"},
+	"forward":     {"compile"},
+	"store":       {"fault", "policy"},
+	"audit":       {"fault"},
+	"session":     nil,
+	"monitor":     {"policy", "compile", "audit"},
+	"issuertest":  nil,
+	"storetest":   {"policy", "store"},
+	"pipeline":    {"fault", "policy", "compile", "forward", "store", "audit", "monitor"},
+	"controller":  {"fault", "policy", "compile", "store", "audit", "session", "monitor", "pipeline"},
+	"admin":       {"policy", "compile", "store", "audit", "session", "monitor", "pipeline", "controller"},
+	"operator":    {"fault", "policy", "store", "audit", "session"},
+	"gatewaytest": {"policy", "store", "audit", "session", "pipeline", "controller", "issuertest"},
+	"openapi":     {"policy", "compile"},
+	"gateway":     {"fault", "policy", "compile", "forward", "store", "audit", "session", "monitor", "pipeline", "controller", "admin", "operator"},
+	// integration tests reach the gateway only through its processes.
+	"integration": {"policy", "compile", "store", "audit", "session", "monitor", "pipeline", "controller"},
 }
 
 // exposed lists, for each package outside internal/, the internal packages its
@@ -47,7 +50,7 @@ var unlayered = []string{"demoports", "services", "services/testfixture"}
 
 // support packages exist for tests: any package's tests may import them,
 // production code never.
-var support = []string{"issuertest", "storetest"}
+var support = []string{"issuertest", "storetest", "gatewaytest"}
 
 func TestPackageLayers(t *testing.T) {
 	root := filepath.Join("..", "..")

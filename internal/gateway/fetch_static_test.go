@@ -1,3 +1,6 @@
+// The Fetch website on the data plane: its targets, response headers and
+// client identity headers.
+
 package gateway
 
 import (

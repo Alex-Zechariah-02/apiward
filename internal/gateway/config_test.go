@@ -14,6 +14,7 @@ import (
 
 	"github.com/Alex-Zechariah-02/apiward/internal/controller"
 	"github.com/Alex-Zechariah-02/apiward/internal/forward"
+	"github.com/Alex-Zechariah-02/apiward/internal/gatewaytest"
 	"github.com/Alex-Zechariah-02/apiward/internal/pipeline"
 )
 
@@ -67,10 +68,10 @@ func TestNativeConfigSettings(t *testing.T) {
 			AuditTimeout:         2 * time.Second,
 			AuditMaxBytes:        64 << 20,
 			AuditMaxFiles:        8,
-			JWT:                  testTrust("issuer", "gateway", filepath.Join(dir, "issuer.pem")),
+			JWT:                  gatewaytest.TestTrust("issuer", "gateway", filepath.Join(dir, "issuer.pem")),
 		},
 		listen:            "127.0.0.2:9480",
-		metricsListen:     demoTestAddress(t, "127.0.0.1:9450"),
+		metricsListen:     gatewaytest.DemoTestAddress(t, "127.0.0.1:9450"),
 		maxBodyBytes:      16 << 10,
 		headerLimit:       16 << 10,
 		readHeaderTimeout: 5 * time.Second,
@@ -114,10 +115,10 @@ func TestNativeConfigSettings(t *testing.T) {
 func TestNativeConfigRefusals(t *testing.T) {
 	dir := t.TempDir()
 	set := func(object, name string, value any) func(map[string]any) {
-		return func(s map[string]any) { section(s, object)[name] = value }
+		return func(s map[string]any) { gatewaytest.Section(s, object)[name] = value }
 	}
 	remove := func(object, name string) func(map[string]any) {
-		return func(s map[string]any) { delete(section(s, object), name) }
+		return func(s map[string]any) { delete(gatewaytest.Section(s, object), name) }
 	}
 	valid := string(configDocument(t, dir, nil))
 	cases := []struct {
@@ -141,7 +142,7 @@ func TestNativeConfigRefusals(t *testing.T) {
 		{"unknown top-level member", string(configDocument(t, dir, func(s map[string]any) { s["admin"] = map[string]any{} })), `unknown field "admin"`},
 		{"unknown setting", string(configDocument(t, dir, set("data", "listen_tls", true))), `unknown field "listen_tls"`},
 		{"unknown trust setting", string(configDocument(t, dir, func(s map[string]any) {
-			section(s, "gateway")["jwt"].(map[string]any)["algorithms"] = []string{"none"}
+			gatewaytest.Section(s, "gateway")["jwt"].(map[string]any)["algorithms"] = []string{"none"}
 		})), `unknown field "algorithms"`},
 		{"wrong type", string(configDocument(t, dir, set("data", "max_body_bytes", "1024"))), "data.max_body_bytes: a JSON string is not a valid value"},
 		{"fractional number", string(configDocument(t, dir, set("gateway", "audit_max_files", 2.5))), "gateway.audit_max_files"},
@@ -150,7 +151,7 @@ func TestNativeConfigRefusals(t *testing.T) {
 		{"no audit log", string(configDocument(t, dir, remove("gateway", "audit_log"))), "gateway.audit_log is required"},
 		{"no admin address", string(configDocument(t, dir, remove("gateway", "admin_listen"))), "gateway.admin_listen is required"},
 		{"no trust key", string(configDocument(t, dir, func(s map[string]any) {
-			delete(section(s, "gateway")["jwt"].(map[string]any), "keys")
+			delete(gatewaytest.Section(s, "gateway")["jwt"].(map[string]any), "keys")
 		})), "gateway.jwt.keys must contain"},
 		{"no trust configuration", string(configDocument(t, dir, remove("gateway", "jwt"))), "gateway.jwt.issuer is required"},
 		{"no data section", string(configDocument(t, dir, func(s map[string]any) { delete(s, "data") })), "data.listen is required"},
@@ -175,8 +176,8 @@ func TestNativeConfigRefusals(t *testing.T) {
 		{"admission wait too short", string(configDocument(t, dir, set("gateway", "audit_timeout", "10ms"))), "gateway.audit_timeout must be 100ms to 30s"},
 		{"session idle too short", string(configDocument(t, dir, set("gateway", "admin_idle_timeout", "500ms"))), "gateway.admin_idle_timeout must be 1s to 24h0m0s"},
 		{"header before the whole request", string(configDocument(t, dir, func(s map[string]any) {
-			section(s, "data")["read_header_timeout"] = "20s"
-			section(s, "data")["read_timeout"] = "10s"
+			gatewaytest.Section(s, "data")["read_header_timeout"] = "20s"
+			gatewaytest.Section(s, "data")["read_timeout"] = "10s"
 		})), "data.read_header_timeout must not exceed data.read_timeout"},
 		{"zero body ceiling", string(configDocument(t, dir, set("data", "max_body_bytes", 0))), "data.max_body_bytes must be 1 to 1048576"},
 		{"body ceiling above the compiler's", string(configDocument(t, dir, set("data", "max_body_bytes", 1<<20+1))), "data.max_body_bytes must be 1 to 1048576"},

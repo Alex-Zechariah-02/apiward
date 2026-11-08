@@ -1,74 +1,31 @@
+// The demo command: Fetch stack setup, start and stop with the native gateway.
+
 package gateway
 
 import (
-	"io"
+	"cmp"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/Alex-Zechariah-02/apiward/internal/demoports"
+	"github.com/Alex-Zechariah-02/apiward/internal/gatewaytest"
 )
 
-func demoTestAddress(t *testing.T, base string) string {
-	t.Helper()
-	address, err := demoports.Offset(base)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return address
-}
-
-func demoCommand(t *testing.T, args ...string) (string, int) {
-	t.Helper()
-	cmd := exec.Command(binaries.demo, args...)
-	output, err := cmd.CombinedOutput()
-	if err != nil && cmd.ProcessState == nil {
-		t.Fatal(err)
-	}
-	code := cmd.ProcessState.ExitCode()
-	t.Logf("demo %v: exit %d (credential output withheld)", args, code)
-	return string(output), code
-}
-
-func startDemo(t *testing.T, dir string) (*exec.Cmd, io.WriteCloser, <-chan error, *logBuffer) {
-	t.Helper()
-	cmd := exec.Command(binaries.demo, "run", "-dir", dir, "-gateway", binaries.plain, "-services", binaries.services, "-accounts", binaries.accounts, "-stdin")
-	output := &logBuffer{}
-	cmd.Stdout, cmd.Stderr = output, output
-	input, err := cmd.StdinPipe()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := cmd.Start(); err != nil {
-		t.Fatal(err)
-	}
-	exited := make(chan error, 1)
-	go func() {
-		exited <- cmd.Wait()
-		close(exited)
-	}()
-	t.Cleanup(func() {
-		input.Close()
-		select {
-		case <-exited:
-		case <-time.After(15 * time.Second):
-			cmd.Process.Kill()
-			<-exited
-			t.Errorf("demo cleanup exceeded its bound: %s", output)
-		}
-	})
-	waitFor(t, time.Now().Add(30*time.Second), "native demonstration admission", func() bool {
-		return strings.Contains(output.String(), "gateway   process")
-	})
-	return cmd, input, exited, output
-}
+// demoPortShift moves this package's demo stack above the span of the demo
+// ports (9440-9605): the integration tests run the Fetch stack on the demo
+// ports themselves, and the two test binaries may run at the same time.
+const demoPortShift = 200
 
 func TestNativeDemoCommands(t *testing.T) {
+	offset, err := strconv.Atoi(cmp.Or(os.Getenv("EAT_PORT_OFFSET"), "0"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("EAT_PORT_OFFSET", strconv.Itoa(offset+demoPortShift))
 	parent := t.TempDir()
 	web := filepath.Join(parent, "web")
 	for _, page := range []string{"admin", "demo"} {
@@ -81,12 +38,12 @@ func TestNativeDemoCommands(t *testing.T) {
 		}
 	}
 	dir := filepath.Join(parent, "demo")
-	args := []string{"setup", "-dir", dir, "-web", web, "-gateway", binaries.plain, "-admin", "root"}
-	output, code := demoCommand(t, args...)
-	if code != 0 || enrolmentSecret(t, output) == "" {
+	args := []string{"setup", "-dir", dir, "-web", web, "-gateway", gatewaytest.Binaries.Plain, "-admin", "root"}
+	output, code := gatewaytest.DemoCommand(t, args...)
+	if code != 0 || gatewaytest.EnrolmentSecret(t, output) == "" {
 		t.Fatalf("native demo setup exit %d", code)
 	}
-	if _, code := demoCommand(t, args...); code != 1 {
+	if _, code := gatewaytest.DemoCommand(t, args...); code != 1 {
 		t.Fatal("setup reused an existing directory")
 	}
 	data, err := os.ReadFile(filepath.Join(dir, "gateway.json"))
@@ -105,7 +62,7 @@ func TestNativeDemoCommands(t *testing.T) {
 		{"run", "-dir", dir},
 		{"setup", "-dir", filepath.Join(parent, "failed"), "-web", web, "-gateway", filepath.Join(parent, "absent.exe")},
 	} {
-		if _, code := demoCommand(t, args...); code == 0 {
+		if _, code := gatewaytest.DemoCommand(t, args...); code == 0 {
 			t.Fatalf("invalid demo arguments accepted: %v", args)
 		}
 	}
@@ -117,23 +74,23 @@ func TestNativeDemoCommands(t *testing.T) {
 		t.Fatal(err)
 	}
 	for round := range 2 {
-		_, input, exited, output := startDemo(t, dir)
+		_, input, exited, output := gatewaytest.StartDemo(t, dir)
 		if !strings.Contains(output.String(), "protected admission: bootstrap_locked") {
 			t.Fatalf("listener startup mistaken for admission readiness: %s", output)
 		}
-		tokenOutput, code := demoCommand(t, "token", "-dir", dir, "-subject", "cust-001")
+		tokenOutput, code := gatewaytest.DemoCommand(t, "token", "-dir", dir, "-subject", "cust-001")
 		if code != 0 {
 			t.Fatal("demo token failed")
 		}
 		token := strings.SplitN(tokenOutput, "\n", 2)[0]
-		e := &env{t: t, dataAddr: demoTestAddress(t, "127.0.0.2:9480"), admin: demoTestAddress(t, "127.0.0.1:9440")}
-		if code, _ := e.get("/orders", "Authorization", "Bearer "+token); code != http.StatusServiceUnavailable {
+		e := &gatewaytest.Env{T: t, DataAddr: gatewaytest.DemoTestAddress(t, "127.0.0.2:9480"), Admin: gatewaytest.DemoTestAddress(t, "127.0.0.1:9440")}
+		if code, _ := e.Get("/orders", "Authorization", "Bearer "+token); code != http.StatusServiceUnavailable {
 			t.Fatalf("bootstrap data plane returned %d", code)
 		}
-		if _, code := demoCommand(t, "reset", "-dir", dir); code != 0 {
+		if _, code := gatewaytest.DemoCommand(t, "reset", "-dir", dir); code != 0 {
 			t.Fatal("identified fixture reset failed")
 		}
-		if output, code := demoCommand(t, "events", "-dir", dir, "-last", "2"); code != 0 || !strings.Contains(output, "rotated files were not searched") {
+		if output, code := gatewaytest.DemoCommand(t, "events", "-dir", dir, "-last", "2"); code != 0 || !strings.Contains(output, "rotated files were not searched") {
 			t.Fatal("events command did not disclose its history boundary")
 		}
 		input.Close()
@@ -146,8 +103,8 @@ func TestNativeDemoCommands(t *testing.T) {
 			t.Fatal("demo did not reap its children")
 		}
 		for _, addr := range []string{"127.0.0.1:9440", "127.0.0.2:9480", "127.0.0.1:9501", "127.0.0.1:9502", "127.0.0.1:9503", "127.0.0.1:9601", "127.0.0.1:9602", "127.0.0.1:9603", "127.0.0.1:9504", "127.0.0.1:9505", "127.0.0.1:9604", "127.0.0.1:9605", "127.0.0.1:9450"} {
-			addr = demoTestAddress(t, addr)
-			if dialable(addr) {
+			addr = gatewaytest.DemoTestAddress(t, addr)
+			if gatewaytest.Dialable(addr) {
 				t.Fatalf("demo round %d leaked listener %s", round, addr)
 			}
 		}
@@ -157,7 +114,7 @@ func TestNativeDemoCommands(t *testing.T) {
 		}
 	}
 	// A gateway crash must stop the launcher and its remaining service children.
-	_, input, exited, runOutput := startDemo(t, dir)
+	_, input, exited, runOutput := gatewaytest.StartDemo(t, dir)
 	for line := range strings.Lines(runOutput.String()) {
 		fields := strings.Fields(line)
 		if len(fields) == 3 && fields[0] == "gateway" && fields[1] == "process" {
@@ -184,28 +141,28 @@ func TestNativeDemoCommands(t *testing.T) {
 	}
 	input.Close()
 	for _, addr := range []string{"127.0.0.1:9440", "127.0.0.2:9480", "127.0.0.1:9501", "127.0.0.1:9502", "127.0.0.1:9503", "127.0.0.1:9601", "127.0.0.1:9602", "127.0.0.1:9603", "127.0.0.1:9504", "127.0.0.1:9505", "127.0.0.1:9604", "127.0.0.1:9605", "127.0.0.1:9450"} {
-		addr = demoTestAddress(t, addr)
-		if dialable(addr) {
+		addr = gatewaytest.DemoTestAddress(t, addr)
+		if gatewaytest.Dialable(addr) {
 			t.Fatalf("crashed demo leaked listener %s", addr)
 		}
 	}
-	if _, code := demoCommand(t, "run", "-dir", dir, "-gateway", filepath.Join(parent, "absent.exe"), "-services", binaries.services, "-accounts", binaries.accounts); code != 1 {
+	if _, code := gatewaytest.DemoCommand(t, "run", "-dir", dir, "-gateway", filepath.Join(parent, "absent.exe"), "-services", gatewaytest.Binaries.Services, "-accounts", gatewaytest.Binaries.Accounts); code != 1 {
 		t.Fatal("partial demo startup did not report a failure")
 	}
 	for _, addr := range []string{"127.0.0.1:9501", "127.0.0.1:9502", "127.0.0.1:9503", "127.0.0.1:9601", "127.0.0.1:9602", "127.0.0.1:9603", "127.0.0.1:9504", "127.0.0.1:9505", "127.0.0.1:9604", "127.0.0.1:9605", "127.0.0.1:9450"} {
-		addr = demoTestAddress(t, addr)
-		if dialable(addr) {
+		addr = gatewaytest.DemoTestAddress(t, addr)
+		if gatewaytest.Dialable(addr) {
 			t.Fatalf("partial startup leaked fixture listener %s", addr)
 		}
 	}
-	before := fileSHA256(t, filepath.Join(dir, "state.db"))
+	before := gatewaytest.FileSHA256(t, filepath.Join(dir, "state.db"))
 	if err := os.WriteFile(filepath.Join(dir, "caddy.json"), []byte(`{"apps":{}}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, code := demoCommand(t, "reset", "-dir", dir); code != 1 {
+	if _, code := gatewaytest.DemoCommand(t, "reset", "-dir", dir); code != 1 {
 		t.Fatal("stale Caddy demo was accepted")
 	}
-	if fileSHA256(t, filepath.Join(dir, "state.db")) != before {
+	if gatewaytest.FileSHA256(t, filepath.Join(dir, "state.db")) != before {
 		t.Fatal("rejected demo operation changed SQLite state")
 	}
 }

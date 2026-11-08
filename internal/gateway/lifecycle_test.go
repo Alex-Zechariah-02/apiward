@@ -3,7 +3,6 @@
 package gateway
 
 import (
-	"bytes"
 	"crypto/x509"
 	"encoding/pem"
 	"errors"
@@ -14,13 +13,13 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/admin"
 	"github.com/Alex-Zechariah-02/apiward/internal/compile"
 	"github.com/Alex-Zechariah-02/apiward/internal/controller"
+	"github.com/Alex-Zechariah-02/apiward/internal/gatewaytest"
 	"github.com/Alex-Zechariah-02/apiward/internal/issuertest"
 	"github.com/Alex-Zechariah-02/apiward/internal/pipeline"
 	"github.com/Alex-Zechariah-02/apiward/internal/store"
@@ -31,44 +30,26 @@ import (
 // what each lifecycle step leaves behind through the deployment itself: its
 // admin listener, database lock, audit file, timers and goroutines.
 
-// logBuffer collects a controller's log output.
-type logBuffer struct {
-	mu  sync.Mutex
-	buf bytes.Buffer
-}
-
-func (b *logBuffer) Write(p []byte) (int, error) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.buf.Write(p)
-}
-
-func (b *logBuffer) String() string {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.buf.String()
-}
-
 // controllerConfig is the configuration of e's deployment.
-func (e *env) controllerConfig() controller.Config {
+func controllerConfig(e *gatewaytest.Env) controller.Config {
 	return controller.Config{
-		Database:    e.database,
-		AuditLog:    e.auditLog,
-		AdminListen: e.admin,
-		JWT:         testTrust(issuertest.Name, issuertest.Audience, e.publicKey),
+		Database:    e.Database,
+		AuditLog:    e.AuditLog,
+		AdminListen: e.Admin,
+		JWT:         gatewaytest.TestTrust(issuertest.Name, issuertest.Audience, e.PublicKey),
 	}
 }
 
 // own creates a controller for cfg in the test process and stops it when the
 // test ends.
-func (e *env) own(cfg controller.Config) (*controller.Controller, *logBuffer) {
-	e.t.Helper()
-	logs := &logBuffer{}
+func own(e *gatewaytest.Env, cfg controller.Config) (*controller.Controller, *gatewaytest.LogBuffer) {
+	e.T.Helper()
+	logs := &gatewaytest.LogBuffer{}
 	c, _, err := openController(cfg, "", slog.New(slog.NewJSONHandler(logs, nil)))
 	if err != nil {
-		e.t.Fatalf("openController: %v", err)
+		e.T.Fatalf("openController: %v", err)
 	}
-	e.t.Cleanup(func() { c.Stop() })
+	e.T.Cleanup(func() { c.Stop() })
 	return c, logs
 }
 
@@ -108,7 +89,7 @@ func goroutines(frame string) int {
 // told to stop may still be returning when the call that stopped it returns.
 func waitGoroutines(t *testing.T, frame string, want int) {
 	t.Helper()
-	waitFor(t, time.Now().Add(5*time.Second), fmt.Sprintf("at most %d goroutines in %s", want, frame), func() bool {
+	gatewaytest.WaitFor(t, time.Now().Add(5*time.Second), fmt.Sprintf("at most %d goroutines in %s", want, frame), func() bool {
 		return goroutines(frame) <= want
 	})
 }
@@ -118,7 +99,7 @@ func waitGoroutines(t *testing.T, frame string, want int) {
 // free for another owner. That Stop closes the database is a controller test.
 func assertReleased(t *testing.T, c *controller.Controller, cfg controller.Config) {
 	t.Helper()
-	if dialable(cfg.AdminListen) {
+	if gatewaytest.Dialable(cfg.AdminListen) {
 		t.Fatal("the admin listener is still open")
 	}
 	if c.Audit().OpenErr() == nil && !c.Audit().Closed() {
@@ -139,12 +120,12 @@ func assertReleased(t *testing.T, c *controller.Controller, cfg controller.Confi
 // listener opens, Start serves the Admin API once, and Stop releases
 // everything, once, however often it is called.
 func TestControllerOwnedByApplication(t *testing.T) {
-	e := newEnv(t)
-	policy := e.protectedPolicy()
-	seed(t, e.database, policy, seedOptions{})
+	e := gatewaytest.NewEnv(t)
+	policy := e.ProtectedPolicy()
+	gatewaytest.Seed(t, e.Database, policy, gatewaytest.SeedOptions{})
 	writers, servers := goroutines(auditWriter), goroutines(adminServer)
 
-	c, logs := e.own(e.controllerConfig())
+	c, logs := own(e, controllerConfig(e))
 	want, err := compile.Compile(policy, 1, time.Time{})
 	if err != nil {
 		t.Fatal(err)
@@ -153,7 +134,7 @@ func TestControllerOwnedByApplication(t *testing.T) {
 	if g == nil || g.ID != want.ID || g.Revision != 1 {
 		t.Fatalf("published %+v, want the canonical compilation of revision 1 (%s)", g, want.ID)
 	}
-	if dialable(e.admin) {
+	if gatewaytest.Dialable(e.Admin) {
 		t.Fatal("the admin listener is open before Start")
 	}
 	if got := goroutines(auditWriter); got != writers+1 {
@@ -163,10 +144,10 @@ func TestControllerOwnedByApplication(t *testing.T) {
 	if err := c.Start(testAdmin(c)); err != nil {
 		t.Fatal(err)
 	}
-	if health := e.health(); health != store.ModeNormal {
+	if health := e.Health(); health != store.ModeNormal {
 		t.Fatalf("health %q", health)
 	}
-	if s := e.status(); s.State != store.ModeNormal || s.Generation != g.ID || s.Confirmed != 1 {
+	if s := e.Status(); s.State != store.ModeNormal || s.Generation != g.ID || s.Confirmed != 1 {
 		t.Fatalf("status %+v", s)
 	}
 	if err := c.Start(testAdmin(c)); err == nil || !strings.Contains(err.Error(), "already started") {
@@ -188,7 +169,7 @@ func TestControllerOwnedByApplication(t *testing.T) {
 	if c.Current() != nil {
 		t.Fatal("a stopped controller still publishes a generation")
 	}
-	assertReleased(t, c, e.controllerConfig())
+	assertReleased(t, c, controllerConfig(e))
 	waitGoroutines(t, auditWriter, writers)
 	waitGoroutines(t, adminServer, servers)
 	if strings.Contains(logs.String(), `"level":"ERROR"`) {
@@ -196,12 +177,12 @@ func TestControllerOwnedByApplication(t *testing.T) {
 	}
 
 	// Another owner of the deployment serves the same committed authority.
-	again, _ := e.own(e.controllerConfig())
+	again, _ := own(e, controllerConfig(e))
 	if g2 := again.Current(); g2 == nil || g2.ID != g.ID {
 		t.Fatalf("after restart %+v, want %s", g2, g.ID)
 	}
-	reconciled := func(events []map[string]any) bool { return countKind(events, "controller.reconciled") == 2 }
-	if n := countKind(e.eventsWhen(reconciled), "controller.reconciled"); n != 2 {
+	reconciled := func(events []map[string]any) bool { return gatewaytest.CountKind(events, "controller.reconciled") == 2 }
+	if n := gatewaytest.CountKind(e.EventsWhen(reconciled), "controller.reconciled"); n != 2 {
 		t.Fatalf("%d reconciliation events, want 2", n)
 	}
 }
@@ -217,32 +198,42 @@ func TestControllerRefusesInvalidConfiguration(t *testing.T) {
 	}
 	cases := []struct {
 		name   string
-		change func(e *env, cfg *controller.Config, ui *string)
+		change func(e *gatewaytest.Env, cfg *controller.Config, ui *string)
 		cause  string
 	}{
-		{"no database", func(e *env, cfg *controller.Config, ui *string) { cfg.Database = "" }, "database, audit_log and admin_listen are required"},
-		{"no audit log", func(e *env, cfg *controller.Config, ui *string) { cfg.AuditLog = "" }, "database, audit_log and admin_listen are required"},
-		{"no admin listener", func(e *env, cfg *controller.Config, ui *string) { cfg.AdminListen = "" }, "database, audit_log and admin_listen are required"},
-		{"wildcard admin listener", func(e *env, cfg *controller.Config, ui *string) { cfg.AdminListen = "0.0.0.0:" + port(e.admin) }, "loopback"},
-		{"host name admin listener", func(e *env, cfg *controller.Config, ui *string) { cfg.AdminListen = "localhost:" + port(e.admin) }, "loopback"},
-		{"admin listener without a port", func(e *env, cfg *controller.Config, ui *string) { cfg.AdminListen = "127.0.0.1:0" }, "loopback"},
-		{"no trust configuration", func(e *env, cfg *controller.Config, ui *string) { cfg.JWT = pipeline.TrustConfig{} }, "jwt: issuer and audience"},
-		{"missing key file", func(e *env, cfg *controller.Config, ui *string) {
-			cfg.JWT.Keys[0].PublicKeyFile = filepath.Join(e.dir, "absent.pem")
+		{"no database", func(e *gatewaytest.Env, cfg *controller.Config, ui *string) { cfg.Database = "" }, "database, audit_log and admin_listen are required"},
+		{"no audit log", func(e *gatewaytest.Env, cfg *controller.Config, ui *string) { cfg.AuditLog = "" }, "database, audit_log and admin_listen are required"},
+		{"no admin listener", func(e *gatewaytest.Env, cfg *controller.Config, ui *string) { cfg.AdminListen = "" }, "database, audit_log and admin_listen are required"},
+		{"wildcard admin listener", func(e *gatewaytest.Env, cfg *controller.Config, ui *string) {
+			cfg.AdminListen = "0.0.0.0:" + gatewaytest.Port(e.Admin)
+		}, "loopback"},
+		{"host name admin listener", func(e *gatewaytest.Env, cfg *controller.Config, ui *string) {
+			cfg.AdminListen = "localhost:" + gatewaytest.Port(e.Admin)
+		}, "loopback"},
+		{"admin listener without a port", func(e *gatewaytest.Env, cfg *controller.Config, ui *string) { cfg.AdminListen = "127.0.0.1:0" }, "loopback"},
+		{"no trust configuration", func(e *gatewaytest.Env, cfg *controller.Config, ui *string) { cfg.JWT = pipeline.TrustConfig{} }, "jwt: issuer and audience"},
+		{"missing key file", func(e *gatewaytest.Env, cfg *controller.Config, ui *string) {
+			cfg.JWT.Keys[0].PublicKeyFile = filepath.Join(e.Dir, "absent.pem")
 		}, "jwt: opening public key"},
-		{"private key given as the key", func(e *env, cfg *controller.Config, ui *string) { cfg.JWT.Keys[0].PublicKeyFile = privateKey }, "exactly one PEM PUBLIC KEY block"},
-		{"audit file size below the bound", func(e *env, cfg *controller.Config, ui *string) { cfg.AuditMaxBytes = 1024 }, "audit_max_bytes must be"},
-		{"negative audit file size", func(e *env, cfg *controller.Config, ui *string) { cfg.AuditMaxBytes = -1 }, "audit_max_bytes must be"},
-		{"one audit file", func(e *env, cfg *controller.Config, ui *string) { cfg.AuditMaxFiles = 1 }, "audit_max_files must be"},
-		{"idle timeout too short", func(e *env, cfg *controller.Config, ui *string) { cfg.AdminIdleTimeout = 500 * time.Millisecond }, "admin_idle_timeout"},
-		{"session lifetime too long", func(e *env, cfg *controller.Config, ui *string) { cfg.AdminSessionLifetime = 25 * time.Hour }, "admin_session_lifetime"},
-		{"dashboard directory without index.html", func(e *env, cfg *controller.Config, ui *string) { *ui = t.TempDir() }, "admin_ui"},
+		{"private key given as the key", func(e *gatewaytest.Env, cfg *controller.Config, ui *string) {
+			cfg.JWT.Keys[0].PublicKeyFile = privateKey
+		}, "exactly one PEM PUBLIC KEY block"},
+		{"audit file size below the bound", func(e *gatewaytest.Env, cfg *controller.Config, ui *string) { cfg.AuditMaxBytes = 1024 }, "audit_max_bytes must be"},
+		{"negative audit file size", func(e *gatewaytest.Env, cfg *controller.Config, ui *string) { cfg.AuditMaxBytes = -1 }, "audit_max_bytes must be"},
+		{"one audit file", func(e *gatewaytest.Env, cfg *controller.Config, ui *string) { cfg.AuditMaxFiles = 1 }, "audit_max_files must be"},
+		{"idle timeout too short", func(e *gatewaytest.Env, cfg *controller.Config, ui *string) {
+			cfg.AdminIdleTimeout = 500 * time.Millisecond
+		}, "admin_idle_timeout"},
+		{"session lifetime too long", func(e *gatewaytest.Env, cfg *controller.Config, ui *string) {
+			cfg.AdminSessionLifetime = 25 * time.Hour
+		}, "admin_session_lifetime"},
+		{"dashboard directory without index.html", func(e *gatewaytest.Env, cfg *controller.Config, ui *string) { *ui = t.TempDir() }, "admin_ui"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			e := newEnv(t)
-			seed(t, e.database, e.policy(e.a, false), seedOptions{})
-			cfg := e.controllerConfig()
+			e := gatewaytest.NewEnv(t)
+			gatewaytest.Seed(t, e.Database, e.Policy(e.A, false), gatewaytest.SeedOptions{})
+			cfg := controllerConfig(e)
 			ui := ""
 			tc.change(e, &cfg, &ui)
 			writers := goroutines(auditWriter)
@@ -253,16 +244,16 @@ func TestControllerRefusesInvalidConfiguration(t *testing.T) {
 			if strings.Contains(err.Error(), "PRIVATE KEY") || strings.Contains(err.Error(), "MII") {
 				t.Fatalf("the error discloses key material: %v", err)
 			}
-			if _, err := os.Stat(e.auditLog); !os.IsNotExist(err) {
+			if _, err := os.Stat(e.AuditLog); !os.IsNotExist(err) {
 				t.Fatalf("an audit file was created: %v", err)
 			}
 			if got := goroutines(auditWriter); got != writers {
 				t.Fatalf("%d audit writers, want %d", got, writers)
 			}
-			if dialable(e.admin) {
+			if gatewaytest.Dialable(e.Admin) {
 				t.Fatal("a listener is open")
 			}
-			st, err := store.OpenStore(e.database)
+			st, err := store.OpenStore(e.Database)
 			if err != nil {
 				t.Fatalf("the database is held: %v", err)
 			}
@@ -271,12 +262,12 @@ func TestControllerRefusesInvalidConfiguration(t *testing.T) {
 	}
 
 	t.Run("no logger", func(t *testing.T) {
-		e := newEnv(t)
-		seed(t, e.database, e.policy(e.a, false), seedOptions{})
-		if c, _, err := openController(e.controllerConfig(), "", nil); c != nil || err == nil {
+		e := gatewaytest.NewEnv(t)
+		gatewaytest.Seed(t, e.Database, e.Policy(e.A, false), gatewaytest.SeedOptions{})
+		if c, _, err := openController(controllerConfig(e), "", nil); c != nil || err == nil {
 			t.Fatalf("openController without a logger = %v, %v", c, err)
 		}
-		if _, err := os.Stat(e.auditLog); !os.IsNotExist(err) {
+		if _, err := os.Stat(e.AuditLog); !os.IsNotExist(err) {
 			t.Fatalf("an audit file was created: %v", err)
 		}
 	})

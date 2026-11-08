@@ -1,0 +1,142 @@
+// Schemas follow the captured generation.
+
+package integration
+
+import (
+	"fmt"
+	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/Alex-Zechariah-02/apiward/internal/controller"
+	"github.com/Alex-Zechariah-02/apiward/internal/gatewaytest"
+	"github.com/Alex-Zechariah-02/apiward/internal/policy"
+)
+
+// A request keeps the schema of the generation it captured, and under
+// repeated schema publications every decision matches the schema of the
+// generation it reports.
+func TestSchemaFollowsCapturedGeneration(t *testing.T) {
+	e := gatewaytest.NewEnv(t)
+	textSchema := `{"type":"object","additionalProperties":false,"required":["v"],"properties":{"v":{"type":"string"}}}`
+	numberSchema := `{"type":"object","additionalProperties":false,"required":["v"],"properties":{"v":{"type":"integer"}}}`
+	withSchema := func(schema string) policy.Policy {
+		p := e.Policy(e.A, false)
+		for i := range p.Operations {
+			if p.Operations[i].ID == "write-a" {
+				p.Operations[i].Body = gatewaytest.JSONBody(1024, schema)
+			}
+		}
+		return p
+	}
+	gatewaytest.Seed(t, e.Database, withSchema(textSchema), gatewaytest.SeedOptions{})
+	dir := t.TempDir()
+	holdFile, release := filepath.Join(dir, "captured"), filepath.Join(dir, "release")
+	e.Start(gatewaytest.Binaries.Fault, "GATEWAY_HOLD_PATH=/a/item", "GATEWAY_HOLD_FILE="+holdFile, "GATEWAY_HOLD_RELEASE="+release)
+	first := e.Status().Generation
+
+	// Valid under the captured generation, invalid under the next one.
+	result := make(chan int, 1)
+	go func() {
+		code, _ := e.Request(http.MethodPost, "/a/item", "application/json", `{"v":"text"}`)
+		result <- code
+	}()
+	waitForFile(t, holdFile)
+	outcome, code := e.Publish(controller.Change{ID: "numbers", Expected: 1, Policy: gatewaytest.MustJSON(withSchema(numberSchema))})
+	if code != http.StatusOK {
+		t.Fatalf("publish: %d %+v", code, outcome)
+	}
+	os.WriteFile(release, nil, 0o600)
+	if code := <-result; code != http.StatusOK {
+		t.Fatalf("request captured under the text schema: %d, want 200", code)
+	}
+	if r := e.A.Receipts(); len(r) != 1 || r[0].Generation != first || r[0].Body != `{"v":"text"}` {
+		t.Fatalf("receipts %+v, want one under %s", r, first)
+	}
+	// New requests use the new schema.
+	if code, _ := e.Request(http.MethodPost, "/a/item", "application/json", `{"v":"text"}`); code != http.StatusBadRequest {
+		t.Fatalf("text value under the number schema: %d", code)
+	}
+
+	// Repeated publications under load: each generation's schema decides
+	// every request that captured it.
+	accepts := map[string]string{first: "text", outcome.Generation: "number"}
+	revision := outcome.Revision
+	stop := make(chan struct{})
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	type decision struct{ body, requestID string }
+	var rejected []decision
+	for client := range 4 {
+		wg.Go(func() {
+			bodies := []string{`{"v":"text"}`, `{"v":7}`}
+			for i := 0; ; i++ {
+				select {
+				case <-stop:
+					return
+				default:
+				}
+				body := bodies[(client+i)%2]
+				resp, reply := e.Exchange(http.MethodPost, "/a/item", "application/json", body)
+				if resp.StatusCode == http.StatusBadRequest {
+					_, id := gatewaytest.RequestID(resp, reply)
+					mu.Lock()
+					rejected = append(rejected, decision{body, id})
+					mu.Unlock()
+				} else if resp.StatusCode != http.StatusOK {
+					t.Errorf("status %d", resp.StatusCode)
+				}
+			}
+		})
+	}
+	for i := range 40 {
+		schema, kind := textSchema, "text"
+		if i%2 == 1 {
+			schema, kind = numberSchema, "number"
+		}
+		outcome, code := e.Publish(controller.Change{ID: fmt.Sprintf("swap-%d", i), Expected: revision, Policy: gatewaytest.MustJSON(withSchema(schema))})
+		if code != http.StatusOK {
+			t.Fatalf("swap %d: %d %+v", i, code, outcome)
+		}
+		revision = outcome.Revision
+		mu.Lock()
+		accepts[outcome.Generation] = kind
+		mu.Unlock()
+		time.Sleep(10 * time.Millisecond)
+	}
+	close(stop)
+	wg.Wait()
+
+	kindOf := func(body string) string {
+		if strings.Contains(body, `"text"`) {
+			return "text"
+		}
+		return "number"
+	}
+	for _, r := range e.A.Receipts()[1:] {
+		if accepts[r.Generation] != kindOf(r.Body) {
+			t.Fatalf("generation %s (%s schema) forwarded %s", r.Generation, accepts[r.Generation], r.Body)
+		}
+	}
+	events := e.AuditEvents()
+	for _, d := range rejected {
+		ev := gatewaytest.FindEvent(events, "request.rejected", d.requestID)
+		if ev == nil {
+			ev = gatewaytest.FindEvent(e.EventsWhen(func(ev []map[string]any) bool {
+				return gatewaytest.FindEvent(ev, "request.rejected", d.requestID) != nil
+			}), "request.rejected", d.requestID)
+		}
+		generation, _ := ev["generation"].(string)
+		if ev == nil || ev["stage"] != "VALIDATION" || accepts[generation] == kindOf(d.body) {
+			t.Fatalf("rejection of %s: event %v, generation schema %s", d.body, ev, accepts[generation])
+		}
+	}
+	t.Logf("%d forwarded and %d refused across 40 schema publications", len(e.A.Receipts())-1, len(rejected))
+	if len(rejected) == 0 || len(e.A.Receipts()) < 3 {
+		t.Fatal("the load did not exercise both outcomes")
+	}
+}

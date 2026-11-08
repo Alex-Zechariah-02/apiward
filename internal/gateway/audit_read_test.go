@@ -6,6 +6,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/Alex-Zechariah-02/apiward/internal/gatewaytest"
 )
 
 // A record a crash cut short stays in the file; the log names its offset in
@@ -15,22 +17,22 @@ func TestParseAuditSkipsOnlyRecoveredRecords(t *testing.T) {
 	first := `{"kind":"request.admitted","seq":1}` + "\n"
 	partial := `{"kind":"request.rejected","request_id":"94d3` + "\n"
 	recovered := `{"kind":"audit.recovered","file":"audit.log","offset":` + strconv.Itoa(len(first)) + `}` + "\n"
-	events, err := parseAudit([]byte(first+partial+recovered), "audit.log")
+	events, err := gatewaytest.ParseAudit([]byte(first+partial+recovered), "audit.log")
 	if err != nil || len(events) != 2 || events[0]["kind"] != "request.admitted" || events[1]["kind"] != "audit.recovered" {
 		t.Fatalf("recovered record: %v %v", events, err)
 	}
 
 	unexplained := strings.Replace(recovered, `"offset":`+strconv.Itoa(len(first)), `"offset":1`, 1)
-	if _, err := parseAudit([]byte(first+partial+unexplained), "audit.log"); err == nil {
+	if _, err := gatewaytest.ParseAudit([]byte(first+partial+unexplained), "audit.log"); err == nil {
 		t.Fatal("a broken line no record names was accepted")
 	}
 	otherFile := strings.Replace(recovered, `"file":"audit.log"`, `"file":"audit.log.1"`, 1)
-	if _, err := parseAudit([]byte(first+partial+otherFile), "audit.log"); err == nil {
+	if _, err := gatewaytest.ParseAudit([]byte(first+partial+otherFile), "audit.log"); err == nil {
 		t.Fatal("a recovery named for another file was applied")
 	}
 
 	// An unterminated tail is a record still being written: it is not read.
-	if events, err := parseAudit([]byte(first+`{"kind":"request.rej`), "audit.log"); err != nil || len(events) != 1 {
+	if events, err := gatewaytest.ParseAudit([]byte(first+`{"kind":"request.rej`), "audit.log"); err != nil || len(events) != 1 {
 		t.Fatalf("unterminated tail: %v %v", events, err)
 	}
 }

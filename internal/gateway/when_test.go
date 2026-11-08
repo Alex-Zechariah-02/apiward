@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/compile"
+	"github.com/Alex-Zechariah-02/apiward/internal/gatewaytest"
 	"github.com/Alex-Zechariah-02/apiward/internal/policy"
 )
 
@@ -48,7 +49,7 @@ func TestWhenCompile(t *testing.T) {
 			variant(p, 0, "orders.v2", v2).Rate = nil
 		}, "CONDITION_WEAKER"},
 		"body where the sibling refuses one": {func(p *policy.Policy) {
-			variant(p, 0, "orders.v2", v2).Body = jsonBody(1024, anyObject)
+			variant(p, 0, "orders.v2", v2).Body = gatewaytest.JSONBody(1024, gatewaytest.AnyObject)
 		}, "CONDITION_WEAKER"},
 		"allowed where the sibling is denied": {func(p *policy.Policy) {
 			variant(p, 5, "reports.v2", v2).Access = "allow"
@@ -103,43 +104,43 @@ func TestWhenCompile(t *testing.T) {
 // target with only a conditioned operation a request without the condition
 // finds no operation: neither path reaches the upstream.
 func TestWhenNeverGrants(t *testing.T) {
-	e := newEnv(t)
-	p := e.policy(e.a, false)
+	e := gatewaytest.NewEnv(t)
+	p := e.Policy(e.A, false)
 	v2 := policy.When{Headers: []policy.HeaderCondition{{Name: "X-Version", Value: "2"}}}
 	p.Operations = append(p.Operations,
 		policy.Operation{ID: "read-a-v2", API: "a", Method: "GET", Target: "/a/*", Access: "deny", Auth: "none", When: &v2},
 		policy.Operation{ID: "only-v2", API: "a", Method: "GET", Target: "/v2", Access: "allow", Auth: "none", When: &v2})
-	e.serveNative(p, forwardTimeouts)
+	serveNative(e, p, forwardTimeouts)
 
-	if status, _ := e.get("/a/x"); status != http.StatusOK {
+	if status, _ := e.Get("/a/x"); status != http.StatusOK {
 		t.Fatalf("unconditioned operation: %d", status)
 	}
-	if status, _ := e.get("/a/x", "X-Version", "2"); status != http.StatusForbidden {
+	if status, _ := e.Get("/a/x", "X-Version", "2"); status != http.StatusForbidden {
 		t.Fatalf("denied variant: %d", status)
 	}
-	if status, _ := e.get("/v2"); status != http.StatusNotFound {
+	if status, _ := e.Get("/v2"); status != http.StatusNotFound {
 		t.Fatalf("condition not met: %d", status)
 	}
-	if status, _ := e.get("/v2", "X-Version", "2"); status != http.StatusOK {
+	if status, _ := e.Get("/v2", "X-Version", "2"); status != http.StatusOK {
 		t.Fatalf("condition met: %d", status)
 	}
-	e.assertReceipts(2, 0, 0)
+	e.AssertReceipts(2, 0, 0)
 }
 
 // A conditioned operation counts on its unconditioned sibling's counter, so
 // alternating a header cannot exceed the plain operation's quota.
 func TestWhenSharesCounter(t *testing.T) {
-	e := newEnv(t)
-	p := e.policy(e.a, false)
+	e := gatewaytest.NewEnv(t)
+	p := e.Policy(e.A, false)
 	p.Operations[0].Rate = &policy.RateRule{Algorithm: "sliding-window", Count: 2, WindowSeconds: 60, Key: "client_address"}
 	variant(&p, 0, "read-a-v2", policy.When{Headers: []policy.HeaderCondition{{Name: "X-Version", Value: "2"}}})
-	e.serveNative(p, forwardTimeouts)
+	serveNative(e, p, forwardTimeouts)
 	for i, want := range []int{http.StatusOK, http.StatusOK, http.StatusTooManyRequests, http.StatusTooManyRequests} {
 		header := []string{}
 		if i%2 == 1 {
 			header = []string{"X-Version", "2"}
 		}
-		if status, _ := e.get("/a/x", header...); status != want {
+		if status, _ := e.Get("/a/x", header...); status != want {
 			t.Fatalf("request %d: %d, want %d", i+1, status, want)
 		}
 	}

@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/controller"
+	"github.com/Alex-Zechariah-02/apiward/internal/gatewaytest"
 )
 
 // A header schema may not declare a field whose validated value the upstream
@@ -22,13 +23,13 @@ import (
 // and the forwarding fields. A publication declaring one is refused and the
 // current generation stays.
 func TestHeaderSchemaRefusesUnforwardedFields(t *testing.T) {
-	e := newEnv(t)
-	c, _ := e.serveNative(e.keywordPolicy(), forwardTimeouts)
+	e := gatewaytest.NewEnv(t)
+	c, _ := serveNative(e, e.KeywordPolicy(), forwardTimeouts)
 	current := c.Current().ID
 	for i, name := range []string{"Via", "Connection", "Content-Length", "X-Forwarded-For"} {
-		p := e.keywordPolicy()
+		p := e.KeywordPolicy()
 		p.Operations[0].Headers = json.RawMessage(`{"type":"object","additionalProperties":true,"properties":{"` + name + `":{"type":"string"}}}`)
-		outcome, status := c.Publish(context.Background(), "test", controller.Change{ID: fmt.Sprintf("unforwarded-%d", i), Expected: 1, Policy: mustJSON(p)})
+		outcome, status := c.Publish(context.Background(), "test", controller.Change{ID: fmt.Sprintf("unforwarded-%d", i), Expected: 1, Policy: gatewaytest.MustJSON(p)})
 		if status == http.StatusOK || outcome.Outcome != "rejected" || outcome.Reason != "INVALID_VALUE" ||
 			outcome.Field != "operations[0].headers.properties."+name || c.Current().ID != current {
 			t.Errorf("%s: %d %+v, generation %s", name, status, outcome, c.Current().ID)
@@ -36,19 +37,19 @@ func TestHeaderSchemaRefusesUnforwardedFields(t *testing.T) {
 		t.Logf("%s declared: %d %s %s at %s", name, status, outcome.Outcome, outcome.Reason, outcome.Field)
 	}
 	// The same operation with an end-to-end field is published.
-	p := e.keywordPolicy()
+	p := e.KeywordPolicy()
 	p.Operations[0].Headers = json.RawMessage(`{"type":"object","additionalProperties":true,"required":["Accept"],"properties":{"Accept":{"type":"string","enum":["application/json"]}}}`)
-	if outcome, status := c.Publish(context.Background(), "test", controller.Change{ID: "end-to-end", Expected: 1, Policy: mustJSON(p)}); status != http.StatusOK {
+	if outcome, status := c.Publish(context.Background(), "test", controller.Change{ID: "end-to-end", Expected: 1, Policy: gatewaytest.MustJSON(p)}); status != http.StatusOK {
 		t.Fatalf("end-to-end field: %d %+v", status, outcome)
 	}
-	if code, body := e.raw("GET /a/x HTTP/1.1\r\nHost: gw\r\nConnection: close\r\nAccept: application/json\r\n\r\n"); code != http.StatusOK || body != "A ok" ||
-		e.a.receipts()[0].Headers.Get("Accept") != "application/json" {
+	if code, body := e.Raw("GET /a/x HTTP/1.1\r\nHost: gw\r\nConnection: close\r\nAccept: application/json\r\n\r\n"); code != http.StatusOK || body != "A ok" ||
+		e.A.Receipts()[0].Headers.Get("Accept") != "application/json" {
 		t.Fatalf("request under the published schema: %d %q", code, body)
 	}
-	if code, _ := e.raw("GET /a/x HTTP/1.1\r\nHost: gw\r\nConnection: close, Accept\r\nAccept: application/json\r\n\r\n"); code != http.StatusBadRequest {
+	if code, _ := e.Raw("GET /a/x HTTP/1.1\r\nHost: gw\r\nConnection: close, Accept\r\nAccept: application/json\r\n\r\n"); code != http.StatusBadRequest {
 		t.Fatalf("validated Accept named in Connection: %d", code)
 	}
-	e.assertReceipts(1, 0, 0)
+	e.AssertReceipts(1, 0, 0)
 }
 
 // Authentication and role authorisation stay authoritative around header
@@ -57,25 +58,25 @@ func TestHeaderSchemaRefusesUnforwardedFields(t *testing.T) {
 // of forged ones; a subject without the permit, and a permitted subject naming
 // a validated field in Connection, reach nothing.
 func TestValidatedHeadersWithAuthentication(t *testing.T) {
-	e := newEnv(t)
-	p := e.protectedPolicy()
+	e := gatewaytest.NewEnv(t)
+	p := e.ProtectedPolicy()
 	for i := range p.Operations {
 		if p.Operations[i].ID == "write-a" {
 			p.Operations[i].Headers = json.RawMessage(`{"type":"object","additionalProperties":true,"required":["Idempotency-Key"],"properties":{"Idempotency-Key":{"type":"string","minLength":8}}}`)
 		}
 	}
-	e.serveNative(p, forwardTimeouts)
+	serveNative(e, p, forwardTimeouts)
 	write := func(subject, lines string) (int, string) {
-		return e.rawExchange(fmt.Sprintf("POST /a/item HTTP/1.1\r\nHost: gw\r\nConnection: close\r\nAuthorization: Bearer %s\r\n"+
+		return e.RawExchange(fmt.Sprintf("POST /a/item HTTP/1.1\r\nHost: gw\r\nConnection: close\r\nAuthorization: Bearer %s\r\n"+
 			"Content-Type: application/json\r\nIdempotency-Key: k-123456\r\n%sContent-Length: %d\r\n\r\n%s",
-			issuer.TokenFor(t, subject), lines, len(keywordItem), keywordItem), false)
+			gatewaytest.Issuer.TokenFor(t, subject), lines, len(keywordItem), keywordItem), false)
 	}
 
 	forged := "X-Gateway-Subject: bob\r\nX-Gateway-Roles: ADMIN\r\nX-Forwarded-For: 203.0.113.9\r\n"
-	if status, body := write("alice", forged); status != http.StatusOK || e.a.count() != 1 {
-		t.Fatalf("permitted write: %d %s with %d receipts", status, body, e.a.count())
+	if status, body := write("alice", forged); status != http.StatusOK || e.A.Count() != 1 {
+		t.Fatalf("permitted write: %d %s with %d receipts", status, body, e.A.Count())
 	}
-	r := e.a.receipts()[0]
+	r := e.A.Receipts()[0]
 	want := map[string]string{
 		"Idempotency-Key": "k-123456", "Content-Type": "application/json", "X-Gateway-Subject": "alice",
 		"X-Gateway-Roles": "WRITER", "X-Forwarded-For": "127.0.0.1", "Authorization": "",
@@ -100,24 +101,24 @@ func TestValidatedHeadersWithAuthentication(t *testing.T) {
 	}
 	for _, tc := range refused {
 		status, body := write(tc.subject, tc.lines)
-		_, id := requestID(&http.Response{StatusCode: status}, body)
-		ev := e.eventOf(id, 1)
+		_, id := gatewaytest.RequestID(&http.Response{StatusCode: status}, body)
+		ev := eventOf(e, id, 1)
 		reason, _ := ev["reason"].(string)
 		if status != tc.status || ev["stage"] != tc.stage || reason != tc.reason {
 			t.Errorf("%s: %d %s, event %v, want %d at %s (%s)", tc.name, status, body, ev, tc.status, tc.stage, tc.reason)
 		}
-		t.Logf("%s: %d, %s at %s (%s), receipts A %d", tc.name, status, ev["kind"], ev["stage"], reason, e.a.count())
+		t.Logf("%s: %d, %s at %s (%s), receipts A %d", tc.name, status, ev["kind"], ev["stage"], reason, e.A.Count())
 	}
-	e.assertReceipts(1, 0, 0)
+	e.AssertReceipts(1, 0, 0)
 }
 
 // The correction leaves ordinary use unchanged: a client connection kept
 // alive carries an admitted request, a refused nomination and an admitted
 // write in turn, and the upstream receives the two admitted ones.
 func TestValidatedHeadersOnKeptConnection(t *testing.T) {
-	e := newEnv(t)
-	e.serveNative(e.keywordPolicy(), forwardTimeouts)
-	conn, err := net.DialTimeout("tcp", e.dataAddr, 5*time.Second)
+	e := gatewaytest.NewEnv(t)
+	serveNative(e, e.KeywordPolicy(), forwardTimeouts)
+	conn, err := net.DialTimeout("tcp", e.DataAddr, 5*time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -144,7 +145,7 @@ func TestValidatedHeadersOnKeptConnection(t *testing.T) {
 			t.Fatalf("request %d: %d (close %v), want %d on the same connection", i+1, resp.StatusCode, resp.Close, r.status)
 		}
 	}
-	got := e.a.receipts()
+	got := e.A.Receipts()
 	if len(got) != 2 || got[0].Headers.Get("X-Probe") != "on" || got[1].Body != keywordItem || got[1].Headers.Get("Idempotency-Key") != "k-123456" {
 		t.Fatalf("receipts %+v", got)
 	}

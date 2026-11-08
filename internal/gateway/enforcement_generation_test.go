@@ -14,6 +14,7 @@ import (
 
 	"github.com/Alex-Zechariah-02/apiward/internal/compile"
 	"github.com/Alex-Zechariah-02/apiward/internal/controller"
+	"github.com/Alex-Zechariah-02/apiward/internal/gatewaytest"
 	"github.com/Alex-Zechariah-02/apiward/internal/pipeline"
 )
 
@@ -36,17 +37,17 @@ func (b *publishOnRead) Close() error { return nil }
 // is published while it is in progress: the body schema, the binding and the
 // metadata all come from it. The next request uses the new generation.
 func TestEnforcementUsesCapturedGeneration(t *testing.T) {
-	e := newEnv(t)
-	c, h, f := e.serveEnforcement(e.policy(e.a, false), 0)
+	e := gatewaytest.NewEnv(t)
+	c, h, f := serveEnforcement(e, e.Policy(e.A, false), 0)
 	captured := c.Current()
 
 	// The next generation sends API a to B and requires the member "x".
-	next := e.policy(e.b, false)
-	next.Operations[1].Body = jsonBody(1024, `{"type":"object","additionalProperties":true,"required":["x"],"properties":{"x":{"type":"integer"}}}`)
+	next := e.Policy(e.B, false)
+	next.Operations[1].Body = gatewaytest.JSONBody(1024, `{"type":"object","additionalProperties":true,"required":["x"],"properties":{"x":{"type":"integer"}}}`)
 	var published controller.Outcome
 	body := &publishOnRead{data: strings.NewReader(`{"n":1}`), publish: func() {
 		var status int
-		published, status = c.Publish(context.Background(), "test", controller.Change{ID: "during-request", Expected: 1, Policy: mustJSON(next)})
+		published, status = c.Publish(context.Background(), "test", controller.Change{ID: "during-request", Expected: 1, Policy: gatewaytest.MustJSON(next)})
 		if status != http.StatusOK {
 			t.Errorf("publication during the request: %d %+v", status, published)
 		}
@@ -60,24 +61,24 @@ func TestEnforcementUsesCapturedGeneration(t *testing.T) {
 		t.Fatalf("request during publication: %d %s; published %+v", rec.Code, rec.Body, published)
 	}
 	got := f.handed()
-	if len(got) != 1 || got[0].dial != e.a.addr || got[0].header.Get("X-Gateway-Generation") != captured.ID {
+	if len(got) != 1 || got[0].dial != e.A.Addr || got[0].header.Get("X-Gateway-Generation") != captured.ID {
 		t.Fatalf("handed %+v, want upstream A under %s", got, captured.ID)
 	}
-	if ev := e.eventOf(got[0].header.Get("X-Request-Id"), 2); ev["generation"] != captured.ID || ev["upstream"] != "A" {
+	if ev := eventOf(e, got[0].header.Get("X-Request-Id"), 2); ev["generation"] != captured.ID || ev["upstream"] != "A" {
 		t.Fatalf("outcome event %v", ev)
 	}
 
-	if code, body := e.request(http.MethodPost, "/a/item", "application/json", `{"n":1}`); code != http.StatusBadRequest {
+	if code, body := e.Request(http.MethodPost, "/a/item", "application/json", `{"n":1}`); code != http.StatusBadRequest {
 		t.Fatalf("body refused by the new schema: %d %s", code, body)
 	}
-	if code, _ := e.request(http.MethodPost, "/a/item", "application/json", `{"x":1}`); code != http.StatusOK {
+	if code, _ := e.Request(http.MethodPost, "/a/item", "application/json", `{"x":1}`); code != http.StatusOK {
 		t.Fatalf("body valid under the new schema: %d", code)
 	}
 	got = f.handed()
-	if len(got) != 2 || got[1].dial != e.b.addr || got[1].header.Get("X-Gateway-Generation") != published.Generation {
+	if len(got) != 2 || got[1].dial != e.B.Addr || got[1].header.Get("X-Gateway-Generation") != published.Generation {
 		t.Fatalf("handed %+v, want upstream B under %s", got[1:], published.Generation)
 	}
-	e.assertReceipts(0, 0, 0)
+	e.AssertReceipts(0, 0, 0)
 }
 
 // Without a usable generation nothing is admitted: none published, one past
@@ -85,8 +86,8 @@ func TestEnforcementUsesCapturedGeneration(t *testing.T) {
 // it rather than serve it), and a stopped controller.
 func TestEnforcementWithoutUsableGeneration(t *testing.T) {
 	t.Run("none published", func(t *testing.T) {
-		e := newEnv(t)
-		c, _ := e.own(e.controllerConfig())
+		e := gatewaytest.NewEnv(t)
+		c, _ := own(e, controllerConfig(e))
 		f := &memoryForwarder{}
 		h, err := newHandler(c, pipeline.NewLimiter(), 0, f.forward)
 		if err != nil {
@@ -100,36 +101,36 @@ func TestEnforcementWithoutUsableGeneration(t *testing.T) {
 	})
 
 	t.Run("past its deadline", func(t *testing.T) {
-		e := newEnv(t)
-		policy := e.policy(e.a, false)
-		seed(t, e.database, policy, seedOptions{})
-		c, _ := e.own(e.controllerConfig())
+		e := gatewaytest.NewEnv(t)
+		policy := e.Policy(e.A, false)
+		gatewaytest.Seed(t, e.Database, policy, gatewaytest.SeedOptions{})
+		c, _ := own(e, controllerConfig(e))
 		stale, err := compile.Compile(policy, 1, time.Now().Add(-time.Second))
 		if err != nil {
 			t.Fatal(err)
 		}
-		f := e.serveAuthority(c, fixedAuthority{Controller: c, generation: stale})
-		resp, body := e.exchange(http.MethodGet, "/a/x", "", "", "")
-		_, id := requestID(resp, body)
+		f := serveAuthority(e, c, fixedAuthority{Controller: c, generation: stale})
+		resp, body := e.Exchange(http.MethodGet, "/a/x", "", "", "")
+		_, id := gatewaytest.RequestID(resp, body)
 		if resp.StatusCode != http.StatusServiceUnavailable || len(f.handed()) != 0 {
 			t.Fatalf("expired generation: %d %s", resp.StatusCode, body)
 		}
-		if ev := e.eventOf(id, 1); ev["stage"] != "CAPTURE" || ev["error"] != "gateway_unavailable" {
+		if ev := eventOf(e, id, 1); ev["stage"] != "CAPTURE" || ev["error"] != "gateway_unavailable" {
 			t.Fatalf("refusal event %v", ev)
 		}
-		e.assertReceipts(0, 0, 0)
+		e.AssertReceipts(0, 0, 0)
 	})
 
 	t.Run("controller stopped", func(t *testing.T) {
-		e := newEnv(t)
-		c, _, f := e.serveEnforcement(e.policy(e.a, false), 0)
-		if code, _ := e.get("/a/x"); code != http.StatusOK {
+		e := gatewaytest.NewEnv(t)
+		c, _, f := serveEnforcement(e, e.Policy(e.A, false), 0)
+		if code, _ := e.Get("/a/x"); code != http.StatusOK {
 			t.Fatalf("before Stop: %d", code)
 		}
 		if err := c.Stop(); err != nil {
 			t.Fatal(err)
 		}
-		if code, body := e.get("/a/x"); code != http.StatusServiceUnavailable || !strings.Contains(body, "gateway_unavailable") {
+		if code, body := e.Get("/a/x"); code != http.StatusServiceUnavailable || !strings.Contains(body, "gateway_unavailable") {
 			t.Fatalf("after Stop: %d %s", code, body)
 		}
 		if n := len(f.handed()); n != 1 {
@@ -142,11 +143,11 @@ func TestEnforcementWithoutUsableGeneration(t *testing.T) {
 // carries the generation it was admitted under, its binding is that
 // generation's upstream, and its outcome event names the same generation.
 func TestEnforcementGenerationsUnderConcurrency(t *testing.T) {
-	e := newEnv(t)
-	toA, toB := e.policy(e.a, false), e.policy(e.b, false)
-	c, _, f := e.serveEnforcement(toA, 0)
+	e := gatewaytest.NewEnv(t)
+	toA, toB := e.Policy(e.A, false), e.Policy(e.B, false)
+	c, _, f := serveEnforcement(e, toA, 0)
 	var dials sync.Map // generation ID -> the dial of API a in it
-	dials.Store(c.Current().ID, e.a.addr)
+	dials.Store(c.Current().ID, e.A.Addr)
 
 	done := make(chan struct{})
 	published := 0
@@ -159,11 +160,11 @@ func TestEnforcementGenerationsUnderConcurrency(t *testing.T) {
 				return
 			default:
 			}
-			policy, dial := toB, e.b.addr
+			policy, dial := toB, e.B.Addr
 			if i%2 == 1 {
-				policy, dial = toA, e.a.addr
+				policy, dial = toA, e.A.Addr
 			}
-			outcome, status := c.Publish(context.Background(), "test", controller.Change{ID: fmt.Sprintf("concurrent-%d", i), Expected: expected, Policy: mustJSON(policy)})
+			outcome, status := c.Publish(context.Background(), "test", controller.Change{ID: fmt.Sprintf("concurrent-%d", i), Expected: expected, Policy: gatewaytest.MustJSON(policy)})
 			if status != http.StatusOK {
 				t.Errorf("publication %d: %d %+v", i, status, outcome)
 				return
@@ -177,7 +178,7 @@ func TestEnforcementGenerationsUnderConcurrency(t *testing.T) {
 	for range 8 {
 		clients.Go(func() {
 			for range 50 {
-				if code, body := e.get("/a/x"); code != http.StatusOK {
+				if code, body := e.Get("/a/x"); code != http.StatusOK {
 					t.Errorf("request: %d %s", code, body)
 				}
 			}
@@ -192,7 +193,7 @@ func TestEnforcementGenerationsUnderConcurrency(t *testing.T) {
 		t.Fatalf("%d requests handed on, want 400", len(got))
 	}
 	outcomes := map[string]string{} // request ID -> generation of its outcome event
-	for _, ev := range e.eventsWhen(func(events []map[string]any) bool { return countKind(events, "request.forwarded") == 400 }) {
+	for _, ev := range e.EventsWhen(func(events []map[string]any) bool { return gatewaytest.CountKind(events, "request.forwarded") == 400 }) {
 		if ev["kind"] == "request.forwarded" {
 			outcomes[ev["request_id"].(string)], _ = ev["generation"].(string)
 		}
@@ -208,5 +209,5 @@ func TestEnforcementGenerationsUnderConcurrency(t *testing.T) {
 		seen[generation] = true
 	}
 	t.Logf("%d publications, %d generations seen by requests", published, len(seen))
-	e.assertReceipts(0, 0, 0)
+	e.AssertReceipts(0, 0, 0)
 }

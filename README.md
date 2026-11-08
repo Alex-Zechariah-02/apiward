@@ -175,8 +175,10 @@ Each package under `internal/` imports only the packages listed before it; a tes
 - `internal/operator`: the local operator commands (install, enrol, migrate, backup, restore), run on the host while the gateway is stopped, each holding the deployment lock and recording its changes in the security log.
 - `internal/issuertest`: test support only, never imported by production code: an RS256 key generated in memory per test run and the tokens signed with it.
 - `internal/storetest`: test support only: a disposable database seeded with a test policy, for the unit tests of packages that open a deployment.
+- `internal/gatewaytest`: test support only: the test harness. It builds the gateway, fixture and demo programs, runs each test's gateway as its own process with a disposable deployment, and gives tests clients for the data plane and the Admin API and readers for the security log and the database.
 - `internal/openapi`: the offline OpenAPI import and export; it turns a description into a candidate policy, checks it with the compiler, and writes one API of a policy back as a description.
 - `internal/gateway`: the gateway itself, which uses the packages above.
+- `internal/integration`: end-to-end tests only: each runs the real gateway binary, with the fixture and demo programs, as separate processes through `internal/gatewaytest`; they reach the gateway only through its processes, listeners and files.
 - `examples/embed`: a host program that embeds the gateway, using only the public packages.
 
 ## Build and test

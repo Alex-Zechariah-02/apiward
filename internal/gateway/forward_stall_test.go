@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/forward"
+	"github.com/Alex-Zechariah-02/apiward/internal/gatewaytest"
 )
 
 // After the response header, the read-idle bound ends an upstream body that
@@ -29,11 +30,11 @@ func TestNativeForwardingResponseStalls(t *testing.T) {
 	const idle = 500 * time.Millisecond
 	timeouts := forwardTimeouts
 	timeouts.ReadIdle = idle
-	e := newEnv(t)
-	_, logs := e.serveNative(e.policy(e.a, false), timeouts)
+	e := gatewaytest.NewEnv(t)
+	_, logs := serveNative(e, e.Policy(e.A, false), timeouts)
 	var respond func(w http.ResponseWriter, r *http.Request)
 	var mu sync.Mutex
-	e.a.handle = func(w http.ResponseWriter, r *http.Request) bool {
+	e.A.Handle = func(w http.ResponseWriter, r *http.Request) bool {
 		mu.Lock()
 		f := respond
 		mu.Unlock()
@@ -46,8 +47,8 @@ func TestNativeForwardingResponseStalls(t *testing.T) {
 		mu.Unlock()
 	}
 	lastOutcome := func() map[string]any {
-		got := e.a.receipts()
-		return e.outcomeOf(got[len(got)-1].RequestID)
+		got := e.A.Receipts()
+		return outcomeOf(e, got[len(got)-1].RequestID)
 	}
 
 	t.Run("stall after the header", func(t *testing.T) {
@@ -61,7 +62,7 @@ func TestNativeForwardingResponseStalls(t *testing.T) {
 			case <-time.After(30 * time.Second):
 			}
 		})
-		resp, _ := e.openResponse("GET /a/x HTTP/1.1\r\nHost: gw\r\n\r\n")
+		resp, _ := e.OpenResponse("GET /a/x HTTP/1.1\r\nHost: gw\r\n\r\n")
 		first := make([]byte, len("partial "))
 		if _, err := io.ReadFull(resp.Body, first); err != nil || resp.StatusCode != http.StatusOK {
 			t.Fatalf("response %d, first bytes %q: %v", resp.StatusCode, first, err)
@@ -95,7 +96,7 @@ func TestNativeForwardingResponseStalls(t *testing.T) {
 			}
 		})
 		started := time.Now()
-		resp, body := e.exchange(http.MethodGet, "/a/x", "", "")
+		resp, body := e.Exchange(http.MethodGet, "/a/x", "", "")
 		elapsed := time.Since(started)
 		if resp.StatusCode != http.StatusOK || body != "012345678901" || elapsed < 4*idle {
 			t.Fatalf("slow response: %d %q after %v", resp.StatusCode, body, elapsed)
@@ -110,7 +111,7 @@ func TestNativeForwardingResponseStalls(t *testing.T) {
 			time.Sleep(3 * idle)
 			io.WriteString(w, "late")
 		})
-		if code, body := e.get("/a/x"); code != http.StatusOK || body != "late" {
+		if code, body := e.Get("/a/x"); code != http.StatusOK || body != "late" {
 			t.Fatalf("pause before the header: %d %q", code, body)
 		}
 	})
@@ -127,7 +128,7 @@ func TestNativeForwardingResponseStalls(t *testing.T) {
 				buffered.Flush()
 				conn.Close()
 			})
-			conn, err := net.DialTimeout("tcp", e.dataAddr, 5*time.Second)
+			conn, err := net.DialTimeout("tcp", e.DataAddr, 5*time.Second)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -161,7 +162,7 @@ func TestNativeForwardingResponseStalls(t *testing.T) {
 			case <-time.After(30 * time.Second):
 			}
 		})
-		resp, conn := e.openResponse("GET /a/x HTTP/1.1\r\nHost: gw\r\n\r\n")
+		resp, conn := e.OpenResponse("GET /a/x HTTP/1.1\r\nHost: gw\r\n\r\n")
 		first := make([]byte, len("first"))
 		if _, err := io.ReadFull(resp.Body, first); err != nil {
 			t.Fatal(err)
@@ -183,13 +184,13 @@ func TestNativeForwardingResponseStalls(t *testing.T) {
 // left once the clients are done.
 func TestNativeForwardingReleasesStalledExchanges(t *testing.T) {
 	const transportGoroutine = "net/http.(*persistConn)."
-	e := newEnv(t)
+	e := gatewaytest.NewEnv(t)
 	timeouts := forwardTimeouts
 	timeouts.ReadIdle = 300 * time.Millisecond
-	e.serveNative(e.policy(e.a, false), timeouts)
+	serveNative(e, e.Policy(e.A, false), timeouts)
 	before := goroutines(transportGoroutine)
 	var cancelled atomic.Int64
-	e.a.handle = func(w http.ResponseWriter, r *http.Request) bool {
+	e.A.Handle = func(w http.ResponseWriter, r *http.Request) bool {
 		io.WriteString(w, "partial")
 		w.(http.Flusher).Flush()
 		select {
@@ -204,7 +205,7 @@ func TestNativeForwardingReleasesStalledExchanges(t *testing.T) {
 	var clients sync.WaitGroup
 	for i := range stalled + abandoned {
 		clients.Go(func() {
-			conn, err := net.DialTimeout("tcp", e.dataAddr, 5*time.Second)
+			conn, err := net.DialTimeout("tcp", e.DataAddr, 5*time.Second)
 			if err != nil {
 				t.Error(err)
 				return
@@ -234,10 +235,12 @@ func TestNativeForwardingReleasesStalledExchanges(t *testing.T) {
 	if elapsed := time.Since(started); elapsed > 5*time.Second {
 		t.Errorf("stalled exchanges ended after %v", elapsed)
 	}
-	waitFor(t, time.Now().Add(5*time.Second), "every upstream request to be cancelled", func() bool { return cancelled.Load() == stalled+abandoned })
+	gatewaytest.WaitFor(t, time.Now().Add(5*time.Second), "every upstream request to be cancelled", func() bool { return cancelled.Load() == stalled+abandoned })
 	waitGoroutines(t, transportGoroutine, before)
 	incomplete := 0
-	for _, ev := range e.eventsWhen(func(events []map[string]any) bool { return countKind(events, "request.forwarded") == stalled+abandoned }) {
+	for _, ev := range e.EventsWhen(func(events []map[string]any) bool {
+		return gatewaytest.CountKind(events, "request.forwarded") == stalled+abandoned
+	}) {
 		if ev["kind"] == "request.forwarded" && ev["error"] == "upstream_incomplete" {
 			incomplete++
 		}
@@ -245,5 +248,5 @@ func TestNativeForwardingReleasesStalledExchanges(t *testing.T) {
 	if incomplete != stalled+abandoned {
 		t.Fatalf("%d incomplete outcomes, want %d", incomplete, stalled+abandoned)
 	}
-	e.assertReceipts(stalled+abandoned, 0, 0)
+	e.AssertReceipts(stalled+abandoned, 0, 0)
 }
