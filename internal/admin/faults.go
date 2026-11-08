@@ -2,7 +2,7 @@
 
 // Test routes for fault-injection builds.
 
-package gateway
+package admin
 
 import (
 	"net/http"
@@ -18,7 +18,7 @@ import (
 // no such route, because whole-policy activation belongs to the confirmed
 // activation lifecycle. The hook still needs an administrator session with
 // manage_policy, the admin origin and the CSRF token.
-func registerTestRoutes(s *adminAPI, mux *http.ServeMux) {
+func registerTestRoutes(s *Server, mux *http.ServeMux) {
 	s.route(mux, "POST /test/publish", store.PermManagePolicy, func(w http.ResponseWriter, r *http.Request, who caller) {
 		var change controller.Change
 		if !decodeBody(w, r, policy.MaxPolicyBytes, &change) {

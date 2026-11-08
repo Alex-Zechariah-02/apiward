@@ -76,11 +76,11 @@ func TestConcurrentOverridesAndActivation(t *testing.T) {
 	// Confirmation, rollback and an override expiry at a 2 s deadline.
 	confirmed := int64(1)
 	for round := range 4 {
-		o := e.mustOverride(harness, operationContainment("read-b", 2), policyETag(confirmed), fmt.Sprintf("race-expiring-%02d-x", round))
+		o := e.mustOverride(harness, operationContainment("read-b", 2), revisionTag(confirmed), fmt.Sprintf("race-expiring-%02d-x", round))
 		_, activated := e.provisionalFrom(harness, e.upstreamCandidate(), confirmed, 2, fmt.Sprintf("race-deadline-%02d", round))
 		if round%2 == 1 {
 			// The other candidate: back to the protected policy.
-			e.resolve(harness, "rollback", activated.Provisional, policyETag(confirmed), fmt.Sprintf("race-reset-%02d-xxxxx", round))
+			e.resolve(harness, "rollback", activated.Provisional, revisionTag(confirmed), fmt.Sprintf("race-reset-%02d-xxxxx", round))
 			_, activated = e.provisionalFrom(harness, e.protectedPolicy(), confirmed, 2, fmt.Sprintf("race-deadline-b-%02d", round))
 		}
 		time.Sleep(time.Until(o.Expires.Add(-15 * time.Millisecond)))
@@ -88,10 +88,10 @@ func TestConcurrentOverridesAndActivation(t *testing.T) {
 		var outcomes [3]controller.Outcome
 		concurrently(
 			func() {
-				codes[0], outcomes[0], _ = e.resolve(harness, "confirm", activated.Provisional, policyETag(confirmed), fmt.Sprintf("race-confirm-%02d-xxx", round))
+				codes[0], outcomes[0], _ = e.resolve(harness, "confirm", activated.Provisional, revisionTag(confirmed), fmt.Sprintf("race-confirm-%02d-xxx", round))
 			},
 			func() {
-				codes[1], outcomes[1], _ = e.resolve(harness, "rollback", activated.Provisional, policyETag(confirmed), fmt.Sprintf("race-rollback-%02d-xx", round))
+				codes[1], outcomes[1], _ = e.resolve(harness, "rollback", activated.Provisional, revisionTag(confirmed), fmt.Sprintf("race-rollback-%02d-xx", round))
 			},
 			func() {
 				codes[2], outcomes[2], _ = e.revokeOverride(harness, o.Override, fmt.Sprintf("race-revoke-%02d-xxxx", round))

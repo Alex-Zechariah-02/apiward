@@ -24,7 +24,7 @@ type adminSession struct {
 // headers are what a session request carries: the cookie, the CSRF token and
 // the admin origin.
 func (s adminSession) headers(e *env) []string {
-	return []string{"Cookie", sessionCookie + "=" + s.cookie, csrfHeader, s.csrf, "Origin", e.adminOrigin()}
+	return []string{"Cookie", adminCookie + "=" + s.cookie, adminCSRF, s.csrf, "Origin", e.adminOrigin()}
 }
 
 func (e *env) adminOrigin() string { return "http://" + e.admin }
@@ -72,7 +72,7 @@ func (e *env) login(name, password string) (adminSession, int) {
 	}
 	json.Unmarshal([]byte(data), &view)
 	for _, cookie := range (&http.Response{Header: header}).Cookies() {
-		if cookie.Name == sessionCookie {
+		if cookie.Name == adminCookie {
 			return adminSession{cookie: cookie.Value, csrf: view.CSRF}, code
 		}
 	}

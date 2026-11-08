@@ -1,6 +1,6 @@
 // Admin API changes to the blocked address list.
 
-package gateway
+package admin
 
 import (
 	"database/sql"
@@ -15,7 +15,7 @@ import (
 	"github.com/Alex-Zechariah-02/apiward/internal/store"
 )
 
-func (s *adminAPI) handleBlockedAddresses(w http.ResponseWriter, r *http.Request, who caller) {
+func (s *Server) handleBlockedAddresses(w http.ResponseWriter, r *http.Request, who caller) {
 	current := s.control.Addresses()
 	if current == nil {
 		adminError(w, http.StatusServiceUnavailable, "gateway_unavailable", "")
@@ -42,7 +42,7 @@ func addressRange(w http.ResponseWriter, r *http.Request) (netip.Prefix, bool) {
 	return prefix, ok
 }
 
-func (s *adminAPI) handleBlockAddress(w http.ResponseWriter, r *http.Request, who caller) {
+func (s *Server) handleBlockAddress(w http.ResponseWriter, r *http.Request, who caller) {
 	prefix, ok := addressRange(w, r)
 	if !ok {
 		return
@@ -76,7 +76,7 @@ func (s *adminAPI) handleBlockAddress(w http.ResponseWriter, r *http.Request, wh
 	pipeline.WriteJSON(w, status, body)
 }
 
-func (s *adminAPI) handleUnblockAddress(w http.ResponseWriter, r *http.Request, who caller) {
+func (s *Server) handleUnblockAddress(w http.ResponseWriter, r *http.Request, who caller) {
 	prefix, ok := addressRange(w, r)
 	if !ok || !noRequestBody(w, r) {
 		return

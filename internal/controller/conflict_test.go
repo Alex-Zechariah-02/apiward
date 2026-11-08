@@ -8,6 +8,7 @@ import (
 
 	"github.com/Alex-Zechariah-02/apiward/internal/policy"
 	"github.com/Alex-Zechariah-02/apiward/internal/store"
+	"github.com/Alex-Zechariah-02/apiward/internal/testdb"
 )
 
 // A candidate conflicts with an active override when it changes the
@@ -16,8 +17,8 @@ import (
 // the override's path prefix. Anything else may proceed with the override in
 // place.
 func TestOverrideConflictWithCandidate(t *testing.T) {
-	before := protectedPolicy()
-	before.Operations[0].Rate = rate(4, 60)
+	before := testdb.Protected()
+	before.Operations[0].Rate = testdb.Rate(4, 60)
 	overrides := []store.Override{
 		{ID: 3, Type: store.OverrideException, Control: store.ControlPermit, Role: "READER", Operation: "write-a", Target: "permit:READER:write-a"},
 		{ID: 4, Type: store.OverrideContainment, Control: store.ControlOperation, Operation: "read-b", Target: "operation:read-b"},
@@ -43,14 +44,14 @@ func TestOverrideConflictWithCandidate(t *testing.T) {
 			p.Roles = p.Roles[1:] // READER
 			p.Permits = slices.DeleteFunc(p.Permits, func(x policy.Permit) bool { return x.Role == "READER" })
 		}, 3},
-		{"operation of a permit override changed", func(p *policy.Policy) { p.Operations[1].Body = jsonBody(512, anyObject) }, 3},
+		{"operation of a permit override changed", func(p *policy.Policy) { p.Operations[1].Body = testdb.JSONBody(512, testdb.AnyObject) }, 3},
 		{"operation of a permit override removed", func(p *policy.Policy) {
 			p.Operations = slices.Delete(p.Operations, 1, 2)
 			p.Permits = slices.DeleteFunc(p.Permits, func(x policy.Permit) bool { return x.Operation == "write-a" })
 		}, 3},
-		{"rate count changed", func(p *policy.Policy) { p.Operations[0].Rate = rate(6, 60) }, 5},
+		{"rate count changed", func(p *policy.Policy) { p.Operations[0].Rate = testdb.Rate(6, 60) }, 5},
 		{"rate rule removed", func(p *policy.Policy) { p.Operations[0].Rate = nil }, 5},
-		{"rate window changed", func(p *policy.Policy) { p.Operations[0].Rate = rate(4, 120) }, 5},
+		{"rate window changed", func(p *policy.Policy) { p.Operations[0].Rate = testdb.Rate(4, 120) }, 5},
 		{"contained operation re-routed", func(p *policy.Policy) { p.Operations[3].Target = "/c/*" }, 4},
 		{"contained operation denied permanently", func(p *policy.Policy) { p.Operations[3].Access = "deny" }, 4},
 		{"more specific operation added inside a contained prefix", func(p *policy.Policy) {
@@ -66,7 +67,7 @@ func TestOverrideConflictWithCandidate(t *testing.T) {
 			p.Permits = slices.DeleteFunc(p.Permits, func(x policy.Permit) bool { return x == policy.Permit{Role: "WRITER", Operation: "read-a"} })
 		}, 0},
 		{"unrelated operation re-routed outside every prefix", func(p *policy.Policy) { p.Operations[2].Target = "/dd" }, 0},
-		{"rate rule added to an overridden operation, an independent control", func(p *policy.Policy) { p.Operations[1].Rate = rate(9, 60) }, 0},
+		{"rate rule added to an overridden operation, an independent control", func(p *policy.Policy) { p.Operations[1].Rate = testdb.Rate(9, 60) }, 0},
 		{"less specific operation added above an overridden prefix", func(p *policy.Policy) {
 			p.Operations = append(p.Operations, policy.Operation{ID: "all", API: "d", Method: "GET", Target: "/*", Access: "allow", Auth: "none"})
 		}, 0},

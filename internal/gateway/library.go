@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/Alex-Zechariah-02/apiward/internal/admin"
 	"github.com/Alex-Zechariah-02/apiward/internal/controller"
 	"github.com/Alex-Zechariah-02/apiward/internal/forward"
 	"github.com/Alex-Zechariah-02/apiward/internal/monitor"
@@ -185,7 +186,11 @@ func (d *deployment) listen() (net.Listener, error) {
 	if err != nil {
 		return nil, classify(ErrListen, fmt.Errorf("metrics listener: %w", err))
 	}
-	if err := d.controller.Start(newAdminAPI(d.controller, d.limiter, d.ui, d.logger).handler()); err != nil {
+	var ui http.Handler // nil when no files are configured: the routes stay unregistered
+	if d.ui != nil {
+		ui = dashboard(d.ui)
+	}
+	if err := d.controller.Start(admin.New(admin.Deps{Control: d.controller, Limiter: d.limiter, UI: ui, Logger: d.logger}).Handler()); err != nil {
 		metrics.Close()
 		return nil, classify(ErrListen, fmt.Errorf("admin listener: %w", err))
 	}

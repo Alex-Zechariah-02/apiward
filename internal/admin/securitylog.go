@@ -1,6 +1,6 @@
 // Admin API security log search and export.
 
-package gateway
+package admin
 
 import (
 	"errors"
@@ -15,7 +15,7 @@ import (
 // handleSecurityLog searches the request records in the active and rotated
 // audit files, newest first, with the same secret-free fields as the live
 // views. format=csv or format=json exports up to securityLogExportRows rows.
-func (s *adminAPI) handleSecurityLog(w http.ResponseWriter, r *http.Request, who caller) {
+func (s *Server) handleSecurityLog(w http.ResponseWriter, r *http.Request, who caller) {
 	values := r.URL.Query()
 	query, field := monitor.ParseQuery(values)
 	if field != "" {

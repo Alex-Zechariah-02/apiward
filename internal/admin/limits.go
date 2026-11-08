@@ -1,4 +1,4 @@
-package gateway
+package admin
 
 import (
 	"net/http"
@@ -12,7 +12,7 @@ import (
 // handleLimits reports each built-in limit with its current use, so an
 // administrator can see one coming before it is reached. Every figure is read
 // from the component that owns it; nothing here changes a limit.
-func (s *adminAPI) handleLimits(w http.ResponseWriter, r *http.Request, who caller) {
+func (s *Server) handleLimits(w http.ResponseWriter, r *http.Request, who caller) {
 	active := 0
 	if g := s.control.Current(); g != nil {
 		active = len(g.Overrides)

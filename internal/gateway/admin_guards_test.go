@@ -55,7 +55,7 @@ func TestLoginThrottling(t *testing.T) {
 		t.Fatal("no concurrent login succeeded")
 	}
 
-	for range maxNameFailures {
+	for range nameLimit {
 		if _, code := e.login(harnessAdmin, "wrong-password-guess"); code != http.StatusUnauthorized {
 			t.Fatalf("failed login: %d", code)
 		}
@@ -67,13 +67,13 @@ func TestLoginThrottling(t *testing.T) {
 		t.Fatalf("another name while one is locked: %d", code)
 	}
 
-	for i := maxNameFailures; i < maxWindowFailures; i++ {
+	for i := nameLimit; i < windowLimit; i++ {
 		if _, code := e.login(fmt.Sprintf("guess-%d", i), "wrong-password-guess"); code != http.StatusUnauthorized {
 			t.Fatalf("failure %d: %d", i, code)
 		}
 	}
 	if _, code := e.login("second", secondPassword); code != http.StatusTooManyRequests {
-		t.Fatalf("login after %d failures in the window: %d", maxWindowFailures, code)
+		t.Fatalf("login after %d failures in the window: %d", windowLimit, code)
 	}
 	recorded := func(events []map[string]any) map[string]bool {
 		reasons := map[string]bool{}
@@ -107,9 +107,9 @@ func TestBrowserRequestGuards(t *testing.T) {
 	before := e.status()
 
 	put := `{"reason":"test containment"}`
-	cookie := []string{"Cookie", sessionCookie + "=" + writer.cookie}
+	cookie := []string{"Cookie", adminCookie + "=" + writer.cookie}
 	origin := []string{"Origin", e.adminOrigin()}
-	csrf := []string{csrfHeader, writer.csrf}
+	csrf := []string{adminCSRF, writer.csrf}
 	cases := []struct {
 		name   string
 		header []string
@@ -120,8 +120,8 @@ func TestBrowserRequestGuards(t *testing.T) {
 		{"same host, another port", slices.Concat(cookie, csrf, []string{"Origin", "http://127.0.0.1:1"})},
 		{"same port, another host name", slices.Concat(cookie, csrf, []string{"Origin", "http://localhost:" + port(e.admin)})},
 		{"no CSRF token", slices.Concat(cookie, origin)},
-		{"wrong CSRF token", slices.Concat(cookie, origin, []string{csrfHeader, session.NewToken()})},
-		{"another session's CSRF token", slices.Concat(cookie, origin, []string{csrfHeader, other.csrf})},
+		{"wrong CSRF token", slices.Concat(cookie, origin, []string{adminCSRF, session.NewToken()})},
+		{"another session's CSRF token", slices.Concat(cookie, origin, []string{adminCSRF, other.csrf})},
 	}
 	for i, tc := range cases {
 		header := append(tc.header, "If-Match", `"r1"`, "Idempotency-Key", fmt.Sprintf("browser-guard-%04d", i))

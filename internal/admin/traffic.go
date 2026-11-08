@@ -1,6 +1,6 @@
 // Admin API traffic summary.
 
-package gateway
+package admin
 
 import (
 	"fmt"
@@ -15,7 +15,7 @@ import (
 	"github.com/Alex-Zechariah-02/apiward/internal/pipeline"
 )
 
-func (s *adminAPI) handleTraffic(w http.ResponseWriter, r *http.Request, who caller) {
+func (s *Server) handleTraffic(w http.ResponseWriter, r *http.Request, who caller) {
 	query, err := url.ParseQuery(r.URL.RawQuery)
 	if err != nil {
 		adminError(w, http.StatusBadRequest, "bad_request", "")

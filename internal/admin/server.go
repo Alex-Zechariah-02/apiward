@@ -1,11 +1,10 @@
 // The Admin API server: routing, authentication, Host, Origin and CSRF checks.
 
-package gateway
+package admin
 
 import (
 	"context"
 	"crypto/subtle"
-	"io/fs"
 	"log/slog"
 	"net/http"
 	"time"
@@ -38,11 +37,11 @@ type caller struct {
 
 type adminHandler func(w http.ResponseWriter, r *http.Request, who caller)
 
-// adminAPI is the Admin API: routing, authentication, the Host, Origin and
-// CSRF checks, the login throttle, password hashing, the dashboard files and
-// every handler. It changes state only through the controller's exported
-// operations.
-type adminAPI struct {
+// Server is the Admin API: routing, authentication, the Host, Origin and
+// CSRF checks, the login throttle, password hashing and every handler. It
+// changes state only through the controller's exported operations and reads
+// the database only through store.Reads.
+type Server struct {
 	control      *controller.Controller
 	config       controller.Config
 	store        store.Reads
@@ -52,22 +51,32 @@ type adminAPI struct {
 	sessions     *session.Table
 	throttle     *throttle
 	hashing      chan struct{} // bounds concurrent password hashing
-	ui           fs.FS         // nil when AdminUI is not set
+	ui           http.Handler  // the dashboard files; nil when none are configured
 	logger       *slog.Logger
 }
 
-// newAdminAPI returns the Admin API of an opened controller, reporting the
-// rate counters of limiter and serving the dashboard files in ui (nil: none).
-func newAdminAPI(c *controller.Controller, limiter *pipeline.Limiter, ui fs.FS, logger *slog.Logger) *adminAPI {
-	return &adminAPI{
+// Deps is what the Admin API serves: an opened controller, the data plane's
+// rate counters (for the limits view), the dashboard files (nil: none) and
+// the logger.
+type Deps struct {
+	Control *controller.Controller
+	Limiter *pipeline.Limiter
+	UI      http.Handler
+	Logger  *slog.Logger
+}
+
+// New returns the Admin API of d.Control.
+func New(d Deps) *Server {
+	c := d.Control
+	return &Server{
 		control: c, config: c.Settings(), store: c.Reads(), audit: c.Audit(),
-		observations: c.Observations(), limiter: limiter, sessions: c.Sessions(),
-		throttle: newThrottle(), hashing: make(chan struct{}, maxHashing), ui: ui, logger: logger,
+		observations: c.Observations(), limiter: d.Limiter, sessions: c.Sessions(),
+		throttle: newThrottle(), hashing: make(chan struct{}, maxHashing), ui: d.UI, logger: d.Logger,
 	}
 }
 
-// handler routes every Admin API endpoint behind the Host check.
-func (s *adminAPI) handler() http.Handler {
+// Handler routes every Admin API endpoint behind the Host check.
+func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /admin/health", s.handleHealth)
 	mux.HandleFunc("POST /admin/enrol", s.handleEnrol)
@@ -120,8 +129,8 @@ func (s *adminAPI) handler() http.Handler {
 	if s.ui != nil {
 		// Only the page and its flat assets directory exist: no fallback page
 		// can answer an unknown path, so an API path never receives HTML.
-		mux.HandleFunc("GET /{$}", s.serveUI)
-		mux.HandleFunc("GET /assets/{file}", s.serveUI)
+		mux.Handle("GET /{$}", s.ui)
+		mux.Handle("GET /assets/{file}", s.ui)
 	}
 	registerTestRoutes(s, mux)
 	return s.checkHost(detachWrites(mux))
@@ -130,7 +139,7 @@ func (s *adminAPI) handler() http.Handler {
 // checkHost refuses any request whose Host is not exactly the admin listener
 // address, so a name that resolves to loopback cannot be used to reach the
 // API from another site's pages (DNS rebinding).
-func (s *adminAPI) checkHost(next http.Handler) http.Handler {
+func (s *Server) checkHost(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Cache-Control", "no-store")
@@ -158,7 +167,7 @@ func detachWrites(next http.Handler) http.Handler {
 // sameOrigin requires the Origin header of a state-changing request to name
 // the admin listener itself. A request without one is refused: a browser
 // always sends it on such requests, and other clients can.
-func (s *adminAPI) sameOrigin(r *http.Request) bool {
+func (s *Server) sameOrigin(r *http.Request) bool {
 	origins := r.Header.Values("Origin")
 	return len(origins) == 1 && origins[0] == "http://"+s.config.AdminListen
 }
@@ -171,7 +180,7 @@ func unsafeMethod(method string) bool {
 // holding the required permission (0: any administrator, for their own
 // session). A state-changing request also needs the admin origin and the
 // session's CSRF token.
-func (s *adminAPI) route(mux *http.ServeMux, pattern string, required store.Permission, handler adminHandler) {
+func (s *Server) route(mux *http.ServeMux, pattern string, required store.Permission, handler adminHandler) {
 	mux.HandleFunc(pattern, func(w http.ResponseWriter, r *http.Request) {
 		who, ok := s.authenticate(w, r)
 		if !ok {
@@ -202,7 +211,7 @@ func (s *adminAPI) route(mux *http.ServeMux, pattern string, required store.Perm
 // authenticate resolves the session cookie to a live session and re-reads the
 // administrator, so a quarantined administrator or a replaced credential loses
 // access at once.
-func (s *adminAPI) authenticate(w http.ResponseWriter, r *http.Request) (caller, bool) {
+func (s *Server) authenticate(w http.ResponseWriter, r *http.Request) (caller, bool) {
 	reason := "no_session"
 	var who caller
 	if cookie, err := r.Cookie(sessionCookie); err == nil {
@@ -231,7 +240,7 @@ func (s *adminAPI) authenticate(w http.ResponseWriter, r *http.Request) (caller,
 
 // refuse answers a refused admin request and records why. Only the error code
 // reaches the client.
-func (s *adminAPI) refuse(w http.ResponseWriter, r *http.Request, status int, code, reason string, who *caller) {
+func (s *Server) refuse(w http.ResponseWriter, r *http.Request, status int, code, reason string, who *caller) {
 	event := audit.Event{Kind: "admin.rejected", Method: r.Method, Path: r.URL.Path, Status: status, Reason: reason}
 	if who != nil {
 		event.Kind, event.Actor, event.Session = "admin.denied", who.admin.Name, who.session.Reference
@@ -250,7 +259,7 @@ func adminError(w http.ResponseWriter, status int, code, field string) {
 	pipeline.WriteJSON(w, status, body)
 }
 
-func (s *adminAPI) handleHealth(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	state := s.control.State()
 	if state != store.ModeNormal && state != store.ModeBootstrap && state != store.ModeRecovery {
 		state = "unavailable"

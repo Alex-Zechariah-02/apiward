@@ -112,14 +112,14 @@ func TestNativeListenersAndAdministration(t *testing.T) {
 			append([]string{"If-Match", `"r1"`, "Idempotency-Key", "native-admin-" + session.NewToken()[:8]}, header...)...)
 		return code
 	}
-	cookie := []string{"Cookie", sessionCookie + "=" + harness.cookie}
+	cookie := []string{"Cookie", adminCookie + "=" + harness.cookie}
 	for name, tc := range map[string]struct {
 		header []string
 		want   int
 	}{
 		"no session":      {[]string{"Origin", e.adminOrigin()}, http.StatusUnauthorized},
 		"no CSRF token":   {append(cookie, "Origin", e.adminOrigin()), http.StatusForbidden},
-		"foreign origin":  {append(cookie, csrfHeader, harness.csrf, "Origin", "http://"+e.dataAddr), http.StatusForbidden},
+		"foreign origin":  {append(cookie, adminCSRF, harness.csrf, "Origin", "http://"+e.dataAddr), http.StatusForbidden},
 		"data-plane host": {append(signedIn, "Host", e.dataAddr), http.StatusBadRequest},
 	} {
 		if got := put(tc.header...); got != tc.want {
@@ -167,7 +167,7 @@ func TestNativeListenersAndAdministration(t *testing.T) {
 	// A temporary containment override blocks the operation until it is
 	// revoked.
 	confirmed := e.status().Confirmed
-	created := e.mustOverride(harness, operationContainment("read-a", 60), policyETag(confirmed), "native-tpo-create")
+	created := e.mustOverride(harness, operationContainment("read-a", 60), revisionTag(confirmed), "native-tpo-create")
 	if code, _ := e.get("/a/x", bearer(t, "alice")...); code != http.StatusForbidden {
 		t.Fatalf("alice under the containment override: %d", code)
 	}

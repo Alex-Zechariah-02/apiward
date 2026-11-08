@@ -1,6 +1,6 @@
 // Admin API trust keys, blocked accounts and administrators.
 
-package gateway
+package admin
 
 import (
 	"database/sql"
@@ -17,7 +17,7 @@ import (
 
 // handleKeys lists the trusted keys with how many tokens each verified since
 // the gateway started and when it last did; counts only, no key material.
-func (s *adminAPI) handleKeys(w http.ResponseWriter, r *http.Request, who caller) {
+func (s *Server) handleKeys(w http.ResponseWriter, r *http.Request, who caller) {
 	type keyReport struct {
 		pipeline.KeyInfo
 		Verified       uint64     `json:"verified"`
@@ -47,7 +47,7 @@ func noRequestBody(w http.ResponseWriter, r *http.Request) bool {
 	return true
 }
 
-func (s *adminAPI) handleReloadKeys(w http.ResponseWriter, r *http.Request, who caller) {
+func (s *Server) handleReloadKeys(w http.ResponseWriter, r *http.Request, who caller) {
 	if !noRequestBody(w, r) {
 		return
 	}
@@ -60,7 +60,7 @@ func (s *adminAPI) handleReloadKeys(w http.ResponseWriter, r *http.Request, who 
 	pipeline.WriteJSON(w, status, body)
 }
 
-func (s *adminAPI) handleBlockedAccounts(w http.ResponseWriter, r *http.Request, who caller) {
+func (s *Server) handleBlockedAccounts(w http.ResponseWriter, r *http.Request, who caller) {
 	current := s.control.Blocked()
 	if current == nil {
 		adminError(w, http.StatusServiceUnavailable, "gateway_unavailable", "")
@@ -74,7 +74,7 @@ func (s *adminAPI) handleBlockedAccounts(w http.ResponseWriter, r *http.Request,
 	pipeline.WriteJSON(w, http.StatusOK, list{Items: items})
 }
 
-func (s *adminAPI) handleBlockAccount(w http.ResponseWriter, r *http.Request, who caller) {
+func (s *Server) handleBlockAccount(w http.ResponseWriter, r *http.Request, who caller) {
 	subject := r.PathValue("subject")
 	if !policy.IsSubjectID(subject) {
 		adminError(w, http.StatusBadRequest, "bad_request", "subject")
@@ -99,7 +99,7 @@ func (s *adminAPI) handleBlockAccount(w http.ResponseWriter, r *http.Request, wh
 	pipeline.WriteJSON(w, status, body)
 }
 
-func (s *adminAPI) handleUnblockAccount(w http.ResponseWriter, r *http.Request, who caller) {
+func (s *Server) handleUnblockAccount(w http.ResponseWriter, r *http.Request, who caller) {
 	subject := r.PathValue("subject")
 	if !policy.IsSubjectID(subject) {
 		adminError(w, http.StatusBadRequest, "bad_request", "subject")
@@ -117,7 +117,7 @@ func (s *adminAPI) handleUnblockAccount(w http.ResponseWriter, r *http.Request, 
 	pipeline.WriteJSON(w, status, body)
 }
 
-func (s *adminAPI) handleAdministrators(w http.ResponseWriter, r *http.Request, who caller) {
+func (s *Server) handleAdministrators(w http.ResponseWriter, r *http.Request, who caller) {
 	entries, err := s.store.Administrators(r.Context())
 	if err != nil {
 		adminError(w, http.StatusServiceUnavailable, "gateway_unavailable", "")

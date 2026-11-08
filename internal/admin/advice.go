@@ -1,7 +1,7 @@
 // Admin API advice and alerts: the fixed checks applied to the current
 // generation, observed traffic and the security log.
 
-package gateway
+package admin
 
 import (
 	"net/http"
@@ -17,7 +17,7 @@ import (
 // handleAdvice answers the configuration warnings and unused permissions for
 // the generation in force, or for a stored draft compiled with the active
 // overrides.
-func (s *adminAPI) handleAdvice(w http.ResponseWriter, r *http.Request, who caller) {
+func (s *Server) handleAdvice(w http.ResponseWriter, r *http.Request, who caller) {
 	g := s.control.Current()
 	var candidate *int64
 	if text := r.URL.Query().Get("candidate"); text != "" {
@@ -56,7 +56,7 @@ func (s *adminAPI) handleAdvice(w http.ResponseWriter, r *http.Request, who call
 
 // handleAlerts evaluates the alert rules when read; nothing is evaluated per
 // request.
-func (s *adminAPI) handleAlerts(w http.ResponseWriter, r *http.Request, who caller) {
+func (s *Server) handleAlerts(w http.ResponseWriter, r *http.Request, who caller) {
 	now := time.Now()
 	items := []monitor.Finding{}
 	if spike := monitor.RefusalSpike(s.observations.Snapshot(), now); spike != nil {

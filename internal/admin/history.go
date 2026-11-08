@@ -1,6 +1,6 @@
 // Admin API change history reads and filters.
 
-package gateway
+package admin
 
 import (
 	"net/http"
@@ -18,7 +18,7 @@ import (
 // optionally only those of the comma-separated kinds, the outcome or the
 // actor given. Filters apply before the page limit, and the cursor is the
 // last entry's seq in the chosen order.
-func (s *adminAPI) handleHistory(w http.ResponseWriter, r *http.Request, who caller) {
+func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request, who caller) {
 	after, limit, ok := page(w, r, "order", "kind", "outcome", "actor")
 	if !ok {
 		return
@@ -98,7 +98,7 @@ func historyKind(kind string) bool {
 	return true
 }
 
-func (s *adminAPI) handleHistoryEntry(w http.ResponseWriter, r *http.Request, who caller) {
+func (s *Server) handleHistoryEntry(w http.ResponseWriter, r *http.Request, who caller) {
 	entry, found, err := s.store.HistoryEntry(r.Context(), r.PathValue("id"))
 	switch {
 	case err != nil:

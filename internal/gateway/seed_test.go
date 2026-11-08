@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"sync"
 	"testing"
 	"time"
 
@@ -22,10 +21,7 @@ import (
 // in this test process.
 const harnessAdmin = "harness"
 
-var (
-	harnessPassword = "harness-" + session.NewToken()
-	harnessHash     = sync.OnceValue(func() string { return hashPassword(harnessPassword) })
-)
+var harnessPassword = "harness-" + session.NewToken()
 
 type seedOptions struct {
 	mode        string

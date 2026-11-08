@@ -1,6 +1,6 @@
 // Admin API candidate staging and confirmed activation handlers.
 
-package gateway
+package admin
 
 import (
 	"bytes"
@@ -24,7 +24,7 @@ type candidateView struct {
 	Document json.RawMessage `json:"document,omitempty"`
 }
 
-func (s *adminAPI) handleCandidates(w http.ResponseWriter, r *http.Request, who caller) {
+func (s *Server) handleCandidates(w http.ResponseWriter, r *http.Request, who caller) {
 	after, limit, ok := page(w, r)
 	if !ok {
 		return
@@ -49,7 +49,7 @@ func (s *adminAPI) handleCandidates(w http.ResponseWriter, r *http.Request, who 
 	pipeline.WriteJSON(w, http.StatusOK, result)
 }
 
-func (s *adminAPI) handleCandidate(w http.ResponseWriter, r *http.Request, who caller) {
+func (s *Server) handleCandidate(w http.ResponseWriter, r *http.Request, who caller) {
 	id, ok := pathID(w, r)
 	if !ok {
 		return
@@ -67,7 +67,7 @@ func (s *adminAPI) handleCandidate(w http.ResponseWriter, r *http.Request, who c
 
 // handlePostCandidate validates and stores a complete policy candidate. The
 // If-Match precondition names the confirmed revision it was prepared against.
-func (s *adminAPI) handlePostCandidate(w http.ResponseWriter, r *http.Request, who caller) {
+func (s *Server) handlePostCandidate(w http.ResponseWriter, r *http.Request, who caller) {
 	expected, ok := ifMatch(w, r)
 	if !ok {
 		return
@@ -103,7 +103,7 @@ func (s *adminAPI) handlePostCandidate(w http.ResponseWriter, r *http.Request, w
 	pipeline.WriteJSON(w, http.StatusCreated, map[string]any{"receipt": outcome, "candidate": candidateView{CandidateRecord: record}})
 }
 
-func (s *adminAPI) handleWithdrawCandidate(w http.ResponseWriter, r *http.Request, who caller) {
+func (s *Server) handleWithdrawCandidate(w http.ResponseWriter, r *http.Request, who caller) {
 	id, ok := pathID(w, r)
 	if !ok {
 		return
@@ -120,7 +120,7 @@ func (s *adminAPI) handleWithdrawCandidate(w http.ResponseWriter, r *http.Reques
 // handleEstablish confirms a deny-all candidate as the first base (genesis)
 // or the base that ends a recovery. The checksum shows the administrator
 // confirmed the exact document.
-func (s *adminAPI) handleEstablish(kind string) adminHandler {
+func (s *Server) handleEstablish(kind string) adminHandler {
 	return func(w http.ResponseWriter, r *http.Request, who caller) {
 		var body struct {
 			Candidate int64  `json:"candidate"`
@@ -138,7 +138,7 @@ func (s *adminAPI) handleEstablish(kind string) adminHandler {
 // If-Match precondition names the confirmed revision that becomes the
 // rollback target; the checksum shows the administrator chose the exact
 // document.
-func (s *adminAPI) handleActivate(w http.ResponseWriter, r *http.Request, who caller) {
+func (s *Server) handleActivate(w http.ResponseWriter, r *http.Request, who caller) {
 	expected, ok := ifMatch(w, r)
 	if !ok {
 		return
@@ -162,7 +162,7 @@ func (s *adminAPI) handleActivate(w http.ResponseWriter, r *http.Request, who ca
 
 // handleResolve confirms or rolls back the provisional revision named in the
 // body.
-func (s *adminAPI) handleResolve(kind, disposition string) adminHandler {
+func (s *Server) handleResolve(kind, disposition string) adminHandler {
 	return func(w http.ResponseWriter, r *http.Request, who caller) {
 		expected, ok := ifMatch(w, r)
 		if !ok {
@@ -187,7 +187,7 @@ func (s *adminAPI) handleResolve(kind, disposition string) adminHandler {
 // handleProvisional reports the current provisional base: its activation
 // record, the generation serving it and every control target it changes
 // relative to its rollback target.
-func (s *adminAPI) handleProvisional(w http.ResponseWriter, r *http.Request, who caller) {
+func (s *Server) handleProvisional(w http.ResponseWriter, r *http.Request, who caller) {
 	ctx := r.Context()
 	a, err := s.store.Load(ctx)
 	if err != nil {
@@ -224,7 +224,7 @@ func (s *adminAPI) handleProvisional(w http.ResponseWriter, r *http.Request, who
 }
 
 // handleActivations lists every provisional base with its final disposition.
-func (s *adminAPI) handleActivations(w http.ResponseWriter, r *http.Request, who caller) {
+func (s *Server) handleActivations(w http.ResponseWriter, r *http.Request, who caller) {
 	after, limit, ok := page(w, r)
 	if !ok {
 		return

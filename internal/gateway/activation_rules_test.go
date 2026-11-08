@@ -49,8 +49,8 @@ func TestLifecycleNeedsAuthorisedAdministrator(t *testing.T) {
 		{"no session", []string{"Origin", e.adminOrigin()}, http.StatusUnauthorized},
 		{"API client token", []string{"Origin", e.adminOrigin(), "Authorization", apiToken}, http.StatusUnauthorized},
 		{"read-only administrator", reader.headers(e), http.StatusForbidden},
-		{"no CSRF token", []string{"Cookie", sessionCookie + "=" + harness.cookie, "Origin", e.adminOrigin()}, http.StatusForbidden},
-		{"another origin", []string{"Cookie", sessionCookie + "=" + harness.cookie, csrfHeader, harness.csrf, "Origin", "http://evil.example"}, http.StatusForbidden},
+		{"no CSRF token", []string{"Cookie", adminCookie + "=" + harness.cookie, "Origin", e.adminOrigin()}, http.StatusForbidden},
+		{"another origin", []string{"Cookie", adminCookie + "=" + harness.cookie, adminCSRF, harness.csrf, "Origin", "http://evil.example"}, http.StatusForbidden},
 	}
 	for _, path := range []string{"/admin/provisional", "/admin/provisional/confirm", "/admin/provisional/rollback"} {
 		payload := activation
@@ -194,7 +194,7 @@ func TestOneProvisionalAndOneDisposition(t *testing.T) {
 		if round%2 == 1 {
 			actions = [2]string{"confirm", "confirm"}
 		}
-		ifMatch := policyETag(confirmed)
+		ifMatch := revisionTag(confirmed)
 		concurrently(
 			func() {
 				codes[0], outcomes[0], _ = e.resolve(harness, actions[0], activated.Provisional, ifMatch, fmt.Sprintf("race-%02d-first-xxxx", round))

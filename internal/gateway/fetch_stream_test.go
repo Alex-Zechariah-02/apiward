@@ -70,7 +70,7 @@ func TestFetchStalledViewerCannotBlockEnforcement(t *testing.T) {
 	if err := connection.SetReadBuffer(1024); err != nil {
 		t.Fatal(err)
 	}
-	fmt.Fprintf(connection, "GET /admin/events/stream HTTP/1.1\r\nHost: %s\r\nAccept: text/event-stream\r\nCookie: %s=%s\r\n\r\n", e.admin, sessionCookie, admin.cookie)
+	fmt.Fprintf(connection, "GET /admin/events/stream HTTP/1.1\r\nHost: %s\r\nAccept: text/event-stream\r\nCookie: %s=%s\r\n\r\n", e.admin, adminCookie, admin.cookie)
 	response, err := http.ReadResponse(bufio.NewReader(connection), nil)
 	if err != nil {
 		t.Fatal(err)

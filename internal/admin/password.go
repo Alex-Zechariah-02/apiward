@@ -1,6 +1,6 @@
 // Administrator password hashing and checks.
 
-package gateway
+package admin
 
 import (
 	"crypto/rand"

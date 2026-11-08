@@ -1,6 +1,6 @@
 // Admin API status, policy and revision reads.
 
-package gateway
+package admin
 
 import (
 	"fmt"
@@ -13,7 +13,7 @@ import (
 	"github.com/Alex-Zechariah-02/apiward/internal/store"
 )
 
-func (s *adminAPI) handleStatus(w http.ResponseWriter, r *http.Request, who caller) {
+func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request, who caller) {
 	state := s.control.State()
 	status := map[string]any{
 		"state":          state,
@@ -51,7 +51,7 @@ func (s *adminAPI) handleStatus(w http.ResponseWriter, r *http.Request, who call
 
 // confirmedPolicy reads the confirmed base. It answers the request itself and
 // returns false when no confirmed base is serving.
-func (s *adminAPI) confirmedPolicy(w http.ResponseWriter, r *http.Request) (store.RevisionInfo, policy.Policy, bool) {
+func (s *Server) confirmedPolicy(w http.ResponseWriter, r *http.Request) (store.RevisionInfo, policy.Policy, bool) {
 	a, err := s.store.Load(r.Context())
 	if err != nil {
 		s.logger.Error("reading authority", "error", err)
@@ -78,7 +78,7 @@ func (s *adminAPI) confirmedPolicy(w http.ResponseWriter, r *http.Request) (stor
 	return revision, p, true
 }
 
-func (s *adminAPI) handlePolicy(w http.ResponseWriter, r *http.Request, who caller) {
+func (s *Server) handlePolicy(w http.ResponseWriter, r *http.Request, who caller) {
 	revision, _, ok := s.confirmedPolicy(w, r)
 	if !ok {
 		return
@@ -87,7 +87,7 @@ func (s *adminAPI) handlePolicy(w http.ResponseWriter, r *http.Request, who call
 	pipeline.WriteJSON(w, http.StatusOK, revision)
 }
 
-func (s *adminAPI) handleRevisions(w http.ResponseWriter, r *http.Request, who caller) {
+func (s *Server) handleRevisions(w http.ResponseWriter, r *http.Request, who caller) {
 	after, limit, ok := page(w, r)
 	if !ok {
 		return
@@ -108,7 +108,7 @@ func (s *adminAPI) handleRevisions(w http.ResponseWriter, r *http.Request, who c
 	pipeline.WriteJSON(w, http.StatusOK, result)
 }
 
-func (s *adminAPI) handleRevision(w http.ResponseWriter, r *http.Request, who caller) {
+func (s *Server) handleRevision(w http.ResponseWriter, r *http.Request, who caller) {
 	id, ok := pathID(w, r)
 	if !ok {
 		return
@@ -127,7 +127,7 @@ func (s *adminAPI) handleRevision(w http.ResponseWriter, r *http.Request, who ca
 // writePolicyOutcome returns the receipt with the policy ETag the client
 // needs next: the confirmed revision after a change, the current one after a
 // stale precondition.
-func (s *adminAPI) writePolicyOutcome(w http.ResponseWriter, r *http.Request, outcome controller.Outcome, status int) {
+func (s *Server) writePolicyOutcome(w http.ResponseWriter, r *http.Request, outcome controller.Outcome, status int) {
 	switch {
 	case status == http.StatusOK && outcome.Provisional != 0 && outcome.Disposition == "":
 		// An activation leaves the confirmed revision as it was.

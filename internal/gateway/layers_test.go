@@ -23,10 +23,12 @@ var layers = map[string][]string{
 	"session":    nil,
 	"monitor":    {"policy", "compile", "audit"},
 	"testissuer": nil,
+	"testdb":     {"policy", "store"},
 	"pipeline":   {"fault", "policy", "compile", "forward", "store", "audit", "monitor"},
 	"controller": {"fault", "policy", "compile", "store", "audit", "session", "monitor", "pipeline"},
+	"admin":      {"policy", "compile", "store", "audit", "session", "monitor", "pipeline", "controller"},
 	"openapi":    {"policy", "compile"},
-	"gateway":    {"fault", "policy", "compile", "forward", "store", "audit", "session", "monitor", "pipeline", "controller"},
+	"gateway":    {"fault", "policy", "compile", "forward", "store", "audit", "session", "monitor", "pipeline", "controller", "admin"},
 }
 
 // exposed lists, for each package outside internal/, the internal packages its
@@ -44,7 +46,7 @@ var unlayered = []string{"demoports", "services", "services/testfixture"}
 
 // support packages exist for tests: any package's tests may import them,
 // production code never.
-var support = []string{"testissuer"}
+var support = []string{"testissuer", "testdb"}
 
 func TestPackageLayers(t *testing.T) {
 	root := filepath.Join("..", "..")

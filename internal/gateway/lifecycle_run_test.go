@@ -17,7 +17,7 @@ func TestOwnedControllerRunsPolicyLifecycles(t *testing.T) {
 	e := newEnv(t)
 	seed(t, e.database, e.protectedPolicy(), seedOptions{})
 	c, _ := e.own(e.controllerConfig())
-	if err := c.Start(testAdmin(c).handler()); err != nil {
+	if err := c.Start(testAdmin(c)); err != nil {
 		t.Fatal(err)
 	}
 	harness := e.mustLogin(harnessAdmin, harnessPassword)
@@ -39,7 +39,7 @@ func TestOwnedControllerRunsPolicyLifecycles(t *testing.T) {
 		t.Fatalf("after the confirmation %+v", s)
 	}
 
-	created := e.mustOverride(harness, operationContainment("read-a", 1), policyETag(kept.Provisional), "owned-override-create")
+	created := e.mustOverride(harness, operationContainment("read-a", 1), revisionTag(kept.Provisional), "owned-override-create")
 	waitFor(t, created.Expires.Add(5*time.Second), "the override expiry", func() bool { return len(e.status().Overrides) == 0 })
 
 	recorded := []string{"cpa.activated", "cpa.timed_out", "cpa.confirmed", "tpo.created", "tpo.expired"}
@@ -54,7 +54,7 @@ func TestOwnedControllerRunsPolicyLifecycles(t *testing.T) {
 		t.Fatal(err)
 	}
 	again, _ := e.own(e.controllerConfig())
-	if err := again.Start(testAdmin(again).handler()); err != nil {
+	if err := again.Start(testAdmin(again)); err != nil {
 		t.Fatal(err)
 	}
 	if code, _, _ := e.as(harness, http.MethodGet, "/admin/session", ""); code != http.StatusUnauthorized {

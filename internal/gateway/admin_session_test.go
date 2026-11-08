@@ -28,7 +28,7 @@ func TestAdminSessions(t *testing.T) {
 		if len(setCookie) != 1 {
 			t.Fatalf("Set-Cookie %v", setCookie)
 		}
-		for _, attribute := range []string{sessionCookie + "=", "; Path=/", "; HttpOnly", "; Secure", "; SameSite=Strict"} {
+		for _, attribute := range []string{adminCookie + "=", "; Path=/", "; HttpOnly", "; Secure", "; SameSite=Strict"} {
 			if !strings.Contains(setCookie[0], attribute) {
 				t.Errorf("cookie lacks %q", attribute)
 			}
@@ -95,7 +95,7 @@ func TestAdminSessions(t *testing.T) {
 		tampered := []byte(valid.cookie)
 		tampered[len(tampered)-1] ^= 1
 		for _, token := range []string{"", "x", strings.Repeat("A", 43), string(tampered), valid.cookie + "A", session.NewToken(), valid.csrf} {
-			code, body, _ := e.adminSend(http.MethodGet, "/admin/status", "", "Cookie", sessionCookie+"="+token)
+			code, body, _ := e.adminSend(http.MethodGet, "/admin/status", "", "Cookie", adminCookie+"="+token)
 			if code != http.StatusUnauthorized || strings.Contains(body, "revision") {
 				t.Fatalf("token %q: %d %s", token, code, body)
 			}
@@ -104,11 +104,11 @@ func TestAdminSessions(t *testing.T) {
 		chosen := session.NewToken()
 		code, _, header := e.adminSend(http.MethodPost, "/admin/session",
 			string(mustJSON(map[string]string{"name": harnessAdmin, "password": harnessPassword})),
-			"Origin", e.adminOrigin(), "Cookie", sessionCookie+"="+chosen)
+			"Origin", e.adminOrigin(), "Cookie", adminCookie+"="+chosen)
 		if code != http.StatusCreated || strings.Contains(header.Get("Set-Cookie"), chosen) {
 			t.Fatalf("login with a chosen token: %d", code)
 		}
-		if code, _, _ := e.adminSend(http.MethodGet, "/admin/status", "", "Cookie", sessionCookie+"="+chosen); code != http.StatusUnauthorized {
+		if code, _, _ := e.adminSend(http.MethodGet, "/admin/status", "", "Cookie", adminCookie+"="+chosen); code != http.StatusUnauthorized {
 			t.Fatalf("chosen token after login: %d", code)
 		}
 	})
@@ -199,7 +199,7 @@ func TestAPIClientTokenIsNotAdminCredential(t *testing.T) {
 	put := `{"reason":"test containment"}`
 	for _, header := range [][]string{
 		{"Authorization", "Bearer " + token},
-		{"Cookie", sessionCookie + "=" + token},
+		{"Cookie", adminCookie + "=" + token},
 		{"Authorization", "Bearer " + issuer.TokenFor(t, "alice")},
 	} {
 		if code, _, _ := e.adminSend(http.MethodGet, "/admin/status", "", header...); code != http.StatusUnauthorized {

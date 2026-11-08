@@ -248,7 +248,7 @@ func TestHistoricalRestoreQuarantinesSeveralOverrides(t *testing.T) {
 				}
 			}
 			if withProvisional {
-				code, outcome, body := e.resolve(root, "confirm", 2, policyETag(recovery.Revision), "several-confirm-0001")
+				code, outcome, body := e.resolve(root, "confirm", 2, revisionTag(recovery.Revision), "several-confirm-0001")
 				if code != http.StatusConflict || outcome.Reason != "ALREADY_RESOLVED" || outcome.Disposition != store.DispositionQuarantined {
 					t.Fatalf("confirmation of the quarantined provisional base: %d %s", code, body)
 				}

@@ -43,11 +43,11 @@ func (e *env) resolve(s adminSession, action string, revision int64, ifMatch, ke
 // activates it, failing the test unless both succeed.
 func (e *env) provisionalFrom(s adminSession, policy policy.Policy, parent, seconds int64, key string) (store.CandidateRecord, controller.Outcome) {
 	e.t.Helper()
-	code, staged, body := e.stage(s, policy, policyETag(parent), "stage-"+key)
+	code, staged, body := e.stage(s, policy, revisionTag(parent), "stage-"+key)
 	if code != http.StatusCreated {
 		e.t.Fatalf("staging: %d %s", code, body)
 	}
-	code, outcome, body := e.activate(s, staged.Candidate.CandidateRecord, seconds, policyETag(parent), "activate-"+key)
+	code, outcome, body := e.activate(s, staged.Candidate.CandidateRecord, seconds, revisionTag(parent), "activate-"+key)
 	if code != http.StatusOK {
 		e.t.Fatalf("activation: %d %s", code, body)
 	}
@@ -57,7 +57,7 @@ func (e *env) provisionalFrom(s adminSession, policy policy.Policy, parent, seco
 func (e *env) confirmPolicy(s adminSession, policy policy.Policy, parent int64, key string) controller.Outcome {
 	e.t.Helper()
 	_, activation := e.provisionalFrom(s, policy, parent, 60, key)
-	code, outcome, body := e.resolve(s, "confirm", activation.Provisional, policyETag(parent), "confirm-"+key)
+	code, outcome, body := e.resolve(s, "confirm", activation.Provisional, revisionTag(parent), "confirm-"+key)
 	if code != http.StatusOK {
 		e.t.Fatalf("confirmation: %d %s", code, body)
 	}

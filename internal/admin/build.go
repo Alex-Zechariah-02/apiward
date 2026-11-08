@@ -1,11 +1,10 @@
 // Build information: the module version, the Go toolchain and every
 // compiled-in module, for the status reply and the version command.
 
-package gateway
+package admin
 
 import (
 	"fmt"
-	"os"
 	"runtime"
 	"runtime/debug"
 	"strings"
@@ -51,13 +50,5 @@ func (b buildInfo) text() string {
 	return out.String()
 }
 
-// printVersion runs the version command, which takes no options and reads no
-// configuration.
-func printVersion(args []string) int {
-	if len(args) != 0 {
-		fmt.Fprintln(os.Stderr, nativeUsage)
-		return exitFailed
-	}
-	fmt.Print(currentBuild().text())
-	return 0
-}
+// VersionText is the version command's output for the running binary.
+func VersionText() string { return currentBuild().text() }

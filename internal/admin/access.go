@@ -1,7 +1,7 @@
 // Admin API Access Checker: a request asked about against the generation in
 // force or a stored draft, decided by compile.Decide.
 
-package gateway
+package admin
 
 import (
 	"net/http"
@@ -46,7 +46,7 @@ type accessAnswer struct {
 // draft compiled with the active overrides, through the same matching and
 // permission code as real requests. It changes nothing and is no second
 // evaluator: every decision below is the request handler's own function.
-func (s *adminAPI) handleAccessCheck(w http.ResponseWriter, r *http.Request, who caller) {
+func (s *Server) handleAccessCheck(w http.ResponseWriter, r *http.Request, who caller) {
 	var check accessCheck
 	if !decodeBody(w, r, maxAdminBody, &check) {
 		return

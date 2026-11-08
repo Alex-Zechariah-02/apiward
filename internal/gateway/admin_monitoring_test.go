@@ -3,8 +3,6 @@
 package gateway
 
 import (
-	"context"
-	"database/sql"
 	"fmt"
 	"net/http"
 	"slices"
@@ -12,7 +10,6 @@ import (
 	"testing"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/policy"
-	"github.com/Alex-Zechariah-02/apiward/internal/store"
 )
 
 type historyItem struct {
@@ -157,7 +154,7 @@ func TestHistoryOrderAndFilters(t *testing.T) {
 		t.Fatalf("a new listing does not start with the new entry: %+v", fresh)
 	}
 
-	tooMany := strings.TrimSuffix(strings.Repeat("a.b,", maxHistoryKinds+1), ",")
+	tooMany := strings.TrimSuffix(strings.Repeat("a.b,", historyKinds+1), ",")
 	for _, query := range []string{"order=up", "order=", "order=desc&order=asc", "kind=", "kind=Account.block", "kind=a,,b",
 		"kind=" + tooMany, "kind=a&kind=b", "outcome=pending", "outcome=", "actor=", "actor=" + strings.Repeat("x", policy.MaxIDLength+1),
 		"sort=seq", "order=desc&after=x"} {
@@ -198,17 +195,17 @@ func TestHistoryEntryByIdempotencyKey(t *testing.T) {
 	revision := e.status().Revision
 	confirmed := e.confirmPolicy(admin, e.cpaCandidate(), revision, "lookup-confirm-01")
 	_, trial := e.provisionalFrom(admin, e.protectedPolicy(), confirmed.Revision, 600, "lookup-rollback-01")
-	if code, _, body := e.resolve(admin, "rollback", trial.Provisional, policyETag(confirmed.Revision), "rollback-lookup-rollback-01"); code != http.StatusOK {
+	if code, _, body := e.resolve(admin, "rollback", trial.Provisional, revisionTag(confirmed.Revision), "rollback-lookup-rollback-01"); code != http.StatusOK {
 		t.Fatalf("rollback: %d %s", code, body)
 	}
-	code, staged, body := e.stage(admin, e.protectedPolicy(), policyETag(confirmed.Revision), "stage-lookup-withdraw-01")
+	code, staged, body := e.stage(admin, e.protectedPolicy(), revisionTag(confirmed.Revision), "stage-lookup-withdraw-01")
 	if code != http.StatusCreated {
 		t.Fatalf("staging: %d %s", code, body)
 	}
 	if code, body, _ := e.as(admin, http.MethodDelete, fmt.Sprintf("/admin/candidates/%d", staged.Candidate.ID), "", "Idempotency-Key", "withdraw-lookup-01"); code != http.StatusOK {
 		t.Fatalf("withdrawal: %d %s", code, body)
 	}
-	rule := e.mustOverride(admin, operationContainment(e.protectedPolicy().Operations[0].ID, 600), policyETag(confirmed.Revision), "override-lookup-01")
+	rule := e.mustOverride(admin, operationContainment(e.protectedPolicy().Operations[0].ID, 600), revisionTag(confirmed.Revision), "override-lookup-01")
 	if code, _, body := e.revokeOverride(admin, rule.Override, "revoke-lookup-01"); code != http.StatusOK {
 		t.Fatalf("revocation: %d %s", code, body)
 	}
@@ -239,37 +236,5 @@ func TestHistoryEntryByIdempotencyKey(t *testing.T) {
 			entry.Outcome != want.outcome || entry.Actor != harnessAdmin {
 			t.Errorf("lookup %s: %d %+v, want %s %s", want.key, code, entry, want.kind, want.outcome)
 		}
-	}
-}
-
-// STORE_ERROR says only that this request did not complete. When the record
-// of an earlier, committed attempt cannot be read, a resend of the same
-// change is answered store_error while that change stays in force, so the
-// Dashboard must never describe store_error as "nothing changed". Once the
-// store can be read, the resend returns the recorded receipt.
-func TestStoreErrorOnResendDoesNotMeanNothingChanged(t *testing.T) {
-	e := newEnv(t)
-	seed(t, e.database, e.protectedPolicy(), seedOptions{})
-	c, _ := e.own(e.controllerConfig())
-	const reason = "store error test"
-	request := struct {
-		Reason string `json:"reason"`
-	}{reason}
-	block := adminTransition(caller{admin: store.Administrator{Name: harnessAdmin}}, "store-error-resend-01", "account.block", "cust-500", sql.NullInt64{}, request)
-	receipt, status := c.Block(t.Context(), block, reason)
-	if status != http.StatusOK {
-		t.Fatalf("block: %d %s", status, receipt)
-	}
-	// A cancelled request makes the read of the earlier record fail.
-	cancelled, cancel := context.WithCancel(t.Context())
-	cancel()
-	if body, status := c.Block(cancelled, block, reason); status != http.StatusServiceUnavailable || string(body) != `{"error":"store_error"}` {
-		t.Fatalf("resend with an unreadable record: %d %s", status, body)
-	}
-	if _, inForce := (*c.Blocked())["cust-500"]; !inForce {
-		t.Fatal("the committed block is no longer in force")
-	}
-	if body, status := c.Block(t.Context(), block, reason); status != http.StatusOK || string(body) != string(receipt) {
-		t.Fatalf("resend with a readable record: %d %s, want the receipt %s", status, body, receipt)
 	}
 }

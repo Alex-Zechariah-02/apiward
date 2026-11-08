@@ -1,6 +1,6 @@
 // Admin API request decoding, preconditions and paging.
 
-package gateway
+package admin
 
 import (
 	"database/sql"

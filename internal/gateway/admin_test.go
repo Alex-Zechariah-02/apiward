@@ -210,7 +210,7 @@ func TestBootstrapIsLocalAndOneTime(t *testing.T) {
 		t.Fatalf("%d enrolments remain", n)
 	}
 	hash := queryString(t, e.database, `SELECT password FROM administrator WHERE name = 'root'`)
-	if !strings.HasPrefix(hash, argonPrefix) {
+	if !strings.HasPrefix(hash, passwordPrefix) {
 		t.Fatalf("stored credential is not an argon2id hash with the configured parameters: %.20s", hash)
 	}
 	assertAbsent(t, e, secret, password)

@@ -109,10 +109,10 @@ func TestOverrideRefusals(t *testing.T) {
 	attempts := []attempt{
 		{"no session", []string{"Origin", e.adminOrigin()}, http.StatusUnauthorized},
 		{"API client token", []string{"Origin", e.adminOrigin(), "Authorization", "Bearer " + apiToken}, http.StatusUnauthorized},
-		{"forged session cookie", []string{"Cookie", sessionCookie + "=" + strings.Repeat("A", 43), "Origin", e.adminOrigin()}, http.StatusUnauthorized},
+		{"forged session cookie", []string{"Cookie", adminCookie + "=" + strings.Repeat("A", 43), "Origin", e.adminOrigin()}, http.StatusUnauthorized},
 		{"read-only administrator", reader.headers(e), http.StatusForbidden},
-		{"no CSRF token", []string{"Cookie", sessionCookie + "=" + harness.cookie, "Origin", e.adminOrigin()}, http.StatusForbidden},
-		{"another origin", []string{"Cookie", sessionCookie + "=" + harness.cookie, csrfHeader, harness.csrf, "Origin", "http://evil.example"}, http.StatusForbidden},
+		{"no CSRF token", []string{"Cookie", adminCookie + "=" + harness.cookie, "Origin", e.adminOrigin()}, http.StatusForbidden},
+		{"another origin", []string{"Cookie", adminCookie + "=" + harness.cookie, adminCSRF, harness.csrf, "Origin", "http://evil.example"}, http.StatusForbidden},
 		{"another host", append(harness.headers(e), "Host", "localhost"), http.StatusBadRequest},
 	}
 	for i, a := range attempts {

@@ -1,6 +1,6 @@
 // Admin API impact estimate for a candidate.
 
-package gateway
+package admin
 
 import (
 	"encoding/json"
@@ -19,7 +19,7 @@ import (
 // candidateGeneration compiles a stored draft with the active overrides,
 // as an activation would, beside the generation in force. It settles no
 // deadline and publishes nothing. On failure it has answered the request.
-func (s *adminAPI) candidateGeneration(w http.ResponseWriter, r *http.Request, id int64) (current, candidate *compile.Generation, ok bool) {
+func (s *Server) candidateGeneration(w http.ResponseWriter, r *http.Request, id int64) (current, candidate *compile.Generation, ok bool) {
 	stored, found, err := s.store.Candidate(r.Context(), id)
 	if err != nil {
 		adminError(w, http.StatusServiceUnavailable, "gateway_unavailable", "")
@@ -49,7 +49,7 @@ func (s *adminAPI) candidateGeneration(w http.ResponseWriter, r *http.Request, i
 	return current, candidate, true
 }
 
-func (s *adminAPI) handleImpact(w http.ResponseWriter, r *http.Request, who caller) {
+func (s *Server) handleImpact(w http.ResponseWriter, r *http.Request, who caller) {
 	if !noRequestBody(w, r) {
 		return
 	}

@@ -25,7 +25,7 @@ func TestStopIsBoundedByStuckAdminRequest(t *testing.T) {
 	e := newEnv(t)
 	seed(t, e.database, e.policy(e.a, false), seedOptions{})
 	c, _ := e.own(e.controllerConfig())
-	if err := c.Start(testAdmin(c).handler()); err != nil {
+	if err := c.Start(testAdmin(c)); err != nil {
 		t.Fatal(err)
 	}
 	conn, err := net.Dial("tcp", e.admin)
@@ -175,7 +175,7 @@ func TestBeginStopEndsAdmission(t *testing.T) {
 	if outcome, status := c.Publish(context.Background(), "test", controller.Change{ID: "after-begin-stop", Expected: 1, Policy: mustJSON(e.policy(e.a, false))}); status != http.StatusServiceUnavailable || outcome.Reason != "UNAVAILABLE" {
 		t.Fatalf("publication after BeginStop: %d %+v", status, outcome)
 	}
-	if err := c.Start(testAdmin(c).handler()); err == nil {
+	if err := c.Start(testAdmin(c)); err == nil {
 		t.Fatal("Start after BeginStop succeeded")
 	}
 

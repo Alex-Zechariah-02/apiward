@@ -1,6 +1,6 @@
 // Security log CSV export.
 
-package gateway
+package admin
 
 import (
 	"encoding/csv"

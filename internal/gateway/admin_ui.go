@@ -1,4 +1,5 @@
-// Dashboard file serving on the Admin API listener.
+// Built frontend files: the dashboard, served on the Admin API listener, and
+// the content policy and file checks it shares with the website.
 
 package gateway
 
@@ -25,18 +26,22 @@ var assetTypes = map[string]string{
 const uiPolicy = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; " +
 	"base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
 
-// serveUI serves one dashboard file. The files hold no data, so no session is
-// needed; everything the dashboard shows comes from the Admin API.
-func (s *adminAPI) serveUI(w http.ResponseWriter, r *http.Request) {
-	name, contentType := "index.html", "text/html; charset=utf-8"
-	if file := r.PathValue("file"); file != "" {
-		name, contentType = "assets/"+file, assetTypes[path.Ext(file)]
-	}
-	if contentType == "" || !fs.ValidPath(name) {
-		http.NotFound(w, r)
-		return
-	}
-	serveFrontendFile(w, r, s.ui, name, contentType)
+// dashboard serves the dashboard's page and assets from files, for the Admin
+// API to mount at "GET /{$}" and "GET /assets/{file}". The files hold no data,
+// so no session is needed; everything the dashboard shows comes from the
+// Admin API.
+func dashboard(files fs.FS) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		name, contentType := "index.html", "text/html; charset=utf-8"
+		if file := r.PathValue("file"); file != "" {
+			name, contentType = "assets/"+file, assetTypes[path.Ext(file)]
+		}
+		if contentType == "" || !fs.ValidPath(name) {
+			http.NotFound(w, r)
+			return
+		}
+		serveFrontendFile(w, r, files, name, contentType)
+	})
 }
 
 // serveFrontendFile answers with one file of a built frontend under the

@@ -1,6 +1,6 @@
 // Admin API temporary policy override handlers.
 
-package gateway
+package admin
 
 import (
 	"database/sql"
@@ -17,7 +17,7 @@ import (
 // they belong to: the active base revision, the confirmed and provisional
 // revisions and the serving generation, whose identity names the base and
 // every applied override.
-func (s *adminAPI) handleOverrides(w http.ResponseWriter, r *http.Request, who caller) {
+func (s *Server) handleOverrides(w http.ResponseWriter, r *http.Request, who caller) {
 	a, err := s.store.Load(r.Context())
 	if err != nil {
 		s.logger.Error("reading authority", "error", err)
@@ -40,7 +40,7 @@ func (s *adminAPI) handleOverrides(w http.ResponseWriter, r *http.Request, who c
 	pipeline.WriteJSON(w, http.StatusOK, view)
 }
 
-func (s *adminAPI) handleOverride(w http.ResponseWriter, r *http.Request, who caller) {
+func (s *Server) handleOverride(w http.ResponseWriter, r *http.Request, who caller) {
 	id, ok := pathID(w, r)
 	if !ok {
 		return
@@ -57,7 +57,7 @@ func (s *adminAPI) handleOverride(w http.ResponseWriter, r *http.Request, who ca
 }
 
 // handleOverrideHistory lists every override with its final disposition.
-func (s *adminAPI) handleOverrideHistory(w http.ResponseWriter, r *http.Request, who caller) {
+func (s *Server) handleOverrideHistory(w http.ResponseWriter, r *http.Request, who caller) {
 	after, limit, ok := page(w, r)
 	if !ok {
 		return
@@ -80,7 +80,7 @@ func (s *adminAPI) handleOverrideHistory(w http.ResponseWriter, r *http.Request,
 
 // handleValidateOverride answers whether a proposed override would be
 // created now. Nothing is created or recorded in the history.
-func (s *adminAPI) handleValidateOverride(w http.ResponseWriter, r *http.Request, who caller) {
+func (s *Server) handleValidateOverride(w http.ResponseWriter, r *http.Request, who caller) {
 	expected, ok := ifMatch(w, r)
 	if !ok {
 		return
@@ -96,7 +96,7 @@ func (s *adminAPI) handleValidateOverride(w http.ResponseWriter, r *http.Request
 // handleCreateOverride creates a temporary override of the confirmed base.
 // The If-Match precondition names the confirmed revision the administrator
 // saw.
-func (s *adminAPI) handleCreateOverride(w http.ResponseWriter, r *http.Request, who caller) {
+func (s *Server) handleCreateOverride(w http.ResponseWriter, r *http.Request, who caller) {
 	expected, ok := ifMatch(w, r)
 	if !ok {
 		return
@@ -123,7 +123,7 @@ func (s *adminAPI) handleCreateOverride(w http.ResponseWriter, r *http.Request, 
 }
 
 // handleRevokeOverride ends one active override.
-func (s *adminAPI) handleRevokeOverride(w http.ResponseWriter, r *http.Request, who caller) {
+func (s *Server) handleRevokeOverride(w http.ResponseWriter, r *http.Request, who caller) {
 	id, ok := pathID(w, r)
 	if !ok {
 		return

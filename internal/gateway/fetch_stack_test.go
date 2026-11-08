@@ -1,10 +1,12 @@
+// The Fetch demo stack end to end: account sign-in, service calls through the
+// gateway, temporary grants and containment, policy changes, blocks and the
+// demo command line, each proven by the services' own receipts.
+
 package gateway
 
 import (
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -21,116 +23,11 @@ import (
 // This test shares the gateway integration package's serial process harness so
 // its fixed offset ports cannot collide with TestNativeDemoCommands.
 func TestFetchStackScenarios(t *testing.T) {
-	parent := t.TempDir()
-	web := filepath.Join(parent, "web")
-	for _, page := range []string{"admin", "demo"} {
-		if err := os.MkdirAll(filepath.Join(web, page), 0700); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(filepath.Join(web, page, "index.html"), []byte("owned stack test page"), 0600); err != nil {
-			t.Fatal(err)
-		}
-	}
-	dir := filepath.Join(parent, "state")
-	install, code := demoCommand(t, "setup", "-dir", dir, "-web", web, "-gateway", binaries.plain, "-admin", "root")
-	if code != 0 {
-		t.Fatal("Fetch setup failed")
-	}
-	_, input, exited, output := startDemo(t, dir)
-	e := &env{t: t, dir: dir, database: filepath.Join(dir, "state.db"), auditLog: filepath.Join(dir, "audit.log"), dataAddr: demoTestAddress(t, "127.0.0.2:9480"), admin: demoTestAddress(t, "127.0.0.1:9440"), output: output}
-	password := testPassword()
-	if code, body := e.enrol("root", enrolmentSecret(t, install), password); code != 201 {
-		t.Fatalf("enrol: %d %s", code, body)
-	}
-	root := e.mustLogin("root", password)
-	loadPolicy := func(name string) policy.Policy {
-		t.Helper()
-		data, err := os.ReadFile(filepath.Join(dir, name))
-		if err != nil {
-			t.Fatal(err)
-		}
-		p, err := policy.DecodePolicy(data)
-		if err != nil {
-			t.Fatal(err)
-		}
-		return p
-	}
-	baseline := loadPolicy("baseline.json")
-	code, first, body := e.stage(root, loadPolicy("deny-all.json"), `"r0"`, "fetch-stack-genesis")
-	if code != 201 {
-		t.Fatalf("stage genesis: %d %s", code, body)
-	}
-	if code, _ := e.establish(root, "/admin/genesis", first.Candidate.ID, first.Candidate.Checksum); code != 200 {
-		t.Fatalf("genesis: %d", code)
-	}
-	confirmed := e.confirmPolicy(root, baseline, 1, "fetch-stack-baseline")
-	revision := confirmed.Revision
-	if revision == 0 {
-		t.Fatal("baseline was not confirmed")
-	}
-	call := func(method, path, body, token string, want int) (*http.Response, string) {
-		t.Helper()
-		headers := []string{}
-		if token != "" {
-			headers = append(headers, "Authorization", "Bearer "+token)
-		}
-		response, reply := e.exchange(method, path, "application/json", body, headers...)
-		if response.StatusCode != want || response.Header.Get("X-Request-Id") == "" {
-			t.Fatalf("%s %s: status %d, want %d (response withheld for credential safety)", method, path, response.StatusCode, want)
-		}
-		return response, reply
-	}
-	login := func(email string) string {
-		t.Helper()
-		_, body := call("POST", "/accounts/login", string(mustJSON(map[string]string{"email": email, "password": "FetchDemo2026!"})), "", 200)
-		var reply struct {
-			Token string `json:"token"`
-		}
-		if json.Unmarshal([]byte(body), &reply) != nil || reply.Token == "" {
-			t.Fatal("Accounts returned no token")
-		}
-		return reply.Token
-	}
+	s := startFetchStack(t)
+	e, dir, root, baseline, revision, password := s.e, s.dir, s.root, s.baseline, s.revision, s.password
+	parent := filepath.Dir(dir) // holds the stack's state and web directories
+	call, login, control, receiptCount, refused, loadPolicy := s.call, s.login, s.control, s.receiptCount, s.refused, s.loadPolicy
 	customer, merchant, rider, support, ops := login("customer1@fetch.test"), login("merchant1@fetch.test"), login("rider1@fetch.test"), login("support1@fetch.test"), login("admin1@fetch.test")
-	secret, err := os.ReadFile(filepath.Join(dir, "service.secret"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	control := func(index int, path string) []byte {
-		t.Helper()
-		request, _ := http.NewRequest("GET", "http://"+demoTestAddress(t, fmt.Sprintf("127.0.0.1:%d", 9601+index))+path, nil)
-		request.Header.Set("Authorization", "Bearer "+strings.TrimSpace(string(secret)))
-		response, err := (&http.Client{Timeout: 5 * time.Second}).Do(request)
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer response.Body.Close()
-		data, err := io.ReadAll(response.Body)
-		if err != nil || response.StatusCode != 200 {
-			t.Fatal("service control failed")
-		}
-		return data
-	}
-	receiptCount := func(index int) int {
-		t.Helper()
-		var view struct {
-			Receipts []services.Receipt `json:"receipts"`
-		}
-		if json.Unmarshal(control(index, "/receipts"), &view) != nil {
-			t.Fatal("invalid receipts")
-		}
-		return len(view.Receipts)
-	}
-	// refused proves a gateway refusal by the service's own receipts: the
-	// service at index recorded nothing and the answer carries no X-Service.
-	refused := func(index int, method, path, body, token string, want int) {
-		t.Helper()
-		count := receiptCount(index)
-		response, _ := call(method, path, body, token, want)
-		if receiptCount(index) != count || response.Header.Get("X-Service") != "" {
-			t.Fatalf("%s %s reached the service", method, path)
-		}
-	}
 	seedHashes := make([]string, 5)
 	for i := range seedHashes {
 		var state services.State
@@ -210,7 +107,7 @@ func TestFetchStackScenarios(t *testing.T) {
 	if receiptCount(0) != before {
 		t.Fatal("unpermitted stock read reached Inventory")
 	}
-	e.mustOverride(root, permitOverride(store.OverrideException, "CUSTOMER", "inventory.stock.read", 1), policyETag(revision), "fetch-stack-stock-grant")
+	e.mustOverride(root, permitOverride(store.OverrideException, "CUSTOMER", "inventory.stock.read", 1), revisionTag(revision), "fetch-stack-stock-grant")
 	call("GET", "/inventory/stock/ITM-501", "", customer, 200)
 	if receiptCount(0) != before+1 {
 		t.Fatal("temporary stock grant did not reach Inventory exactly once")
@@ -230,7 +127,7 @@ func TestFetchStackScenarios(t *testing.T) {
 		t.Fatal("unpermitted report reached Reports")
 	}
 	for i, operation := range reportOperations {
-		e.mustOverride(root, permitOverride(store.OverrideException, "CUSTOMER", operation.id, 5), policyETag(revision), fmt.Sprintf("fetch-report-grant-%d", i))
+		e.mustOverride(root, permitOverride(store.OverrideException, "CUSTOMER", operation.id, 5), revisionTag(revision), fmt.Sprintf("fetch-report-grant-%d", i))
 	}
 	for _, operation := range reportOperations {
 		call("GET", operation.path, "", customer, 200)
@@ -277,7 +174,7 @@ func TestFetchStackScenarios(t *testing.T) {
 	}
 
 	t.Log("containment applies, then expires")
-	e.mustOverride(root, operationContainment("orders.create", 1), policyETag(revision), "fetch-stack-contain")
+	e.mustOverride(root, operationContainment("orders.create", 1), revisionTag(revision), "fetch-stack-contain")
 	refused(1, "POST", "/orders", checkout, customer, 403)
 	refused(1, "POST", "/orders", checkout, floodCustomer, 403)
 	waitFor(t, time.Now().Add(5*time.Second), "containment expiry", func() bool {
@@ -300,7 +197,7 @@ func TestFetchStackScenarios(t *testing.T) {
 	call("GET", "/orders/jobs", "", rider, 200)
 	bad := loadPolicy("baseline.json")
 	bad.Permits = slices.DeleteFunc(bad.Permits, func(p policy.Permit) bool { return p.Role == "RIDER" && p.Operation == "orders.jobs" })
-	code, staged, body := e.stage(root, bad, policyETag(revision), "fetch-stack-bad-rider")
+	code, staged, body := e.stage(root, bad, revisionTag(revision), "fetch-stack-bad-rider")
 	if code != 201 {
 		t.Fatalf("bad rider candidate: %d %s", code, body)
 	}
@@ -308,7 +205,7 @@ func TestFetchStackScenarios(t *testing.T) {
 	if code != 200 || !strings.Contains(impact, `"operation":"orders.jobs"`) || !strings.Contains(impact, `"after":"refused"`) {
 		t.Fatalf("impact missed real rider flip: %d %s", code, impact)
 	}
-	if code, _, body = e.activate(root, staged.Candidate.CandidateRecord, 1, policyETag(revision), "fetch-stack-bad-activate"); code != 200 {
+	if code, _, body = e.activate(root, staged.Candidate.CandidateRecord, 1, revisionTag(revision), "fetch-stack-bad-activate"); code != 200 {
 		t.Fatalf("bad activation: %d %s", code, body)
 	}
 	refused(1, "GET", "/orders/jobs", "", rider, 403)
@@ -374,9 +271,9 @@ func TestFetchStackScenarios(t *testing.T) {
 		}
 	}
 	assertAbsent(t, e, customer, merchant, rider, support, ops, newToken.Token, "FetchDemo2026!", password)
-	input.Close()
+	s.input.Close()
 	select {
-	case err := <-exited:
+	case err := <-s.exited:
 		if err != nil {
 			t.Fatalf("stack shutdown: %v", err)
 		}

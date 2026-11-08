@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/compile"
+	"github.com/Alex-Zechariah-02/apiward/internal/testdb"
 )
 
 // Stop ends the deadline timer: a provisional base whose deadline passes
@@ -16,9 +17,9 @@ import (
 // rolls it back at startup, once.
 func TestStopEndsDeadlineTimer(t *testing.T) {
 	e := newEnv(t)
-	provisional := basePolicy(true)
+	provisional := testdb.Policy(true)
 	deadline := time.UnixMilli(time.Now().Add(1500 * time.Millisecond).UnixMilli())
-	seed(t, e.database, basePolicy(false), seedOptions{provisional: &provisional, deadline: deadline})
+	testdb.Seed(t, e.database, testdb.Policy(false), testdb.Options{Provisional: &provisional, Deadline: deadline})
 
 	c := e.own(e.controllerConfig())
 	if g := c.Current(); g == nil || g.Revision != 2 || !g.NotAfter.Equal(deadline) {
@@ -31,10 +32,10 @@ func TestStopEndsDeadlineTimer(t *testing.T) {
 		t.Fatal("the deadline timer was still armed after Stop")
 	}
 	time.Sleep(time.Until(deadline.Add(700 * time.Millisecond)))
-	if n := queryInt(t, e.database, `SELECT coalesce(provisional, 0) FROM base`); n != 2 {
+	if n := testdb.Int(t, e.database, `SELECT coalesce(provisional, 0) FROM base`); n != 2 {
 		t.Fatalf("provisional %d after the deadline passed while stopped, want 2", n)
 	}
-	if n := queryInt(t, e.database, `SELECT count(*) FROM transition WHERE id LIKE 'auto-rollback:%'`); n != 0 {
+	if n := testdb.Int(t, e.database, `SELECT count(*) FROM transition WHERE id LIKE 'auto-rollback:%'`); n != 0 {
 		t.Fatalf("%d rollbacks recorded by a stopped controller", n)
 	}
 
@@ -45,7 +46,7 @@ func TestStopEndsDeadlineTimer(t *testing.T) {
 	if err := again.Stop(); err != nil {
 		t.Fatal(err)
 	}
-	if n := queryInt(t, e.database, `SELECT count(*) FROM transition WHERE id = 'auto-rollback:2' AND outcome = 'committed' AND audited_at IS NOT NULL`); n != 1 {
+	if n := testdb.Int(t, e.database, `SELECT count(*) FROM transition WHERE id = 'auto-rollback:2' AND outcome = 'committed' AND audited_at IS NOT NULL`); n != 1 {
 		t.Fatalf("%d audited rollbacks, want 1", n)
 	}
 }
@@ -54,7 +55,7 @@ func TestStopEndsDeadlineTimer(t *testing.T) {
 // than once.
 func TestStopReleasesDeployment(t *testing.T) {
 	e := newEnv(t)
-	seed(t, e.database, basePolicy(false), seedOptions{})
+	testdb.Seed(t, e.database, testdb.Policy(false), testdb.Options{})
 	c := e.own(e.controllerConfig())
 	for range 2 {
 		if err := c.Stop(); err != nil {
@@ -73,8 +74,8 @@ func TestStopReleasesDeployment(t *testing.T) {
 // as a late timer would leave it, is withdrawn rather than served.
 func TestExpiredGenerationWithoutDeadlineIsWithdrawn(t *testing.T) {
 	e := newEnv(t)
-	p := basePolicy(false)
-	seed(t, e.database, p, seedOptions{})
+	p := testdb.Policy(false)
+	testdb.Seed(t, e.database, p, testdb.Options{})
 	c := e.own(e.controllerConfig())
 	stale, err := compile.Compile(p, 1, time.Now().Add(-time.Second))
 	if err != nil {

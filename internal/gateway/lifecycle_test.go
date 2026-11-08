@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -17,6 +18,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Alex-Zechariah-02/apiward/internal/admin"
 	"github.com/Alex-Zechariah-02/apiward/internal/compile"
 	"github.com/Alex-Zechariah-02/apiward/internal/controller"
 	"github.com/Alex-Zechariah-02/apiward/internal/pipeline"
@@ -70,10 +72,10 @@ func (e *env) own(cfg controller.Config) (*controller.Controller, *logBuffer) {
 	return c, logs
 }
 
-// testAdmin returns the Admin API of c with its own rate counters and no
-// dashboard files.
-func testAdmin(c *controller.Controller) *adminAPI {
-	return newAdminAPI(c, pipeline.NewLimiter(), nil, slog.New(slog.DiscardHandler))
+// testAdmin returns the Admin API handler of c with its own rate counters and
+// no dashboard files.
+func testAdmin(c *controller.Controller) http.Handler {
+	return admin.New(admin.Deps{Control: c, Limiter: pipeline.NewLimiter(), Logger: slog.New(slog.DiscardHandler)}).Handler()
 }
 
 // Stack frames of the goroutines a controller starts.
@@ -158,7 +160,7 @@ func TestControllerOwnedByApplication(t *testing.T) {
 		t.Fatalf("%d audit writers, want %d", got, writers+1)
 	}
 
-	if err := c.Start(testAdmin(c).handler()); err != nil {
+	if err := c.Start(testAdmin(c)); err != nil {
 		t.Fatal(err)
 	}
 	if health := e.health(); health != store.ModeNormal {
@@ -167,7 +169,7 @@ func TestControllerOwnedByApplication(t *testing.T) {
 	if s := e.status(); s.State != store.ModeNormal || s.Generation != g.ID || s.Confirmed != 1 {
 		t.Fatalf("status %+v", s)
 	}
-	if err := c.Start(testAdmin(c).handler()); err == nil || !strings.Contains(err.Error(), "already started") {
+	if err := c.Start(testAdmin(c)); err == nil || !strings.Contains(err.Error(), "already started") {
 		t.Fatalf("second Start: %v", err)
 	}
 	if got := goroutines(adminServer); got != servers+1 {
@@ -180,7 +182,7 @@ func TestControllerOwnedByApplication(t *testing.T) {
 	if err := c.Stop(); err != nil {
 		t.Fatalf("repeated Stop: %v", err)
 	}
-	if err := c.Start(testAdmin(c).handler()); err == nil || !strings.Contains(err.Error(), "stopped") {
+	if err := c.Start(testAdmin(c)); err == nil || !strings.Contains(err.Error(), "stopped") {
 		t.Fatalf("Start after Stop: %v", err)
 	}
 	if c.Current() != nil {

@@ -70,7 +70,7 @@ func TestHistoricalRestoreQuarantinesProvisional(t *testing.T) {
 			e.expectNothingServed()
 			// The quarantined revision cannot be confirmed or rolled back.
 			for _, action := range []string{"confirm", "rollback"} {
-				code, outcome, body := e.resolve(root, action, 2, policyETag(recovery.Revision), "restored-"+action+"-xxxxx")
+				code, outcome, body := e.resolve(root, action, 2, revisionTag(recovery.Revision), "restored-"+action+"-xxxxx")
 				if code != http.StatusConflict || outcome.Reason != "ALREADY_RESOLVED" || outcome.Disposition != store.DispositionQuarantined {
 					t.Fatalf("%s of the quarantined revision: %d %s", action, code, body)
 				}

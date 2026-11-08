@@ -1,6 +1,6 @@
 // Sign-in failure throttling.
 
-package gateway
+package admin
 
 import (
 	"sync"

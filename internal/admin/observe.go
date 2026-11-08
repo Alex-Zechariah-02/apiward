@@ -1,6 +1,6 @@
 // Admin API event list and event stream handlers.
 
-package gateway
+package admin
 
 import (
 	"encoding/json"
@@ -24,7 +24,7 @@ func knownQuery(query url.Values, names ...string) bool {
 	return true
 }
 
-func (s *adminAPI) handleEvents(w http.ResponseWriter, r *http.Request, who caller) {
+func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request, who caller) {
 	query, err := url.ParseQuery(r.URL.RawQuery)
 	if err != nil {
 		adminError(w, http.StatusBadRequest, "bad_request", "")
@@ -71,7 +71,7 @@ func (s *adminAPI) handleEvents(w http.ResponseWriter, r *http.Request, who call
 	pipeline.WriteJSON(w, http.StatusOK, list{Items: items, Next: next})
 }
 
-func (s *adminAPI) handleEventStream(w http.ResponseWriter, r *http.Request, who caller) {
+func (s *Server) handleEventStream(w http.ResponseWriter, r *http.Request, who caller) {
 	if r.Header.Get("Accept") != "text/event-stream" || r.URL.RawQuery != "" {
 		adminError(w, http.StatusBadRequest, "bad_request", "")
 		return

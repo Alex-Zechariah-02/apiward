@@ -1,6 +1,6 @@
 // Admin API enrolment, sign-in, session and password handlers.
 
-package gateway
+package admin
 
 import (
 	"net/http"
@@ -13,7 +13,7 @@ import (
 )
 
 // acquireHashing takes one of the bounded password-hashing slots.
-func (s *adminAPI) acquireHashing() bool {
+func (s *Server) acquireHashing() bool {
 	select {
 	case s.hashing <- struct{}{}:
 		return true
@@ -22,9 +22,9 @@ func (s *adminAPI) acquireHashing() bool {
 	}
 }
 
-func (s *adminAPI) releaseHashing() { <-s.hashing }
+func (s *Server) releaseHashing() { <-s.hashing }
 
-func (s *adminAPI) handleEnrol(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleEnrol(w http.ResponseWriter, r *http.Request) {
 	if !s.sameOrigin(r) {
 		s.refuse(w, r, http.StatusForbidden, "forbidden", "bad_origin", nil)
 		return
@@ -76,7 +76,7 @@ func (s *adminAPI) handleEnrol(w http.ResponseWriter, r *http.Request) {
 	pipeline.WriteJSON(w, http.StatusCreated, map[string]any{"name": e.Name, "permissions": e.Permissions.Names()})
 }
 
-func (s *adminAPI) handleLogin(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	if !s.sameOrigin(r) {
 		s.refuse(w, r, http.StatusForbidden, "forbidden", "bad_origin", nil)
 		return
@@ -150,11 +150,11 @@ func sessionView(admin store.Administrator, s session.Session) map[string]any {
 	}
 }
 
-func (s *adminAPI) handleWhoAmI(w http.ResponseWriter, r *http.Request, who caller) {
+func (s *Server) handleWhoAmI(w http.ResponseWriter, r *http.Request, who caller) {
 	pipeline.WriteJSON(w, http.StatusOK, sessionView(who.admin, who.session))
 }
 
-func (s *adminAPI) handleLogout(w http.ResponseWriter, r *http.Request, who caller) {
+func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request, who caller) {
 	s.sessions.Revoke(who.token)
 	s.audit.Record(audit.Event{Kind: "admin.logout", Method: r.Method, Path: r.URL.Path, Actor: who.admin.Name, Session: who.session.Reference})
 	clearSessionCookie(w)
@@ -167,7 +167,7 @@ func clearSessionCookie(w http.ResponseWriter) {
 
 // handlePassword changes the caller's own password after verifying the
 // current one, and ends all of the caller's sessions.
-func (s *adminAPI) handlePassword(w http.ResponseWriter, r *http.Request, who caller) {
+func (s *Server) handlePassword(w http.ResponseWriter, r *http.Request, who caller) {
 	var body struct {
 		Current string `json:"current_password"`
 		New     string `json:"new_password"`

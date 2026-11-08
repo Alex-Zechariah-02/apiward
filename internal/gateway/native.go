@@ -17,6 +17,7 @@ import (
 	"sync"
 	"syscall"
 
+	"github.com/Alex-Zechariah-02/apiward/internal/admin"
 	"github.com/Alex-Zechariah-02/apiward/internal/controller"
 	"github.com/Alex-Zechariah-02/apiward/internal/pipeline"
 )
@@ -241,4 +242,15 @@ func (g *nativeGateway) shutdown() error {
 	}
 	errs = append(errs, g.controller.StopWithin(ctx))
 	return errors.Join(errs...)
+}
+
+// printVersion runs the version command, which takes no options and reads no
+// configuration.
+func printVersion(args []string) int {
+	if len(args) != 0 {
+		fmt.Fprintln(os.Stderr, nativeUsage)
+		return exitFailed
+	}
+	fmt.Print(admin.VersionText())
+	return 0
 }

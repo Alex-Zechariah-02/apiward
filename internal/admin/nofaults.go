@@ -2,9 +2,9 @@
 
 // Production builds register no test routes.
 
-package gateway
+package admin
 
 import "net/http"
 
 // registerTestRoutes adds nothing: production binaries have no test hooks.
-func registerTestRoutes(*adminAPI, *http.ServeMux) {}
+func registerTestRoutes(*Server, *http.ServeMux) {}

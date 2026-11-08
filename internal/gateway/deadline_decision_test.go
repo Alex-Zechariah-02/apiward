@@ -133,7 +133,7 @@ func TestDecisionAtDeadline(t *testing.T) {
 		_, activated := e.provisionalFrom(harness, e.cpaCandidate(), confirmed, 1, fmt.Sprintf("boundary-round-%02d", i))
 		time.Sleep(time.Until(activated.Deadline.Add(offset)))
 		sent := time.Now()
-		code, outcome, body := e.resolve(harness, "confirm", activated.Provisional, policyETag(confirmed), fmt.Sprintf("boundary-confirm-%02d", i))
+		code, outcome, body := e.resolve(harness, "confirm", activated.Provisional, revisionTag(confirmed), fmt.Sprintf("boundary-confirm-%02d", i))
 		switch {
 		case code == http.StatusOK && outcome.Disposition == store.DispositionConfirmed:
 			if !sent.Before(activated.Deadline) {

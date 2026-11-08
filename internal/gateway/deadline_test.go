@@ -123,7 +123,7 @@ func TestTimeoutWithoutTraffic(t *testing.T) {
 	}
 	// Rolled back before its deadline: the timer must not act again.
 	_, withdrawn := e.provisionalFrom(harness, e.protectedPolicy(), kept.Provisional, 2, "quiet-timeout-03")
-	if code, _, body := e.resolve(harness, "rollback", withdrawn.Provisional, policyETag(kept.Provisional), "quiet-timeout-03-rollback"); code != http.StatusOK {
+	if code, _, body := e.resolve(harness, "rollback", withdrawn.Provisional, revisionTag(kept.Provisional), "quiet-timeout-03-rollback"); code != http.StatusOK {
 		t.Fatalf("rollback: %d %s", code, body)
 	}
 	time.Sleep(time.Until(withdrawn.Deadline.Add(1500 * time.Millisecond)))
