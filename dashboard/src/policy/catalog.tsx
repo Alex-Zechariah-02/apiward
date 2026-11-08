@@ -1,5 +1,5 @@
 import { useContext, useState } from 'react'
-import type { Policy, Revision } from '../shared/api'
+import { upstreamAddress, type Policy, type Revision } from '../shared/api'
 import { addressRule, corsRule, forwardRule, whenRule } from '../shared/rules'
 import { useGatewayState, liveMs, usePoll, useResource, ViewMemory } from '../shared/hooks'
 import { RequestRules } from './request-rules'
@@ -128,7 +128,7 @@ export function ApisView({ admin, can, open }: ViewProps) {
                       <div>
                         <h2 id={`api-${api.id}`}>{apiName(api.id)}</h2>
                         <p className="hint">
-                          {all.length} endpoints · service address <code>{upstream?.dial ?? api.upstream}</code> · limits count per client
+                          {all.length} endpoints · service address <code>{upstreamAddress(upstream) || api.upstream}</code> · limits count per client
                           address for public endpoints, per account otherwise
                         </p>
                         {forwardRule(api.forward) ? (

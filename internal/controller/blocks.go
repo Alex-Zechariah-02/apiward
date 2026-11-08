@@ -92,11 +92,16 @@ func (c *Controller) reloadKeys(ctx context.Context, t store.TransitionRecord) (
 		return body, status
 	}
 	now := compile.TrustedNow()
-	if c.config.ReloadTrust == nil {
+	if c.config.ReloadKeys == nil {
 		return c.rejectControl(ctx, t, "KEYS_INVALID", now)
 	}
-	trust, err := c.config.ReloadTrust()
+	trust, network, err := c.config.ReloadKeys()
 	if err != nil {
+		return c.rejectControl(ctx, t, "KEYS_INVALID", now)
+	}
+	// The served generation's upstreams must stay reachable: a reload may
+	// not remove a TLS profile it uses or the public addresses it needs.
+	if g := c.current.Load(); g != nil && g.CheckNetwork(network) != nil {
 		return c.rejectControl(ctx, t, "KEYS_INVALID", now)
 	}
 	current := c.verifier.Load()
@@ -112,6 +117,7 @@ func (c *Controller) reloadKeys(ctx context.Context, t store.TransitionRecord) (
 	}{loaded.Keys()}, nil, func() {
 		loaded.AdoptUses(c.verifier.Load())
 		c.verifier.Store(loaded)
+		c.network.Store(network)
 	}, now)
 }
 

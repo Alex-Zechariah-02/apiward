@@ -1,4 +1,4 @@
-import type { Policy } from '../../shared/api'
+import type { Policy, Upstream } from '../../shared/api'
 import type { NewEndpoint } from './edits'
 import { wholeNumber, withBody } from './wizards'
 
@@ -55,10 +55,23 @@ export function idProblem(id: string, taken: string | undefined): string | undef
   return taken
 }
 
-export function dialProblem(dial: string): string | undefined {
-  const match = /^(\[[0-9A-Fa-f:.]+\]|[^\s:[\]]+):(\d{1,5})$/.exec(dial)
-  const port = Number(match?.[2])
-  return match && port >= 1 && port <= 65535 ? undefined : 'Enter the address as host:port, for example 127.0.0.1:9600.'
+// addressProblem checks the form of a service address: host:port on this
+// computer, or an http or https URL ending at the host and port. Which
+// addresses are allowed stays the gateway's answer on saving.
+export function addressProblem(address: string): string | undefined {
+  const url = /^https?:\/\/(\[[0-9A-Fa-f:.]+\]|[a-z0-9.-]+)(:(\d{1,5}))?\/?$/.exec(address)
+  const dial = /^(\[[0-9A-Fa-f:.]+\]|[^\s:[\]/]+):(\d{1,5})$/.exec(address)
+  const port = url ? Number(url[3] ?? 1) : Number(dial?.[2])
+  if ((url || dial) && port >= 1 && port <= 65535) return undefined
+  return 'Enter host:port, such as 127.0.0.1:9600, or a URL such as https://orders.internal:8443.'
+}
+
+// upstreamFrom writes a service address in the form its text names: a URL
+// with its TLS settings (https only), or a dial address.
+export function upstreamFrom(id: string, address: string, transport: Pick<Upstream, 'tls' | 'host'>): Upstream {
+  if (!address.includes('://')) return { id, dial: address }
+  if (!address.startsWith('https://')) return { id, url: address }
+  return { id, url: address, ...(transport.tls ? { tls: transport.tls } : {}), ...(transport.host ? { host: transport.host } : {}) }
 }
 
 export function pathProblem(target: string): string | undefined {

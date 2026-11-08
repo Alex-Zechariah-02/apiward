@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import { MarkerType, type Edge } from '@xyflow/react'
-import type { ControlChange, Operation, Override, Policy } from '../../shared/api'
+import { upstreamAddress, type ControlChange, type Operation, type Override, type Policy } from '../../shared/api'
 import { capital, splitKey, type BoxKey, type BoxKind, type GroupAction, type Issue } from './model'
 import { type CardSpec, type Row } from './card'
 import { time } from '../../shared/time'
@@ -168,7 +168,7 @@ export function buildGraph(props: CanvasProps, zone: string): { cards: CardSpec[
           return {
             key,
             title: upstream.id || '(empty ID)',
-            detail: <code>{upstream.dial || 'Address needed'}</code>,
+            detail: <code>{upstreamAddress(upstream) || 'Address needed'}</code>,
             kind: 'Service address',
             badges: badgesFor(key),
             dim: !inTrace(key),

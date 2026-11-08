@@ -116,13 +116,13 @@ type deployment struct {
 // openDeployment opens cfg's deployment and builds its handlers; it binds no
 // listener. When it returns an error, everything it opened is released.
 func openDeployment(cfg nativeConfig, logger *slog.Logger) (*deployment, error) {
-	proxy, err := forward.NewUpstreamProxy(cfg.upstream, logger)
-	if err != nil {
-		return nil, classify(ErrConfig, err)
-	}
 	c, ui, err := openController(cfg.controller, cfg.adminUI, logger)
 	if err != nil {
 		return nil, err
+	}
+	proxy, err := forward.NewUpstreamProxy(cfg.upstream, c.Network, logger)
+	if err != nil {
+		return nil, errors.Join(classify(ErrConfig, err), c.Stop())
 	}
 	// A log that cannot be opened refuses every admission and every change
 	// for as long as the process runs; a running gateway could only report it.

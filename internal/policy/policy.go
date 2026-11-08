@@ -13,8 +13,14 @@ import (
 	"unicode/utf8"
 )
 
-// SchemaVersion is the only policy document version this compiler accepts.
-const SchemaVersion = 4
+// SchemaVersion is the policy document version written when nothing newer
+// is needed; LatestSchemaVersion adds upstream URLs, TLS profiles and the
+// Host header choice. The compiler accepts both, and compiles a version 4
+// document exactly as before version 5 existed.
+const (
+	SchemaVersion       = 4
+	LatestSchemaVersion = 5
+)
 
 // ProfileCore is the only enforcement profile that can be activated. Under it
 // the gateway enforces routing, the per-operation access flag, bearer JWT
@@ -35,6 +41,7 @@ const (
 	MaxIDLength      = 64
 	MaxSubjectLength = 128
 	MaxTargetLength  = 256
+	MaxUpstreamURL   = 2048
 	MaxBodyLimit     = 1 << 20
 )
 
@@ -50,10 +57,16 @@ type Policy struct {
 	Permits       []Permit    `json:"permits"`
 }
 
-// Upstream is one entry of the closed destination inventory.
+// Upstream is one entry of the closed destination inventory. It holds
+// exactly one of Dial (a loopback address, plain HTTP) or URL (version 5: an
+// http or https origin); TLS names a TLS profile and Host chooses the Host
+// header ("inbound" or "upstream"), both only with URL.
 type Upstream struct {
 	ID   string `json:"id"`
-	Dial string `json:"dial"`
+	Dial string `json:"dial,omitempty"`
+	URL  string `json:"url,omitempty"`
+	TLS  string `json:"tls,omitempty"`
+	Host string `json:"host,omitempty"`
 }
 
 // Operation binds a method and target of an API to an access decision and
@@ -144,7 +157,7 @@ func DecodePolicy(document []byte) (Policy, error) {
 	if err := json.Unmarshal(document, &header); err != nil {
 		return Policy{}, Invalid("SCHEMA_INVALID", "")
 	}
-	if header.SchemaVersion != SchemaVersion {
+	if header.SchemaVersion != SchemaVersion && header.SchemaVersion != LatestSchemaVersion {
 		return Policy{}, Invalid("SCHEMA_VERSION_UNSUPPORTED", "schema_version")
 	}
 

@@ -36,11 +36,14 @@ type (
 	PolicyError = document.PolicyError
 )
 
-// SchemaVersion is the policy schema version this gateway reads, and
-// ProfileCore the only profile it supports.
+// SchemaVersion is the policy schema version written when nothing newer is
+// needed; LatestSchemaVersion adds upstream URLs, TLS profiles and the Host
+// header choice. The gateway reads both. ProfileCore is the only profile it
+// supports.
 const (
-	SchemaVersion = document.SchemaVersion
-	ProfileCore   = document.ProfileCore
+	SchemaVersion       = document.SchemaVersion
+	LatestSchemaVersion = document.LatestSchemaVersion
+	ProfileCore         = document.ProfileCore
 )
 
 // Decode strictly decodes a policy document: unknown, repeated or

@@ -68,9 +68,11 @@ type Event struct {
 	Generation    string            `json:"generation,omitempty"`
 	Profile       string            `json:"profile,omitempty"`
 	Upstream      string            `json:"upstream,omitempty"`
-	Transition    string            `json:"transition,omitempty"`
-	Revision      int64             `json:"revision,omitempty"`
-	Candidate     int64             `json:"candidate,omitempty"`
+	// UpstreamAddress names the address dialled, on forwarding failures only.
+	UpstreamAddress string `json:"upstream_address,omitempty"`
+	Transition      string `json:"transition,omitempty"`
+	Revision        int64  `json:"revision,omitempty"`
+	Candidate       int64  `json:"candidate,omitempty"`
 	// A provisional base's events name its revision, the confirmed revision
 	// it returns to on rollback and its deadline.
 	Provisional    int64     `json:"provisional,omitempty"`

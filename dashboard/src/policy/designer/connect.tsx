@@ -2,7 +2,9 @@ import { useId, useState } from 'react'
 import { connectApi, withBrowserAccess } from './edits'
 import { Wizard } from '../../shared/dialogs'
 import { Choice, Review, type WizardProps } from './wizards'
-import { blank, dialProblem, endpoints, idProblem, rowErrors, rowId, writes, type Row } from './inputs'
+import { addressProblem, blank, endpoints, idProblem, rowErrors, rowId, upstreamFrom, writes, type Row } from './inputs'
+import { secure, TransportFields } from './transport'
+import { upstreamAddress, type Upstream } from '../../shared/api'
 import { BodyStep, EndpointStep, Entry, RateStep, RoleStep } from './routes'
 
 // Connect an API: a side drawer that adds a service address, an API and its
@@ -20,6 +22,8 @@ export function ConnectWizard({ policy, apply, close }: WizardProps) {
   const [existing, setExisting] = useState('')
   const [upstream, setUpstream] = useState('')
   const [dial, setDial] = useState('')
+  // transport is the TLS profile and Host header of a new https service address.
+  const [transport, setTransport] = useState<Pick<Upstream, 'tls' | 'host'>>({})
   const [api, setApi] = useState('')
   const [rows, setRows] = useState<Row[]>([blank(1)])
   // origins are the web pages allowed to call the API from a browser, separated by spaces.
@@ -34,17 +38,18 @@ export function ConnectWizard({ policy, apply, close }: WizardProps) {
   const upstreamError = existing
     ? undefined
     : idProblem(upstream, policy.upstreams.some((item) => item.id === upstream) ? 'This draft already has a service address with this ID.' : undefined)
-  const dialError = existing ? undefined : dialProblem(dial)
+  const dialError = existing ? undefined : addressProblem(dial)
+  const service = upstreamFrom(upstream, dial, transport)
   const apiError = idProblem(api, policy.apis.some((item) => item.id === api) ? 'This draft already has an API with this ID.' : undefined)
   const errors = rows.map((_, index) => rowErrors(policy, api, rows, index))
   // marks are a revealed step's field errors by row.
   const marks = (step: number) => (shown(step) ? Object.fromEntries(rows.map((row, index) => [row.key, errors[index]])) : {})
   const failing = (names: string[]) => errors.some((error) => names.some((name) => error[name]))
   const complete = !upstreamError && !dialError && !apiError && !failing(['target', 'id', 'count', 'seconds', 'bytes', 'schema'])
-  const connected = complete ? connectApi(policy, existing ? { id: existing } : { id: upstream, dial }, api, endpoints(api, rows)) : policy
+  const connected = complete ? connectApi(policy, existing ? { id: existing } : service, api, endpoints(api, rows)) : policy
   const next = complete ? withBrowserAccess(connected, api, origins.split(/[\s,]+/).filter(Boolean)) : policy
   const permits = rows.reduce((sum, row) => sum + (row.open ? 0 : row.roles.length), 0)
-  const unsaved = existing !== '' || upstream !== '' || dial !== '' || api !== '' || origins !== '' || JSON.stringify(rows) !== JSON.stringify([blank(1)])
+  const unsaved = existing !== '' || upstream !== '' || dial !== '' || transport.tls !== undefined || api !== '' || origins !== '' || JSON.stringify(rows) !== JSON.stringify([blank(1)])
   const named = rows.map((row) => ({ row, id: rowId(api, row) }))
   const writing = named.filter(({ row }) => writes(row))
 
@@ -66,7 +71,7 @@ export function ConnectWizard({ policy, apply, close }: WizardProps) {
             </>
           ) : (
             <>
-              Writes <code>upstreams[]</code>: <code>{field([['id', upstream], ['dial', dial]])}</code>
+              Writes <code>upstreams[]</code>: <code>{field(Object.entries(service) as [string, string][])}</code>
             </>
           ),
           problem: upstreamError || dialError ? fix : undefined,
@@ -77,7 +82,7 @@ export function ConnectWizard({ policy, apply, close }: WizardProps) {
                 id={`${id}-existing`}
                 label="Service Address"
                 value={existing}
-                options={[['', 'New service address'], ...policy.upstreams.map((item): [string, string] => [item.id, `${item.id} (${item.dial})`])]}
+                options={[['', 'New service address'], ...policy.upstreams.map((item): [string, string] => [item.id, `${item.id} (${upstreamAddress(item)})`])]}
                 onChange={setExisting}
               />
               {existing ? null : (
@@ -85,12 +90,14 @@ export function ConnectWizard({ policy, apply, close }: WizardProps) {
                   <Entry id={`${id}-upstream`} label="Service Address ID" value={upstream} onChange={setUpstream} error={shown(0) ? upstreamError : undefined} />
                   <Entry
                     id={`${id}-dial`}
-                    label="Address (Host and Port)"
+                    label="Address"
                     value={dial}
                     onChange={setDial}
                     placeholder="127.0.0.1:9600"
+                    hint="A service address on this computer (127.0.0.1:9504) or a URL such as https://orders.internal:8443."
                     error={shown(0) ? dialError : undefined}
                   />
+                  {secure(dial) ? <TransportFields id={id} upstream={transport} onChange={setTransport} /> : null}
                 </div>
               )}
             </>

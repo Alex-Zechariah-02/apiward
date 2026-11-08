@@ -31,6 +31,7 @@ import { connectHandoff, type ViewProps } from '../../app/views'
 import { DesignerBar, type Mode, SidePanel, type Staged, StaleNotice, type Tab } from './panels'
 import { JsonView } from './json'
 import { DeleteDialog, DiscardDialog, SaveDialog } from './prompts'
+import { ProfilesContext, type ServiceProfile } from './transport'
 
 // The Policy page's Designer: one draft policy shown as a canvas, a form or JSON.
 
@@ -46,6 +47,8 @@ export function Designer({
   const policy = useResource<Revision>((signal) => admin.get('/admin/policy', signal), [])
   const overrides = useResource<OverridesView>((signal) => admin.get('/admin/overrides', signal), [])
   const provisional = useResource<ProvisionalView>((signal) => admin.get('/admin/provisional', signal), [])
+  // profiles are the gateway's TLS profiles, offered for https service addresses.
+  const profiles = useResource<{ items: ServiceProfile[] }>((signal) => admin.get('/admin/tls-profiles', signal), [])
   const pendingId = facts?.provisional
   const provisionalDocument = useResource<Revision>(
     (signal) => (pendingId !== undefined ? admin.get(`/admin/revisions/${pendingId}`, signal) : Promise.resolve({ kind: 'aborted' })),
@@ -314,7 +317,7 @@ export function Designer({
     !!draft && (dirty || draft.baseRevision !== current?.id || (tab === 'json' && json !== serialised) || Object.keys(buffers).length > 0)
 
   return (
-    <>
+    <ProfilesContext.Provider value={profiles.last?.body.items ?? []}>
       <PageHeader
         title="Policy"
         lede="Define which roles may call each endpoint and where each API forwards requests."
@@ -597,6 +600,6 @@ export function Designer({
           </button>
         </>
       ) : null}
-    </>
+    </ProfilesContext.Provider>
   )
 }

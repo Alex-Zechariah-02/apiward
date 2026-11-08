@@ -41,7 +41,7 @@ func (s *Server) candidateGeneration(w http.ResponseWriter, r *http.Request, id 
 		adminError(w, 503, "gateway_unavailable", "")
 		return nil, nil, false
 	}
-	candidate, err = controller.CandidateGeneration(policy, stored.Parent, authority.Overrides)
+	candidate, err = controller.CandidateGeneration(s.control.Network(), policy, stored.Parent, authority.Overrides)
 	if err != nil {
 		adminError(w, http.StatusUnprocessableEntity, "candidate_invalid", "")
 		return nil, nil, false

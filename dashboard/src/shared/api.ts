@@ -82,12 +82,28 @@ export interface Operation {
   when?: When
 }
 
-// Policy is a schema version 4 document. It names no accounts: roles come
-// from the trusted issuer's tokens and blocking is a separate list.
+// Upstream is a service address: either dial (an address on the gateway's
+// computer, plain HTTP) or, from schema version 5, url (an http or https
+// origin), with an optional TLS profile and the Host header it receives.
+export interface Upstream {
+  id: string
+  dial?: string
+  url?: string
+  tls?: string
+  host?: 'inbound' | 'upstream'
+}
+
+// upstreamAddress is the address an upstream names, in either form.
+export function upstreamAddress(upstream: Upstream | undefined): string {
+  return upstream?.url ?? upstream?.dial ?? ''
+}
+
+// Policy is a schema version 4 or 5 document. It names no accounts: roles
+// come from the trusted issuer's tokens and blocking is a separate list.
 export interface Policy {
   schema_version: number
   profile: string
-  upstreams: { id: string; dial: string }[]
+  upstreams: Upstream[]
   apis: ApiEntry[]
   operations: Operation[]
   roles: { id: string }[]

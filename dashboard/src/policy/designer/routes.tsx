@@ -9,9 +9,9 @@ type Marks = Record<number, Record<string, string | undefined>>
 type Named = { row: Row; id: string }[]
 
 // Entry is one text field for an ID, a path or an address, with what to fix beside it.
-export function Entry(props: { id: string; label: string; value: string; onChange: (value: string) => void; placeholder?: string; error?: string; wide?: boolean }) {
+export function Entry(props: { id: string; label: string; value: string; onChange: (value: string) => void; placeholder?: string; hint?: string; error?: string; wide?: boolean }) {
   return (
-    <Field id={props.id} label={props.label} error={props.error} wide={props.wide}>
+    <Field id={props.id} label={props.label} hint={props.hint} error={props.error} wide={props.wide}>
       <input
         id={props.id}
         className="input mono"
@@ -20,7 +20,7 @@ export function Entry(props: { id: string; label: string; value: string; onChang
         spellCheck={false}
         autoComplete="off"
         aria-invalid={props.error ? true : undefined}
-        aria-describedby={describedBy(props.id, undefined, props.error)}
+        aria-describedby={describedBy(props.id, props.hint, props.error)}
         onChange={(event) => props.onChange(event.target.value)}
       />
     </Field>

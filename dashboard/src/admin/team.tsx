@@ -8,6 +8,8 @@ import { ReadStamp, Time } from '../shared/time'
 import type { ViewProps } from '../app/views'
 import { permissionWords } from '../shared/checks'
 import { GatewayBuild } from './build'
+import { ServiceProfiles } from './profiles'
+import type { ServiceProfile } from '../policy/designer/transport'
 
 // The Team page: administrators, trusted token signing keys and the gateway
 // build.
@@ -30,19 +32,25 @@ interface SigningKey {
 export function TeamView({ admin, can }: ViewProps) {
   const admins = useResource<{ items: Administrator[] }>((signal) => admin.get('/admin/administrators', signal), [])
   const keys = useResource<{ items: SigningKey[] }>((signal) => admin.get('/admin/keys', signal), [])
-  const reload = useMutation<{ items: SigningKey[] }>(admin, keys.refresh)
+  const profiles = useResource<{ items: ServiceProfile[] }>((signal) => admin.get('/admin/tls-profiles', signal), [])
+  // A key reload reads the service TLS profiles again too.
+  const refresh = () => {
+    keys.refresh()
+    profiles.refresh()
+  }
+  const reload = useMutation<{ items: SigningKey[] }>(admin, refresh)
   // trustedBefore is the key list read before the latest reload was sent,
   // so the result can say which key IDs it added and removed.
   const [trustedBefore, setTrustedBefore] = useState<SigningKey[] | null>(null)
   return (
     <>
-      <PageHeader title="Team" lede="Administrators, their permissions, the keys trusted to sign tokens and the running build.">
+      <PageHeader title="Team" lede="Administrators, their permissions, the keys trusted to sign tokens, the TLS profiles used to reach services and the running build.">
         <ReadStamp
           okAt={admins.last?.at ?? null} failed={admins.failed}
           loading={admins.loading}
           onRefresh={() => {
             admins.refresh()
-            keys.refresh()
+            refresh()
           }}
         />
       </PageHeader>
@@ -151,13 +159,14 @@ export function TeamView({ admin, can }: ViewProps) {
             )}
           </ReplyView>
           <div className="card-pad-x">
-            <MutationResult mutation={reload} onRefresh={keys.refresh} success={(r) => <KeyChange before={trustedBefore} after={r.items} />} />
+            <MutationResult mutation={reload} onRefresh={refresh} success={(r) => <KeyChange before={trustedBefore} after={r.items} />} />
           </div>
         </div>
       </section>
       <p className="hint section">
         Signing keys are read from the gateway host, not the policy, so a policy rollback never restores a retired key. Before retiring a key, check it is no longer in use: tokens it signed are refused once it is retired.
       </p>
+      <ServiceProfiles profiles={profiles} />
       <GatewayBuild admin={admin} />
     </>
   )

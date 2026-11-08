@@ -12,6 +12,7 @@ import (
 	"github.com/Alex-Zechariah-02/apiward/internal/audit"
 	"github.com/Alex-Zechariah-02/apiward/internal/controller"
 	"github.com/Alex-Zechariah-02/apiward/internal/demoports"
+	"github.com/Alex-Zechariah-02/apiward/internal/forward"
 	"github.com/Alex-Zechariah-02/apiward/internal/pipeline"
 	"github.com/Alex-Zechariah-02/apiward/internal/policy"
 )
@@ -117,6 +118,12 @@ func (f nativeFile) check() (nativeConfig, error) {
 		return nativeConfig{}, err
 	}
 	if cfg.headerLimit, err = numberSetting("data.max_header_bytes", d.MaxHeaderBytes, defaultHeaderBytes, minHeaderBytes, maxHeaderBytes); err != nil {
+		return nativeConfig{}, err
+	}
+
+	// Profile files are read here, so a missing or invalid one stops the
+	// start, and a reload reads them again with the rest of the file.
+	if cfg.controller.Network, err = forward.LoadNetwork(u.AllowPublicAddresses, u.TLSProfiles); err != nil {
 		return nativeConfig{}, err
 	}
 

@@ -81,7 +81,7 @@ export function shapeIssue(value: unknown): Issue | null {
   if (root) return { id: 'shape', field: '$', message: root }
   const policy = value as unknown as Policy
   const definitions: Record<string, [Record<string, string>, Record<string, string>?]> = {
-    upstreams: [{ id: 'string', dial: 'string' }],
+    upstreams: [{ id: 'string' }, { dial: 'string', url: 'string', tls: 'string', host: 'string' }],
     apis: [{ id: 'string', upstream: 'string' }, { forward: 'object', cors: 'object', response_headers: 'object', allow_addresses: 'array' }],
     operations: [
       { id: 'string', api: 'string', method: 'string', target: 'string', access: 'string', auth: 'string' },
@@ -175,7 +175,7 @@ export function localIssues(policy: Policy): Issue[] {
       issues.push({ id: 'reference', field: `apis[${index}].upstream`, message: 'Choose a service address in this document.', box: `api:${api.id}` })
   })
   policy.upstreams.forEach((upstream, index) => {
-    if (!upstream.dial)
+    if (!upstream.dial && !upstream.url)
       issues.push({ id: 'dial', field: `upstreams[${index}].dial`, message: 'Enter the service address.', box: `upstream:${upstream.id}` })
   })
   return issues

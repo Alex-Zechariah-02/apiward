@@ -31,7 +31,7 @@ func PolicyChanges(before, after policy.Policy) []ControlChange {
 	collect := func(p policy.Policy) map[string]map[string]string {
 		d := map[string]map[string]string{"upstream": {}, "api": {}, "operation": {}, "rate": {}, "role": {}, "permit": {}}
 		for _, u := range p.Upstreams {
-			d["upstream"][u.ID] = u.Dial
+			d["upstream"][u.ID] = encode(u)
 		}
 		for _, a := range p.APIs {
 			d["api"][a.ID] = a.Upstream

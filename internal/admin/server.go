@@ -94,6 +94,7 @@ func (s *Server) Handler() http.Handler {
 	s.route(mux, "GET /admin/revisions/{id}", store.PermRead, s.handleRevision)
 	s.route(mux, "GET /admin/keys", store.PermRead, s.handleKeys)
 	s.route(mux, "POST /admin/keys/reload", store.PermManagePolicy, s.handleReloadKeys)
+	s.route(mux, "GET /admin/tls-profiles", store.PermRead, s.handleProfiles)
 	s.route(mux, "GET /admin/blocked-accounts", store.PermRead, s.handleBlockedAccounts)
 	s.route(mux, "PUT /admin/blocked-accounts/{subject}", store.PermManageSubjects, s.handleBlockAccount)
 	s.route(mux, "DELETE /admin/blocked-accounts/{subject}", store.PermManageSubjects, s.handleUnblockAccount)

@@ -23,7 +23,7 @@ import (
 // publishAuthority compiles committed authority, the active base with its
 // active overrides, and swaps it in.
 func (c *Controller) publishAuthority(a store.Authority) bool {
-	g, err := authorityGeneration(a, a.Overrides)
+	g, err := authorityGeneration(c.network.Load(), a, a.Overrides)
 	if err != nil {
 		c.unavailable(fmt.Sprintf("stored revision %d with overrides %v: %v", a.Revision, overrideIDs(a.Overrides), err))
 		return false
@@ -36,7 +36,7 @@ func (c *Controller) publishAuthority(a store.Authority) bool {
 
 // authorityGeneration compiles the active base of a with the given overrides,
 // keeping a provisional base's deadline.
-func authorityGeneration(a store.Authority, overrides []store.Override) (*compile.Generation, error) {
+func authorityGeneration(network compile.Network, a store.Authority, overrides []store.Override) (*compile.Generation, error) {
 	p, err := policy.DecodePolicy(a.Document)
 	if err != nil {
 		return nil, err
@@ -45,7 +45,7 @@ func authorityGeneration(a store.Authority, overrides []store.Override) (*compil
 	if a.Provisional != 0 {
 		deadline = a.Deadline
 	}
-	return effectiveGeneration(p, a.Revision, deadline, overrides)
+	return effectiveGeneration(network, p, a.Revision, deadline, overrides)
 }
 
 func overrideIDs(overrides []store.Override) []int64 {
@@ -62,7 +62,7 @@ func (c *Controller) compileEffective(ctx context.Context, revision int64, deadl
 	if err != nil {
 		return nil, err
 	}
-	return effectiveGeneration(p, revision, deadline, overrides)
+	return effectiveGeneration(c.network.Load(), p, revision, deadline, overrides)
 }
 
 // publish applies a complete proposed policy: compile it with the
@@ -71,7 +71,7 @@ func (c *Controller) compileEffective(ctx context.Context, revision int64, deadl
 // outcome event. Callers have checked that the policy changes no target the
 // overrides depend on.
 func (c *Controller) publish(ctx context.Context, t store.TransitionRecord, policy policy.Policy, change store.RevisionChange, overrides []store.Override, now time.Time) (Outcome, int) {
-	if _, err := effectiveGeneration(policy, 0, change.Deadline, overrides); err != nil {
+	if _, err := effectiveGeneration(c.network.Load(), policy, 0, change.Deadline, overrides); err != nil {
 		code, field := policyRejection(err)
 		return c.reject(ctx, t, code, field, now)
 	}
@@ -88,7 +88,7 @@ func (c *Controller) publish(ctx context.Context, t store.TransitionRecord, poli
 	}
 	fault.CrashPoint("after-commit")
 
-	g, err := effectiveGeneration(policy, revision, change.Deadline, overrides)
+	g, err := effectiveGeneration(c.network.Load(), policy, revision, change.Deadline, overrides)
 	if err != nil {
 		c.unavailable(fmt.Sprintf("compiling committed revision %d: %v", revision, err))
 		return Outcome{Transition: t.ID, Outcome: "committed", Reason: "PUBLICATION_FAILED"}, http.StatusInternalServerError

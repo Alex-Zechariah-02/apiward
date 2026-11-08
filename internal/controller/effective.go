@@ -101,17 +101,18 @@ func applyOverride(p *policy.Policy, o store.Override) error {
 	return nil
 }
 
+// CandidateGeneration compiles p, stored with parent revision parent, with
+// overrides applied, as an activation would publish it; it publishes nothing.
+func CandidateGeneration(network compile.Network, p policy.Policy, parent int64, overrides []store.Override) (*compile.Generation, error) {
+	return effectiveGeneration(network, p, parent, time.Time{}, overrides)
+}
+
 // effectiveGeneration compiles the active base with the active overrides into
 // one generation. It expires at the earliest of the provisional deadline (if
 // any) and the overrides' expiry times, so a generation never serves past the
 // first of them. Its identity names the base revision and every override.
-// CandidateGeneration compiles p, stored with parent revision parent, with
-// overrides applied, as an activation would publish it; it publishes nothing.
-func CandidateGeneration(p policy.Policy, parent int64, overrides []store.Override) (*compile.Generation, error) {
-	return effectiveGeneration(p, parent, time.Time{}, overrides)
-}
-
-func effectiveGeneration(base policy.Policy, revision int64, deadline time.Time, overrides []store.Override) (*compile.Generation, error) {
+// It is refused when network does not allow its upstreams.
+func effectiveGeneration(network compile.Network, base policy.Policy, revision int64, deadline time.Time, overrides []store.Override) (*compile.Generation, error) {
 	if len(overrides) > store.MaxActiveOverrides {
 		return nil, policy.Invalid("LIMIT_EXCEEDED", "overrides")
 	}
@@ -131,6 +132,10 @@ func effectiveGeneration(base policy.Policy, revision int64, deadline time.Time,
 
 	g, err := compile.Compile(p, revision, notAfter)
 	if err != nil {
+		return nil, err
+	}
+	// An upstream the operator settings no longer allow is never served.
+	if err := g.CheckNetwork(network); err != nil {
 		return nil, err
 	}
 	if len(ids) > 0 {

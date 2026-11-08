@@ -23,7 +23,7 @@ type apiRule struct {
 
 // compileAPIs checks the policy's APIs against the upstream inventory and
 // compiles each API's own settings.
-func compileAPIs(p policy.Policy, dials map[string]string) (map[string]*apiRule, error) {
+func compileAPIs(p policy.Policy, endpoints map[string]*Endpoint) (map[string]*apiRule, error) {
 	apis := map[string]*apiRule{}
 	for i, a := range p.APIs {
 		if err := policy.CheckID(a.ID, "apis[%d].id", i); err != nil {
@@ -32,7 +32,7 @@ func compileAPIs(p policy.Policy, dials map[string]string) (map[string]*apiRule,
 		if _, exists := apis[a.ID]; exists {
 			return nil, policy.Invalid("DUPLICATE_ID", "apis[%d].id", i)
 		}
-		if _, ok := dials[a.Upstream]; !ok {
+		if _, ok := endpoints[a.Upstream]; !ok {
 			return nil, policy.Invalid("UNKNOWN_REFERENCE", "apis[%d].upstream", i)
 		}
 		api := &apiRule{upstream: a.Upstream, limited: a.AllowAddresses != nil}

@@ -90,11 +90,15 @@ type dataSettings struct {
 	IdleTimeout       *string `json:"idle_timeout"`
 }
 
-// upstreamSettings bound each exchange with an upstream.
+// upstreamSettings bound each exchange with an upstream and say which
+// destinations upstreams may use: public addresses only when allowed, and
+// the TLS profiles policies name.
 type upstreamSettings struct {
-	DialTimeout           *string `json:"dial_timeout"`
-	ResponseHeaderTimeout *string `json:"response_header_timeout"`
-	ReadIdleTimeout       *string `json:"read_idle_timeout"`
+	DialTimeout           *string                   `json:"dial_timeout"`
+	ResponseHeaderTimeout *string                   `json:"response_header_timeout"`
+	ReadIdleTimeout       *string                   `json:"read_idle_timeout"`
+	AllowPublicAddresses  bool                      `json:"allow_public_addresses"`
+	TLSProfiles           []forward.ProfileSettings `json:"tls_profiles"`
 }
 
 // nativeConfig is a checked configuration of the native gateway.
@@ -150,9 +154,9 @@ func loadNativeConfig(path string) (nativeConfig, error) {
 		return nativeConfig{}, err
 	}
 	settingsFile, err := filepath.Abs(path)
-	cfg.controller.ReloadTrust = func() (pipeline.TrustConfig, error) {
+	cfg.controller.ReloadKeys = func() (pipeline.TrustConfig, *forward.Network, error) {
 		reloaded, err := loadNativeConfig(settingsFile)
-		return reloaded.controller.JWT, err
+		return reloaded.controller.JWT, reloaded.controller.Network, err
 	}
 	return cfg, err
 }

@@ -41,7 +41,10 @@ func (c *Controller) StageCandidate(ctx context.Context, t store.TransitionRecor
 	}
 	policy, err := policy.DecodePolicy(document)
 	if err == nil {
-		_, err = compile.Compile(policy, 0, time.Time{})
+		var g *compile.Generation
+		if g, err = compile.Compile(policy, 0, time.Time{}); err == nil {
+			err = g.CheckNetwork(c.network.Load())
+		}
 	}
 	if err != nil {
 		code, field := policyRejection(err)

@@ -36,9 +36,10 @@ type Generation struct {
 	// controller has not yet replaced it.
 	NotAfter time.Time
 
-	exact    map[string]*target
-	prefixes []*target // ordered most specific first
-	roles    map[string]bool
+	exact     map[string]*target
+	prefixes  []*target   // ordered most specific first
+	endpoints []*Endpoint // the upstreams, in policy order
+	roles     map[string]bool
 }
 
 type target struct {
@@ -58,7 +59,7 @@ type Rule struct {
 	index     int    // position in the policy's operations
 	api       string
 	upstream  string
-	dial      string
+	endpoint  *Endpoint
 	forward   *rewrite // nil: the inbound path is forwarded unchanged
 	settings  *apiRule
 	permitted bool
@@ -77,7 +78,7 @@ type Rule struct {
 // It has no side effects. A non-zero notAfter is the earliest persisted
 // deadline the generation depends on.
 func Compile(p policy.Policy, revision int64, notAfter time.Time) (*Generation, error) {
-	if p.SchemaVersion != policy.SchemaVersion {
+	if p.SchemaVersion != policy.SchemaVersion && p.SchemaVersion != policy.LatestSchemaVersion {
 		return nil, policy.Invalid("SCHEMA_VERSION_UNSUPPORTED", "schema_version")
 	}
 	if p.Profile == "" {
@@ -90,33 +91,20 @@ func Compile(p policy.Policy, revision int64, notAfter time.Time) (*Generation, 
 		return nil, err
 	}
 
-	dials := map[string]string{}
-	usedDials := map[string]bool{}
-	for i, u := range p.Upstreams {
-		if err := policy.CheckID(u.ID, "upstreams[%d].id", i); err != nil {
-			return nil, err
-		}
-		if _, exists := dials[u.ID]; exists {
-			return nil, policy.Invalid("DUPLICATE_ID", "upstreams[%d].id", i)
-		}
-		if !IsLoopbackDial(u.Dial) {
-			return nil, policy.Invalid("INVALID_UPSTREAM", "upstreams[%d].dial", i)
-		}
-		// Two upstream identities for one destination would make receipts
-		// and events ambiguous about which service was reached.
-		if usedDials[u.Dial] {
-			return nil, policy.Invalid("INVALID_UPSTREAM", "upstreams[%d].dial", i)
-		}
-		dials[u.ID] = u.Dial
-		usedDials[u.Dial] = true
+	endpoints, err := compileUpstreams(p)
+	if err != nil {
+		return nil, err
 	}
 
-	apis, err := compileAPIs(p, dials)
+	apis, err := compileAPIs(p, endpoints)
 	if err != nil {
 		return nil, err
 	}
 
 	g := &Generation{Revision: revision, Profile: p.Profile, exact: map[string]*target{}}
+	for _, u := range p.Upstreams {
+		g.endpoints = append(g.endpoints, endpoints[u.ID])
+	}
 	if !notAfter.IsZero() {
 		g.NotAfter = notAfter.Round(0)
 	}
@@ -164,7 +152,7 @@ func Compile(p policy.Policy, revision int64, notAfter time.Time) (*Generation, 
 			api:       op.API,
 			counter:   op.ID,
 			upstream:  api.upstream,
-			dial:      dials[api.upstream],
+			endpoint:  endpoints[api.upstream],
 			forward:   api.forward,
 			settings:  api,
 			permitted: op.Access == "allow",

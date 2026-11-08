@@ -108,7 +108,11 @@ func Export(p policy.Policy, options ExportOptions) (map[string]any, *ExportRepo
 	if options.WithUpstream {
 		for _, u := range p.Upstreams {
 			if u.ID == upstream {
-				document["servers"] = []any{map[string]any{"url": "http://" + u.Dial, "description": u.ID}}
+				origin := u.URL
+				if origin == "" {
+					origin = "http://" + u.Dial
+				}
+				document["servers"] = []any{map[string]any{"url": origin, "description": u.ID}}
 			}
 		}
 	} else {

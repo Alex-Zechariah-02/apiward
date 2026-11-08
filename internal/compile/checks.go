@@ -65,9 +65,9 @@ func checkPermits(p policy.Policy, rules map[string]*Rule) (map[string]bool, err
 	return roles, nil
 }
 
-// IsLoopbackDial accepts only literal loopback addresses, so a destination can
+// isLoopbackDial accepts only literal loopback addresses, so a destination can
 // neither be resolved through DNS nor expanded from request placeholders.
-func IsLoopbackDial(dial string) bool {
+func isLoopbackDial(dial string) bool {
 	addr, err := netip.ParseAddrPort(dial)
 	return err == nil && addr.Port() != 0 && addr.Addr().IsLoopback()
 }

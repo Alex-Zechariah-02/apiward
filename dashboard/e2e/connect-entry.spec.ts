@@ -115,7 +115,7 @@ test.describe.serial('Connect an API: entry points, keyboard and accessibility',
       await page.keyboard.type(text)
     }
     await fill('Service Address ID', 'kb-svc')
-    await fill('Address (Host and Port)', '127.0.0.1:9691')
+    await fill('Address', '127.0.0.1:9691')
     await tabTo(next)
     await page.keyboard.press('Enter')
     await expect(heading()).toHaveText('Step 2 of 8: API')

@@ -58,6 +58,11 @@ func TestNativeConfigSettings(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Without upstream settings: no public addresses and no TLS profiles.
+	closed, err := forward.LoadNetwork(false, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 	want := nativeConfig{
 		controller: controller.Config{
 			Database:             filepath.Join(dir, "state.db"),
@@ -69,6 +74,7 @@ func TestNativeConfigSettings(t *testing.T) {
 			AuditMaxBytes:        64 << 20,
 			AuditMaxFiles:        8,
 			JWT:                  gatewaytest.TestTrust("issuer", "gateway", filepath.Join(dir, "issuer.pem")),
+			Network:              closed,
 		},
 		listen:            "127.0.0.2:9480",
 		metricsListen:     gatewaytest.DemoTestAddress(t, "127.0.0.1:9450"),
@@ -185,6 +191,7 @@ func TestNativeConfigRefusals(t *testing.T) {
 		{"zero audit file size", string(configDocument(t, dir, set("gateway", "audit_max_bytes", 0))), "gateway.audit_max_bytes must be"},
 		{"one audit file", string(configDocument(t, dir, set("gateway", "audit_max_files", 1))), "gateway.audit_max_files must be 2 to 1000"},
 		{"removed website setting", string(configDocument(t, dir, set("data", "website", t.TempDir()))), `unknown field "website"`},
+		{"TLS profile file missing", string(configDocument(t, dir, set("upstream", "tls_profiles", []any{map[string]any{"id": "fetch", "ca_file": filepath.Join(dir, "none.pem")}}))), `upstream TLS profile "fetch": ca_file`},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

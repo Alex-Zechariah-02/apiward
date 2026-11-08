@@ -17,9 +17,9 @@ var (
 )
 
 // binding is the trusted upstream decision carried in the request context:
-// the address to dial and the path to forward. Only this package can create
-// it; no header or placeholder can.
-type binding struct{ dial, path string }
+// the compiled destination. Only this package can attach it; no header or
+// placeholder can.
+type binding struct{ destination compile.Destination }
 
 type bindingKey struct{}
 
@@ -27,11 +27,11 @@ type bindingKey struct{}
 // upstream the request may reach and the path it is forwarded with. It is
 // the only way to attach a binding.
 func Bind(ctx context.Context, d compile.Destination) context.Context {
-	return context.WithValue(ctx, bindingKey{}, binding{dial: d.Dial(), path: d.Path()})
+	return context.WithValue(ctx, bindingKey{}, binding{destination: d})
 }
 
-// Bound returns the address and path ctx is bound to, if a binding is attached.
-func Bound(ctx context.Context) (dial, path string, bound bool) {
+// Bound returns the destination ctx is bound to, if a binding is attached.
+func Bound(ctx context.Context) (compile.Destination, bool) {
 	b, bound := ctx.Value(bindingKey{}).(binding)
-	return b.dial, b.path, bound
+	return b.destination, bound
 }

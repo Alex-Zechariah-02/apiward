@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import type { Policy, Revision } from '../shared/api'
+import { upstreamAddress, type Policy, type Revision } from '../shared/api'
 import { differences } from '../shared/diff'
 import { useResource } from '../shared/hooks'
 import { Badge, CodeBlock, Glyph, TableScroll } from '../shared/ui'
@@ -196,7 +196,7 @@ export function PolicyTables({ policy: p, part }: { policy: Policy; part: 'endpo
                 <tr key={u.id}>
                   <td>{u.id}</td>
                   <td>
-                    <code>{u.dial}</code>
+                    <code>{upstreamAddress(u)}</code>
                   </td>
                   <td>
                     {p.apis

@@ -20,8 +20,8 @@ func (r *Rule) API() string { return r.api }
 // Upstream is the ID of the upstream the operation is bound to.
 func (r *Rule) Upstream() string { return r.upstream }
 
-// Dial is the loopback address of that upstream.
-func (r *Rule) Dial() string { return r.dial }
+// Endpoint is that upstream's compiled destination.
+func (r *Rule) Endpoint() *Endpoint { return r.endpoint }
 
 // Permitted reports whether the operation's access flag allows requests.
 func (r *Rule) Permitted() bool { return r.permitted }

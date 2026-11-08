@@ -118,7 +118,24 @@ export const messages: Record<string, Message> = {
   LIMIT_EXCEEDED: { title: 'The document is too large', action: 'It exceeds a size or count limit. Make it smaller.' },
   INVALID_UPSTREAM: {
     title: 'A service address is not allowed',
-    action: 'Use a local address with a port, such as 127.0.0.1:9502, and give each service its own address.',
+    action:
+      'Use an address on this computer with a port, such as 127.0.0.1:9502, or a URL on a private network, such as https://orders.internal:8443. Give each service its own address. Public addresses need the operator setting that allows them; link-local and cloud metadata addresses are never allowed.',
+  },
+  UNKNOWN_TLS_PROFILE: {
+    title: 'A service names a TLS profile the gateway does not have',
+    action: 'Choose a profile listed on the Team page under Service TLS Profiles, or ask the operator to add it to the gateway settings.',
+  },
+  destination_refused: {
+    title: 'The gateway refused to connect to this service address',
+    action: 'The address is not allowed, so the request was not sent. Check the service address in the policy and the operator settings.',
+  },
+  certificate_invalid: {
+    title: 'The service’s certificate was not trusted',
+    action: 'The request was not sent. Check that the certificate names the service address and is signed by the CA in its TLS profile.',
+  },
+  tls_handshake_failed: {
+    title: 'A secure connection to the service could not be set up',
+    action: 'The request was not sent. Check the service’s TLS settings and that it accepts the gateway’s client certificate.',
   },
   INVALID_METHOD: { title: 'An endpoint method is not allowed', action: 'Use GET, HEAD, POST, PUT, PATCH, DELETE or OPTIONS.' },
   INVALID_TARGET: { title: 'An endpoint path is not valid', action: 'Use an exact path, such as /orders, or a prefix ending in /*.' },

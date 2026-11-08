@@ -22,12 +22,21 @@ func ForwardFailure(err error) (int, string) {
 
 // FailureReason states what is known about the delivery of a request whose
 // forwarding failed before any response: "not_sent" when it never reached
-// the upstream, "outcome_unknown" when the upstream may have acted on it, and
+// the upstream, or why not when the gateway refused the connection
+// ("destination_refused": an address no setting allows; "certificate_invalid";
+// "tls_handshake_failed"), "outcome_unknown" when the upstream may have acted
+// on it, and
 // "client_cancelled" when the client went away after it was handed to an
 // upstream connection, which leaves the outcome unknown too. A forwarder that
 // cannot tell gives no reason.
 func FailureReason(err error) string {
 	switch {
+	case errors.Is(err, errRefused):
+		return "destination_refused"
+	case errors.Is(err, errCertificate):
+		return "certificate_invalid"
+	case errors.Is(err, errHandshake), errors.Is(err, errProfileMissing):
+		return "tls_handshake_failed"
 	case errors.Is(err, errNotSent):
 		return "not_sent"
 	case errors.Is(err, errClientGone):

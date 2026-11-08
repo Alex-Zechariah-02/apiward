@@ -100,7 +100,7 @@ func TestValidPolicyCompilesDeterministically(t *testing.T) {
 	p.Roles[1].ID = "OTHER"
 	p.Permits[0].Role = "CUSTOMER"
 	_, r := first.Match("/orders", "GET", compile.Inbound{})
-	if r == nil || !r.Permitted() || r.Dial() != "127.0.0.1:9101" || r.API() != "orders" || r.Upstream() != "orders" {
+	if r == nil || !r.Permitted() || r.Endpoint().Address() != "127.0.0.1:9101" || r.API() != "orders" || r.Upstream() != "orders" {
 		t.Fatalf("generation changed with its source policy: %+v", r)
 	}
 	if _, _, reason := first.Authorise([]string{"STAFF"}, r); reason != "" {
@@ -146,7 +146,7 @@ func TestMalformedPolicyDocumentsAreRejected(t *testing.T) {
 		{"earlier schema version", `{"schema_version":1,"profile":"routing-only"}`, "SCHEMA_VERSION_UNSUPPORTED"},
 		{"previous schema version", `{"schema_version":2,"profile":"jwt-rbac"}`, "SCHEMA_VERSION_UNSUPPORTED"},
 		{"retired schema version", `{"schema_version":3,"profile":"core"}`, "SCHEMA_VERSION_UNSUPPORTED"},
-		{"later schema version", `{"schema_version":5,"profile":"core"}`, "SCHEMA_VERSION_UNSUPPORTED"},
+		{"later schema version", `{"schema_version":6,"profile":"core"}`, "SCHEMA_VERSION_UNSUPPORTED"},
 		{"missing profile", `{"schema_version":4}`, "INVALID_VALUE"},
 		{"routing-only profile", `{"schema_version":4,"profile":"routing-only"}`, "UNSUPPORTED_FEATURE"},
 		{"previous profile", `{"schema_version":4,"profile":"jwt-rbac"}`, "UNSUPPORTED_FEATURE"},

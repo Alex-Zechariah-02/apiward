@@ -60,6 +60,15 @@ func (s *Server) handleReloadKeys(w http.ResponseWriter, r *http.Request, who ca
 	pipeline.WriteJSON(w, status, body)
 }
 
+// handleProfiles lists the upstream TLS profiles: whether each pins a CA and
+// holds a client certificate, and when that certificate expires. File paths
+// and keys are never returned.
+func (s *Server) handleProfiles(w http.ResponseWriter, r *http.Request, who caller) {
+	pipeline.WriteJSON(w, http.StatusOK, struct {
+		Items any `json:"items"`
+	}{s.control.Network().Profiles()})
+}
+
 func (s *Server) handleBlockedAccounts(w http.ResponseWriter, r *http.Request, who caller) {
 	current := s.control.Blocked()
 	if current == nil {

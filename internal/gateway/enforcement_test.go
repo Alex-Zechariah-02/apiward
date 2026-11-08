@@ -50,7 +50,11 @@ type memoryForwarder struct {
 }
 
 func (f *memoryForwarder) forward(w http.ResponseWriter, r *http.Request) error {
-	dial, path, bound := forward.Bound(r.Context())
+	d, bound := forward.Bound(r.Context())
+	dial, path := "", d.Path()
+	if d.Endpoint() != nil {
+		dial = d.Endpoint().Address()
+	}
 	body, _ := io.ReadAll(r.Body)
 	f.mu.Lock()
 	f.got = append(f.got, handedRequest{

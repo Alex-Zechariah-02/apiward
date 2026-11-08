@@ -1,5 +1,6 @@
-import type { Policy } from '../../shared/api'
+import type { Policy, Upstream } from '../../shared/api'
 import { copy } from './model'
+import { upstreamFrom } from './inputs'
 
 // Prepared Designer edits: the templates and the step-by-step wizards' changes.
 
@@ -101,10 +102,10 @@ export function addEndpoint(policy: Policy, endpoint: NewEndpoint): Policy {
 }
 
 // connectApi adds an API with its endpoints, forwarding to an existing service
-// address or, when dial is given, to a new one.
-export function connectApi(policy: Policy, upstream: { id: string; dial?: string }, api: string, endpoints: NewEndpoint[]): Policy {
+// address (only its ID given) or to a new one.
+export function connectApi(policy: Policy, upstream: Upstream, api: string, endpoints: NewEndpoint[]): Policy {
   let next = copy(policy)
-  if (upstream.dial !== undefined) next.upstreams.push({ id: upstream.id, dial: upstream.dial })
+  if (upstream.dial !== undefined || upstream.url !== undefined) next = withUpstreamSchema(next, [...next.upstreams, upstream])
   next.apis.push({ id: api, upstream: upstream.id })
   for (const endpoint of endpoints) next = addEndpoint(next, endpoint)
   return next
@@ -119,4 +120,18 @@ export function withBrowserAccess(policy: Policy, api: string, origins: string[]
   const headers = endpoints.some((operation) => operation.auth === 'required') ? ['Authorization', 'Content-Type'] : ['Content-Type']
   next.apis.find((entry) => entry.id === api)!.cors = { origins, methods: [...new Set(endpoints.map((operation) => operation.method))], headers }
   return next
+}
+
+// withUpstreamSchema sets the service addresses and moves the draft to schema
+// version 5 when one uses a URL, the first version that has them.
+export function withUpstreamSchema(policy: Policy, upstreams: Upstream[]): Policy {
+  const urls = upstreams.some((upstream) => upstream.url !== undefined)
+  return { ...policy, upstreams, schema_version: urls ? Math.max(policy.schema_version, 5) : policy.schema_version }
+}
+
+// withAddress gives one service address a new address, keeping its TLS
+// settings unless new ones are given; TLS settings apply only to https.
+export function withAddress(policy: Policy, id: string, address: string, transport?: Pick<Upstream, 'tls' | 'host'>): Policy {
+  const upstreams = policy.upstreams.map((upstream) => (upstream.id === id ? upstreamFrom(id, address, transport ?? upstream) : upstream))
+  return withUpstreamSchema(copy(policy), upstreams)
 }

@@ -1,4 +1,4 @@
-import type { Operation, Policy } from '../../shared/api'
+import { upstreamAddress, type Operation, type Policy } from '../../shared/api'
 import type { StepState } from '../../shared/checks'
 
 // The Designer's trace: the checks one caller's request meets on one endpoint, in the gateway's order.
@@ -69,6 +69,6 @@ export function trace(policy: Policy, who: string, operation: Operation): TraceS
   step('Record', 'recorded in the security log before forwarding (503 if it cannot be written)')
   const api = policy.apis.find((item) => item.id === operation.api)
   const upstream = policy.upstreams.find((item) => item.id === api?.upstream)
-  step('Forward', `${operation.api} → ${upstream?.id ?? 'missing service address'} ${upstream?.dial ?? ''}`)
+  step('Forward', `${operation.api} → ${upstream?.id ?? 'missing service address'} ${upstreamAddress(upstream)}`)
   return steps
 }

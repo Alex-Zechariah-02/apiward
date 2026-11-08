@@ -36,7 +36,7 @@ func TestCheck(t *testing.T) {
 	if _, err := Check(p, Request{Method: "GET", Path: "/items/%2e%2e"}); err == nil {
 		t.Fatal("a path the handler refuses was checked")
 	}
-	p.SchemaVersion++
+	p.SchemaVersion = LatestSchemaVersion + 1
 	if _, err := Check(p, Request{Method: "GET", Path: "/items/42"}); !errors.As(err, new(*PolicyError)) {
 		t.Fatalf("unsupported schema: %v", err)
 	}

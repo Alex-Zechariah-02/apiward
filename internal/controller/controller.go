@@ -16,6 +16,7 @@ import (
 
 	"github.com/Alex-Zechariah-02/apiward/internal/audit"
 	"github.com/Alex-Zechariah-02/apiward/internal/compile"
+	"github.com/Alex-Zechariah-02/apiward/internal/forward"
 	"github.com/Alex-Zechariah-02/apiward/internal/monitor"
 	"github.com/Alex-Zechariah-02/apiward/internal/pipeline"
 	"github.com/Alex-Zechariah-02/apiward/internal/session"
@@ -63,10 +64,14 @@ type Config struct {
 	AuditMaxBytes        int64
 	AuditMaxFiles        int
 	JWT                  pipeline.TrustConfig
+	// Network holds the upstream network settings; nil allows no public
+	// address and defines no TLS profile.
+	Network *forward.Network
 
-	// ReloadTrust reads the trust settings again from the startup
-	// configuration, never from HTTP; nil refuses every key reload.
-	ReloadTrust func() (pipeline.TrustConfig, error)
+	// ReloadKeys reads the trust and upstream network settings again from
+	// the startup configuration, never from HTTP; nil refuses every key
+	// reload.
+	ReloadKeys func() (pipeline.TrustConfig, *forward.Network, error)
 }
 
 // Controller is the only component that changes the effective policy. It owns
@@ -83,6 +88,7 @@ type Controller struct {
 
 	// Trust and account containment are published independently of policy.
 	verifier atomic.Pointer[pipeline.Verifier]
+	network  atomic.Pointer[forward.Network]
 	blocked  atomic.Pointer[store.BlockedAccounts]
 	// addresses is the blocked address list; nil until read from the store.
 	addresses atomic.Pointer[store.BlockedAddresses]
@@ -132,6 +138,11 @@ func Prepare(cfg Config, logger *slog.Logger) (*Controller, error) {
 	if err := cfg.applyDefaults(); err != nil {
 		return nil, err
 	}
+	if cfg.Network == nil {
+		if cfg.Network, err = forward.LoadNetwork(false, nil); err != nil {
+			return nil, err
+		}
+	}
 	c := &Controller{
 		config:       cfg,
 		observations: monitor.New(),
@@ -139,6 +150,7 @@ func Prepare(cfg Config, logger *slog.Logger) (*Controller, error) {
 		logger:       logger,
 	}
 	c.verifier.Store(verifier)
+	c.network.Store(cfg.Network)
 	return c, nil
 }
 

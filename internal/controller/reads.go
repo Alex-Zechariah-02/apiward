@@ -8,6 +8,7 @@ import (
 
 	"github.com/Alex-Zechariah-02/apiward/internal/audit"
 	"github.com/Alex-Zechariah-02/apiward/internal/compile"
+	"github.com/Alex-Zechariah-02/apiward/internal/forward"
 	"github.com/Alex-Zechariah-02/apiward/internal/monitor"
 	"github.com/Alex-Zechariah-02/apiward/internal/pipeline"
 	"github.com/Alex-Zechariah-02/apiward/internal/session"
@@ -19,6 +20,9 @@ func (c *Controller) Current() *compile.Generation { return c.current.Load() }
 
 // Verifier returns the published token verifier.
 func (c *Controller) Verifier() *pipeline.Verifier { return c.verifier.Load() }
+
+// Network returns the published upstream network settings.
+func (c *Controller) Network() *forward.Network { return c.network.Load() }
 
 // Blocked returns the published blocked accounts.
 func (c *Controller) Blocked() *store.BlockedAccounts { return c.blocked.Load() }

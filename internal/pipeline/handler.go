@@ -255,6 +255,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			writeError(w, status, code, q.event.RequestID)
 		}
 		q.event.Reason = forward.FailureReason(forwardErr)
+		if d, bound := forward.Bound(r.Context()); bound && d.Endpoint() != nil {
+			q.event.UpstreamAddress = d.Endpoint().Address()
+		}
 		q.forwarded(status, "upstream_failure", code)
 		return
 	}

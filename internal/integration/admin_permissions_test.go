@@ -35,7 +35,7 @@ func TestPermissionsAreServerSide(t *testing.T) {
 	harness := e.MustLogin(gatewaytest.HarnessAdmin, gatewaytest.HarnessPassword)
 
 	sensitive := []string{"/admin/status", "/admin/policy", "/admin/revisions", "/admin/revisions/1", "/admin/blocked-accounts",
-		"/admin/keys", "/admin/candidates", "/admin/candidates/1", "/admin/history", "/admin/history/x", "/admin/session", "/admin/events", "/admin/traffic", "/admin/administrators"}
+		"/admin/keys", "/admin/tls-profiles", "/admin/candidates", "/admin/candidates/1", "/admin/history", "/admin/history/x", "/admin/session", "/admin/events", "/admin/traffic", "/admin/administrators"}
 	for _, path := range sensitive {
 		code, body, _ := e.AdminSend(http.MethodGet, path, "")
 		if code != http.StatusUnauthorized || strings.TrimSpace(body) != `{"error":"unauthenticated"}` {

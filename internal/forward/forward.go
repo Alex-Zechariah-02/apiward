@@ -50,43 +50,52 @@ var (
 // using the standard library's reverse proxy over one dedicated transport.
 type upstreamProxy struct {
 	transport *http.Transport
+	dialer    *net.Dialer
+	network   func() *Network
 	readIdle  time.Duration
 	errorLog  *log.Logger
 }
 
 // NewUpstreamProxy returns the proxy whose exchanges are bounded by timeouts.
 // Every timeout must be positive: a zero would leave its phase unbounded.
+// network returns the current upstream network settings at each connection.
 // The reverse proxy's own warnings, such as a failed response body read, go to
 // logger.
-func NewUpstreamProxy(timeouts UpstreamTimeouts, logger *slog.Logger) (*upstreamProxy, error) {
+func NewUpstreamProxy(timeouts UpstreamTimeouts, network func() *Network, logger *slog.Logger) (*upstreamProxy, error) {
 	if timeouts.Dial <= 0 || timeouts.ResponseHeader <= 0 || timeouts.ReadIdle <= 0 {
 		return nil, errors.New("every upstream timeout must be positive")
 	}
-	if logger == nil {
-		return nil, errors.New("a logger is required")
+	if logger == nil || network == nil {
+		return nil, errors.New("a logger and the network settings are required")
 	}
 	protocols := new(http.Protocols)
 	protocols.SetHTTP1(true)
-	return &upstreamProxy{
-		transport: &http.Transport{
-			// No Proxy function: the bound address is dialled directly, never
-			// through a proxy named by the environment.
-			DialContext:           (&net.Dialer{Timeout: timeouts.Dial}).DialContext,
-			ResponseHeaderTimeout: timeouts.ResponseHeader,
-			// Every request is sent once, on a new connection. A transport that
-			// keeps idle connections resends a request it deems replayable (GET,
-			// HEAD, OPTIONS, or any request with an Idempotency-Key and no body)
-			// when a reused connection fails, though the upstream may already
-			// have acted on it.
-			DisableKeepAlives: true,
-			// The upstream receives the client's Accept-Encoding, not one the
-			// transport adds, and the client receives the upstream's bytes.
-			DisableCompression: true,
-			Protocols:          protocols,
-		},
+	p := &upstreamProxy{
+		network:  network,
 		readIdle: timeouts.ReadIdle,
 		errorLog: slog.NewLogLogger(logger.Handler(), slog.LevelWarn),
-	}, nil
+	}
+	// Every connection, whatever the policy or DNS said, is checked on the
+	// address it is about to connect to.
+	p.dialer = &net.Dialer{Timeout: timeouts.Dial, Control: p.checkAddress}
+	p.transport = &http.Transport{
+		// No Proxy function: the bound address is dialled directly, never
+		// through a proxy named by the environment.
+		DialContext:           p.dialer.DialContext,
+		DialTLSContext:        p.dialTLS,
+		ResponseHeaderTimeout: timeouts.ResponseHeader,
+		// Every request is sent once, on a new connection. A transport that
+		// keeps idle connections resends a request it deems replayable (GET,
+		// HEAD, OPTIONS, or any request with an Idempotency-Key and no body)
+		// when a reused connection fails, though the upstream may already
+		// have acted on it.
+		DisableKeepAlives: true,
+		// The upstream receives the client's Accept-Encoding, not one the
+		// transport adds, and the client receives the upstream's bytes.
+		DisableCompression: true,
+		Protocols:          protocols,
+	}
+	return p, nil
 }
 
 // forward sends an admitted request to the upstream bound to it and copies
@@ -97,8 +106,8 @@ func NewUpstreamProxy(timeouts UpstreamTimeouts, logger *slog.Logger) (*upstream
 // proxy with http.ErrAbortHandler, which it panics with only under a net/http
 // server, so the handler must be served by one.
 func (p *upstreamProxy) Forward(w http.ResponseWriter, r *http.Request) error {
-	dial, path, bound := Bound(r.Context())
-	if !bound || !compile.IsLoopbackDial(dial) || !compile.IsCanonical(path) {
+	d, bound := Bound(r.Context())
+	if !bound || d.Endpoint() == nil || !compile.IsCanonical(d.Path()) {
 		return fmt.Errorf("%w: %w", ErrNoUpstream, errNotSent)
 	}
 
@@ -113,7 +122,7 @@ func (p *upstreamProxy) Forward(w http.ResponseWriter, r *http.Request) error {
 
 	var failure error
 	proxy := &httputil.ReverseProxy{
-		Rewrite:   func(pr *httputil.ProxyRequest) { rewriteToUpstream(pr, dial, path) },
+		Rewrite:   func(pr *httputil.ProxyRequest) { rewriteToUpstream(pr, d.Endpoint(), d.Path()) },
 		Transport: p.transport,
 		ErrorLog:  p.errorLog,
 		ModifyResponse: func(res *http.Response) error {
@@ -157,32 +166,35 @@ func ExchangeFailure(err error, connected, clientGone bool) error {
 	return fmt.Errorf("%w: %w", errMaybeSent, err)
 }
 
-// rewriteToUpstream addresses the outbound request to dial with the bound
-// path and sets the gateway's forwarding metadata. The reverse proxy calls it
+// rewriteToUpstream addresses the outbound request to the endpoint with the
+// bound path and sets the gateway's forwarding metadata. The reverse proxy calls it
 // after removing the hop-by-hop fields, including every field the client
 // named in Connection, and the client's Forwarded and X-Forwarded-* fields,
 // so the client can neither remove nor supply anything set here.
-func rewriteToUpstream(pr *httputil.ProxyRequest, dial, path string) {
+func rewriteToUpstream(pr *httputil.ProxyRequest, e *compile.Endpoint, path string) {
 	in := pr.In.URL
 	// The client's target as admitted: the query unparsed, unparsable
 	// parameters included, and the path in its received encoding unless the
 	// API's forward rule rewrote it. The gateway does not interpret the
 	// query, so it cannot read it differently from the upstream. The outbound
-	// request keeps the inbound Host, which reaches the upstream but never
-	// chooses it.
+	// request keeps the inbound Host unless the upstream asks for its own;
+	// either reaches the upstream but never chooses it.
 	rawPath := in.RawPath
 	if path != in.Path {
 		rawPath = "" // the rewritten path is canonical, so its encoding is unambiguous
 	}
 	pr.Out.URL = &url.URL{
-		Scheme:     "http",
-		Host:       dial,
+		Scheme:     e.Scheme(),
+		Host:       e.Address(),
 		Path:       path,
 		RawPath:    rawPath,
 		RawQuery:   in.RawQuery,
 		ForceQuery: in.ForceQuery,
 	}
-	// The direct peer's address, the inbound Host and "http".
+	if e.Host() != "" {
+		pr.Out.Host = e.Host()
+	}
+	// The direct peer's address, the inbound Host and the inbound protocol.
 	pr.SetXForwarded()
 	pr.Out.Header.Add("Via", via(pr.In.ProtoMajor, pr.In.ProtoMinor))
 }

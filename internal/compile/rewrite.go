@@ -12,14 +12,18 @@ import (
 // rewrite is a compiled forward rule: fixed strings, never patterns.
 type rewrite struct{ strip, add string }
 
-// Destination is where an admitted request goes: its upstream's address and
+// Destination is where an admitted request goes: its upstream's endpoint and
 // the path it is forwarded with. Only Rule.Destination makes one, after the
 // rewritten path passed the canonical-path check, so a forwarder bound to a
-// Destination cannot be handed an unchecked path.
-type Destination struct{ dial, path string }
+// Destination cannot be handed an unchecked path or address.
+type Destination struct {
+	endpoint *Endpoint
+	path     string
+}
 
-// Dial is the upstream's loopback address.
-func (d Destination) Dial() string { return d.dial }
+// Endpoint is the upstream's compiled destination; nil only for the zero
+// Destination, which must not be forwarded.
+func (d Destination) Endpoint() *Endpoint { return d.endpoint }
 
 // Path is the canonical path the request is forwarded with.
 func (d Destination) Path() string { return d.path }
@@ -70,5 +74,5 @@ func (r *Rule) Destination(path string) (d Destination, ok bool) {
 	if !IsCanonical(out) {
 		return Destination{}, false
 	}
-	return Destination{dial: r.dial, path: out}, true
+	return Destination{endpoint: r.endpoint, path: out}, true
 }

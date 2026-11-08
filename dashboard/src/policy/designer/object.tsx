@@ -1,10 +1,12 @@
 import { useEffect, useId, useState } from 'react'
-import type { Operation, Policy } from '../../shared/api'
+import { upstreamAddress, type Operation, type Policy, type Upstream } from '../../shared/api'
 import { capital, copy, deleteReason, kindNames, rename, sections, splitKey, type BoxKey } from './model'
 import { Confirm } from '../../shared/dialogs'
 import { Field, describedBy } from '../../shared/ui'
 import { checks, OperationFields } from './fields'
 import { ApiFields } from './api-fields'
+import { withAddress } from './edits'
+import { secure, TransportFields } from './transport'
 
 // The editor for one box of the draft: its ID, its fields, its permissions and its deletion.
 
@@ -148,15 +150,25 @@ export function ObjectForm({ selection, inPanel = false, ...props }: FormProps &
               ? 'Renaming moves its permissions. Tokens carrying the old name lose them.'
               : 'Changing an ID also changes its references in this draft.',
         )}
-        {kind === 'upstream'
-          ? input(
+        {kind === 'upstream' ? (
+          <>
+            {input(
               'dial',
               'Address',
-              (item as Policy['upstreams'][number]).dial,
-              (dial) => patch({ dial }),
-              'A service address on this computer, for example 127.0.0.1:9504.',
-            )
-          : null}
+              upstreamAddress(item as Upstream),
+              (address) => onChange(withAddress(policy, id, address)),
+              'A service address on this computer (127.0.0.1:9504) or a URL such as https://orders.internal:8443.',
+            )}
+            {secure(upstreamAddress(item as Upstream)) ? (
+              <TransportFields
+                id={fieldId('transport')}
+                upstream={item as Upstream}
+                editable={editable}
+                onChange={(transport) => onChange(withAddress(policy, id, upstreamAddress(item as Upstream), transport))}
+              />
+            ) : null}
+          </>
+        ) : null}
         {kind === 'api'
           ? select(
               'upstream',
