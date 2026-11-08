@@ -74,7 +74,7 @@ func TestNativeDemoCommands(t *testing.T) {
 		t.Fatal(err)
 	}
 	for round := range 2 {
-		_, input, exited, output := gatewaytest.StartDemo(t, dir)
+		_, input, exited, output := gatewaytest.StartDemo(t, dir, web)
 		if !strings.Contains(output.String(), "protected admission: bootstrap_locked") {
 			t.Fatalf("listener startup mistaken for admission readiness: %s", output)
 		}
@@ -102,7 +102,7 @@ func TestNativeDemoCommands(t *testing.T) {
 		case <-time.After(15 * time.Second):
 			t.Fatal("demo did not reap its children")
 		}
-		for _, addr := range []string{"127.0.0.1:9440", "127.0.0.2:9480", "127.0.0.1:9501", "127.0.0.1:9502", "127.0.0.1:9503", "127.0.0.1:9601", "127.0.0.1:9602", "127.0.0.1:9603", "127.0.0.1:9504", "127.0.0.1:9505", "127.0.0.1:9604", "127.0.0.1:9605", "127.0.0.1:9450"} {
+		for _, addr := range []string{"127.0.0.1:9440", "127.0.0.2:9480", "127.0.0.1:9501", "127.0.0.1:9502", "127.0.0.1:9503", "127.0.0.1:9601", "127.0.0.1:9602", "127.0.0.1:9603", "127.0.0.1:9504", "127.0.0.1:9505", "127.0.0.1:9604", "127.0.0.1:9605", "127.0.0.1:9450", "127.0.0.1:9506"} {
 			addr = gatewaytest.DemoTestAddress(t, addr)
 			if gatewaytest.Dialable(addr) {
 				t.Fatalf("demo round %d leaked listener %s", round, addr)
@@ -114,7 +114,7 @@ func TestNativeDemoCommands(t *testing.T) {
 		}
 	}
 	// A gateway crash must stop the launcher and its remaining service children.
-	_, input, exited, runOutput := gatewaytest.StartDemo(t, dir)
+	_, input, exited, runOutput := gatewaytest.StartDemo(t, dir, web)
 	for line := range strings.Lines(runOutput.String()) {
 		fields := strings.Fields(line)
 		if len(fields) == 3 && fields[0] == "gateway" && fields[1] == "process" {
@@ -140,7 +140,7 @@ func TestNativeDemoCommands(t *testing.T) {
 		t.Fatal("gateway crash did not stop the demonstration")
 	}
 	input.Close()
-	for _, addr := range []string{"127.0.0.1:9440", "127.0.0.2:9480", "127.0.0.1:9501", "127.0.0.1:9502", "127.0.0.1:9503", "127.0.0.1:9601", "127.0.0.1:9602", "127.0.0.1:9603", "127.0.0.1:9504", "127.0.0.1:9505", "127.0.0.1:9604", "127.0.0.1:9605", "127.0.0.1:9450"} {
+	for _, addr := range []string{"127.0.0.1:9440", "127.0.0.2:9480", "127.0.0.1:9501", "127.0.0.1:9502", "127.0.0.1:9503", "127.0.0.1:9601", "127.0.0.1:9602", "127.0.0.1:9603", "127.0.0.1:9504", "127.0.0.1:9505", "127.0.0.1:9604", "127.0.0.1:9605", "127.0.0.1:9450", "127.0.0.1:9506"} {
 		addr = gatewaytest.DemoTestAddress(t, addr)
 		if gatewaytest.Dialable(addr) {
 			t.Fatalf("crashed demo leaked listener %s", addr)
@@ -149,7 +149,7 @@ func TestNativeDemoCommands(t *testing.T) {
 	if _, code := gatewaytest.DemoCommand(t, "run", "-dir", dir, "-gateway", filepath.Join(parent, "absent.exe"), "-services", gatewaytest.Binaries.Services, "-accounts", gatewaytest.Binaries.Accounts); code != 1 {
 		t.Fatal("partial demo startup did not report a failure")
 	}
-	for _, addr := range []string{"127.0.0.1:9501", "127.0.0.1:9502", "127.0.0.1:9503", "127.0.0.1:9601", "127.0.0.1:9602", "127.0.0.1:9603", "127.0.0.1:9504", "127.0.0.1:9505", "127.0.0.1:9604", "127.0.0.1:9605", "127.0.0.1:9450"} {
+	for _, addr := range []string{"127.0.0.1:9501", "127.0.0.1:9502", "127.0.0.1:9503", "127.0.0.1:9601", "127.0.0.1:9602", "127.0.0.1:9603", "127.0.0.1:9504", "127.0.0.1:9505", "127.0.0.1:9604", "127.0.0.1:9605", "127.0.0.1:9450", "127.0.0.1:9506"} {
 		addr = gatewaytest.DemoTestAddress(t, addr)
 		if gatewaytest.Dialable(addr) {
 			t.Fatalf("partial startup leaked fixture listener %s", addr)

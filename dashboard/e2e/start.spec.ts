@@ -33,8 +33,8 @@ test.describe.serial('dashboard', () => {
     await shot(admin, '01-sign-in')
 
     // Every built file is served from /assets/ with a fixed type and the
-    // frontends' content policy; none is reachable on the data plane, whose
-    // /assets/ holds only the Fetch app's files.
+    // dashboard's content policy; none is reachable on the data plane, which
+    // admits nothing before the first policy.
     const index = readFileSync(resolvePath(applicationDist, 'index.html'), 'utf8')
     const assets = [...index.matchAll(/(?:src|href)="\/assets\/([^"]+)"/g)].map((m) => m[1])
     expect(assets.map((a) => a.split('.').pop()).sort()).toEqual(['css', 'js', 'svg'])
@@ -47,7 +47,7 @@ test.describe.serial('dashboard', () => {
       expect(reply.headers['content-security-policy'], asset).toBe(uiPolicy)
       expect(reply.body, asset).toBe(readFileSync(resolvePath(applicationDist, 'assets', asset), 'utf8'))
       const onDataPlane = await raw('GET', `${siteURL}/assets/${asset}`)
-      expect(onDataPlane.status, asset).toBe(404)
+      expect(onDataPlane.status, asset).toBe(503)
       expect(onDataPlane.body, asset).not.toBe(reply.body)
       served.push({ asset, status: reply.status, dataPlane: onDataPlane.status })
     }
@@ -78,9 +78,11 @@ test.describe.serial('dashboard', () => {
       expect(String(reply.headers['content-type'] ?? ''), probe.url).not.toContain('text/html')
       expect(reply.body, probe.url).not.toContain('<!doctype html>')
     }
-    // The data plane's page is the Fetch app, never the dashboard.
+    // The data plane serves no page of its own, never the dashboard: before
+    // the first policy even the Fetch app's page is refused.
     const fetchPage = await raw('GET', siteURL + '/')
-    expect(fetchPage.status).toBe(200)
+    expect(fetchPage.status).toBe(503)
+    expect(String(fetchPage.headers['content-type'])).toContain('application/json')
     expect(fetchPage.body).not.toBe(index)
     expect(fetchPage.body).not.toContain(assets[0])
 

@@ -142,7 +142,6 @@ func gatewayConfig(dir, web string) map[string]any {
 			"read_header_timeout": "5s",
 			"read_timeout":        "10s",
 			"write_timeout":       "30s",
-			"website":             filepath.Join(web, "demo"),
 		},
 		"upstream": map[string]any{
 			"dial_timeout":            "2s",

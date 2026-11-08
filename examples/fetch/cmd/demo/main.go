@@ -24,6 +24,9 @@ var (
 	adminListen   = "127.0.0.1:9440"
 	dataListen    = "127.0.0.2:9480"
 	metricsListen = "127.0.0.1:9450"
+	// siteListen is the shop's own upstream, reached only through the
+	// gateway's public website operations.
+	siteListen = "127.0.0.1:9506"
 )
 
 const (
@@ -50,7 +53,7 @@ var fetchServices = []demoService{
 var portSetupError = applyDemoPortOffset()
 
 func applyDemoPortOffset() error {
-	addresses := []*string{&adminListen, &dataListen, &metricsListen}
+	addresses := []*string{&adminListen, &dataListen, &metricsListen, &siteListen}
 	for i := range fetchServices {
 		addresses = append(addresses, &fetchServices[i].listen, &fetchServices[i].control)
 	}
@@ -80,7 +83,7 @@ const (
 const usage = `usage:
   demo up     [-home H] [-fresh] [-stdin]
   demo setup  -dir D -web W -gateway G [-admin NAME]
-  demo run    -dir D -gateway G -services S -accounts A [-stdin]
+  demo run    -dir D -web W -gateway G -services S -accounts A [-stdin]
   demo token  -dir D -subject ID [-ttl 15m]
   demo reset  -dir D
   demo attack -dir D -scenario flood-search|flood-login|flood-orders [-from 127.0.0.50] [-count N]

@@ -202,7 +202,9 @@ test.describe.serial('Policy Designer on the native Gateway', () => {
     const longRole = 'warehouse.inventory.audit.readers.'.padEnd(64, 'x')
     document.roles.push({ id: longRole })
     document.apis.push({ id: 'unused-api', upstream: document.upstreams[0].id })
-    for (let index = document.operations.length; index < 40; index++) {
+    // Six operations more than the baseline, each with the longest ID and target.
+    const total = document.operations.length + 6
+    for (let index = document.operations.length; index < total; index++) {
       document.operations.push({
         id: `warehouse.inventory.audit.operation.${index}.`.padEnd(64, 'x'),
         api: document.apis[0].id,
@@ -215,7 +217,7 @@ test.describe.serial('Policy Designer on the native Gateway', () => {
     await applyJson(document)
     await page.getByRole('tab', { name: 'Canvas', exact: true }).click()
     await expandAll()
-    await expect(page.locator('.designer-row[data-box^="operation:"]')).toHaveCount(40)
+    await expect(page.locator('.designer-row[data-box^="operation:"]')).toHaveCount(total)
     await capture('designer-worst-canvas')
     await page.getByRole('tab', { name: 'Form', exact: true }).click()
     await formItem(`Role ${longRole}`)

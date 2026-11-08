@@ -3,8 +3,9 @@ import { siteURL } from './env'
 import { accessible, record, shot } from './pages'
 import { context, demo, open, site, useSite, violations } from './site'
 
-// The Fetch app in the browser before any policy exists: a gateway that
-// admits nothing is shown with its Ref, malformed saved data cannot break the
+// The Fetch app in the browser behind a policy that allows only the shop's
+// own pages and assets: a gateway that admits no API call is shown with its
+// Ref, malformed saved data cannot break the
 // tab, and the reachable pages pass the accessibility rules.
 
 test.describe.serial('Fetch app on the gateway data plane', () => {
@@ -25,15 +26,15 @@ test.describe.serial('Fetch app on the gateway data plane', () => {
       })),
     ).toEqual({ faces: ['Plus Jakarta Sans:loaded'], text: true })
 
-    // Each section says in plain words that Fetch can't take requests, that
-    // the gateway answered, and the reference of the very answer it got.
-    const problems = site.getByRole('alert').filter({ hasText: 'Fetch can’t take requests right now.' })
+    // Each section says in plain words that Fetch isn't allowing it, that the
+    // gateway answered, and the reference of the very answer it got.
+    const problems = site.getByRole('alert').filter({ hasText: 'Your account can’t do this right now.' })
     await expect(problems).toHaveCount(2)
     const shown: string[] = []
     for (const problem of await problems.all()) {
-      await expect(problem).toContainText('Answered by the Fetch gateway · 503')
+      await expect(problem).toContainText('Answered by the Fetch gateway · 403')
       const ref = ((await problem.getByTitle(/^Full reference /).getAttribute('title')) ?? '').replace(/^Full reference /, '')
-      expect(answers.get(ref), ref).toEqual({ status: 503, service: undefined })
+      expect(answers.get(ref), ref).toEqual({ status: 403, service: undefined })
       // The page shows the reference's first eight characters, grouped.
       await expect(problem.getByText(`Ref ${ref.slice(0, 4).toUpperCase()}-${ref.slice(4, 8).toUpperCase()}`, { exact: true })).toBeVisible()
       shown.push(ref)
@@ -49,10 +50,10 @@ test.describe.serial('Fetch app on the gateway data plane', () => {
     await site.getByLabel('Email').fill('customer1@fetch.test')
     await site.getByLabel('Password', { exact: true }).fill('FetchDemo2026!')
     await site.getByRole('button', { name: 'Sign in', exact: true }).click()
-    const refusal = site.getByRole('alert').filter({ hasText: 'Answered by the Fetch gateway · 503' })
+    const refusal = site.getByRole('alert').filter({ hasText: 'Answered by the Fetch gateway · 403' })
     await expect(refusal).toBeVisible()
     const ref = ((await refusal.getByTitle(/^Full reference /).getAttribute('title')) ?? '').replace(/^Full reference /, '')
-    expect(answers.get(ref)?.status).toBe(503)
+    expect(answers.get(ref)?.status).toBe(403)
     await shot(site, '02-signin-not-admitting')
     for (const count of Object.values(await demo.counts())) expect(count).toBe(0)
     record('refusals-with-ref', { home: shown, signIn: ref })

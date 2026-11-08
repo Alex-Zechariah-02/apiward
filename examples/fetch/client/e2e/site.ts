@@ -1,10 +1,11 @@
-// Shared set-up for the site specs: the Fetch app as the gateway's data plane
-// serves it, before any policy exists, in one browser context that records
-// every request, console line, content-policy violation and script dialog.
+// Shared set-up for the site specs: the Fetch app behind a gateway whose
+// confirmed policy allows only the shop's own pages and assets and refuses
+// every API call, in one browser context that records every request, console
+// line, content-policy violation and script dialog.
 import { readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { expect, test, type BrowserContext, type Page } from '@playwright/test'
-import { build, Demo, siteURL, webRoot } from './env'
+import { AdminApi, build, Demo, siteURL, webRoot } from './env'
 
 export let demo: Demo
 export let context: BrowserContext
@@ -53,8 +54,13 @@ export function useSite() {
     violations.length = 0
     dialogs = 0
     demo = new Demo(build(), webRoot())
-    demo.setup()
+    const secret = demo.setup()
     await demo.start()
+    const api = new AdminApi()
+    const password = `Site-Admin-${crypto.randomUUID()}`
+    await api.enrol('admin', secret, password)
+    await api.signIn('admin', password)
+    await api.shopOnly(demo)
     context = await browser.newContext({ viewport: { width: 1440, height: 900 } })
     await context.exposeBinding('reportViolation', (_source, text: string) => {
       violations.push(text)

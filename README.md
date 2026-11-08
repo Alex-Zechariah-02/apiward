@@ -151,7 +151,7 @@ A module adds a check to the request pipeline at build time. It implements `modu
 - The Dashboard's header search by Ref and the live events use an in-memory window of the latest 10,000 API outcomes. A security log search reads the active and rotated audit files, newest first and bounded per page, and exports matching requests as CSV or JSON; it names any log file that has been moved away. Event streams have bounded queues, disclose dropped events and stop with the administrator's session. Traffic summaries and a separate loopback Prometheus listener expose bounded operational measurements without token, subject or address labels.
 - Local commands set up the first administrator, add or reset administrators, make and restore checked database backups, and upgrade a database made by an earlier version. A restored backup serves nothing until an administrator confirms a new policy that allows nothing, and a provisional policy in the backup never comes back.
 - A web dashboard for administrators (in `dashboard/`) is served by the admin listener itself, so it uses the same sign-in, origin and CSRF checks as the admin API. It shows the confirmed policy, any provisional policy and its deadline, the temporary overrides in force and the change history. It stages and activates new policies, confirms or rolls them back and creates or revokes overrides. It also has pages for the security log search, the access checker, limits and advice, and shows active alerts on its overview. Each change is shown as done only when the gateway's receipt arrives, and a request with no answer is shown as having an unknown outcome.
-- Fetch, the demonstration application in `examples/fetch/client/`, is served on a second loopback address, so the administrator's session cookie never reaches it. Customers, merchants, riders, support agents and operations staff sign in through Fetch Accounts. Application calls go through the gateway to Inventory, Orders, Reports, Support and Accounts. Business ownership, stock, wallet and order transitions stay in those services.
+- Fetch, the demonstration application in `examples/fetch/client/`, is reached on a second loopback address, so the administrator's session cookie never reaches it. The gateway serves no website of its own: the demo tool serves the shop's built files as one more upstream, and the baseline policy exposes its pages and assets as public `GET` operations of the API `web`, so every request to the shop is checked, rate-limited and audited like an API call. Customers, merchants, riders, support agents and operations staff sign in through Fetch Accounts. Application calls go through the gateway to Inventory, Orders, Reports, Support and Accounts. Business ownership, stock, wallet and order transitions stay in those services.
 
 ### Code layout
 
@@ -221,10 +221,10 @@ The dashboard is in `dashboard/` and the website in `examples/fetch/client/` (Re
 
 ```
 demo setup -dir <new-dir> -web <web-dir> -gateway <out-dir>/gateway.exe
-demo run -dir <new-dir> -gateway <out-dir>/gateway.exe -services <out-dir>/services.exe -accounts <out-dir>/accounts.exe
+demo run -dir <new-dir> -web <web-dir> -gateway <out-dir>/gateway.exe -services <out-dir>/services.exe -accounts <out-dir>/accounts.exe
 ```
 
-The dashboard is at `http://127.0.0.1:9440/` and the website at `http://127.0.0.2:9480/`. Metrics are at `http://127.0.0.1:9450/metrics` on a separate loopback listener. `EAT_PORT_OFFSET` shifts the demonstration ports; for example, `1000` selects data port 10480, admin port 10440 and metrics port 10450.
+The dashboard is at `http://127.0.0.1:9440/` and the website at `http://127.0.0.2:9480/`, through the gateway; `run` serves the shop's files itself on `127.0.0.1:9506`, the website's upstream. Metrics are at `http://127.0.0.1:9450/metrics` on a separate loopback listener. `EAT_PORT_OFFSET` shifts the demonstration ports; for example, `1000` selects data port 10480, admin port 10440 and metrics port 10450.
 
 ### One command
 

@@ -107,11 +107,8 @@ type deployment struct {
 	// generation, so publication never resets them; a restart does.
 	limiter *pipeline.Limiter
 	// ui reads the dashboard files; nil when none are configured.
-	ui     fs.FS
-	logger *slog.Logger
-	// handler is the data plane: enforcement, and the website when one is
-	// configured.
-	handler http.Handler
+	ui      fs.FS
+	logger  *slog.Logger
 	metrics *http.Server
 }
 
@@ -143,7 +140,6 @@ func openDeployment(cfg nativeConfig, logger *slog.Logger) (*deployment, error) 
 		limiter:     limiter,
 		ui:          ui,
 		logger:      logger,
-		handler:     dataPlane(enforcement, cfg.website),
 		metrics: &http.Server{
 			Handler:           monitor.Metrics(c.Observations(), c.Gauges),
 			ReadHeaderTimeout: 5 * time.Second,

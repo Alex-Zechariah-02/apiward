@@ -18,6 +18,26 @@ func objectSchema(required []string, properties map[string]any) map[string]any {
 	return map[string]any{"type": "object", "additionalProperties": false, "required": required, "properties": properties}
 }
 
+// websiteOperations are the shop's public GET operations: one per exact
+// client route, one per route that takes an ID or name, and the assets. A
+// page view loads many images, so the assets allow ten times a page's rate.
+func websiteOperations() []fetchOperation {
+	var operations []fetchOperation
+	for _, page := range sitePages {
+		name := strings.TrimPrefix(page, "/")
+		if name == "" {
+			name = "home"
+		}
+		operations = append(operations, fetchOperation{id: "web.page." + name, api: "web", method: "GET", target: page, count: 600})
+	}
+	for _, route := range []struct{ id, prefix string }{
+		{"web.store", "/store/"}, {"web.item", "/item/"}, {"web.my-order", "/my-orders/"}, {"web.help-ticket", "/help/"},
+	} {
+		operations = append(operations, fetchOperation{id: route.id, api: "web", method: "GET", target: route.prefix + "*", count: 600})
+	}
+	return append(operations, fetchOperation{id: "web.assets", api: "web", method: "GET", target: "/assets/*", count: 6000})
+}
+
 func baselinePolicy() map[string]any {
 	itemChange := objectSchema([]string{}, map[string]any{"price_sen": integerSchema(50, 100000), "available": map[string]any{"type": "boolean"}})
 	stockChange := objectSchema([]string{"delta"}, map[string]any{"delta": integerSchema(-100, 100)})
@@ -70,11 +90,14 @@ func baselinePolicy() map[string]any {
 		{"accounts.refresh", "accounts", "POST", "/accounts/refresh", allRoles, 30, 0, nil},
 		{"accounts.me", "accounts", "GET", "/accounts/me", allRoles, 60, 0, nil},
 	}
+	definitions = append(definitions, websiteOperations()...)
 	upstreams, apis, operations, permits := []map[string]any{}, []map[string]any{}, []map[string]any{}, []map[string]any{}
 	for _, service := range fetchServices {
 		upstreams = append(upstreams, map[string]any{"id": service.name + "-svc", "dial": service.listen})
 		apis = append(apis, map[string]any{"id": service.name, "upstream": service.name + "-svc"})
 	}
+	upstreams = append(upstreams, map[string]any{"id": "web-svc", "dial": siteListen})
+	apis = append(apis, map[string]any{"id": "web", "upstream": "web-svc"})
 	for _, definition := range definitions {
 		auth, key := "required", "subject"
 		if definition.roles == "" {

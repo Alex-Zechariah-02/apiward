@@ -1,7 +1,6 @@
-// The Fetch website on the data plane: its targets, response headers and
-// client identity headers.
+// The Fetch website server: the targets it answers and the headers it sets.
 
-package gateway
+package main
 
 import (
 	"net/http"
@@ -10,21 +9,6 @@ import (
 	"testing"
 	"testing/fstest"
 )
-
-func TestFetchStaticDiscardsClientIdentityHeaders(t *testing.T) {
-	request := httptest.NewRequest("GET", "http://gateway/", nil)
-	request.RequestURI = "/"
-	request.Header.Set("X-Request-Id", "client-value")
-	request.Header.Set("X-Gateway-Subject", "forged")
-	request.Header.Set("X-Gateway-Extra", "forged")
-	files := fstest.MapFS{"index.html": {Data: []byte("Fetch")}}
-	dataPlane(http.NotFoundHandler(), files).ServeHTTP(httptest.NewRecorder(), request)
-	for _, name := range []string{"X-Request-Id", "X-Gateway-Subject", "X-Gateway-Extra"} {
-		if request.Header.Get(name) != "" {
-			t.Errorf("static request retained %s", name)
-		}
-	}
-}
 
 // Catch accidental SPA fallback over an API or acceptance of a decoded target.
 func TestFetchWebsiteTargets(t *testing.T) {
@@ -73,29 +57,25 @@ func TestFetchWebsiteTargets(t *testing.T) {
 	}
 }
 
-// A page, an asset and a missing asset all retain a gateway-issued reference.
+// A page and an asset carry the content policy and nosniff; a missing asset
+// and any other target are 404.
 func TestFetchWebsiteResponseHeaders(t *testing.T) {
 	files := fstest.MapFS{
 		"index.html":          {Data: []byte("test page")},
 		"assets/MER-001.webp": {Data: []byte("test image")},
 	}
-	fallback := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusUnauthorized) })
-	handler := dataPlane(fallback, files)
-	for _, target := range []string{"/", "/food", "/assets/MER-001.webp", "/assets/missing.js"} {
-		r := httptest.NewRequest(http.MethodGet, target, nil)
-		r.Header.Set("X-Request-Id", "forged")
+	handler := website(files)
+	for _, target := range []string{"/", "/food", "/assets/MER-001.webp", "/assets/missing.js", "/orders/mine"} {
 		w := httptest.NewRecorder()
-		handler.ServeHTTP(w, r)
-		if id := w.Header().Get("X-Request-Id"); len(id) != 32 || id == "forged" {
-			t.Errorf("%s has no generated reference: %q", target, id)
-		}
-		if strings.Contains(target, "missing") {
+		handler.ServeHTTP(w, httptest.NewRequest(http.MethodGet, target, nil))
+		if strings.Contains(target, "missing") || strings.HasPrefix(target, "/orders") {
 			if w.Code != http.StatusNotFound {
-				t.Errorf("missing asset: %d", w.Code)
+				t.Errorf("%s: %d, want 404", target, w.Code)
 			}
 			continue
 		}
-		if w.Code != http.StatusOK || w.Header().Get("Content-Security-Policy") != uiPolicy || w.Header().Get("X-Content-Type-Options") != "nosniff" {
+		if w.Code != http.StatusOK || w.Header().Get("Content-Security-Policy") != sitePolicy || w.Header().Get("X-Content-Type-Options") != "nosniff" ||
+			w.Header().Get("X-Frame-Options") != "DENY" || w.Header().Get("Cache-Control") != "no-store" {
 			t.Errorf("%s: status %d headers %v", target, w.Code, w.Header())
 		}
 	}

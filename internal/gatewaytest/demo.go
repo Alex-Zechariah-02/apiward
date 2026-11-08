@@ -40,9 +40,9 @@ func DemoCommand(t *testing.T, args ...string) (string, int) {
 // StartDemo runs the demo stack from dir until the test ends, and waits until
 // its gateway admits requests. It returns the process, its standard input,
 // which stops the stack when closed, its exit and its output.
-func StartDemo(t *testing.T, dir string) (*exec.Cmd, io.WriteCloser, <-chan error, *LogBuffer) {
+func StartDemo(t *testing.T, dir, web string) (*exec.Cmd, io.WriteCloser, <-chan error, *LogBuffer) {
 	t.Helper()
-	cmd := exec.Command(Binaries.Demo, "run", "-dir", dir, "-gateway", Binaries.Plain, "-services", Binaries.Services, "-accounts", Binaries.Accounts, "-stdin")
+	cmd := exec.Command(Binaries.Demo, "run", "-dir", dir, "-web", web, "-gateway", Binaries.Plain, "-services", Binaries.Services, "-accounts", Binaries.Accounts, "-stdin")
 	output := &LogBuffer{}
 	cmd.Stdout, cmd.Stderr = output, output
 	input, err := cmd.StdinPipe()

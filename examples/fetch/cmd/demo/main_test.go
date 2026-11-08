@@ -42,8 +42,8 @@ func decode(t *testing.T, policy map[string]any) decoded {
 
 // The demonstration policy matches the Fetch baseline: the same
 // operations, each permitted to exactly the roles the catalogue intends, the
-// same token roles and permits, and one upstream per service at the
-// address the run command starts it on.
+// same token roles and permits, one upstream per service at the address the
+// run command starts it on, and the website's upstream last.
 func TestBaselineMatchesCatalogue(t *testing.T) {
 	checkFetchBaseline(t)
 	p := decode(t, baselinePolicy())
@@ -54,6 +54,9 @@ func TestBaselineMatchesCatalogue(t *testing.T) {
 		if p.Upstreams[i].ID != service.name+"-svc" || p.Upstreams[i].Dial != service.listen {
 			t.Errorf("upstream %d does not match its service", i)
 		}
+	}
+	if site := p.Upstreams[len(p.Upstreams)-1]; len(p.Upstreams) != len(fetchServices)+1 || site.ID != "web-svc" || site.Dial != siteListen {
+		t.Errorf("the website upstream: %+v", p.Upstreams)
 	}
 }
 

@@ -54,7 +54,7 @@ export class Demo {
     if (options.fault) env.GATEWAY_FAULT = options.fault
     const child = spawn(
       join(this.bin, 'demo' + exe),
-      ['run', '-dir', this.dir, '-gateway', join(this.bin, gateway + exe), '-services', join(this.bin, 'services' + exe), '-accounts', join(this.bin, 'accounts' + exe), '-stdin'],
+      ['run', '-dir', this.dir, '-web', this.web, '-gateway', join(this.bin, gateway + exe), '-services', join(this.bin, 'services' + exe), '-accounts', join(this.bin, 'accounts' + exe), '-stdin'],
       { stdio: 'pipe', env },
     )
     this.process = child

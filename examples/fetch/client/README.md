@@ -39,7 +39,7 @@ npm run build
 npm audit
 ```
 
-`dist/` is the website directory the gateway serves. It uses only its own files: no external fonts, images or scripts, and no inline script or style, under the gateway's content policy. Plus Jakarta Sans is bundled into the script and registered with the CSS Font Loading API; its licence is in `src/fonts/`. The photos are WebP files named by merchant and item ID; their sources and licences are in `src/photos/CREDITS.md`.
+`dist/` is the website directory the demo tool serves behind the gateway. It uses only its own files: no external fonts, images or scripts, and no inline script or style, under the site's content policy. Plus Jakarta Sans is bundled into the script and registered with the CSS Font Loading API; its licence is in `src/fonts/`. The photos are WebP files named by merchant and item ID; their sources and licences are in `src/photos/CREDITS.md`.
 
 ## Local development
 

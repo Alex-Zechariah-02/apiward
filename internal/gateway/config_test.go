@@ -92,7 +92,7 @@ func TestNativeConfigSettings(t *testing.T) {
 		})
 		maps.Copy(s["data"].(map[string]any), map[string]any{
 			"max_body_bytes": 2048, "max_header_bytes": 32768, "read_header_timeout": "2s", "read_timeout": "3s",
-			"write_timeout": "4s", "idle_timeout": "1m", "website": site,
+			"write_timeout": "4s", "idle_timeout": "1m",
 		})
 		s["upstream"] = map[string]any{"dial_timeout": "1s", "response_header_timeout": "3s", "read_idle_timeout": "2m"}
 	}))
@@ -101,7 +101,7 @@ func TestNativeConfigSettings(t *testing.T) {
 	}
 	c := cfg.controller
 	if c.AdminIdleTimeout != 10*time.Minute || c.AdminSessionLifetime != time.Hour || c.AuditTimeout != time.Second ||
-		c.AuditMaxBytes != 1<<20 || c.AuditMaxFiles != 4 || cfg.adminUI != site || cfg.website == nil ||
+		c.AuditMaxBytes != 1<<20 || c.AuditMaxFiles != 4 || cfg.adminUI != site ||
 		cfg.maxBodyBytes != 2048 || cfg.headerLimit != 32768 || cfg.readHeaderTimeout != 2*time.Second ||
 		cfg.readTimeout != 3*time.Second || cfg.writeTimeout != 4*time.Second || cfg.idleTimeout != time.Minute ||
 		cfg.upstream != (forward.UpstreamTimeouts{Dial: time.Second, ResponseHeader: 3 * time.Second, ReadIdle: 2 * time.Minute}) {
@@ -184,8 +184,7 @@ func TestNativeConfigRefusals(t *testing.T) {
 		{"header limit too small", string(configDocument(t, dir, set("data", "max_header_bytes", 4096))), "data.max_header_bytes must be 8192 to 1048576"},
 		{"zero audit file size", string(configDocument(t, dir, set("gateway", "audit_max_bytes", 0))), "gateway.audit_max_bytes must be"},
 		{"one audit file", string(configDocument(t, dir, set("gateway", "audit_max_files", 1))), "gateway.audit_max_files must be 2 to 1000"},
-		{"website without an index page", string(configDocument(t, dir, set("data", "website", t.TempDir()))), "data.website"},
-		{"missing website directory", string(configDocument(t, dir, set("data", "website", filepath.Join(dir, "absent")))), "data.website"},
+		{"removed website setting", string(configDocument(t, dir, set("data", "website", t.TempDir()))), `unknown field "website"`},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

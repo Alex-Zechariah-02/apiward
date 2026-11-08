@@ -166,6 +166,17 @@ export class AdminApi {
     await this.expect('DELETE', `/admin/blocked-accounts/${encodeURIComponent(subject)}`, 200, undefined, { 'Idempotency-Key': crypto.randomUUID() })
   }
 
+  // shopOnly confirms a policy that allows only the shop's own pages and
+  // assets (the API "web") and denies every API operation, after deny-all as
+  // the first policy: the app loads, and every call it makes is refused.
+  async shopOnly(demo: Demo) {
+    const policy = JSON.parse(demo.file('deny-all.json')) as { operations: { api: string; access: string }[] }
+    for (const operation of policy.operations) if (operation.api === 'web') operation.access = 'allow'
+    await this.genesis(await this.stage(demo.file('deny-all.json')))
+    await this.activate(await this.stage(JSON.stringify(policy)), 600)
+    await this.resolve('confirm')
+  }
+
   // baseline establishes the demonstration's confirmed policy: deny-all as the
   // first policy, then the baseline through a confirmed trial.
   async baseline(demo: Demo) {

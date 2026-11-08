@@ -61,6 +61,12 @@ func startFetchStack(t *testing.T) *fetchStack {
 			t.Fatal(err)
 		}
 	}
+	if err := os.MkdirAll(filepath.Join(web, "demo", "assets"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(web, "demo", "assets", "app.js"), []byte("// owned stack test script"), 0600); err != nil {
+		t.Fatal(err)
+	}
 	dir := filepath.Join(parent, "state")
 	install, code := gatewaytest.DemoCommand(t, "setup", "-dir", dir, "-web", web, "-gateway", gatewaytest.Binaries.Plain, "-admin", "root")
 	if code != 0 {
@@ -68,7 +74,7 @@ func startFetchStack(t *testing.T) *fetchStack {
 	}
 	s := &fetchStack{t: t, dir: dir, password: testPassword()}
 	var output *gatewaytest.LogBuffer
-	_, s.input, s.exited, output = gatewaytest.StartDemo(t, dir)
+	_, s.input, s.exited, output = gatewaytest.StartDemo(t, dir, web)
 	e := &gatewaytest.Env{T: t, Dir: dir, Database: filepath.Join(dir, "state.db"), AuditLog: filepath.Join(dir, "audit.log"), DataAddr: gatewaytest.DemoTestAddress(t, "127.0.0.2:9480"), Admin: gatewaytest.DemoTestAddress(t, "127.0.0.1:9440"), Output: output}
 	s.e = e
 	if code, body := enrol(e, "root", gatewaytest.EnrolmentSecret(t, install), s.password); code != 201 {
@@ -152,6 +158,23 @@ func (s *fetchStack) control(index int, path string) []byte {
 		s.t.Fatal("service control failed")
 	}
 	return data
+}
+
+// website loads a page, a client route and an asset through the gateway's
+// public website operations, and sees an unlisted path and HEAD refused by
+// the gateway itself.
+func (s *fetchStack) website() {
+	s.t.Helper()
+	for target, want := range map[string]string{"/": "owned stack test page", "/store/MER-001?item=ITM-001": "owned stack test page", "/assets/app.js": "// owned stack test script"} {
+		response, body := s.call("GET", target, "", "", 200)
+		if body != want || response.Header.Get("Content-Security-Policy") == "" || response.Header.Get("X-Content-Type-Options") != "nosniff" {
+			s.t.Fatalf("website %s: %q %v", target, body, response.Header)
+		}
+	}
+	if _, body := s.call("GET", "/unlisted", "", "", 404); !strings.Contains(body, `"not_found"`) {
+		s.t.Fatalf("an unlisted path was not refused by the gateway: %s", body)
+	}
+	s.call("HEAD", "/", "", "", 405)
 }
 
 // receiptCount is the number of receipts the service at index recorded.

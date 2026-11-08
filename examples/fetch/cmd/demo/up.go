@@ -131,7 +131,7 @@ func up(args []string) error {
 	ready := make(chan struct{})
 	finished := make(chan error, 1)
 	go func() {
-		finished <- runDemo(running, state, programs.gateway, programs.services, programs.accounts, func() { close(ready) })
+		finished <- runDemo(running, state, web, programs.gateway, programs.services, programs.accounts, func() { close(ready) })
 	}()
 	select {
 	case <-ready:

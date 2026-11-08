@@ -58,7 +58,6 @@ func (f nativeFile) check() (nativeConfig, error) {
 		{"gateway.database", &g.Database},
 		{"gateway.audit_log", &g.AuditLog},
 		{"gateway.admin_ui", g.AdminUI},
-		{"data.website", d.Website},
 	} {
 		if file.value != nil && !filepath.IsAbs(*file.value) {
 			return nativeConfig{}, fmt.Errorf("%s must be an absolute path", file.name)
@@ -123,11 +122,6 @@ func (f nativeFile) check() (nativeConfig, error) {
 
 	if g.AdminUI != nil {
 		cfg.adminUI = *g.AdminUI
-	}
-	if d.Website != nil {
-		if cfg.website, err = frontendFiles("data.website", *d.Website); err != nil {
-			return nativeConfig{}, err
-		}
 	}
 	return cfg, nil
 }

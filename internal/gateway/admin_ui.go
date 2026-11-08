@@ -1,5 +1,5 @@
-// Built frontend files: the dashboard, served on the Admin API listener, and
-// the content policy and file checks it shares with the website.
+// The built dashboard, served on the Admin API listener under a content
+// policy of its own origin only, and the check of its files.
 
 package gateway
 
@@ -20,7 +20,7 @@ var assetTypes = map[string]string{
 	".svg": "image/svg+xml",
 }
 
-// uiPolicy lets a frontend, the dashboard or the website, load only its own
+// uiPolicy lets the dashboard load only its own
 // scripts and styles and call only its own origin, and forbids framing, so
 // injected markup cannot run script or exfiltrate data.
 const uiPolicy = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; " +

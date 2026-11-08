@@ -49,6 +49,9 @@ func TestFetchStackScenarios(t *testing.T) {
 		return string(data)
 	}
 
+	t.Log("the shop reached only through its public website operations")
+	s.website()
+
 	t.Log("real customer, merchant and rider flow")
 	call("GET", "/inventory/categories", "", "", 200)
 	call("GET", "/inventory/search?q=nasi", "", "", 200)

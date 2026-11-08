@@ -5,9 +5,10 @@ import { adminURL, applicationDist, controls, gatewayIdentity, pageRoutes, raw, 
 import { record, storage } from './pages'
 import { consoleLines, context, demo, files, open, requests, scriptDialogs, site, useSite, violations } from './site'
 
-// How the gateway's data plane serves the Fetch app before any policy
-// exists: its routes and assets, what the page may reach and keep, and that
-// the built files hold nothing secret.
+// How the Fetch app reaches the browser through the gateway, under a policy
+// that allows only the shop's own pages and assets: its routes and assets,
+// what the page may reach and keep, and that the built files hold nothing
+// secret.
 const assetTypes: Record<string, string> = { js: 'text/javascript', css: 'text/css', svg: 'image/svg+xml', webp: 'image/webp' }
 
 test.describe.serial('How the gateway serves the Fetch app', () => {
@@ -19,7 +20,7 @@ test.describe.serial('How the gateway serves the Fetch app', () => {
     const index = readFileSync(resolvePath(applicationDist, 'index.html'), 'utf8')
 
     // Every page route answers the same page, with the security headers and
-    // the gateway's own reference.
+    // the gateway's own reference; HEAD is no website operation.
     for (const route of pageRoutes) {
       const reply = await raw('GET', siteURL + route + '?from=link')
       expect(reply.status, route).toBe(200)
@@ -32,7 +33,7 @@ test.describe.serial('How the gateway serves the Fetch app', () => {
       expect(reply.headers['cache-control'], route).toBe('no-store')
       expect(reply.headers['x-request-id'], route).toMatch(/^[0-9a-f]{32}$/)
       const head = await raw('HEAD', siteURL + route)
-      expect(head.status, `HEAD ${route}`).toBe(200)
+      expect(head.status, `HEAD ${route}`).toBe(405)
       expect(head.body, `HEAD ${route}`).toBe('')
     }
 
@@ -50,23 +51,24 @@ test.describe.serial('How the gateway serves the Fetch app', () => {
       expect((await raw('GET', `${adminURL}/assets/${asset}`)).status, `${asset} on the admin listener`).toBe(404)
     }
 
-    // Every other path, spelling and method is not the website's: it goes to
-    // enforcement, which admits nothing yet, and never answers with the page.
+    // Every other path, spelling and method is refused, by the gateway or,
+    // within a website operation, by the shop's own file rules, and never
+    // answers with the page.
     const probes = [
       { method: 'GET', path: '/assets/no-such-file.js', status: 404 },
-      { method: 'GET', path: '/index.html', status: 503 },
-      { method: 'GET', path: '/food/', status: 503 },
-      { method: 'GET', path: '/store', status: 503 },
-      { method: 'GET', path: '/store/MER-001/menu', status: 503 },
-      { method: 'GET', path: '/%66ood', status: 503 },
-      { method: 'GET', path: '/assets/picture.png', status: 503 },
-      { method: 'GET', path: '/assets/../index.html', status: 503 },
-      { method: 'GET', path: '/assets/sub/app.js', status: 503 },
-      { method: 'GET', path: '/demo/', status: 503 },
-      { method: 'POST', path: '/', status: 503 },
-      { method: 'POST', path: '/checkout', status: 503 },
-      { method: 'GET', path: '/orders', status: 503 },
-      { method: 'GET', path: '/admin/status', status: 503 },
+      { method: 'GET', path: '/index.html', status: 404 },
+      { method: 'GET', path: '/food/', status: 404 },
+      { method: 'GET', path: '/store', status: 404 },
+      { method: 'GET', path: '/store/MER-001/menu', status: 404 },
+      { method: 'GET', path: '/%66ood', status: 404 },
+      { method: 'GET', path: '/assets/picture.png', status: 404 },
+      { method: 'GET', path: '/assets/../index.html', status: 404 },
+      { method: 'GET', path: '/assets/sub/app.js', status: 404 },
+      { method: 'GET', path: '/demo/', status: 404 },
+      { method: 'POST', path: '/', status: 405 },
+      { method: 'POST', path: '/checkout', status: 405 },
+      { method: 'GET', path: '/orders', status: 403 },
+      { method: 'GET', path: '/admin/status', status: 404 },
     ]
     const seen = []
     for (const probe of probes) {
@@ -129,7 +131,7 @@ test.describe.serial('How the gateway serves the Fetch app', () => {
       },
       [controls.inventory + '/receipts', adminURL + '/admin/status'],
     )
-    expect(probes).toEqual({ service: 'blocked', admin: 'blocked', sameOrigin: 'answered 503 application/json' })
+    expect(probes).toEqual({ service: 'blocked', admin: 'blocked', sameOrigin: 'answered 404 application/json' })
     await expect.poll(() => violations.length).toBe(2)
     expect(violations.every((v) => v.startsWith('connect-src http://127.0.0.1:'))).toBe(true)
     violations.length = 0

@@ -26,6 +26,7 @@ import (
 // directory.
 func run(args []string) (runErr error) {
 	set := flag.NewFlagSet("run", flag.ContinueOnError)
+	web := set.String("web", "", "built frontend directory holding demo/, the shop")
 	gateway := set.String("gateway", "", "gateway binary")
 	serviceBinary := set.String("services", "", "Fetch services binary")
 	accountsBinary := set.String("accounts", "", "Fetch Accounts binary")
@@ -34,8 +35,8 @@ func run(args []string) (runErr error) {
 	if err != nil {
 		return err
 	}
-	if *gateway == "" || *serviceBinary == "" || *accountsBinary == "" {
-		return errors.New("-gateway, -services and -accounts are required")
+	if *web == "" || *gateway == "" || *serviceBinary == "" || *accountsBinary == "" {
+		return errors.New("-web, -gateway, -services and -accounts are required")
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -45,19 +46,38 @@ func run(args []string) (runErr error) {
 			stop()
 		}()
 	}
-	return runDemo(ctx, dir, *gateway, *serviceBinary, *accountsBinary, nil)
+	return runDemo(ctx, dir, *web, *gateway, *serviceBinary, *accountsBinary, nil)
 }
 
-// runDemo is run's work: it stops everything when ctx ends. ready, if not
-// nil, is called once every process listens and the gateway has reported
-// its admission status.
-func runDemo(ctx context.Context, dir, gateway, serviceBinary, accountsBinary string, ready func()) (runErr error) {
+// runDemo is run's work: it serves the shop in web/demo itself and stops
+// everything when ctx ends. ready, if not nil, is called once every process
+// listens and the gateway has reported its admission status.
+func runDemo(ctx context.Context, dir, web, gateway, serviceBinary, accountsBinary string, ready func()) (runErr error) {
 	if err := checkDemo(dir); err != nil {
 		return err
 	}
 	if err := checkPortsFree(); err != nil {
 		return err
 	}
+	shop := filepath.Join(web, "demo")
+	if _, err := os.Stat(filepath.Join(shop, "index.html")); err != nil {
+		return fmt.Errorf("-web %s has no demo/index.html: build the shop first", web)
+	}
+	siteListener, err := net.Listen("tcp", siteListen)
+	if err != nil {
+		return fmt.Errorf("the website address: %w", err)
+	}
+	siteCtx, stopSite := context.WithCancel(context.Background())
+	siteDone := make(chan error, 1)
+	go func() { siteDone <- serveWebsite(siteCtx, siteListener, os.DirFS(shop)) }()
+	// The website stops last, after every child, so the gateway never
+	// forwards to a closed shop while it still admits requests.
+	defer func() {
+		stopSite()
+		if err := <-siteDone; err != nil {
+			runErr = errors.Join(runErr, fmt.Errorf("the website stopped: %w", err))
+		}
+	}()
 
 	// Each started process reports its exit on exited; running counts those
 	// not yet received, so the cleanup waits for exactly the rest.
@@ -189,7 +209,7 @@ func runDemo(ctx context.Context, dir, gateway, serviceBinary, accountsBinary st
 		}
 	}
 	fmt.Printf("listening; protected admission: %s\n", admission)
-	fmt.Printf("  dashboard: http://%s/\n  website:   http://%s/\n", adminListen, dataListen)
+	fmt.Printf("  dashboard: http://%s/\n  website:   http://%s/ (served from %s through the gateway)\n", adminListen, dataListen, siteListen)
 	for i, p := range processes {
 		name := "gateway"
 		if i < len(fetchServices) {
@@ -206,6 +226,9 @@ func runDemo(ctx context.Context, dir, gateway, serviceBinary, accountsBinary st
 		case <-ctx.Done():
 			fmt.Println("stopping")
 			return nil
+		case err := <-siteDone:
+			siteDone <- err
+			return fmt.Errorf("the website stopped (%v)", err)
 		case result := <-exited:
 			running--
 			if result.name == "gateway" {
@@ -218,7 +241,7 @@ func runDemo(ctx context.Context, dir, gateway, serviceBinary, accountsBinary st
 
 // checkPortsFree refuses a second demonstration on the same addresses.
 func checkPortsFree() error {
-	addresses := []string{adminListen, dataListen, metricsListen}
+	addresses := []string{adminListen, dataListen, metricsListen, siteListen}
 	for _, service := range fetchServices {
 		addresses = append(addresses, service.listen, service.control)
 	}

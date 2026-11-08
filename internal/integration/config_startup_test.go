@@ -107,11 +107,6 @@ func TestNativeStartupRefusesConfiguration(t *testing.T) {
 			gatewaytest.Section(s, "gateway")["admin_ui"] = t.TempDir()
 			e.WriteNative(s)
 		}, "admin_ui"},
-		{"website directory without index.html", func(e *gatewaytest.Env) {
-			s := e.NativeSettings()
-			gatewaytest.Section(s, "data")["website"] = t.TempDir()
-			e.WriteNative(s)
-		}, "data.website"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

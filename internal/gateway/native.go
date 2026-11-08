@@ -204,7 +204,7 @@ func startNative(cfg nativeConfig, logger *slog.Logger) (*nativeGateway, error) 
 	protocols := new(http.Protocols)
 	protocols.SetHTTP1(true)
 	data := &http.Server{
-		Handler:   d.handler,
+		Handler:   d.enforcement,
 		Protocols: protocols,
 		// "OPTIONS *" reaches enforcement, which refuses every target that
 		// is not in origin form, instead of being answered by net/http.

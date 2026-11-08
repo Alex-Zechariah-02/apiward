@@ -239,10 +239,18 @@ test.describe.serial('Failures and safeguards on the real services', () => {
     // The gateway restarts unable to write its security record: protected
     // requests are refused 503 and reach no service; the write still says it
     // may or may not have been sent, and is not resent.
+    // The open tab moves within the app, as the gateway refuses the page
+    // itself to a reload it cannot record.
     await demo.stop()
     await demo.start({ fault: 'audit-partial' })
     const before = await demo.counts()
-    await customer1.reload({ waitUntil: 'networkidle' })
+    for (const route of ['/', '/help']) {
+      await customer1.evaluate((to) => {
+        history.pushState(null, '', to)
+        dispatchEvent(new PopStateEvent('popstate'))
+      }, route)
+    }
+    await customer1.waitForLoadState('networkidle')
     await expect(customer1.getByRole('alert').filter({ hasText: 'Fetch can’t take requests right now.' })).toContainText('Answered by the Fetch gateway · 503')
     await ask()
     await expect(customer1.getByRole('alert').filter({ hasText: 'Fetch couldn’t confirm your request.' })).toContainText('Answered by the Fetch gateway · 503')

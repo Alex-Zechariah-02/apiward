@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -89,7 +88,6 @@ type dataSettings struct {
 	ReadTimeout       *string `json:"read_timeout"`
 	WriteTimeout      *string `json:"write_timeout"`
 	IdleTimeout       *string `json:"idle_timeout"`
-	Website           *string `json:"website"`
 }
 
 // upstreamSettings bound each exchange with an upstream.
@@ -114,9 +112,6 @@ type nativeConfig struct {
 	// adminUI is an optional directory of built dashboard files, served by
 	// the admin listener so the dashboard shares the Admin API's origin.
 	adminUI string
-	// website holds the built Fetch website served at /; nil when
-	// none is configured.
-	website fs.FS
 }
 
 // operatorConfig is what the operator commands need of the controller's

@@ -83,12 +83,11 @@ func (e *Embedded) Start() error {
 	return nil
 }
 
-// ServeHTTP runs the data plane: the full request pipeline, and the website
-// when one is configured.
+// ServeHTTP runs the data plane: the full request pipeline for every request.
 func (e *Embedded) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	e.calls.enter()
 	defer e.calls.leave()
-	e.deployment.handler.ServeHTTP(w, r)
+	e.deployment.enforcement.ServeHTTP(w, r)
 }
 
 // ServerSettings returns the configured limits for the host's server.
