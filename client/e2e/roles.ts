@@ -23,8 +23,11 @@ export function scriptDialogs(): number {
   return dialogs
 }
 
-// person returns this person's tab, signed in, opening a new browser context
-// for someone not seen before (or for nobody, when email is null).
+// person returns this person's tab, signed in and settled on the home page,
+// opening a new browser context for someone not seen before (or for nobody,
+// when email is null). Sign-in ends with an in-app route change, which never
+// reaches network idle, so a new person's home is opened again and awaited:
+// no read of the home page may land after a test takes its receipt counts.
 export async function person(browser: Browser, email: string | null): Promise<Page> {
   const known = email ? people.get(email) : undefined
   if (known) {
@@ -49,6 +52,7 @@ export async function person(browser: Browser, email: string | null): Promise<Pa
   })
   if (email) {
     await signIn(page, siteURL, email)
+    await page.goto(siteURL + '/', { waitUntil: 'networkidle' })
     people.set(email, page)
   }
   return page
