@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Alex-Zechariah-02/apiward/internal/controller"
 	"github.com/Alex-Zechariah-02/apiward/internal/policy"
 )
 
@@ -39,7 +40,7 @@ func TestRoleChangeAppliesToNewRequestsOnly(t *testing.T) {
 	// The next generation removes alice's role and grants READER the write.
 	next := withoutRole(e.protectedPolicy(), "WRITER")
 	next.Permits = append(next.Permits, policy.Permit{Role: "READER", Operation: "write-a"})
-	outcome, code := e.publish(Change{ID: "remove-writer", Expected: 1, Policy: mustJSON(next)})
+	outcome, code := e.publish(controller.Change{ID: "remove-writer", Expected: 1, Policy: mustJSON(next)})
 	if code != http.StatusOK {
 		t.Fatalf("publish: %d %+v", code, outcome)
 	}
@@ -146,7 +147,7 @@ func TestRoleSwapsUnderLoad(t *testing.T) {
 		for range workers {
 			requests <- struct{}{}
 		}
-		outcome, code := e.publish(Change{ID: fmt.Sprintf("swap-%d", i), Expected: int64(i + 1), Policy: mustJSON(policy)})
+		outcome, code := e.publish(controller.Change{ID: fmt.Sprintf("swap-%d", i), Expected: int64(i + 1), Policy: mustJSON(policy)})
 		if code != http.StatusOK {
 			t.Fatalf("swap %d: %d %+v", i, code, outcome)
 		}
@@ -204,13 +205,13 @@ func TestRejectedRoleChangeKeepsMembership(t *testing.T) {
 	duplicate := e.protectedPolicy()
 	duplicate.Roles = append(duplicate.Roles, policy.Role{ID: "READER"})
 	changes := []struct {
-		change Change
+		change controller.Change
 		status int
 		reason string
 	}{
-		{Change{ID: "unknown-role", Expected: 1, Policy: mustJSON(invalid)}, 400, "UNKNOWN_REFERENCE"},
-		{Change{ID: "duplicate-subject", Expected: 1, Policy: mustJSON(duplicate)}, 400, "DUPLICATE_ID"},
-		{Change{ID: "stale-removal", Expected: 0, Policy: mustJSON(removal)}, 409, "STALE"},
+		{controller.Change{ID: "unknown-role", Expected: 1, Policy: mustJSON(invalid)}, 400, "UNKNOWN_REFERENCE"},
+		{controller.Change{ID: "duplicate-subject", Expected: 1, Policy: mustJSON(duplicate)}, 400, "DUPLICATE_ID"},
+		{controller.Change{ID: "stale-removal", Expected: 0, Policy: mustJSON(removal)}, 409, "STALE"},
 	}
 	for _, c := range changes {
 		outcome, code := e.publish(c.change)
@@ -226,7 +227,7 @@ func TestRejectedRoleChangeKeepsMembership(t *testing.T) {
 	}
 
 	// The valid removal then applies.
-	if _, code := e.publish(Change{ID: "disable-alice", Expected: 1, Policy: mustJSON(removal)}); code != http.StatusOK {
+	if _, code := e.publish(controller.Change{ID: "disable-alice", Expected: 1, Policy: mustJSON(removal)}); code != http.StatusOK {
 		t.Fatalf("valid removal: %d", code)
 	}
 	if code, _ := e.request(http.MethodPost, "/a/item", "application/json", `{"n":1}`, "Authorization", "Bearer "+aliceToken); code != http.StatusForbidden {
@@ -256,7 +257,7 @@ func TestRoleChangeSurvivesCrash(t *testing.T) {
 			// Removes WRITER from policy and grants READER the write.
 			next := withoutRole(e.protectedPolicy(), "WRITER")
 			next.Permits = append(next.Permits, policy.Permit{Role: "READER", Operation: "write-a"})
-			change := Change{ID: "swap-roles", Expected: 1, Policy: mustJSON(next)}
+			change := controller.Change{ID: "swap-roles", Expected: 1, Policy: mustJSON(next)}
 			if _, code := e.publish(change); code != 0 {
 				t.Fatalf("publication answered %d instead of crashing", code)
 			}

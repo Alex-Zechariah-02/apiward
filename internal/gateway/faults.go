@@ -7,6 +7,7 @@ package gateway
 import (
 	"net/http"
 
+	"github.com/Alex-Zechariah-02/apiward/internal/controller"
 	"github.com/Alex-Zechariah-02/apiward/internal/pipeline"
 	"github.com/Alex-Zechariah-02/apiward/internal/policy"
 	"github.com/Alex-Zechariah-02/apiward/internal/store"
@@ -19,7 +20,7 @@ import (
 // manage_policy, the admin origin and the CSRF token.
 func registerTestRoutes(s *adminAPI, mux *http.ServeMux) {
 	s.route(mux, "POST /test/publish", store.PermManagePolicy, func(w http.ResponseWriter, r *http.Request, who caller) {
-		var change Change
+		var change controller.Change
 		if !decodeBody(w, r, policy.MaxPolicyBytes, &change) {
 			return
 		}

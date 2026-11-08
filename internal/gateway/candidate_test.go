@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Alex-Zechariah-02/apiward/internal/controller"
 	"github.com/Alex-Zechariah-02/apiward/internal/policy"
 	"github.com/Alex-Zechariah-02/apiward/internal/store"
 )
@@ -21,11 +22,11 @@ func TestCandidateReceiptSurvivesMetadataReadFailure(t *testing.T) {
 	admin := e.mustLogin(harnessAdmin, harnessPassword)
 	before := e.status()
 	body := string(mustJSON(map[string]any{"policy": policy}))
-	var receipt Outcome
+	var receipt controller.Outcome
 	for range 2 {
 		code, answer, _ := e.as(admin, http.MethodPost, "/admin/candidates", body,
 			"If-Match", `"r1"`, "Idempotency-Key", "candidate-metadata-failure")
-		receipt = fromJSON[Outcome](t, answer)
+		receipt = fromJSON[controller.Outcome](t, answer)
 		if code != http.StatusServiceUnavailable || receipt.Outcome != "committed" || receipt.Reason != "STORE_ERROR" ||
 			receipt.Candidate != 1 || receipt.Transition != "admin:"+harnessAdmin+":candidate-metadata-failure" {
 			t.Fatalf("committed stage with unreadable metadata: %d %s", code, answer)
@@ -187,7 +188,7 @@ func TestCandidateRefusals(t *testing.T) {
 	for i, tc := range cases {
 		// A refusal answers with the outcome itself, not a receipt and candidate.
 		code, _, body := e.stage(harness, tc.policy, `"r1"`, fmt.Sprintf("invalid-candidate-%02d", i))
-		outcome := fromJSON[Outcome](t, body)
+		outcome := fromJSON[controller.Outcome](t, body)
 		if code != http.StatusBadRequest || outcome.Outcome != "rejected" || outcome.Reason != tc.reason || outcome.Field != tc.field {
 			t.Errorf("%s: %d %s, want 400 %s %s", tc.name, code, body, tc.reason, tc.field)
 		}
@@ -268,11 +269,11 @@ func TestCandidateLifecycle(t *testing.T) {
 	}
 
 	code, body, _ = e.as(harness, http.MethodDelete, path, "", "Idempotency-Key", "lifecycle-withdraw")
-	withdrawn := fromJSON[Outcome](t, body)
+	withdrawn := fromJSON[controller.Outcome](t, body)
 	if code != http.StatusOK || withdrawn.Outcome != "committed" || withdrawn.Candidate != first.Candidate.ID {
 		t.Fatalf("withdrawal: %d %s", code, body)
 	}
-	if code, body, _ := e.as(harness, http.MethodDelete, path, "", "Idempotency-Key", "lifecycle-withdraw"); code != http.StatusOK || fromJSON[Outcome](t, body) != withdrawn {
+	if code, body, _ := e.as(harness, http.MethodDelete, path, "", "Idempotency-Key", "lifecycle-withdraw"); code != http.StatusOK || fromJSON[controller.Outcome](t, body) != withdrawn {
 		t.Fatalf("retried withdrawal: %d %s", code, body)
 	}
 	if code, body, _ := e.as(harness, http.MethodDelete, path, "", "Idempotency-Key", "lifecycle-withdraw-2"); code != http.StatusConflict || !strings.Contains(body, "CANDIDATE_UNAVAILABLE") {

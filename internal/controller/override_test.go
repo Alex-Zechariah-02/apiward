@@ -1,6 +1,6 @@
-// Applying overrides to generations.
+// Override requests and applying overrides to generations.
 
-package gateway
+package controller
 
 import (
 	"math/rand/v2"
@@ -14,12 +14,83 @@ import (
 	"github.com/Alex-Zechariah-02/apiward/internal/store"
 )
 
+// Only the supported controls and actions can be requested, each with
+// exactly the members it takes, well-formed identifiers and a bounded
+// lifetime. JWT, validation, logging, upstream or route-allow changes have no
+// representation and are refused by name.
+func TestOverrideRequestGrammar(t *testing.T) {
+	valid := []OverrideRequest{
+		permitOverride(store.OverrideException, "READER", "write-a", 60),
+		permitOverride(store.OverrideContainment, "WRITER", "read-a", 60),
+		rateOverride(store.OverrideException, "read-a", 10, 60),
+		rateOverride(store.OverrideContainment, "read-a", 1, 60),
+		operationContainment("read-b", 60),
+		permitOverride(store.OverrideException, "READER", "write-a", store.MinOverrideSeconds),
+		permitOverride(store.OverrideException, "READER", "write-a", store.MaxOverrideSeconds),
+	}
+	wantTargets := []string{"permit:READER:write-a", "permit:WRITER:read-a", "rate:read-a", "rate:read-a", "operation:read-b",
+		"permit:READER:write-a", "permit:READER:write-a"}
+	for i, r := range valid {
+		o, err := r.check()
+		if err != nil || o.Target != wantTargets[i] || o.Status != "" {
+			t.Errorf("valid request %d %+v: %+v %v", i, r, o, err)
+		}
+	}
+
+	withRole := func(r OverrideRequest, role string) OverrideRequest { r.Role = new(role); return r }
+	withCount := func(r OverrideRequest, count int64) OverrideRequest { r.Count = new(count); return r }
+	withSeconds := func(r OverrideRequest, s int64) OverrideRequest { r.ExpiresInSeconds = s; return r }
+	permit := permitOverride(store.OverrideException, "READER", "write-a", 60)
+	refused := []struct {
+		name    string
+		request OverrideRequest
+		want    string
+	}{
+		{"JWT control", OverrideRequest{Type: store.OverrideException, Control: "jwt", Operation: "read-a", ExpiresInSeconds: 60}, "UNSUPPORTED_CONTROL@control"},
+		{"authentication control", OverrideRequest{Type: store.OverrideException, Control: "auth", Operation: "read-a", ExpiresInSeconds: 60}, "UNSUPPORTED_CONTROL@control"},
+		{"validation control", OverrideRequest{Type: store.OverrideException, Control: "validation", Operation: "write-a", ExpiresInSeconds: 60}, "UNSUPPORTED_CONTROL@control"},
+		{"schema control", OverrideRequest{Type: store.OverrideContainment, Control: "schema", Operation: "write-a", ExpiresInSeconds: 60}, "UNSUPPORTED_CONTROL@control"},
+		{"logging control", OverrideRequest{Type: store.OverrideException, Control: "logging", Operation: "read-a", ExpiresInSeconds: 60}, "UNSUPPORTED_CONTROL@control"},
+		{"audit control", OverrideRequest{Type: store.OverrideContainment, Control: "audit", Operation: "read-a", ExpiresInSeconds: 60}, "UNSUPPORTED_CONTROL@control"},
+		{"upstream control", OverrideRequest{Type: store.OverrideException, Control: "upstream", Operation: "read-a", ExpiresInSeconds: 60}, "UNSUPPORTED_CONTROL@control"},
+		{"route control name", OverrideRequest{Type: store.OverrideContainment, Control: "route", Operation: "read-a", ExpiresInSeconds: 60}, "UNSUPPORTED_CONTROL@control"},
+		{"case variant control", OverrideRequest{Type: store.OverrideException, Control: "Permit", Operation: "write-a", Role: new("READER"), ExpiresInSeconds: 60}, "UNSUPPORTED_CONTROL@control"},
+		{"operation allow", OverrideRequest{Type: store.OverrideException, Control: store.ControlOperation, Operation: "denied", ExpiresInSeconds: 60}, "UNSUPPORTED_ACTION@type"},
+		{"missing type", OverrideRequest{Control: store.ControlPermit, Operation: "write-a", Role: new("READER"), ExpiresInSeconds: 60}, "INVALID_VALUE@type"},
+		{"unknown type", OverrideRequest{Type: "priority", Control: store.ControlPermit, Operation: "write-a", Role: new("READER"), ExpiresInSeconds: 60}, "INVALID_VALUE@type"},
+		{"missing control", OverrideRequest{Type: store.OverrideException, Operation: "write-a", ExpiresInSeconds: 60}, "UNSUPPORTED_CONTROL@control"},
+		{"missing operation", OverrideRequest{Type: store.OverrideException, Control: store.ControlPermit, Role: new("READER"), ExpiresInSeconds: 60}, "INVALID_VALUE@operation"},
+		{"path as operation", OverrideRequest{Type: store.OverrideException, Control: store.ControlPermit, Operation: "/a/*", Role: new("READER"), ExpiresInSeconds: 60}, "INVALID_VALUE@operation"},
+		{"method and path as operation", OverrideRequest{Type: store.OverrideException, Control: store.ControlPermit, Operation: "POST /a/item", Role: new("READER"), ExpiresInSeconds: 60}, "INVALID_VALUE@operation"},
+		{"encoded operation", OverrideRequest{Type: store.OverrideException, Control: store.ControlPermit, Operation: "write%2Da", Role: new("READER"), ExpiresInSeconds: 60}, "INVALID_VALUE@operation"},
+		{"oversized operation", OverrideRequest{Type: store.OverrideContainment, Control: store.ControlOperation, Operation: strings.Repeat("a", policy.MaxIDLength+1), ExpiresInSeconds: 60}, "INVALID_VALUE@operation"},
+		{"permit without role", OverrideRequest{Type: store.OverrideException, Control: store.ControlPermit, Operation: "write-a", ExpiresInSeconds: 60}, "INVALID_VALUE@role"},
+		{"empty role", withRole(permit, ""), "INVALID_VALUE@role"},
+		{"role with a line break", withRole(permit, "READER\r\nX"), "INVALID_VALUE@role"},
+		{"role on a rate override", withRole(rateOverride(store.OverrideException, "read-a", 10, 60), "READER"), "INVALID_VALUE@role"},
+		{"role on an operation containment", withRole(operationContainment("read-a", 60), "READER"), "INVALID_VALUE@role"},
+		{"count on a permit override", withCount(permit, 5), "INVALID_VALUE@count"},
+		{"rate without count", OverrideRequest{Type: store.OverrideException, Control: store.ControlRate, Operation: "read-a", ExpiresInSeconds: 60}, "INVALID_VALUE@count"},
+		{"zero count", rateOverride(store.OverrideContainment, "read-a", 0, 60), "INVALID_VALUE@count"},
+		{"negative count", rateOverride(store.OverrideContainment, "read-a", -1, 60), "INVALID_VALUE@count"},
+		{"unlimited count", rateOverride(store.OverrideException, "read-a", compile.MaxRateCount+1, 60), "INVALID_VALUE@count"},
+		{"missing expiry", withSeconds(permit, 0), "INVALID_EXPIRY@expires_in_seconds"},
+		{"negative expiry", withSeconds(permit, -60), "INVALID_EXPIRY@expires_in_seconds"},
+		{"expiry above a day", withSeconds(permit, store.MaxOverrideSeconds+1), "INVALID_EXPIRY@expires_in_seconds"},
+		{"expiry past the duration range", withSeconds(permit, 10_000_000_000), "INVALID_EXPIRY@expires_in_seconds"},
+	}
+	for _, r := range refused {
+		if _, err := r.request.check(); overrideErrorCode(err) != r.want {
+			t.Errorf("%s: %v, want %s", r.name, err, r.want)
+		}
+	}
+}
+
 // The resolver applies each supported change to a copy of the base and
 // nothing else, refuses a change that no longer does what its type says, and
 // produces the same generation whatever order the overrides come in.
 func TestApplyOverrides(t *testing.T) {
-	e := &env{a: &receiver{name: "A", addr: "127.0.0.1:1"}, b: &receiver{name: "B", addr: "127.0.0.1:2"}}
-	basePolicy := e.protectedPolicy()
+	basePolicy := protectedPolicy()
 	basePolicy.Operations[0].Rate = rate(4, 60) // read-a
 	pristine := string(mustJSON(basePolicy))
 

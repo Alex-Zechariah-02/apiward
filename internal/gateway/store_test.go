@@ -179,7 +179,10 @@ func TestOverrideResolutionConstraints(t *testing.T) {
 	create := func(id int64, o store.Override) {
 		t.Helper()
 		o.ID, o.Base, o.CreatedAt, o.ExpiresAt, o.Actor = id, 1, now, now.Add(time.Hour), harnessAdmin
-		o.Target = overrideTarget(o.Control, o.Operation, o.Role)
+		o.Target = o.Control + ":" + o.Operation // the stored target format
+		if o.Control == store.ControlPermit {
+			o.Target = o.Control + ":" + o.Role + ":" + o.Operation
+		}
 		creation := store.TransitionRecord{ID: fmt.Sprintf("create-%d", id), Kind: "tpo.create", Actor: harnessAdmin, Target: "override", Digest: "d"}
 		if err := s.CommitOverride(ctx, creation, o, now); err != nil {
 			t.Fatalf("creating override %d: %v", id, err)

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/Alex-Zechariah-02/apiward/internal/controller"
 	"github.com/Alex-Zechariah-02/apiward/internal/pipeline"
 	"github.com/Alex-Zechariah-02/apiward/internal/policy"
 	"github.com/Alex-Zechariah-02/apiward/internal/store"
@@ -126,7 +127,7 @@ func (s *adminAPI) handleRevision(w http.ResponseWriter, r *http.Request, who ca
 // writePolicyOutcome returns the receipt with the policy ETag the client
 // needs next: the confirmed revision after a change, the current one after a
 // stale precondition.
-func (s *adminAPI) writePolicyOutcome(w http.ResponseWriter, r *http.Request, outcome Outcome, status int) {
+func (s *adminAPI) writePolicyOutcome(w http.ResponseWriter, r *http.Request, outcome controller.Outcome, status int) {
 	switch {
 	case status == http.StatusOK && outcome.Provisional != 0 && outcome.Disposition == "":
 		// An activation leaves the confirmed revision as it was.

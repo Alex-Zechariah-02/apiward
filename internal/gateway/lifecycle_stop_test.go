@@ -15,6 +15,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/Alex-Zechariah-02/apiward/internal/controller"
 )
 
 // Stop waits a bounded time for an admin request in progress, then closes its
@@ -23,7 +25,7 @@ func TestStopIsBoundedByStuckAdminRequest(t *testing.T) {
 	e := newEnv(t)
 	seed(t, e.database, e.policy(e.a, false), seedOptions{})
 	c, _ := e.own(e.controllerConfig())
-	if err := c.Start(newAdminAPI(c).handler()); err != nil {
+	if err := c.Start(testAdmin(c).handler()); err != nil {
 		t.Fatal(err)
 	}
 	conn, err := net.Dial("tcp", e.admin)
@@ -43,8 +45,8 @@ func TestStopIsBoundedByStuckAdminRequest(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "admin listener shutdown") {
 		t.Fatalf("Stop with a stuck admin request: %v", err)
 	}
-	if elapsed < adminShutdownWait || elapsed > adminShutdownWait+3*time.Second {
-		t.Fatalf("Stop took %s, want about %s", elapsed, adminShutdownWait)
+	if elapsed < controller.ShutdownWait || elapsed > controller.ShutdownWait+3*time.Second {
+		t.Fatalf("Stop took %s, want about %s", elapsed, controller.ShutdownWait)
 	}
 	conn.SetReadDeadline(time.Now().Add(2 * time.Second))
 	if _, err := io.ReadAll(conn); errors.Is(err, os.ErrDeadlineExceeded) {
@@ -65,7 +67,7 @@ func TestStopWaitsForMutations(t *testing.T) {
 	c, _ := e.own(e.controllerConfig())
 
 	type result struct {
-		outcome Outcome
+		outcome controller.Outcome
 		status  int
 	}
 	results := make(chan result, 1000)
@@ -73,7 +75,7 @@ func TestStopWaitsForMutations(t *testing.T) {
 		defer close(results)
 		expected := int64(1)
 		for i := 0; ; i++ {
-			outcome, status := c.Publish(context.Background(), "test", Change{
+			outcome, status := c.Publish(context.Background(), "test", controller.Change{
 				ID:       fmt.Sprintf("during-stop-%d", i),
 				Expected: expected,
 				Policy:   mustJSON(e.policy(e.a, i%2 == 0)),
@@ -161,20 +163,20 @@ func TestBeginStopEndsAdmission(t *testing.T) {
 	io.WriteString(conn, "GET /a/held HTTP/1.1\r\nHost: gw\r\n\r\n")
 	<-held
 
-	c.beginStop()
-	if got := c.Admission(); got != stateStopping || c.Current() != nil {
-		t.Fatalf("after beginStop: admission %q, generation %v", got, c.Current())
+	c.BeginStop()
+	if got := c.Admission(); got != "stopping" || c.Current() != nil {
+		t.Fatalf("after BeginStop: admission %q, generation %v", got, c.Current())
 	}
 	resp, body := e.exchange(http.MethodGet, "/a/x", "", "")
 	_, refused := requestID(resp, body)
 	if resp.StatusCode != http.StatusServiceUnavailable || e.eventOf(refused, 1)["stage"] != "CAPTURE" {
-		t.Fatalf("request after beginStop: %d %s", resp.StatusCode, body)
+		t.Fatalf("request after BeginStop: %d %s", resp.StatusCode, body)
 	}
-	if outcome, status := c.Publish(context.Background(), "test", Change{ID: "after-begin-stop", Expected: 1, Policy: mustJSON(e.policy(e.a, false))}); status != http.StatusServiceUnavailable || outcome.Reason != "UNAVAILABLE" {
-		t.Fatalf("publication after beginStop: %d %+v", status, outcome)
+	if outcome, status := c.Publish(context.Background(), "test", controller.Change{ID: "after-begin-stop", Expected: 1, Policy: mustJSON(e.policy(e.a, false))}); status != http.StatusServiceUnavailable || outcome.Reason != "UNAVAILABLE" {
+		t.Fatalf("publication after BeginStop: %d %+v", status, outcome)
 	}
-	if err := c.Start(newAdminAPI(c).handler()); err == nil {
-		t.Fatal("Start after beginStop succeeded")
+	if err := c.Start(testAdmin(c).handler()); err == nil {
+		t.Fatal("Start after BeginStop succeeded")
 	}
 
 	release()
@@ -185,7 +187,7 @@ func TestBeginStopEndsAdmission(t *testing.T) {
 	}
 	data, _ := io.ReadAll(first.Body)
 	if first.StatusCode != http.StatusOK || string(data) != "forwarded" {
-		t.Fatalf("request admitted before beginStop: %d %q", first.StatusCode, data)
+		t.Fatalf("request admitted before BeginStop: %d %q", first.StatusCode, data)
 	}
 	heldID := f.handed()[0].header.Get("X-Request-Id")
 	io.WriteString(conn, "GET /a/x HTTP/1.1\r\nHost: gw\r\nConnection: close\r\n\r\n")
@@ -196,7 +198,7 @@ func TestBeginStopEndsAdmission(t *testing.T) {
 	data, _ = io.ReadAll(second.Body)
 	_, later := requestID(second, string(data))
 	if second.StatusCode != http.StatusServiceUnavailable || len(f.handed()) != 1 {
-		t.Fatalf("request on the kept connection after beginStop: %d %s", second.StatusCode, data)
+		t.Fatalf("request on the kept connection after BeginStop: %d %s", second.StatusCode, data)
 	}
 
 	if err := c.Stop(); err != nil {

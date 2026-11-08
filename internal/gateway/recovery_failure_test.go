@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Alex-Zechariah-02/apiward/internal/controller"
 	"github.com/Alex-Zechariah-02/apiward/internal/store"
 )
 
@@ -129,7 +130,7 @@ func TestLifecycleAuditFailure(t *testing.T) {
 	} {
 		e.start(binaries.fault, "GATEWAY_FAULT=audit-fail-published")
 		harness = e.mustLogin(harnessAdmin, harnessPassword)
-		var outcome Outcome
+		var outcome controller.Outcome
 		if step.action == "activate" {
 			code, outcome, body = e.activate(harness, candidate, 60, `"r1"`, step.key)
 		} else {

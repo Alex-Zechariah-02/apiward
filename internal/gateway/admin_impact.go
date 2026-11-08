@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/compile"
+	"github.com/Alex-Zechariah-02/apiward/internal/controller"
 	"github.com/Alex-Zechariah-02/apiward/internal/monitor"
 	"github.com/Alex-Zechariah-02/apiward/internal/pipeline"
 	"github.com/Alex-Zechariah-02/apiward/internal/policy"
@@ -40,7 +41,7 @@ func (s *adminAPI) candidateGeneration(w http.ResponseWriter, r *http.Request, i
 		adminError(w, 503, "gateway_unavailable", "")
 		return nil, nil, false
 	}
-	candidate, err = effectiveGeneration(policy, stored.Parent, time.Time{}, authority.Overrides)
+	candidate, err = controller.CandidateGeneration(policy, stored.Parent, authority.Overrides)
 	if err != nil {
 		adminError(w, http.StatusUnprocessableEntity, "candidate_invalid", "")
 		return nil, nil, false

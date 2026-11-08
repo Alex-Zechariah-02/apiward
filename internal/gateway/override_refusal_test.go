@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/compile"
+	"github.com/Alex-Zechariah-02/apiward/internal/controller"
 	"github.com/Alex-Zechariah-02/apiward/internal/store"
 )
 
@@ -139,7 +140,7 @@ func TestOverrideRefusals(t *testing.T) {
 
 	// Validation answers without creating anything.
 	code, body, _ := e.as(harness, http.MethodPost, "/admin/overrides/validate", good, "If-Match", `"r1"`)
-	if valid := fromJSON[Outcome](t, body); code != http.StatusOK || valid.Outcome != "valid" || valid.Target != "permit:READER:write-a" || valid.Expires.IsZero() {
+	if valid := fromJSON[controller.Outcome](t, body); code != http.StatusOK || valid.Outcome != "valid" || valid.Target != "permit:READER:write-a" || valid.Expires.IsZero() {
 		t.Fatalf("validation: %d %s", code, body)
 	}
 	bad := string(mustJSON(permitOverride(store.OverrideException, "ADMIN", "write-a", 60)))

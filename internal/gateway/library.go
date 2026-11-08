@@ -8,14 +8,17 @@ package gateway
 import (
 	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"net"
 	"net/http"
 	"time"
 
+	"github.com/Alex-Zechariah-02/apiward/internal/controller"
 	"github.com/Alex-Zechariah-02/apiward/internal/forward"
 	"github.com/Alex-Zechariah-02/apiward/internal/monitor"
 	"github.com/Alex-Zechariah-02/apiward/internal/pipeline"
+	"github.com/Alex-Zechariah-02/apiward/internal/store"
 )
 
 // Kinds of lifecycle failure. Every error returned while loading, opening,
@@ -96,8 +99,14 @@ func (cfg nativeConfig) server() ServerSettings {
 // deployment is an opened gateway that serves nothing yet.
 type deployment struct {
 	config      nativeConfig
-	controller  *Controller
+	controller  *controller.Controller
 	enforcement *pipeline.Handler
+	// limiter holds the rate counters. They belong to the process, not to a
+	// generation, so publication never resets them; a restart does.
+	limiter *pipeline.Limiter
+	// ui reads the dashboard files; nil when none are configured.
+	ui     fs.FS
+	logger *slog.Logger
 	// handler is the data plane: enforcement, and the website when one is
 	// configured.
 	handler http.Handler
@@ -111,16 +120,17 @@ func openDeployment(cfg nativeConfig, logger *slog.Logger) (*deployment, error) 
 	if err != nil {
 		return nil, classify(ErrConfig, err)
 	}
-	c, err := NewController(cfg.controller, logger)
+	c, ui, err := openController(cfg.controller, cfg.adminUI, logger)
 	if err != nil {
 		return nil, err
 	}
 	// A log that cannot be opened refuses every admission and every change
 	// for as long as the process runs; a running gateway could only report it.
-	if c.audit.OpenErr() != nil {
-		return nil, errors.Join(classify(ErrStorage, fmt.Errorf("audit log: %w", c.audit.OpenErr())), c.Stop())
+	if c.Audit().OpenErr() != nil {
+		return nil, errors.Join(classify(ErrStorage, fmt.Errorf("audit log: %w", c.Audit().OpenErr())), c.Stop())
 	}
-	enforcement, err := newHandler(c, cfg.maxBodyBytes, proxy.Forward)
+	limiter := pipeline.NewLimiter()
+	enforcement, err := newHandler(c, limiter, cfg.maxBodyBytes, proxy.Forward)
 	if err != nil {
 		return nil, errors.Join(classify(ErrConfig, err), c.Stop())
 	}
@@ -128,15 +138,44 @@ func openDeployment(cfg nativeConfig, logger *slog.Logger) (*deployment, error) 
 		config:      cfg,
 		controller:  c,
 		enforcement: enforcement,
+		limiter:     limiter,
+		ui:          ui,
+		logger:      logger,
 		handler:     dataPlane(enforcement, cfg.website),
 		metrics: &http.Server{
-			Handler:           monitor.Metrics(c.observations, c.gauges),
+			Handler:           monitor.Metrics(c.Observations(), c.Gauges),
 			ReadHeaderTimeout: 5 * time.Second,
 			WriteTimeout:      5 * time.Second,
 			IdleTimeout:       30 * time.Second,
 			MaxHeaderBytes:    defaultHeaderBytes,
 		},
 	}, nil
+}
+
+// openController checks cfg, reads the dashboard files in ui (none when
+// empty) and opens the controller's deployment. Its errors are classified:
+// ErrConfig for the settings and the dashboard files, ErrLocked when another
+// process holds the deployment, ErrStorage when the database cannot be
+// opened. The files are read before the database is opened, so a wrong
+// directory changes nothing.
+func openController(cfg controller.Config, ui string, logger *slog.Logger) (*controller.Controller, fs.FS, error) {
+	c, err := controller.Prepare(cfg, logger)
+	if err != nil {
+		return nil, nil, classify(ErrConfig, err)
+	}
+	var files fs.FS
+	if ui != "" {
+		if files, err = frontendFiles("admin_ui", ui); err != nil {
+			return nil, nil, classify(ErrConfig, err)
+		}
+	}
+	if err := c.Open(); err != nil {
+		if errors.Is(err, store.ErrHeld) {
+			return nil, nil, classify(ErrLocked, err)
+		}
+		return nil, nil, classify(ErrStorage, err)
+	}
+	return c, files, nil
 }
 
 // listen binds the metrics address and starts the Admin API. On an error
@@ -146,7 +185,7 @@ func (d *deployment) listen() (net.Listener, error) {
 	if err != nil {
 		return nil, classify(ErrListen, fmt.Errorf("metrics listener: %w", err))
 	}
-	if err := d.controller.Start(newAdminAPI(d.controller).handler()); err != nil {
+	if err := d.controller.Start(newAdminAPI(d.controller, d.limiter, d.ui, d.logger).handler()); err != nil {
 		metrics.Close()
 		return nil, classify(ErrListen, fmt.Errorf("admin listener: %w", err))
 	}
@@ -164,15 +203,15 @@ func (d *deployment) logAdmission(logger *slog.Logger) {
 	logger.Info("protected admission", attrs...)
 }
 
-// newHandler returns the enforcement handler for the policy c publishes. A
-// maxBodyBytes of zero or less selects the default ceiling. forward is called
-// only for admitted requests.
-func newHandler(c *Controller, maxBodyBytes int64, forward pipeline.Forward) (*pipeline.Handler, error) {
-	d := pipeline.Deps{MaxBodyBytes: maxBodyBytes, Forward: forward}
-	// A nil controller leaves every dependency unset, which newPipeline refuses.
+// newHandler returns the enforcement handler for the policy c publishes,
+// counting rates in limiter. A maxBodyBytes of zero or less selects the
+// default ceiling. forward is called only for admitted requests.
+func newHandler(c *controller.Controller, limiter *pipeline.Limiter, maxBodyBytes int64, forward pipeline.Forward) (*pipeline.Handler, error) {
+	d := pipeline.Deps{Limiter: limiter, Clock: pipeline.NewClock(), MaxBodyBytes: maxBodyBytes, Forward: forward}
+	// A nil controller leaves its dependencies unset, which pipeline.New refuses.
 	if c != nil {
-		d.Authority, d.Audit, d.Observations = c, c.audit, c.observations
-		d.Limiter, d.Clock, d.AuditTimeout = c.limiter, c.clock, c.config.AuditTimeout
+		d.Authority, d.Audit, d.Observations = c, c.Audit(), c.Observations()
+		d.AuditTimeout = c.Settings().AuditTimeout
 	}
 	return pipeline.New(d)
 }

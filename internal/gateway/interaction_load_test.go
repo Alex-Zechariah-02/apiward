@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Alex-Zechariah-02/apiward/internal/controller"
 	"github.com/Alex-Zechariah-02/apiward/internal/policy"
 	"github.com/Alex-Zechariah-02/apiward/internal/store"
 )
@@ -42,7 +43,7 @@ func TestConcurrentOverridesAndActivation(t *testing.T) {
 	orders := map[string]int{}
 	for round := range 8 {
 		_, staged, _ := e.stage(harness, e.cpaCandidate(), `"r1"`, fmt.Sprintf("race-stage-%02d-xxxx", round))
-		var activation, creation Outcome
+		var activation, creation controller.Outcome
 		var activationCode, creationCode int
 		concurrently(
 			func() {
@@ -84,7 +85,7 @@ func TestConcurrentOverridesAndActivation(t *testing.T) {
 		}
 		time.Sleep(time.Until(o.Expires.Add(-15 * time.Millisecond)))
 		var codes [3]int
-		var outcomes [3]Outcome
+		var outcomes [3]controller.Outcome
 		concurrently(
 			func() {
 				codes[0], outcomes[0], _ = e.resolve(harness, "confirm", activated.Provisional, policyETag(confirmed), fmt.Sprintf("race-confirm-%02d-xxx", round))

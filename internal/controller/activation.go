@@ -1,6 +1,6 @@
 // Recovery base, confirmed activation and resolution.
 
-package gateway
+package controller
 
 import (
 	"context"
@@ -35,7 +35,7 @@ func (c *Controller) EstablishBase(ctx context.Context, kind, actor string, cand
 		t.ID, t.Kind = "recovery:"+a.Episode, "recovery_base"
 		requiredMode = store.ModeRecovery
 	}
-	t.Digest = requestDigest(t.Kind, t.Target, sql.NullInt64{}, checksum)
+	t.Digest = store.Digest(t.Kind, t.Target, sql.NullInt64{}, checksum)
 	if result, status, done := c.replay(ctx, t); done {
 		return result, status
 	}

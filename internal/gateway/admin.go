@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/audit"
+	"github.com/Alex-Zechariah-02/apiward/internal/controller"
 	"github.com/Alex-Zechariah-02/apiward/internal/monitor"
 	"github.com/Alex-Zechariah-02/apiward/internal/pipeline"
 	"github.com/Alex-Zechariah-02/apiward/internal/session"
@@ -26,10 +27,6 @@ const (
 	csrfHeader       = "X-CSRF-Token"
 	minKeyLength     = 16
 	maxKeyLength     = 64
-	// adminShutdownWait bounds how long stopping waits for admin requests in
-	// progress; the native gateway waits that long for the requests of both
-	// its listeners together.
-	adminShutdownWait = 5 * time.Second
 )
 
 // caller is the authenticated administrator of one admin request.
@@ -46,9 +43,9 @@ type adminHandler func(w http.ResponseWriter, r *http.Request, who caller)
 // every handler. It changes state only through the controller's exported
 // operations.
 type adminAPI struct {
-	control      *Controller
-	config       Config
-	store        *store.DB
+	control      *controller.Controller
+	config       controller.Config
+	store        store.Reads
 	audit        *audit.AuditLog
 	observations *monitor.Observations
 	limiter      *pipeline.Limiter
@@ -59,12 +56,13 @@ type adminAPI struct {
 	logger       *slog.Logger
 }
 
-// newAdminAPI returns the Admin API of an opened controller.
-func newAdminAPI(c *Controller) *adminAPI {
+// newAdminAPI returns the Admin API of an opened controller, reporting the
+// rate counters of limiter and serving the dashboard files in ui (nil: none).
+func newAdminAPI(c *controller.Controller, limiter *pipeline.Limiter, ui fs.FS, logger *slog.Logger) *adminAPI {
 	return &adminAPI{
-		control: c, config: c.config, store: c.store, audit: c.audit,
-		observations: c.observations, limiter: c.limiter, sessions: c.sessions,
-		throttle: newThrottle(), hashing: make(chan struct{}, maxHashing), ui: c.ui, logger: c.logger,
+		control: c, config: c.Settings(), store: c.Reads(), audit: c.Audit(),
+		observations: c.Observations(), limiter: limiter, sessions: c.Sessions(),
+		throttle: newThrottle(), hashing: make(chan struct{}, maxHashing), ui: ui, logger: logger,
 	}
 }
 

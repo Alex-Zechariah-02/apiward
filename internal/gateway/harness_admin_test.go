@@ -12,6 +12,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/Alex-Zechariah-02/apiward/internal/controller"
 )
 
 // adminSession is an administrator's session cookie value and CSRF token.
@@ -126,10 +128,10 @@ func (e *env) forgetSession(refused adminSession) {
 
 // publish sends a whole policy through the test publication hook, which
 // exists only in the fault-injection build.
-func (e *env) publish(change Change) (Outcome, int) {
+func (e *env) publish(change controller.Change) (controller.Outcome, int) {
 	e.t.Helper()
 	code, body, _ := e.harnessCall(http.MethodPost, "/test/publish", string(mustJSON(change)))
-	var outcome Outcome
+	var outcome controller.Outcome
 	json.Unmarshal([]byte(body), &outcome)
 	return outcome, code
 }

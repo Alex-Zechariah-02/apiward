@@ -143,9 +143,6 @@ func TestNativeStartAndStopRelease(t *testing.T) {
 			t.Fatalf("stop: %v", err)
 		}
 	}
-	if g.controller.timer.Stop() {
-		t.Fatal("the deadline timer was still armed after the stop")
-	}
 	if err := <-g.served; !errors.Is(err, http.ErrServerClosed) {
 		t.Fatalf("data-plane Serve returned %v", err)
 	}
@@ -228,7 +225,7 @@ func TestNativeGracefulStop(t *testing.T) {
 	interrupt(t, e.process)
 	e.waitOutput(`"msg":"stopping","signal":"interrupt"`)
 	waitFor(t, time.Now().Add(5*time.Second), "the data listener to close", func() bool { return !dialable(e.dataAddr) })
-	if s := e.status(); s.Admission != stateStopping || s.State != stateStopping {
+	if s := e.status(); s.Admission != "stopping" || s.State != "stopping" {
 		t.Fatalf("status while stopping %+v", s)
 	}
 	if health := e.health(); health != "unavailable" {

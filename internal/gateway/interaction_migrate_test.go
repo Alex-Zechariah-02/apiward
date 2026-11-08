@@ -69,13 +69,13 @@ func writeVersion3Overrides(t *testing.T, path string) {
 		at                      int64
 	}{
 		{"admin:harness:version3-grant-00001", "tpo.create", harnessAdmin, "override", 1, "version3-grant", ms(-2 * time.Hour)},
-		{"admin:harness:version3-revoke-0001", "tpo.revoke", harnessAdmin, "override 1", nil, requestDigest("tpo.revoke", "override 1", sql.NullInt64{}, nil), ms(-119 * time.Minute)},
+		{"admin:harness:version3-revoke-0001", "tpo.revoke", harnessAdmin, "override 1", nil, store.Digest("tpo.revoke", "override 1", sql.NullInt64{}, nil), ms(-119 * time.Minute)},
 		{"admin:harness:version3-close-00001", "tpo.create", harnessAdmin, "override", 1, "version3-close", ms(-2 * time.Hour)},
 		{"auto-expire:2", "tpo.expire", "controller", "override 2", nil, "auto-expire:2", ms(-119 * time.Minute)},
 		{"admin:harness:version3-limit-00001", "tpo.create", harnessAdmin, "override", 1, "version3-limit", ms(-2 * time.Hour)},
 		{"operator:restore:" + strings.Repeat("e", 32), "operator.restore", "operator", "older.db", nil, "version3-restore", ms(-118 * time.Minute)},
 		{"admin:harness:version3-grant-00002", "tpo.create", harnessAdmin, "override", 1,
-			requestDigest("tpo.create", "override", sql.NullInt64{Int64: 1, Valid: true}, version3Grant), ms(-time.Minute)},
+			store.Digest("tpo.create", "override", sql.NullInt64{Int64: 1, Valid: true}, version3Grant), ms(-time.Minute)},
 	}
 	for _, tr := range transitions {
 		if _, err := db.Exec(transition, tr.id, tr.kind, tr.actor, tr.target, tr.expected, tr.digest, tr.at, tr.at, tr.at); err != nil {

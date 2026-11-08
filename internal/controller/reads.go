@@ -1,13 +1,16 @@
 // Published state the request pipeline, the metrics listener and the Admin API
 // read from the controller.
 
-package gateway
+package controller
 
 import (
 	"context"
 
+	"github.com/Alex-Zechariah-02/apiward/internal/audit"
 	"github.com/Alex-Zechariah-02/apiward/internal/compile"
+	"github.com/Alex-Zechariah-02/apiward/internal/monitor"
 	"github.com/Alex-Zechariah-02/apiward/internal/pipeline"
+	"github.com/Alex-Zechariah-02/apiward/internal/session"
 	"github.com/Alex-Zechariah-02/apiward/internal/store"
 )
 
@@ -23,9 +26,31 @@ func (c *Controller) Blocked() *store.BlockedAccounts { return c.blocked.Load() 
 // Addresses returns the published blocked address list.
 func (c *Controller) Addresses() *store.BlockedAddresses { return c.addresses.Load() }
 
-// gauges reads the published policy revision, active temporary rules and
+// Audit returns the audit log the controller opened; it stays open until
+// the stop.
+func (c *Controller) Audit() *audit.AuditLog { return c.audit }
+
+// Observations returns the in-memory observations of requests and events.
+func (c *Controller) Observations() *monitor.Observations { return c.observations }
+
+// Sessions returns the administrator sessions, which the controller revokes
+// when an administrator's credentials change.
+func (c *Controller) Sessions() *session.Table { return c.sessions }
+
+// Settings returns the configuration with its defaults applied.
+func (c *Controller) Settings() Config { return c.config }
+
+// Reads returns the store's read methods; nil while no database is open.
+func (c *Controller) Reads() store.Reads {
+	if c.store == nil {
+		return nil
+	}
+	return c.store
+}
+
+// Gauges reads the published policy revision, active temporary rules and
 // blocked accounts for the metrics listener.
-func (c *Controller) gauges() (revision int64, overrides, blocked int) {
+func (c *Controller) Gauges() (revision int64, overrides, blocked int) {
 	if generation := c.Current(); generation != nil {
 		revision, overrides = generation.Revision, len(generation.Overrides)
 	}

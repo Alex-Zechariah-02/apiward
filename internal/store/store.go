@@ -3,9 +3,12 @@
 package store
 
 import (
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"time"
 )
 
@@ -90,6 +93,16 @@ type TransitionRecord struct {
 	// Override is the override the mutation concerns, for its receipt and
 	// events. It is not a column: the override row names its transitions.
 	Override int64
+}
+
+// Digest identifies a mutation request by its kind, target, required
+// revision and canonical payload; a resent request must match it.
+func Digest(kind, target string, expected sql.NullInt64, payload any) string {
+	canonical, _ := json.Marshal(payload)
+	sum := sha256.New()
+	fmt.Fprintf(sum, "%s|%s|%v|%d|", kind, target, expected.Valid, expected.Int64)
+	sum.Write(canonical)
+	return hex.EncodeToString(sum.Sum(nil))
 }
 
 // RevisionChange is a new active base and the state committed with it.

@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Alex-Zechariah-02/apiward/internal/controller"
 	"github.com/Alex-Zechariah-02/apiward/internal/policy"
 	"github.com/Alex-Zechariah-02/apiward/internal/store"
 )
@@ -33,7 +34,7 @@ func TestConcurrencyAndLockContention(t *testing.T) {
 		t.Fatalf("stage: %d %s", code, body)
 	}
 	codes := make([]int, writers)
-	outcomes := make([]Outcome, writers)
+	outcomes := make([]controller.Outcome, writers)
 	var wg sync.WaitGroup
 	for i := range writers {
 		wg.Go(func() {

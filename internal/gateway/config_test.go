@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Alex-Zechariah-02/apiward/internal/controller"
 	"github.com/Alex-Zechariah-02/apiward/internal/forward"
 	"github.com/Alex-Zechariah-02/apiward/internal/pipeline"
 )
@@ -57,7 +58,7 @@ func TestNativeConfigSettings(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := nativeConfig{
-		controller: Config{
+		controller: controller.Config{
 			Database:             filepath.Join(dir, "state.db"),
 			AuditLog:             filepath.Join(dir, "audit.log"),
 			AdminListen:          "127.0.0.1:9440",
@@ -99,7 +100,7 @@ func TestNativeConfigSettings(t *testing.T) {
 	}
 	c := cfg.controller
 	if c.AdminIdleTimeout != 10*time.Minute || c.AdminSessionLifetime != time.Hour || c.AuditTimeout != time.Second ||
-		c.AuditMaxBytes != 1<<20 || c.AuditMaxFiles != 4 || c.AdminUI != site || cfg.website == nil ||
+		c.AuditMaxBytes != 1<<20 || c.AuditMaxFiles != 4 || cfg.adminUI != site || cfg.website == nil ||
 		cfg.maxBodyBytes != 2048 || cfg.headerLimit != 32768 || cfg.readHeaderTimeout != 2*time.Second ||
 		cfg.readTimeout != 3*time.Second || cfg.writeTimeout != 4*time.Second || cfg.idleTimeout != time.Minute ||
 		cfg.upstream != (forward.UpstreamTimeouts{Dial: time.Second, ResponseHeader: 3 * time.Second, ReadIdle: 2 * time.Minute}) {

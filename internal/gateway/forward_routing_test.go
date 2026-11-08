@@ -12,6 +12,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/Alex-Zechariah-02/apiward/internal/controller"
 	"github.com/Alex-Zechariah-02/apiward/internal/policy"
 	"github.com/Alex-Zechariah-02/apiward/internal/testissuer"
 )
@@ -41,7 +42,7 @@ func TestNativeForwardingUnderConcurrency(t *testing.T) {
 			if i%2 == 1 {
 				policy, name = toA, "A"
 			}
-			outcome, status := c.Publish(context.Background(), "test", Change{ID: fmt.Sprintf("concurrent-%d", i), Expected: expected, Policy: mustJSON(policy)})
+			outcome, status := c.Publish(context.Background(), "test", controller.Change{ID: fmt.Sprintf("concurrent-%d", i), Expected: expected, Policy: mustJSON(policy)})
 			if status != http.StatusOK {
 				t.Errorf("publication %d: %d %+v", i, status, outcome)
 				return
@@ -243,7 +244,7 @@ func TestNativeForwardingRefusalsReachNoUpstream(t *testing.T) {
 	e.assertReceipts(3, 0, 0)
 
 	// An audit log that cannot record the admission admits nothing.
-	c.audit.Fail(errors.New("injected write failure"))
+	c.Audit().Fail(errors.New("injected write failure"))
 	if code, body := e.get("/a/x", "Authorization", "Bearer "+token); code != http.StatusServiceUnavailable || !strings.Contains(body, "gateway_unavailable") {
 		t.Fatalf("with a failed audit log: %d %s", code, body)
 	}

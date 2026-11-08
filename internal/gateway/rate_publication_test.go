@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Alex-Zechariah-02/apiward/internal/controller"
 	"github.com/Alex-Zechariah-02/apiward/internal/policy"
 	"github.com/Alex-Zechariah-02/apiward/internal/testissuer"
 )
@@ -84,7 +85,7 @@ func TestRateCountersAcrossPublication(t *testing.T) {
 	revision := int64(1)
 	publish := func(id string, read *policy.RateRule) {
 		t.Helper()
-		outcome, code := e.publish(Change{ID: id, Expected: revision, Policy: mustJSON(e.ratePolicy(read, nil))})
+		outcome, code := e.publish(controller.Change{ID: id, Expected: revision, Policy: mustJSON(e.ratePolicy(read, nil))})
 		if code != http.StatusOK {
 			t.Fatalf("publish %s: %d %+v", id, code, outcome)
 		}
@@ -144,7 +145,7 @@ func TestInFlightRequestKeepsCapturedRateRule(t *testing.T) {
 		result <- code
 	}()
 	waitForFile(t, holdFile)
-	if outcome, code := e.publish(Change{ID: "count-10", Expected: 1, Policy: mustJSON(e.ratePolicy(rate(10, 60), nil))}); code != http.StatusOK {
+	if outcome, code := e.publish(controller.Change{ID: "count-10", Expected: 1, Policy: mustJSON(e.ratePolicy(rate(10, 60), nil))}); code != http.StatusOK {
 		t.Fatalf("publish: %d %+v", code, outcome)
 	}
 	os.WriteFile(release, nil, 0o600)

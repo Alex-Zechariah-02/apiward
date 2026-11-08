@@ -1,6 +1,6 @@
 // Change outcomes, rejections and their audit records.
 
-package gateway
+package controller
 
 import (
 	"context"

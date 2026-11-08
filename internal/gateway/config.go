@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Alex-Zechariah-02/apiward/internal/controller"
 	"github.com/Alex-Zechariah-02/apiward/internal/forward"
 	"github.com/Alex-Zechariah-02/apiward/internal/pipeline"
 	"github.com/Alex-Zechariah-02/apiward/internal/policy"
@@ -99,7 +100,7 @@ type upstreamSettings struct {
 
 // nativeConfig is a checked configuration of the native gateway.
 type nativeConfig struct {
-	controller        Config
+	controller        controller.Config
 	listen            string
 	metricsListen     string
 	maxBodyBytes      int64
@@ -109,6 +110,9 @@ type nativeConfig struct {
 	writeTimeout      time.Duration
 	idleTimeout       time.Duration
 	upstream          forward.UpstreamTimeouts
+	// adminUI is an optional directory of built dashboard files, served by
+	// the admin listener so the dashboard shares the Admin API's origin.
+	adminUI string
 	// website holds the built Fetch website served at /; nil when
 	// none is configured.
 	website fs.FS

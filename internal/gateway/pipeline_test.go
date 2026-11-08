@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/audit"
+	"github.com/Alex-Zechariah-02/apiward/internal/controller"
 	"github.com/Alex-Zechariah-02/apiward/internal/policy"
 	"github.com/Alex-Zechariah-02/apiward/internal/testissuer"
 )
@@ -159,7 +160,7 @@ func TestValidationRefusalDuringPublication(t *testing.T) {
 		result <- reply{status, body}
 	}()
 	waitForFile(t, holdFile)
-	outcome, code := e.publish(Change{ID: "fixture-schema", Expected: 1, Policy: mustJSON(fixtureWithRate(fixtures, rate(2, 60), ordersCreateSchema))})
+	outcome, code := e.publish(controller.Change{ID: "fixture-schema", Expected: 1, Policy: mustJSON(fixtureWithRate(fixtures, rate(2, 60), ordersCreateSchema))})
 	if code != http.StatusOK {
 		t.Fatalf("publish: %d %+v", code, outcome)
 	}

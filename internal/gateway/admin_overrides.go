@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/Alex-Zechariah-02/apiward/internal/controller"
 	"github.com/Alex-Zechariah-02/apiward/internal/pipeline"
 	"github.com/Alex-Zechariah-02/apiward/internal/store"
 )
@@ -84,7 +85,7 @@ func (s *adminAPI) handleValidateOverride(w http.ResponseWriter, r *http.Request
 	if !ok {
 		return
 	}
-	var request OverrideRequest
+	var request controller.OverrideRequest
 	if !decodeBody(w, r, maxAdminBody, &request) {
 		return
 	}
@@ -104,7 +105,7 @@ func (s *adminAPI) handleCreateOverride(w http.ResponseWriter, r *http.Request, 
 	if !ok {
 		return
 	}
-	var request OverrideRequest
+	var request controller.OverrideRequest
 	if !decodeBody(w, r, maxAdminBody, &request) {
 		return
 	}

@@ -13,6 +13,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/Alex-Zechariah-02/apiward/internal/controller"
 )
 
 // A header schema may not declare a field whose validated value the upstream
@@ -26,7 +28,7 @@ func TestHeaderSchemaRefusesUnforwardedFields(t *testing.T) {
 	for i, name := range []string{"Via", "Connection", "Content-Length", "X-Forwarded-For"} {
 		p := e.keywordPolicy()
 		p.Operations[0].Headers = json.RawMessage(`{"type":"object","additionalProperties":true,"properties":{"` + name + `":{"type":"string"}}}`)
-		outcome, status := c.Publish(context.Background(), "test", Change{ID: fmt.Sprintf("unforwarded-%d", i), Expected: 1, Policy: mustJSON(p)})
+		outcome, status := c.Publish(context.Background(), "test", controller.Change{ID: fmt.Sprintf("unforwarded-%d", i), Expected: 1, Policy: mustJSON(p)})
 		if status == http.StatusOK || outcome.Outcome != "rejected" || outcome.Reason != "INVALID_VALUE" ||
 			outcome.Field != "operations[0].headers.properties."+name || c.Current().ID != current {
 			t.Errorf("%s: %d %+v, generation %s", name, status, outcome, c.Current().ID)
@@ -36,7 +38,7 @@ func TestHeaderSchemaRefusesUnforwardedFields(t *testing.T) {
 	// The same operation with an end-to-end field is published.
 	p := e.keywordPolicy()
 	p.Operations[0].Headers = json.RawMessage(`{"type":"object","additionalProperties":true,"required":["Accept"],"properties":{"Accept":{"type":"string","enum":["application/json"]}}}`)
-	if outcome, status := c.Publish(context.Background(), "test", Change{ID: "end-to-end", Expected: 1, Policy: mustJSON(p)}); status != http.StatusOK {
+	if outcome, status := c.Publish(context.Background(), "test", controller.Change{ID: "end-to-end", Expected: 1, Policy: mustJSON(p)}); status != http.StatusOK {
 		t.Fatalf("end-to-end field: %d %+v", status, outcome)
 	}
 	if code, body := e.raw("GET /a/x HTTP/1.1\r\nHost: gw\r\nConnection: close\r\nAccept: application/json\r\n\r\n"); code != http.StatusOK || body != "A ok" ||

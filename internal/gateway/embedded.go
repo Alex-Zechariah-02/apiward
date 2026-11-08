@@ -13,6 +13,8 @@ import (
 	"net/http"
 	"sync"
 	"sync/atomic"
+
+	"github.com/Alex-Zechariah-02/apiward/internal/controller"
 )
 
 // Embedded is one gateway whose data plane a host program serves. Its
@@ -64,7 +66,7 @@ func (e *Embedded) Start() error {
 	metrics, err := e.deployment.listen()
 	if err != nil {
 		e.stopping = true
-		ctx, cancel := context.WithTimeout(context.Background(), adminShutdownWait)
+		ctx, cancel := context.WithTimeout(context.Background(), controller.ShutdownWait)
 		defer cancel()
 		return errors.Join(err, e.stop(ctx))
 	}
@@ -112,7 +114,7 @@ func (e *Embedded) stop(ctx context.Context) error {
 
 func (e *Embedded) shutdown(ctx context.Context) error {
 	c := e.deployment.controller
-	c.beginStop()
+	c.BeginStop()
 	var errs []error
 	if err := e.deployment.metrics.Shutdown(ctx); err != nil {
 		errs = append(errs, fmt.Errorf("metrics listener shutdown: %w", err), e.deployment.metrics.Close())
@@ -122,7 +124,7 @@ func (e *Embedded) shutdown(ctx context.Context) error {
 	if err := e.calls.wait(ctx); err != nil {
 		errs = append(errs, fmt.Errorf("requests in progress: %w", err))
 	}
-	errs = append(errs, c.stopWithin(ctx))
+	errs = append(errs, c.StopWithin(ctx))
 	if err := errors.Join(errs...); err != nil {
 		return classify(ErrIncomplete, err)
 	}

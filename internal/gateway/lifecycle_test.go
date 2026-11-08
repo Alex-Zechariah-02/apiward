@@ -17,6 +17,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Alex-Zechariah-02/apiward/internal/compile"
+	"github.com/Alex-Zechariah-02/apiward/internal/controller"
 	"github.com/Alex-Zechariah-02/apiward/internal/pipeline"
 	"github.com/Alex-Zechariah-02/apiward/internal/store"
 	"github.com/Alex-Zechariah-02/apiward/internal/testissuer"
@@ -46,8 +48,8 @@ func (b *logBuffer) String() string {
 }
 
 // controllerConfig is the configuration of e's deployment.
-func (e *env) controllerConfig() Config {
-	return Config{
+func (e *env) controllerConfig() controller.Config {
+	return controller.Config{
 		Database:    e.database,
 		AuditLog:    e.auditLog,
 		AdminListen: e.admin,
@@ -57,21 +59,27 @@ func (e *env) controllerConfig() Config {
 
 // own creates a controller for cfg in the test process and stops it when the
 // test ends.
-func (e *env) own(cfg Config) (*Controller, *logBuffer) {
+func (e *env) own(cfg controller.Config) (*controller.Controller, *logBuffer) {
 	e.t.Helper()
 	logs := &logBuffer{}
-	c, err := NewController(cfg, slog.New(slog.NewJSONHandler(logs, nil)))
+	c, _, err := openController(cfg, "", slog.New(slog.NewJSONHandler(logs, nil)))
 	if err != nil {
-		e.t.Fatalf("NewController: %v", err)
+		e.t.Fatalf("openController: %v", err)
 	}
 	e.t.Cleanup(func() { c.Stop() })
 	return c, logs
 }
 
+// testAdmin returns the Admin API of c with its own rate counters and no
+// dashboard files.
+func testAdmin(c *controller.Controller) *adminAPI {
+	return newAdminAPI(c, pipeline.NewLimiter(), nil, slog.New(slog.DiscardHandler))
+}
+
 // Stack frames of the goroutines a controller starts.
 const (
 	auditWriter = "audit.(*AuditLog).run("
-	adminServer = "gateway.(*Controller).startAdmin."
+	adminServer = "controller.(*Controller).startAdmin."
 )
 
 // goroutines counts the goroutines whose stack holds frame.
@@ -104,17 +112,14 @@ func waitGoroutines(t *testing.T, frame string, want int) {
 }
 
 // assertReleased fails unless the stopped controller c holds nothing of its
-// deployment: no admin listener, no open database or audit file, and the
-// database lock is free for another owner.
-func assertReleased(t *testing.T, c *Controller, cfg Config) {
+// deployment: no admin listener or open audit file, and the database lock is
+// free for another owner. That Stop closes the database is a controller test.
+func assertReleased(t *testing.T, c *controller.Controller, cfg controller.Config) {
 	t.Helper()
 	if dialable(cfg.AdminListen) {
 		t.Fatal("the admin listener is still open")
 	}
-	if c.store != nil && c.store.Ping() == nil {
-		t.Fatal("the database is still open")
-	}
-	if c.audit.OpenErr() == nil && !c.audit.Closed() {
+	if c.Audit().OpenErr() == nil && !c.Audit().Closed() {
 		t.Fatal("the audit file is still open")
 	}
 	if _, err := os.Stat(cfg.Database); err == nil {
@@ -138,7 +143,7 @@ func TestControllerOwnedByApplication(t *testing.T) {
 	writers, servers := goroutines(auditWriter), goroutines(adminServer)
 
 	c, logs := e.own(e.controllerConfig())
-	want, err := effectiveGeneration(policy, 1, time.Time{}, nil)
+	want, err := compile.Compile(policy, 1, time.Time{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -153,7 +158,7 @@ func TestControllerOwnedByApplication(t *testing.T) {
 		t.Fatalf("%d audit writers, want %d", got, writers+1)
 	}
 
-	if err := c.Start(newAdminAPI(c).handler()); err != nil {
+	if err := c.Start(testAdmin(c).handler()); err != nil {
 		t.Fatal(err)
 	}
 	if health := e.health(); health != store.ModeNormal {
@@ -162,7 +167,7 @@ func TestControllerOwnedByApplication(t *testing.T) {
 	if s := e.status(); s.State != store.ModeNormal || s.Generation != g.ID || s.Confirmed != 1 {
 		t.Fatalf("status %+v", s)
 	}
-	if err := c.Start(newAdminAPI(c).handler()); err == nil || !strings.Contains(err.Error(), "already started") {
+	if err := c.Start(testAdmin(c).handler()); err == nil || !strings.Contains(err.Error(), "already started") {
 		t.Fatalf("second Start: %v", err)
 	}
 	if got := goroutines(adminServer); got != servers+1 {
@@ -175,7 +180,7 @@ func TestControllerOwnedByApplication(t *testing.T) {
 	if err := c.Stop(); err != nil {
 		t.Fatalf("repeated Stop: %v", err)
 	}
-	if err := c.Start(newAdminAPI(c).handler()); err == nil || !strings.Contains(err.Error(), "stopped") {
+	if err := c.Start(testAdmin(c).handler()); err == nil || !strings.Contains(err.Error(), "stopped") {
 		t.Fatalf("Start after Stop: %v", err)
 	}
 	if c.Current() != nil {
@@ -210,35 +215,38 @@ func TestControllerRefusesInvalidConfiguration(t *testing.T) {
 	}
 	cases := []struct {
 		name   string
-		change func(e *env, cfg *Config)
+		change func(e *env, cfg *controller.Config, ui *string)
 		cause  string
 	}{
-		{"no database", func(e *env, cfg *Config) { cfg.Database = "" }, "database, audit_log and admin_listen are required"},
-		{"no audit log", func(e *env, cfg *Config) { cfg.AuditLog = "" }, "database, audit_log and admin_listen are required"},
-		{"no admin listener", func(e *env, cfg *Config) { cfg.AdminListen = "" }, "database, audit_log and admin_listen are required"},
-		{"wildcard admin listener", func(e *env, cfg *Config) { cfg.AdminListen = "0.0.0.0:" + port(e.admin) }, "loopback"},
-		{"host name admin listener", func(e *env, cfg *Config) { cfg.AdminListen = "localhost:" + port(e.admin) }, "loopback"},
-		{"admin listener without a port", func(e *env, cfg *Config) { cfg.AdminListen = "127.0.0.1:0" }, "loopback"},
-		{"no trust configuration", func(e *env, cfg *Config) { cfg.JWT = pipeline.TrustConfig{} }, "jwt: issuer and audience"},
-		{"missing key file", func(e *env, cfg *Config) { cfg.JWT.Keys[0].PublicKeyFile = filepath.Join(e.dir, "absent.pem") }, "jwt: opening public key"},
-		{"private key given as the key", func(e *env, cfg *Config) { cfg.JWT.Keys[0].PublicKeyFile = privateKey }, "exactly one PEM PUBLIC KEY block"},
-		{"audit file size below the bound", func(e *env, cfg *Config) { cfg.AuditMaxBytes = 1024 }, "audit_max_bytes must be"},
-		{"negative audit file size", func(e *env, cfg *Config) { cfg.AuditMaxBytes = -1 }, "audit_max_bytes must be"},
-		{"one audit file", func(e *env, cfg *Config) { cfg.AuditMaxFiles = 1 }, "audit_max_files must be"},
-		{"idle timeout too short", func(e *env, cfg *Config) { cfg.AdminIdleTimeout = 500 * time.Millisecond }, "admin_idle_timeout"},
-		{"session lifetime too long", func(e *env, cfg *Config) { cfg.AdminSessionLifetime = 25 * time.Hour }, "admin_session_lifetime"},
-		{"dashboard directory without index.html", func(e *env, cfg *Config) { cfg.AdminUI = t.TempDir() }, "admin_ui"},
+		{"no database", func(e *env, cfg *controller.Config, ui *string) { cfg.Database = "" }, "database, audit_log and admin_listen are required"},
+		{"no audit log", func(e *env, cfg *controller.Config, ui *string) { cfg.AuditLog = "" }, "database, audit_log and admin_listen are required"},
+		{"no admin listener", func(e *env, cfg *controller.Config, ui *string) { cfg.AdminListen = "" }, "database, audit_log and admin_listen are required"},
+		{"wildcard admin listener", func(e *env, cfg *controller.Config, ui *string) { cfg.AdminListen = "0.0.0.0:" + port(e.admin) }, "loopback"},
+		{"host name admin listener", func(e *env, cfg *controller.Config, ui *string) { cfg.AdminListen = "localhost:" + port(e.admin) }, "loopback"},
+		{"admin listener without a port", func(e *env, cfg *controller.Config, ui *string) { cfg.AdminListen = "127.0.0.1:0" }, "loopback"},
+		{"no trust configuration", func(e *env, cfg *controller.Config, ui *string) { cfg.JWT = pipeline.TrustConfig{} }, "jwt: issuer and audience"},
+		{"missing key file", func(e *env, cfg *controller.Config, ui *string) {
+			cfg.JWT.Keys[0].PublicKeyFile = filepath.Join(e.dir, "absent.pem")
+		}, "jwt: opening public key"},
+		{"private key given as the key", func(e *env, cfg *controller.Config, ui *string) { cfg.JWT.Keys[0].PublicKeyFile = privateKey }, "exactly one PEM PUBLIC KEY block"},
+		{"audit file size below the bound", func(e *env, cfg *controller.Config, ui *string) { cfg.AuditMaxBytes = 1024 }, "audit_max_bytes must be"},
+		{"negative audit file size", func(e *env, cfg *controller.Config, ui *string) { cfg.AuditMaxBytes = -1 }, "audit_max_bytes must be"},
+		{"one audit file", func(e *env, cfg *controller.Config, ui *string) { cfg.AuditMaxFiles = 1 }, "audit_max_files must be"},
+		{"idle timeout too short", func(e *env, cfg *controller.Config, ui *string) { cfg.AdminIdleTimeout = 500 * time.Millisecond }, "admin_idle_timeout"},
+		{"session lifetime too long", func(e *env, cfg *controller.Config, ui *string) { cfg.AdminSessionLifetime = 25 * time.Hour }, "admin_session_lifetime"},
+		{"dashboard directory without index.html", func(e *env, cfg *controller.Config, ui *string) { *ui = t.TempDir() }, "admin_ui"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			e := newEnv(t)
 			seed(t, e.database, e.policy(e.a, false), seedOptions{})
 			cfg := e.controllerConfig()
-			tc.change(e, &cfg)
+			ui := ""
+			tc.change(e, &cfg, &ui)
 			writers := goroutines(auditWriter)
-			c, err := NewController(cfg, slog.New(slog.DiscardHandler))
+			c, _, err := openController(cfg, ui, slog.New(slog.DiscardHandler))
 			if c != nil || err == nil || !strings.Contains(err.Error(), tc.cause) {
-				t.Fatalf("NewController = %v, %v; want an error with %q", c, err, tc.cause)
+				t.Fatalf("openController = %v, %v; want an error with %q", c, err, tc.cause)
 			}
 			if strings.Contains(err.Error(), "PRIVATE KEY") || strings.Contains(err.Error(), "MII") {
 				t.Fatalf("the error discloses key material: %v", err)
@@ -263,8 +271,8 @@ func TestControllerRefusesInvalidConfiguration(t *testing.T) {
 	t.Run("no logger", func(t *testing.T) {
 		e := newEnv(t)
 		seed(t, e.database, e.policy(e.a, false), seedOptions{})
-		if c, err := NewController(e.controllerConfig(), nil); c != nil || err == nil {
-			t.Fatalf("NewController without a logger = %v, %v", c, err)
+		if c, _, err := openController(e.controllerConfig(), "", nil); c != nil || err == nil {
+			t.Fatalf("openController without a logger = %v, %v", c, err)
 		}
 		if _, err := os.Stat(e.auditLog); !os.IsNotExist(err) {
 			t.Fatalf("an audit file was created: %v", err)

@@ -19,7 +19,7 @@ func TestStatusBuild(t *testing.T) {
 	seed(t, e.database, e.protectedPolicy(), seedOptions{})
 	c, _ := e.own(e.controllerConfig())
 	reply := httptest.NewRecorder()
-	newAdminAPI(c).handleStatus(reply, httptest.NewRequest(http.MethodGet, "/admin/status", nil), caller{})
+	testAdmin(c).handleStatus(reply, httptest.NewRequest(http.MethodGet, "/admin/status", nil), caller{})
 	var status struct{ Build buildInfo }
 	if reply.Code != http.StatusOK || json.Unmarshal(reply.Body.Bytes(), &status) != nil {
 		t.Fatalf("status: %d %s", reply.Code, reply.Body)

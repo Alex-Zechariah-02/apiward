@@ -14,9 +14,12 @@ import (
 	"testing"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/audit"
+	"github.com/Alex-Zechariah-02/apiward/internal/compile"
+	"github.com/Alex-Zechariah-02/apiward/internal/controller"
 	"github.com/Alex-Zechariah-02/apiward/internal/forward"
 	"github.com/Alex-Zechariah-02/apiward/internal/pipeline"
 	"github.com/Alex-Zechariah-02/apiward/internal/policy"
+	"github.com/Alex-Zechariah-02/apiward/internal/store"
 )
 
 // These tests run the enforcement handler under a plain net/http server in
@@ -83,19 +86,62 @@ func (f *memoryForwarder) setRespond(respond func(w http.ResponseWriter, r *http
 // serveEnforcement seeds e's database with policy, owns its controller and
 // serves the enforcement handler, with the global body ceiling maxBodyBytes
 // (0: the default), at e.dataAddr, where the harness request helpers send.
-func (e *env) serveEnforcement(policy policy.Policy, maxBodyBytes int64) (*Controller, *pipeline.Handler, *memoryForwarder) {
+func (e *env) serveEnforcement(policy policy.Policy, maxBodyBytes int64) (*controller.Controller, *pipeline.Handler, *memoryForwarder) {
 	e.t.Helper()
 	seed(e.t, e.database, policy, seedOptions{})
 	c, _ := e.own(e.controllerConfig())
 	f := &memoryForwarder{}
-	h, err := newHandler(c, maxBodyBytes, f.forward)
+	h, err := newHandler(c, pipeline.NewLimiter(), maxBodyBytes, f.forward)
 	if err != nil {
 		e.t.Fatal(err)
 	}
+	e.serve(h)
+	return c, h, f
+}
+
+// serveAuthority serves at e.dataAddr the enforcement handler of c that reads
+// its published state from authority instead of c.
+func (e *env) serveAuthority(c *controller.Controller, authority pipeline.Authority) *memoryForwarder {
+	e.t.Helper()
+	f := &memoryForwarder{}
+	h, err := pipeline.New(pipeline.Deps{
+		Authority: authority, Audit: c.Audit(), Observations: c.Observations(),
+		Limiter: pipeline.NewLimiter(), Clock: pipeline.NewClock(), AuditTimeout: c.Settings().AuditTimeout, Forward: f.forward,
+	})
+	if err != nil {
+		e.t.Fatal(err)
+	}
+	e.serve(h)
+	return f
+}
+
+// serve serves h at e.dataAddr until the test ends.
+func (e *env) serve(h http.Handler) {
 	server := httptest.NewServer(h)
 	e.t.Cleanup(server.Close)
 	e.dataAddr = server.Listener.Addr().String()
-	return c, h, f
+}
+
+// fixedAuthority is a controller whose published generation or blocked
+// accounts, when set, a test replaces.
+type fixedAuthority struct {
+	*controller.Controller
+	generation *compile.Generation
+	blocked    *store.BlockedAccounts
+}
+
+func (a fixedAuthority) Current() *compile.Generation {
+	if a.generation != nil {
+		return a.generation
+	}
+	return a.Controller.Current()
+}
+
+func (a fixedAuthority) Blocked() *store.BlockedAccounts {
+	if a.blocked != nil {
+		return a.blocked
+	}
+	return a.Controller.Blocked()
 }
 
 // eventOf returns the last event of the request with the given identifier,
@@ -124,13 +170,13 @@ func TestNewHandlerRefusesIncompleteSetup(t *testing.T) {
 	seed(t, e.database, e.policy(e.a, false), seedOptions{})
 	c, _ := e.own(e.controllerConfig())
 	forward := (&memoryForwarder{}).forward
-	if h, err := newHandler(nil, 0, forward); h != nil || err == nil {
+	if h, err := newHandler(nil, nil, 0, forward); h != nil || err == nil {
 		t.Fatalf("without a controller: %v, %v", h, err)
 	}
-	if h, err := newHandler(c, 0, nil); h != nil || err == nil {
+	if h, err := newHandler(c, pipeline.NewLimiter(), 0, nil); h != nil || err == nil {
 		t.Fatalf("without a forwarder: %v, %v", h, err)
 	}
-	if h, err := newHandler(c, 0, forward); h == nil || err != nil {
+	if h, err := newHandler(c, pipeline.NewLimiter(), 0, forward); h == nil || err != nil {
 		t.Fatalf("complete setup: %v, %v", h, err)
 	}
 }
@@ -205,8 +251,8 @@ func TestEnforcementAuditFailureBlocksForwarding(t *testing.T) {
 		t.Fatalf("before the failure: %d", code)
 	}
 	// The state a failed write or sync leaves the log in.
-	c.audit.Fail(errors.New("injected write failure"))
-	lost := c.audit.Lost()
+	c.Audit().Fail(errors.New("injected write failure"))
+	lost := c.Audit().Lost()
 	code, body := e.get("/a/x", "Authorization", "Bearer "+issuer.TokenFor(t, "alice"))
 	var reply struct {
 		Error     string `json:"error"`
@@ -219,7 +265,7 @@ func TestEnforcementAuditFailureBlocksForwarding(t *testing.T) {
 	if n := len(f.handed()); n != 1 {
 		t.Fatalf("%d requests handed on, want 1", n)
 	}
-	if got := c.audit.Lost(); got != lost+1 {
+	if got := c.Audit().Lost(); got != lost+1 {
 		t.Fatalf("lost events %d, want %d", got, lost+1)
 	}
 	// A refusal before the AUDIT stage needs no acknowledgement and is

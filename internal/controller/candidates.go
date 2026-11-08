@@ -1,6 +1,6 @@
 // Candidate staging and withdrawal.
 
-package gateway
+package controller
 
 import (
 	"context"

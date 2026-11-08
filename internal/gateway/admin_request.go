@@ -81,7 +81,7 @@ func adminTransition(who caller, key, kind, target string, expected sql.NullInt6
 		Actor:    who.admin.Name,
 		Target:   target,
 		Expected: expected,
-		Digest:   requestDigest(kind, target, expected, payload),
+		Digest:   store.Digest(kind, target, expected, payload),
 	}
 }
 

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/audit"
+	"github.com/Alex-Zechariah-02/apiward/internal/controller"
 	"github.com/Alex-Zechariah-02/apiward/internal/demoports"
 	"github.com/Alex-Zechariah-02/apiward/internal/pipeline"
 	"github.com/Alex-Zechariah-02/apiward/internal/policy"
@@ -20,7 +21,7 @@ import (
 func (f nativeFile) check() (nativeConfig, error) {
 	g, d, u := f.Gateway, f.Data, f.Upstream
 	cfg := nativeConfig{
-		controller: Config{
+		controller: controller.Config{
 			Database:    g.Database,
 			AuditLog:    g.AuditLog,
 			AdminListen: g.AdminListen,
@@ -86,9 +87,9 @@ func (f nativeFile) check() (nativeConfig, error) {
 		low, high time.Duration
 		into      *time.Duration
 	}{
-		{"gateway.admin_idle_timeout", g.AdminIdleTimeout, defaultIdle, minSessionSetting, maxSessionSetting, &cfg.controller.AdminIdleTimeout},
-		{"gateway.admin_session_lifetime", g.AdminSessionLifetime, defaultLifetime, minSessionSetting, maxSessionSetting, &cfg.controller.AdminSessionLifetime},
-		{"gateway.audit_timeout", g.AuditTimeout, defaultAuditWait, minAuditTimeout, maxAuditTimeout, &cfg.controller.AuditTimeout},
+		{"gateway.admin_idle_timeout", g.AdminIdleTimeout, controller.DefaultIdle, controller.MinSession, controller.MaxSession, &cfg.controller.AdminIdleTimeout},
+		{"gateway.admin_session_lifetime", g.AdminSessionLifetime, controller.DefaultLifetime, controller.MinSession, controller.MaxSession, &cfg.controller.AdminSessionLifetime},
+		{"gateway.audit_timeout", g.AuditTimeout, controller.DefaultAuditWait, minAuditTimeout, maxAuditTimeout, &cfg.controller.AuditTimeout},
 		{"data.read_header_timeout", d.ReadHeaderTimeout, defaultReadHeader, minServerTimeout, maxServerTimeout, &cfg.readHeaderTimeout},
 		{"data.read_timeout", d.ReadTimeout, defaultRead, minServerTimeout, maxServerTimeout, &cfg.readTimeout},
 		{"data.write_timeout", d.WriteTimeout, defaultWrite, minServerTimeout, maxServerTimeout, &cfg.writeTimeout},
@@ -107,10 +108,10 @@ func (f nativeFile) check() (nativeConfig, error) {
 		return nativeConfig{}, errors.New("data.read_header_timeout must not exceed data.read_timeout")
 	}
 
-	if cfg.controller.AuditMaxBytes, err = numberSetting("gateway.audit_max_bytes", g.AuditMaxBytes, audit.DefaultAuditBytes, minAuditBytes, maxAuditBytes); err != nil {
+	if cfg.controller.AuditMaxBytes, err = numberSetting("gateway.audit_max_bytes", g.AuditMaxBytes, audit.DefaultAuditBytes, controller.MinAuditBytes, controller.MaxAuditBytes); err != nil {
 		return nativeConfig{}, err
 	}
-	if cfg.controller.AuditMaxFiles, err = numberSetting("gateway.audit_max_files", g.AuditMaxFiles, audit.DefaultAuditFiles, 2, maxAuditFiles); err != nil {
+	if cfg.controller.AuditMaxFiles, err = numberSetting("gateway.audit_max_files", g.AuditMaxFiles, audit.DefaultAuditFiles, 2, controller.MaxAuditFiles); err != nil {
 		return nativeConfig{}, err
 	}
 	if cfg.maxBodyBytes, err = numberSetting("data.max_body_bytes", d.MaxBodyBytes, pipeline.DefaultMaxBody, 1, policy.MaxBodyLimit); err != nil {
@@ -121,7 +122,7 @@ func (f nativeFile) check() (nativeConfig, error) {
 	}
 
 	if g.AdminUI != nil {
-		cfg.controller.AdminUI = *g.AdminUI
+		cfg.adminUI = *g.AdminUI
 	}
 	if d.Website != nil {
 		if cfg.website, err = frontendFiles("data.website", *d.Website); err != nil {

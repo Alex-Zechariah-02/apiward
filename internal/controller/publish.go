@@ -1,6 +1,6 @@
 // Policy generation publication and change requests.
 
-package gateway
+package controller
 
 import (
 	"context"
@@ -58,7 +58,7 @@ func overrideIDs(overrides []store.Override) []int64 {
 
 // compileEffective compiles a stored revision with the given overrides.
 func (c *Controller) compileEffective(ctx context.Context, revision int64, deadline time.Time, overrides []store.Override) (*compile.Generation, error) {
-	p, err := storedPolicy(ctx, c.store, revision)
+	p, err := c.store.Policy(ctx, revision)
 	if err != nil {
 		return nil, err
 	}
@@ -219,15 +219,5 @@ func changeDigest(change Change) string {
 	sum := sha256.New()
 	fmt.Fprintf(sum, "%d|", change.Expected)
 	sum.Write(change.Policy)
-	return hex.EncodeToString(sum.Sum(nil))
-}
-
-// requestDigest identifies a mutation request by its kind, target, required
-// revision and canonical payload.
-func requestDigest(kind, target string, expected sql.NullInt64, payload any) string {
-	canonical, _ := json.Marshal(payload)
-	sum := sha256.New()
-	fmt.Fprintf(sum, "%s|%s|%v|%d|", kind, target, expected.Valid, expected.Int64)
-	sum.Write(canonical)
 	return hex.EncodeToString(sum.Sum(nil))
 }

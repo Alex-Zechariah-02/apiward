@@ -17,6 +17,7 @@ import (
 	"sync"
 	"syscall"
 
+	"github.com/Alex-Zechariah-02/apiward/internal/controller"
 	"github.com/Alex-Zechariah-02/apiward/internal/pipeline"
 )
 
@@ -90,7 +91,7 @@ func Main(args []string) int {
 	}
 	cfg, err := loadNativeConfig(values["config"])
 	if err == nil {
-		err = cfg.controller.check()
+		err = cfg.controller.Check()
 	}
 	if err == nil {
 		_, err = pipeline.LoadVerifier(cfg.controller.JWT)
@@ -167,7 +168,7 @@ func runNative(configPath string, logger *slog.Logger) int {
 
 // nativeGateway is one running native gateway.
 type nativeGateway struct {
-	controller *Controller
+	controller *controller.Controller
 	data       *http.Server
 	metrics    *http.Server
 	// served receives the data-plane and metrics servers' Serve results.
@@ -223,11 +224,11 @@ func startNative(cfg nativeConfig, logger *slog.Logger) (*nativeGateway, error) 
 // plane stops accepting connections and its requests in progress finish,
 // then the controller stops its Admin API the same way, writes the audit
 // events queued until then and closes the database. Requests in progress on
-// both listeners share one wait of adminShutdownWait; the audit drain has its
+// both listeners share one wait of ShutdownWait; the audit drain has its
 // own auditDrainWait. It returns nil only when every step completed.
 func (g *nativeGateway) shutdown() error {
-	g.controller.beginStop()
-	ctx, cancel := context.WithTimeout(context.Background(), adminShutdownWait)
+	g.controller.BeginStop()
+	ctx, cancel := context.WithTimeout(context.Background(), controller.ShutdownWait)
 	defer cancel()
 	var errs []error
 	if err := g.metrics.Shutdown(ctx); err != nil {
@@ -238,6 +239,6 @@ func (g *nativeGateway) shutdown() error {
 		// connections close.
 		errs = append(errs, fmt.Errorf("data listener shutdown: %w", err), g.data.Close())
 	}
-	errs = append(errs, g.controller.stopWithin(ctx))
+	errs = append(errs, g.controller.StopWithin(ctx))
 	return errors.Join(errs...)
 }

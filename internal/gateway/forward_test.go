@@ -13,7 +13,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Alex-Zechariah-02/apiward/internal/controller"
 	"github.com/Alex-Zechariah-02/apiward/internal/forward"
+	"github.com/Alex-Zechariah-02/apiward/internal/pipeline"
 	"github.com/Alex-Zechariah-02/apiward/internal/policy"
 )
 
@@ -32,11 +34,11 @@ var forwardTimeouts = forward.UpstreamTimeouts{Dial: 2 * time.Second, ResponseHe
 // and serves the enforcement handler with the native proxy, bounded by
 // timeouts, at e.dataAddr, where the harness request helpers send. It returns
 // the controller and the proxy's log.
-func (e *env) serveNative(policy policy.Policy, timeouts forward.UpstreamTimeouts) (*Controller, *logBuffer) {
+func (e *env) serveNative(policy policy.Policy, timeouts forward.UpstreamTimeouts) (*controller.Controller, *logBuffer) {
 	e.t.Helper()
 	seed(e.t, e.database, policy, seedOptions{})
 	c, _ := e.own(e.controllerConfig())
-	if err := c.Start(newAdminAPI(c).handler()); err != nil {
+	if err := c.Start(testAdmin(c).handler()); err != nil {
 		e.t.Fatal(err)
 	}
 	logs := &logBuffer{}
@@ -44,7 +46,7 @@ func (e *env) serveNative(policy policy.Policy, timeouts forward.UpstreamTimeout
 	if err != nil {
 		e.t.Fatal(err)
 	}
-	h, err := newHandler(c, 0, p.Forward)
+	h, err := newHandler(c, pipeline.NewLimiter(), 0, p.Forward)
 	if err != nil {
 		e.t.Fatal(err)
 	}
@@ -189,7 +191,7 @@ func TestNativeForwardingKeepsCapturedDestination(t *testing.T) {
 		slow <- result{code, body, err}
 	}()
 	<-entered
-	outcome, status := c.Publish(context.Background(), "test", Change{ID: "move-a", Expected: 1, Policy: mustJSON(e.policy(e.b, false))})
+	outcome, status := c.Publish(context.Background(), "test", controller.Change{ID: "move-a", Expected: 1, Policy: mustJSON(e.policy(e.b, false))})
 	close(release)
 	if status != http.StatusOK {
 		t.Fatalf("publication during the exchange: %d %+v", status, outcome)

@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Alex-Zechariah-02/apiward/internal/controller"
 	"github.com/Alex-Zechariah-02/apiward/internal/store"
 )
 
@@ -201,7 +202,7 @@ func TestUnavailableAuthorityAdmitsNothing(t *testing.T) {
 				}
 			}
 			e.assertReceipts(0, 0, 0)
-			if _, code := e.publish(Change{ID: "x", Expected: 1, Policy: mustJSON(e.policy(e.a, true))}); code != http.StatusServiceUnavailable {
+			if _, code := e.publish(controller.Change{ID: "x", Expected: 1, Policy: mustJSON(e.policy(e.a, true))}); code != http.StatusServiceUnavailable {
 				t.Fatalf("publication accepted in unavailable state: %d", code)
 			}
 			code, body, _ := e.harnessCall(http.MethodPut, "/admin/blocked-accounts/someone", `{"reason":"contain"}`,

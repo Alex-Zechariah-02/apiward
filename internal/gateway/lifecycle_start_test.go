@@ -54,7 +54,7 @@ func TestControllerWithoutAuthorityServesNothing(t *testing.T) {
 			if g := c.Current(); g != nil {
 				t.Fatalf("published %s without usable authority", g.ID)
 			}
-			if err := c.Start(newAdminAPI(c).handler()); err != nil {
+			if err := c.Start(testAdmin(c).handler()); err != nil {
 				t.Fatal(err)
 			}
 			if health := e.health(); health != "unavailable" {
@@ -83,7 +83,7 @@ func TestSecondControllerCannotOwnDeployment(t *testing.T) {
 	e := newEnv(t)
 	seed(t, e.database, e.policy(e.a, false), seedOptions{})
 	first, _ := e.own(e.controllerConfig())
-	if err := first.Start(newAdminAPI(first).handler()); err != nil {
+	if err := first.Start(testAdmin(first).handler()); err != nil {
 		t.Fatal(err)
 	}
 	g := first.Current()
@@ -92,7 +92,7 @@ func TestSecondControllerCannotOwnDeployment(t *testing.T) {
 	second.AuditLog = filepath.Join(e.dir, "second-audit.log")
 	second.AdminListen = freeAddr(t)
 	writers := goroutines(auditWriter)
-	c, err := NewController(second, slog.New(slog.DiscardHandler))
+	c, _, err := openController(second, "", slog.New(slog.DiscardHandler))
 	if c != nil || err == nil || !strings.Contains(err.Error(), "held by another gateway process") {
 		t.Fatalf("second controller = %v, %v", c, err)
 	}
@@ -131,7 +131,7 @@ func TestStartFailureLeavesNoListener(t *testing.T) {
 	writers, servers := goroutines(auditWriter), goroutines(adminServer)
 
 	c, _ := e.own(e.controllerConfig())
-	if err := c.Start(newAdminAPI(c).handler()); err == nil {
+	if err := c.Start(testAdmin(c).handler()); err == nil {
 		t.Fatal("Start succeeded on an occupied address")
 	}
 	if got := goroutines(adminServer); got != servers {

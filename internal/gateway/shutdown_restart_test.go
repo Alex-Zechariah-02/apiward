@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Alex-Zechariah-02/apiward/internal/controller"
 	"github.com/Alex-Zechariah-02/apiward/internal/policy"
 )
 
@@ -130,8 +131,8 @@ func TestNativeRestartAfterGracefulStop(t *testing.T) {
 	e := newEnv(t)
 	seed(t, e.database, e.protectedPolicy(), seedOptions{})
 	settings := e.nativeSettings()
-	section(settings, "gateway")["audit_max_bytes"] = minAuditBytes
-	section(settings, "gateway")["audit_max_files"] = maxAuditFiles
+	section(settings, "gateway")["audit_max_bytes"] = controller.MinAuditBytes
+	section(settings, "gateway")["audit_max_files"] = controller.MaxAuditFiles
 	e.writeNative(settings)
 	e.interruptible = true
 	e.start(binaries.plain)

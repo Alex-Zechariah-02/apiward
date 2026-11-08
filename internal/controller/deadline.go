@@ -1,6 +1,6 @@
 // Provisional deadlines, expiry and settlement.
 
-package gateway
+package controller
 
 import (
 	"context"
@@ -52,7 +52,7 @@ func (c *Controller) expire(g *compile.Generation) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	now := compile.TrustedNow()
-	// After beginStop no generation is published, so this is never g.
+	// After BeginStop no generation is published, so this is never g.
 	if c.current.Load() != g {
 		return
 	}

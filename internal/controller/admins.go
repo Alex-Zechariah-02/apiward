@@ -1,6 +1,6 @@
 // Administrator enrolment and password changes.
 
-package gateway
+package controller
 
 import (
 	"context"

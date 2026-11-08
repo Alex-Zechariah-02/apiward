@@ -12,6 +12,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/Alex-Zechariah-02/apiward/internal/controller"
 )
 
 func TestRepeatedSwapsUnderLoad(t *testing.T) {
@@ -56,7 +58,7 @@ func TestRepeatedSwapsUnderLoad(t *testing.T) {
 		if i%2 == 0 {
 			target = e.b
 		}
-		outcome, code := e.publish(Change{ID: fmt.Sprintf("swap-%d", i), Expected: revision, Policy: mustJSON(e.policy(target, i%3 == 0))})
+		outcome, code := e.publish(controller.Change{ID: fmt.Sprintf("swap-%d", i), Expected: revision, Policy: mustJSON(e.policy(target, i%3 == 0))})
 		if code != http.StatusOK {
 			t.Fatalf("swap %d: %d %+v", i, code, outcome)
 		}

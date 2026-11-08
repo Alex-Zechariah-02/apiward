@@ -9,6 +9,7 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/Alex-Zechariah-02/apiward/internal/controller"
 	"github.com/Alex-Zechariah-02/apiward/internal/store"
 )
 
@@ -21,7 +22,7 @@ func pathsAlias(a, b string) bool {
 	return sameFile(a, b)
 }
 
-func operatorPaths(configPath string, cfg Config, command string, flags map[string]string) error {
+func operatorPaths(configPath string, cfg controller.Config, command string, flags map[string]string) error {
 	protected := []struct{ name, path string }{
 		{"configuration", configPath},
 		{"database", cfg.Database},

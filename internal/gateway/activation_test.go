@@ -9,6 +9,7 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/Alex-Zechariah-02/apiward/internal/controller"
 	"github.com/Alex-Zechariah-02/apiward/internal/policy"
 	"github.com/Alex-Zechariah-02/apiward/internal/store"
 )
@@ -18,29 +19,29 @@ import (
 // receivers: a status code alone does not show what was forwarded.
 
 // activate asks for a staged candidate to become the provisional base.
-func (e *env) activate(s adminSession, c store.CandidateRecord, seconds int64, ifMatch, key string) (int, Outcome, string) {
+func (e *env) activate(s adminSession, c store.CandidateRecord, seconds int64, ifMatch, key string) (int, controller.Outcome, string) {
 	e.t.Helper()
 	body := string(mustJSON(map[string]any{"candidate": c.ID, "checksum": c.Checksum, "confirm_within_seconds": seconds}))
 	code, data, _ := e.as(s, http.MethodPost, "/admin/provisional", body, "If-Match", ifMatch, "Idempotency-Key", key)
-	var outcome Outcome
+	var outcome controller.Outcome
 	json.Unmarshal([]byte(data), &outcome)
 	return code, outcome, data
 }
 
 // resolve confirms ("confirm") or rolls back ("rollback") a provisional
 // revision.
-func (e *env) resolve(s adminSession, action string, revision int64, ifMatch, key string) (int, Outcome, string) {
+func (e *env) resolve(s adminSession, action string, revision int64, ifMatch, key string) (int, controller.Outcome, string) {
 	e.t.Helper()
 	body := string(mustJSON(map[string]any{"revision": revision}))
 	code, data, _ := e.as(s, http.MethodPost, "/admin/provisional/"+action, body, "If-Match", ifMatch, "Idempotency-Key", key)
-	var outcome Outcome
+	var outcome controller.Outcome
 	json.Unmarshal([]byte(data), &outcome)
 	return code, outcome, data
 }
 
 // provisionalFrom stages policy against the confirmed revision parent and
 // activates it, failing the test unless both succeed.
-func (e *env) provisionalFrom(s adminSession, policy policy.Policy, parent, seconds int64, key string) (store.CandidateRecord, Outcome) {
+func (e *env) provisionalFrom(s adminSession, policy policy.Policy, parent, seconds int64, key string) (store.CandidateRecord, controller.Outcome) {
 	e.t.Helper()
 	code, staged, body := e.stage(s, policy, policyETag(parent), "stage-"+key)
 	if code != http.StatusCreated {
@@ -53,7 +54,7 @@ func (e *env) provisionalFrom(s adminSession, policy policy.Policy, parent, seco
 	return staged.Candidate.CandidateRecord, outcome
 }
 
-func (e *env) confirmPolicy(s adminSession, policy policy.Policy, parent int64, key string) Outcome {
+func (e *env) confirmPolicy(s adminSession, policy policy.Policy, parent int64, key string) controller.Outcome {
 	e.t.Helper()
 	_, activation := e.provisionalFrom(s, policy, parent, 60, key)
 	code, outcome, body := e.resolve(s, "confirm", activation.Provisional, policyETag(parent), "confirm-"+key)

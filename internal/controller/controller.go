@@ -1,12 +1,11 @@
 // Controller configuration, state and construction.
 
-package gateway
+package controller
 
 import (
 	"context"
 	"errors"
 	"fmt"
-	"io/fs"
 	"log/slog"
 	"net/http"
 	"net/netip"
@@ -27,16 +26,8 @@ const (
 	// clockTolerance is how far the wall clock may sit behind the highest
 	// time recorded by a committed transition before startup refuses to trust
 	// persisted deadlines.
-	clockTolerance    = 5 * time.Second
-	defaultAuditWait  = 2 * time.Second
-	minAuditBytes     = 4 << 10
-	maxAuditBytes     = 1 << 30
-	maxAuditFiles     = 1000
-	defaultIdle       = 15 * time.Minute
-	defaultLifetime   = 8 * time.Hour
-	minSessionSetting = time.Second
-	maxSessionSetting = 24 * time.Hour
-	maxTransitionID   = 128
+	clockTolerance  = 5 * time.Second
+	maxTransitionID = 128
 	// A provisional base must be confirmed within this many seconds of its
 	// activation. A shorter period only brings the automatic rollback forward;
 	// the upper bound limits how long an unconfirmed policy can serve.
@@ -46,6 +37,19 @@ const (
 	// stateStopped the state after Stop.
 	stateStopping = "stopping"
 	stateStopped  = "stopped"
+)
+
+// Defaults and bounds of the controller's settings, which the configuration
+// file check applies too.
+const (
+	DefaultAuditWait = 2 * time.Second
+	MinAuditBytes    = 4 << 10
+	MaxAuditBytes    = 1 << 30
+	MaxAuditFiles    = 1000
+	DefaultIdle      = 15 * time.Minute
+	DefaultLifetime  = 8 * time.Hour
+	MinSession       = time.Second
+	MaxSession       = 24 * time.Hour
 )
 
 // Config is the controller's configuration. Zero limits take their defaults.
@@ -60,9 +64,6 @@ type Config struct {
 	AuditMaxFiles        int
 	JWT                  pipeline.TrustConfig
 
-	// AdminUI is an optional directory of built dashboard files, served by
-	// the admin listener so the dashboard shares the Admin API's origin.
-	AdminUI string
 	// ReloadTrust reads the trust settings again from the startup
 	// configuration, never from HTTP; nil refuses every key reload.
 	ReloadTrust func() (pipeline.TrustConfig, error)
@@ -72,15 +73,13 @@ type Config struct {
 // the database, compiles generations and publishes them by atomic pointer
 // swap. Request handlers only read the current pointer.
 //
-// NewController creates it, Start serves its Admin API and Stop releases
-// everything it owns. The application that calls them owns its lifecycle.
+// Prepare creates it, Open opens its deployment, Start serves its Admin API
+// and Stop releases everything it owns. The application that calls them owns
+// its lifecycle.
 type Controller struct {
 	config Config
 
 	current atomic.Pointer[compile.Generation]
-
-	// ui reads the dashboard files; nil when AdminUI is not set.
-	ui fs.FS
 
 	// Trust and account containment are published independently of policy.
 	verifier atomic.Pointer[pipeline.Verifier]
@@ -88,10 +87,6 @@ type Controller struct {
 	// addresses is the blocked address list; nil until read from the store.
 	addresses atomic.Pointer[store.BlockedAddresses]
 
-	// limiter holds the rate counters. They belong to the process, not to a
-	// generation, so publication never resets them; a restart does.
-	limiter      *pipeline.Limiter
-	clock        pipeline.Clock
 	observations *monitor.Observations
 
 	// Administrator authentication state, in memory only.
@@ -101,7 +96,7 @@ type Controller struct {
 	// lifecycle changes of Start and Stop.
 	mu        sync.Mutex
 	state     string // a deployment mode, or the reason no authority is served
-	stopping  bool   // set when the stop begins; see beginStop
+	stopping  bool   // set when the stop begins; see BeginStop
 	ownership *os.File
 	store     *store.DB
 	audit     *audit.AuditLog
@@ -119,36 +114,13 @@ type Controller struct {
 	expiring atomic.Bool
 }
 
-// NewController checks cfg, opens the deployment's database and audit log and
-// publishes the effective policy that the database holds. It opens no
-// listener; Start does. When it returns an error, nothing it opened is left
-// open. A database without usable authority is not an error: the controller
-// is returned serving no protected request, and its health and audit log say
-// why.
-//
-// Its errors are classified: ErrConfig for the settings, ErrLocked when
-// another process holds the deployment, ErrStorage when the database cannot
-// be opened.
-func NewController(cfg Config, logger *slog.Logger) (*Controller, error) {
-	c, err := prepareController(cfg, logger)
-	if err != nil {
-		return nil, classify(ErrConfig, err)
-	}
-	if err := c.open(); err != nil {
-		if errors.Is(err, store.ErrHeld) {
-			return nil, classify(ErrLocked, err)
-		}
-		return nil, classify(ErrStorage, err)
-	}
-	return c, nil
-}
-
-// prepareController checks cfg and builds the controller, opening nothing.
-func prepareController(cfg Config, logger *slog.Logger) (*Controller, error) {
+// Prepare checks cfg and builds the controller, opening nothing; its errors
+// are about the settings only.
+func Prepare(cfg Config, logger *slog.Logger) (*Controller, error) {
 	if logger == nil {
 		return nil, errors.New("a logger is required")
 	}
-	if err := cfg.check(); err != nil {
+	if err := cfg.Check(); err != nil {
 		return nil, err
 	}
 	// Without valid trust material no token can be verified, so the gateway
@@ -162,25 +134,21 @@ func prepareController(cfg Config, logger *slog.Logger) (*Controller, error) {
 	}
 	c := &Controller{
 		config:       cfg,
-		limiter:      pipeline.NewLimiter(),
-		clock:        pipeline.NewClock(),
 		observations: monitor.New(),
 		sessions:     session.New(cfg.AdminIdleTimeout, cfg.AdminSessionLifetime),
 		logger:       logger,
 	}
 	c.verifier.Store(verifier)
-	if cfg.AdminUI != "" {
-		if c.ui, err = frontendFiles("admin_ui", cfg.AdminUI); err != nil {
-			return nil, err
-		}
-	}
 	return c, nil
 }
 
-// open takes the deployment lock, opens the database and the audit log and
-// publishes the effective policy. A database without usable authority leaves
-// the controller unavailable, not failed.
-func (c *Controller) open() error {
+// Open takes the deployment lock, opens the database and the audit log and
+// publishes the effective policy; it opens no listener, Start does. Its
+// errors are store errors (store.ErrHeld when another process holds the
+// deployment); on one, nothing it opened is left open. A database without
+// usable authority is not an error: the controller serves no protected
+// request, and its health and audit log say why.
+func (c *Controller) Open() error {
 	cfg := c.config
 	// The database's exclusive lock is taken before the audit log is opened,
 	// so a second gateway for the same deployment stops here and never
@@ -220,7 +188,8 @@ func (c *Controller) open() error {
 	return nil
 }
 
-func (cfg Config) check() error {
+// Check checks the settings the controller needs before it opens anything.
+func (cfg Config) Check() error {
 	if cfg.Database == "" || cfg.AuditLog == "" || cfg.AdminListen == "" {
 		return errors.New("database, audit_log and admin_listen are required")
 	}
@@ -235,7 +204,7 @@ func (cfg Config) check() error {
 // bounds.
 func (cfg *Config) applyDefaults() error {
 	if cfg.AuditTimeout <= 0 {
-		cfg.AuditTimeout = defaultAuditWait
+		cfg.AuditTimeout = DefaultAuditWait
 	}
 	if cfg.AuditMaxBytes == 0 {
 		cfg.AuditMaxBytes = audit.DefaultAuditBytes
@@ -244,20 +213,20 @@ func (cfg *Config) applyDefaults() error {
 		cfg.AuditMaxFiles = audit.DefaultAuditFiles
 	}
 	if cfg.AdminIdleTimeout == 0 {
-		cfg.AdminIdleTimeout = defaultIdle
+		cfg.AdminIdleTimeout = DefaultIdle
 	}
 	if cfg.AdminSessionLifetime == 0 {
-		cfg.AdminSessionLifetime = defaultLifetime
+		cfg.AdminSessionLifetime = DefaultLifetime
 	}
-	if cfg.AuditMaxBytes < minAuditBytes || cfg.AuditMaxBytes > maxAuditBytes {
-		return fmt.Errorf("audit_max_bytes must be %d to %d", minAuditBytes, maxAuditBytes)
+	if cfg.AuditMaxBytes < MinAuditBytes || cfg.AuditMaxBytes > MaxAuditBytes {
+		return fmt.Errorf("audit_max_bytes must be %d to %d", MinAuditBytes, MaxAuditBytes)
 	}
-	if cfg.AuditMaxFiles < 2 || cfg.AuditMaxFiles > maxAuditFiles {
-		return fmt.Errorf("audit_max_files must be 2 to %d", maxAuditFiles)
+	if cfg.AuditMaxFiles < 2 || cfg.AuditMaxFiles > MaxAuditFiles {
+		return fmt.Errorf("audit_max_files must be 2 to %d", MaxAuditFiles)
 	}
 	for _, setting := range []time.Duration{cfg.AdminIdleTimeout, cfg.AdminSessionLifetime} {
-		if setting < minSessionSetting || setting > maxSessionSetting {
-			return fmt.Errorf("admin_idle_timeout and admin_session_lifetime must be %s to %s", minSessionSetting, maxSessionSetting)
+		if setting < MinSession || setting > MaxSession {
+			return fmt.Errorf("admin_idle_timeout and admin_session_lifetime must be %s to %s", MinSession, MaxSession)
 		}
 	}
 	return nil

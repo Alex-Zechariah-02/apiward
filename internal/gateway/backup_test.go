@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Alex-Zechariah-02/apiward/internal/controller"
 	"github.com/Alex-Zechariah-02/apiward/internal/store"
 )
 
@@ -45,7 +46,7 @@ func (e *env) recoverAdministrator() adminSession {
 
 // establishRecoveryBase stages a deny-all candidate and confirms it as the
 // recovery base.
-func (e *env) establishRecoveryBase(s adminSession) Outcome {
+func (e *env) establishRecoveryBase(s adminSession) controller.Outcome {
 	e.t.Helper()
 	code, staged, body := e.stage(s, e.denyAllPolicy(), `"r0"`, "recovery-deny-all")
 	if code != http.StatusCreated || staged.Candidate.Parent != 0 || !staged.Candidate.DenyAll {

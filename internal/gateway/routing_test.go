@@ -14,6 +14,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/Alex-Zechariah-02/apiward/internal/controller"
 )
 
 func TestAdmittedRequestReachesOnlyBoundUpstream(t *testing.T) {
@@ -57,7 +59,7 @@ func TestPublicationAddsOperationWithoutReload(t *testing.T) {
 	if code, _ := e.get("/b/x"); code != http.StatusNotFound {
 		t.Fatalf("before publication: %d", code)
 	}
-	outcome, code := e.publish(Change{ID: "add-b", Expected: 1, Policy: mustJSON(e.policy(e.a, true))})
+	outcome, code := e.publish(controller.Change{ID: "add-b", Expected: 1, Policy: mustJSON(e.policy(e.a, true))})
 	if code != http.StatusOK || outcome.Revision != 2 {
 		t.Fatalf("publish: %d %+v", code, outcome)
 	}
@@ -115,7 +117,7 @@ func TestInFlightRequestKeepsCapturedGeneration(t *testing.T) {
 	if captured != first {
 		t.Fatalf("captured %s, want %s", captured, first)
 	}
-	outcome, code := e.publish(Change{ID: "move-a", Expected: 1, Policy: mustJSON(e.policy(e.b, false))})
+	outcome, code := e.publish(controller.Change{ID: "move-a", Expected: 1, Policy: mustJSON(e.policy(e.b, false))})
 	if code != http.StatusOK {
 		t.Fatalf("publish: %d %+v", code, outcome)
 	}
@@ -163,7 +165,7 @@ func TestFailedAttemptStaysOnCapturedDestination(t *testing.T) {
 	var once sync.Once
 	e.a.handle = func(w http.ResponseWriter, r *http.Request) bool {
 		once.Do(func() {
-			outcome, code := e.publish(Change{ID: "move-a", Expected: 1, Policy: mustJSON(e.policy(e.b, false))})
+			outcome, code := e.publish(controller.Change{ID: "move-a", Expected: 1, Policy: mustJSON(e.policy(e.b, false))})
 			if code != http.StatusOK {
 				t.Errorf("publish during attempt: %d %+v", code, outcome)
 			}

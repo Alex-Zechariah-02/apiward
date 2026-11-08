@@ -1,6 +1,6 @@
 // The Admin API listener, which the controller starts and stops under its lock.
 
-package gateway
+package controller
 
 import (
 	"context"

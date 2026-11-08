@@ -4,7 +4,6 @@ package gateway
 
 import (
 	"bytes"
-	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -207,10 +206,10 @@ func (s *adminAPI) handleProvisional(w http.ResponseWriter, r *http.Request, who
 	}
 	var before, after policy.Policy
 	if err == nil {
-		before, err = storedPolicy(ctx, s.store, a.Confirmed)
+		before, err = s.store.Policy(ctx, a.Confirmed)
 	}
 	if err == nil {
-		after, err = storedPolicy(ctx, s.store, a.Provisional)
+		after, err = s.store.Policy(ctx, a.Provisional)
 	}
 	if err != nil {
 		s.logger.Error("reading the provisional base", "error", err)
@@ -222,17 +221,6 @@ func (s *adminAPI) handleProvisional(w http.ResponseWriter, r *http.Request, who
 		view["generation"] = g.ID
 	}
 	pipeline.WriteJSON(w, http.StatusOK, view)
-}
-
-func storedPolicy(ctx context.Context, st *store.DB, id int64) (policy.Policy, error) {
-	r, found, err := st.Revision(ctx, id)
-	if err == nil && !found {
-		err = fmt.Errorf("revision %d missing", id)
-	}
-	if err != nil {
-		return policy.Policy{}, err
-	}
-	return policy.DecodePolicy(r.Document)
 }
 
 // handleActivations lists every provisional base with its final disposition.

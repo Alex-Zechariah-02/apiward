@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/Alex-Zechariah-02/apiward/internal/controller"
 	"github.com/Alex-Zechariah-02/apiward/internal/store"
 )
 
@@ -28,7 +29,7 @@ func TestCrashDuringPublication(t *testing.T) {
 			seed(t, e.database, e.policy(e.a, false), seedOptions{})
 			e.start(binaries.fault, "GATEWAY_FAULT="+tc.point)
 
-			change := Change{ID: "add-b", Expected: 1, Policy: mustJSON(e.policy(e.a, true))}
+			change := controller.Change{ID: "add-b", Expected: 1, Policy: mustJSON(e.policy(e.a, true))}
 			if _, code := e.publish(change); code != 0 {
 				t.Fatalf("publication answered %d instead of crashing", code)
 			}
@@ -126,7 +127,7 @@ func TestLifecycleSurvivesCrash(t *testing.T) {
 				}
 			}
 			const key = "crash-case-request"
-			send := func() (int, Outcome, string) {
+			send := func() (int, controller.Outcome, string) {
 				if tc.action == "activate" {
 					return e.activate(harness, candidate, 60, `"r1"`, key)
 				}

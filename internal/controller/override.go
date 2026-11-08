@@ -1,6 +1,6 @@
 // Temporary policy override requests, checks and conflicts.
 
-package gateway
+package controller
 
 import (
 	"cmp"

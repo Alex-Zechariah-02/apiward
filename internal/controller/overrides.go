@@ -1,6 +1,6 @@
 // Temporary policy override proposal, creation, revocation and publication.
 
-package gateway
+package controller
 
 import (
 	"context"

@@ -1,6 +1,6 @@
 // Startup reconciliation of stored state, audit and unfinished outcomes.
 
-package gateway
+package controller
 
 import (
 	"context"

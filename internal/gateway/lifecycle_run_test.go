@@ -17,7 +17,7 @@ func TestOwnedControllerRunsPolicyLifecycles(t *testing.T) {
 	e := newEnv(t)
 	seed(t, e.database, e.protectedPolicy(), seedOptions{})
 	c, _ := e.own(e.controllerConfig())
-	if err := c.Start(newAdminAPI(c).handler()); err != nil {
+	if err := c.Start(testAdmin(c).handler()); err != nil {
 		t.Fatal(err)
 	}
 	harness := e.mustLogin(harnessAdmin, harnessPassword)
@@ -54,7 +54,7 @@ func TestOwnedControllerRunsPolicyLifecycles(t *testing.T) {
 		t.Fatal(err)
 	}
 	again, _ := e.own(e.controllerConfig())
-	if err := again.Start(newAdminAPI(again).handler()); err != nil {
+	if err := again.Start(testAdmin(again).handler()); err != nil {
 		t.Fatal(err)
 	}
 	if code, _, _ := e.as(harness, http.MethodGet, "/admin/session", ""); code != http.StatusUnauthorized {

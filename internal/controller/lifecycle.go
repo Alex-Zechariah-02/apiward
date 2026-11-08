@@ -1,20 +1,26 @@
 // Controller start, stop and admission state.
 
-package gateway
+package controller
 
 import (
 	"context"
 	"errors"
 	"net/http"
+	"time"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/audit"
 	"github.com/Alex-Zechariah-02/apiward/internal/compile"
 	"github.com/Alex-Zechariah-02/apiward/internal/store"
 )
 
+// ShutdownWait bounds how long Stop waits for admin requests in progress; the
+// native gateway waits that long for the requests of both its listeners
+// together.
+const ShutdownWait = 5 * time.Second
+
 // Start serves admin, the Admin API, on its loopback listener. Protected
 // admission does not wait for it: it follows the generation published since
-// NewController. Start succeeds at most once, and never once Stop has begun.
+// Open. Start succeeds at most once, and never once Stop has begun.
 func (c *Controller) Start(admin http.Handler) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -27,33 +33,33 @@ func (c *Controller) Start(admin http.Handler) error {
 	return c.startAdmin(admin)
 }
 
-// Stop begins the stop (see beginStop), shuts the Admin API down, waiting at
-// most adminShutdownWait for admin requests in progress, then closes the
+// Stop begins the stop (see BeginStop), shuts the Admin API down, waiting at
+// most ShutdownWait for admin requests in progress, then closes the
 // audit log, waiting at most auditDrainWait for the events queued until then
 // to be written, and the database. It returns nil only when every step
 // completed. It also releases a controller that was never started. Stop may
 // be called any number of times, also concurrently: the controller stops
 // once, and every call returns that stop's result.
 func (c *Controller) Stop() error {
-	ctx, cancel := context.WithTimeout(context.Background(), adminShutdownWait)
+	ctx, cancel := context.WithTimeout(context.Background(), ShutdownWait)
 	defer cancel()
-	return c.stopWithin(ctx)
+	return c.StopWithin(ctx)
 }
 
-// stopWithin is Stop with ctx bounding the wait for admin requests in
+// StopWithin is Stop with ctx bounding the wait for admin requests in
 // progress; the native gateway shares that bound with its data plane.
-func (c *Controller) stopWithin(ctx context.Context) error {
+func (c *Controller) StopWithin(ctx context.Context) error {
 	c.stopOnce.Do(func() { c.stopErr = c.shutdown(ctx) })
 	return c.stopErr
 }
 
-// beginStop ends protected admission and every change of authority: the
+// BeginStop ends protected admission and every change of authority: the
 // published generation is withdrawn, so a request that has not captured one
 // yet is refused; mutations and the deadline timer change nothing any more;
 // Start is refused. A request that captured a generation earlier runs to its
 // end with it. Stop begins with it; the native gateway calls it before it
 // stops its data plane.
-func (c *Controller) beginStop() {
+func (c *Controller) BeginStop() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.stopping {
@@ -69,7 +75,7 @@ func (c *Controller) beginStop() {
 }
 
 func (c *Controller) shutdown(ctx context.Context) error {
-	c.beginStop()
+	c.BeginStop()
 	c.mu.Lock()
 	admin := c.admin
 	c.mu.Unlock()

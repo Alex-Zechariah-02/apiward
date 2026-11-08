@@ -256,20 +256,20 @@ func TestStoreErrorOnResendDoesNotMeanNothingChanged(t *testing.T) {
 		Reason string `json:"reason"`
 	}{reason}
 	block := adminTransition(caller{admin: store.Administrator{Name: harnessAdmin}}, "store-error-resend-01", "account.block", "cust-500", sql.NullInt64{}, request)
-	receipt, status := c.changeBlock(t.Context(), block, reason)
+	receipt, status := c.Block(t.Context(), block, reason)
 	if status != http.StatusOK {
 		t.Fatalf("block: %d %s", status, receipt)
 	}
 	// A cancelled request makes the read of the earlier record fail.
 	cancelled, cancel := context.WithCancel(t.Context())
 	cancel()
-	if body, status := c.changeBlock(cancelled, block, reason); status != http.StatusServiceUnavailable || string(body) != `{"error":"store_error"}` {
+	if body, status := c.Block(cancelled, block, reason); status != http.StatusServiceUnavailable || string(body) != `{"error":"store_error"}` {
 		t.Fatalf("resend with an unreadable record: %d %s", status, body)
 	}
-	if _, inForce := (*c.blocked.Load())["cust-500"]; !inForce {
+	if _, inForce := (*c.Blocked())["cust-500"]; !inForce {
 		t.Fatal("the committed block is no longer in force")
 	}
-	if body, status := c.changeBlock(t.Context(), block, reason); status != http.StatusOK || string(body) != string(receipt) {
+	if body, status := c.Block(t.Context(), block, reason); status != http.StatusOK || string(body) != string(receipt) {
 		t.Fatalf("resend with a readable record: %d %s, want the receipt %s", status, body, receipt)
 	}
 }

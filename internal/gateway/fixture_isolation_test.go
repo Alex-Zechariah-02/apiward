@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/Alex-Zechariah-02/apiward/internal/controller"
 )
 
 // Requests the gateway rejects leave no receipt at any
@@ -82,7 +84,7 @@ func TestDenyAllPolicyForwardsNothing(t *testing.T) {
 		denyAll.Operations[i].Access = "deny"
 	}
 	denyAll.Permits = nil
-	if outcome, code := e.publish(Change{ID: "deny-all", Expected: 1, Policy: mustJSON(denyAll)}); code != http.StatusOK {
+	if outcome, code := e.publish(controller.Change{ID: "deny-all", Expected: 1, Policy: mustJSON(denyAll)}); code != http.StatusOK {
 		t.Fatalf("publishing the deny-all policy: %d %+v", code, outcome)
 	}
 	for _, sc := range c.Scenarios {

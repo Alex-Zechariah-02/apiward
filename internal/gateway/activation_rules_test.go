@@ -10,6 +10,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/Alex-Zechariah-02/apiward/internal/controller"
 	"github.com/Alex-Zechariah-02/apiward/internal/store"
 )
 
@@ -128,7 +129,7 @@ func TestOneProvisionalAndOneDisposition(t *testing.T) {
 	_, first, _ := e.stage(harness, e.cpaCandidate(), `"r1"`, "stage-race-first")
 	_, second, _ := e.stage(harness, e.protectedPolicy(), `"r1"`, "stage-race-second")
 	var codes [2]int
-	var outcomes [2]Outcome
+	var outcomes [2]controller.Outcome
 	concurrently(
 		func() {
 			codes[0], outcomes[0], _ = e.activate(harness, first.Candidate.CandidateRecord, 60, `"r1"`, "race-activation-one")

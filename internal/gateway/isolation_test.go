@@ -11,6 +11,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/Alex-Zechariah-02/apiward/internal/controller"
 )
 
 var nativeAdminPaths = []string{"/config/", "/load", "/stop", "/id/x", "/debug/pprof/", "/reverse_proxy/upstreams", "/adapt", "/pki/ca/local", "/metrics"}
@@ -58,7 +60,7 @@ func TestNativeAdministrationIsAbsent(t *testing.T) {
 
 	// A production binary has no whole-policy publication route: neither the
 	// earlier bearer-secret channel nor the test publication hook exists.
-	change := string(mustJSON(Change{ID: "x", Expected: 1, Policy: mustJSON(e.policy(e.a, true))}))
+	change := string(mustJSON(controller.Change{ID: "x", Expected: 1, Policy: mustJSON(e.policy(e.a, true))}))
 	for _, path := range []string{"/publish", "/test/publish", "/admin/publish", "/admin/activate", "/admin/policy"} {
 		if code, _ := e.adminRaw(http.MethodPost, path, change); code != http.StatusNotFound && code != http.StatusMethodNotAllowed {
 			t.Fatalf("POST %s on the admin listener: %d", path, code)

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/audit"
+	"github.com/Alex-Zechariah-02/apiward/internal/controller"
 	"github.com/Alex-Zechariah-02/apiward/internal/session"
 	"github.com/Alex-Zechariah-02/apiward/internal/store"
 )
@@ -28,7 +29,7 @@ const (
 
 // operatorContext is the deployment an operator command acts on.
 type operatorContext struct {
-	config Config
+	config controller.Config
 	audit  *audit.AuditLog
 }
 

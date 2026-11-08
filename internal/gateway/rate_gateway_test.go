@@ -14,6 +14,7 @@ import (
 
 	"github.com/Alex-Zechariah-02/apiward/internal/audit"
 	"github.com/Alex-Zechariah-02/apiward/internal/compile"
+	"github.com/Alex-Zechariah-02/apiward/internal/controller"
 	"github.com/Alex-Zechariah-02/apiward/internal/policy"
 	"github.com/Alex-Zechariah-02/apiward/internal/testissuer"
 )
@@ -207,7 +208,7 @@ func TestEarlierRejectionsConsumeNoQuota(t *testing.T) {
 	// Grant TRIAL write-a; carol's quota is untouched by the refusals.
 	p := e.ratePolicy(rate(2, 60), rate(2, 60))
 	p.Permits = append(p.Permits, policy.Permit{Role: "TRIAL", Operation: "write-a"})
-	if outcome, code := e.publish(Change{ID: "grant", Expected: 1, Policy: mustJSON(p)}); code != http.StatusOK {
+	if outcome, code := e.publish(controller.Change{ID: "grant", Expected: 1, Policy: mustJSON(p)}); code != http.StatusOK {
 		t.Fatalf("publish: %d %+v", code, outcome)
 	}
 	if got := e.sendAs("carol", http.MethodPost, "/a/item", `{"n":1}`, 3); !statusesAre(got, 200, 200, 429) {

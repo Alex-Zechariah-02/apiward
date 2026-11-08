@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/audit"
+	"github.com/Alex-Zechariah-02/apiward/internal/controller"
 	"github.com/Alex-Zechariah-02/apiward/internal/policy"
 )
 
@@ -59,11 +60,11 @@ func TestEventsCoverEveryDecisionClass(t *testing.T) {
 	started := time.Now().UTC()
 
 	tight := withRate(fixturePolicy(fixtures), rate(1, 60))
-	published, code := e.publish(Change{ID: "tight", Expected: 1, Policy: mustJSON(tight)})
+	published, code := e.publish(controller.Change{ID: "tight", Expected: 1, Policy: mustJSON(tight)})
 	if code != http.StatusOK {
 		t.Fatalf("publish: %d %+v", code, published)
 	}
-	if rejected, code := e.publish(Change{ID: "broken", Expected: published.Revision, Policy: mustJSON(withRate(tight, rate(0, 60)))}); code != http.StatusBadRequest || rejected.Reason != "INVALID_VALUE" {
+	if rejected, code := e.publish(controller.Change{ID: "broken", Expected: published.Revision, Policy: mustJSON(withRate(tight, rate(0, 60)))}); code != http.StatusBadRequest || rejected.Reason != "INVALID_VALUE" {
 		t.Fatalf("invalid publish: %d %+v", code, rejected)
 	}
 	g := e.status().Generation

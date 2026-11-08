@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Alex-Zechariah-02/apiward/internal/controller"
 	"github.com/Alex-Zechariah-02/apiward/internal/policy"
 	"github.com/Alex-Zechariah-02/apiward/internal/store"
 )
@@ -187,7 +188,7 @@ func TestProvisionalRestrictsOverrides(t *testing.T) {
 	e.assertReceipts(0, 0, 1)
 
 	// No creation, extension or broadening while provisional.
-	for i, r := range []OverrideRequest{
+	for i, r := range []controller.OverrideRequest{
 		operationContainment("write-a", 600),
 		permitOverride(store.OverrideException, "READER", "write-a", 3600), // same target, longer: an extension
 		rateOverride(store.OverrideException, "read-a", 100, 60),           // a broadening

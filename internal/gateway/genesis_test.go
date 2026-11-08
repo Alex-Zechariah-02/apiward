@@ -7,12 +7,13 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Alex-Zechariah-02/apiward/internal/controller"
 	"github.com/Alex-Zechariah-02/apiward/internal/store"
 )
 
 // stagedCandidate is the reply to a candidate submission.
 type stagedCandidate struct {
-	Receipt   Outcome `json:"receipt"`
+	Receipt   controller.Outcome `json:"receipt"`
 	Candidate struct {
 		store.CandidateRecord
 		Active *bool `json:"active"`
@@ -30,11 +31,11 @@ func (e *env) stage(s adminSession, policy any, ifMatch, key string) (int, stage
 }
 
 // establish asks for a genesis or recovery base from a staged candidate.
-func (e *env) establish(s adminSession, path string, candidate int64, checksum string) (int, Outcome) {
+func (e *env) establish(s adminSession, path string, candidate int64, checksum string) (int, controller.Outcome) {
 	e.t.Helper()
 	body := string(mustJSON(map[string]any{"candidate": candidate, "checksum": checksum}))
 	code, data, _ := e.as(s, http.MethodPost, path, body)
-	var outcome Outcome
+	var outcome controller.Outcome
 	json.Unmarshal([]byte(data), &outcome)
 	return code, outcome
 }

@@ -10,6 +10,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/Alex-Zechariah-02/apiward/internal/controller"
 	"github.com/Alex-Zechariah-02/apiward/internal/policy"
 	"github.com/Alex-Zechariah-02/apiward/internal/testissuer"
 )
@@ -32,37 +33,37 @@ func TestInvalidCandidateLeavesStateUnchanged(t *testing.T) {
 	}
 	cases := []struct {
 		name   string
-		change Change
+		change controller.Change
 		status int
 		reason string
 	}{
-		{"duplicate operation", Change{Policy: withOperation(policy.Operation{ID: "dup", API: "a", Method: "GET", Target: "/a/*", Access: "allow", Auth: "none"})}, 400, "DUPLICATE_OPERATION"},
-		{"unknown upstream", Change{Policy: withOperation(policy.Operation{ID: "u", API: "z", Method: "GET", Target: "/u", Access: "allow", Auth: "none"})}, 400, "UNKNOWN_REFERENCE"},
-		{"placeholder dial", Change{Policy: withUpstream("{http.request.header.x}:80")}, 400, "INVALID_UPSTREAM"},
-		{"non-loopback dial", Change{Policy: withUpstream("10.0.0.5:80")}, 400, "INVALID_UPSTREAM"},
-		{"hostname dial", Change{Policy: withUpstream("localhost:80")}, 400, "INVALID_UPSTREAM"},
-		{"non-canonical target", Change{Policy: withOperation(policy.Operation{ID: "n", API: "a", Method: "GET", Target: "/a/../b", Access: "allow", Auth: "none"})}, 400, "INVALID_TARGET"},
-		{"invalid method", Change{Policy: withOperation(policy.Operation{ID: "m", API: "a", Method: "get", Target: "/m", Access: "allow", Auth: "none"})}, 400, "INVALID_METHOD"},
-		{"unknown field", Change{Policy: json.RawMessage(`{"schema_version":4,"profile":"core","extra":1}`)}, 400, "UNKNOWN_FIELD"},
-		{"separate rate rule list", Change{Policy: json.RawMessage(`{"schema_version":4,"profile":"core","rate_rules":[{"id":"r","count":1}]}`)}, 400, "UNKNOWN_FIELD"},
+		{"duplicate operation", controller.Change{Policy: withOperation(policy.Operation{ID: "dup", API: "a", Method: "GET", Target: "/a/*", Access: "allow", Auth: "none"})}, 400, "DUPLICATE_OPERATION"},
+		{"unknown upstream", controller.Change{Policy: withOperation(policy.Operation{ID: "u", API: "z", Method: "GET", Target: "/u", Access: "allow", Auth: "none"})}, 400, "UNKNOWN_REFERENCE"},
+		{"placeholder dial", controller.Change{Policy: withUpstream("{http.request.header.x}:80")}, 400, "INVALID_UPSTREAM"},
+		{"non-loopback dial", controller.Change{Policy: withUpstream("10.0.0.5:80")}, 400, "INVALID_UPSTREAM"},
+		{"hostname dial", controller.Change{Policy: withUpstream("localhost:80")}, 400, "INVALID_UPSTREAM"},
+		{"non-canonical target", controller.Change{Policy: withOperation(policy.Operation{ID: "n", API: "a", Method: "GET", Target: "/a/../b", Access: "allow", Auth: "none"})}, 400, "INVALID_TARGET"},
+		{"invalid method", controller.Change{Policy: withOperation(policy.Operation{ID: "m", API: "a", Method: "get", Target: "/m", Access: "allow", Auth: "none"})}, 400, "INVALID_METHOD"},
+		{"unknown field", controller.Change{Policy: json.RawMessage(`{"schema_version":4,"profile":"core","extra":1}`)}, 400, "UNKNOWN_FIELD"},
+		{"separate rate rule list", controller.Change{Policy: json.RawMessage(`{"schema_version":4,"profile":"core","rate_rules":[{"id":"r","count":1}]}`)}, 400, "UNKNOWN_FIELD"},
 		// An invalid rate rule or schema rejects the whole candidate; nothing
 		// else in it is published.
-		{"body without a schema", Change{Policy: withOperation(policy.Operation{ID: "x", API: "a", Method: "POST", Target: "/x", Access: "allow", Auth: "none", Body: &policy.BodyRule{MaxBytes: 10}})}, 400, "INVALID_VALUE"},
-		{"schema with an unsupported keyword", Change{Policy: withOperation(policy.Operation{ID: "x", API: "a", Method: "POST", Target: "/x", Access: "allow", Auth: "none",
+		{"body without a schema", controller.Change{Policy: withOperation(policy.Operation{ID: "x", API: "a", Method: "POST", Target: "/x", Access: "allow", Auth: "none", Body: &policy.BodyRule{MaxBytes: 10}})}, 400, "INVALID_VALUE"},
+		{"schema with an unsupported keyword", controller.Change{Policy: withOperation(policy.Operation{ID: "x", API: "a", Method: "POST", Target: "/x", Access: "allow", Auth: "none",
 			Body: jsonBody(10, `{"type":"object","additionalProperties":true,"patternProperties":{}}`)})}, 400, "UNSUPPORTED_FEATURE"},
-		{"rate rule with zero count", Change{Policy: withOperation(policy.Operation{ID: "x", API: "a", Method: "GET", Target: "/x", Access: "allow", Auth: "required",
+		{"rate rule with zero count", controller.Change{Policy: withOperation(policy.Operation{ID: "x", API: "a", Method: "GET", Target: "/x", Access: "allow", Auth: "required",
 			Rate: &policy.RateRule{Algorithm: "sliding-window", Count: 0, WindowSeconds: 60, Key: "subject"}})}, 400, "INVALID_VALUE"},
-		{"rate rule on a public operation", Change{Policy: withOperation(policy.Operation{ID: "x", API: "a", Method: "GET", Target: "/x", Access: "allow", Auth: "none",
+		{"rate rule on a public operation", controller.Change{Policy: withOperation(policy.Operation{ID: "x", API: "a", Method: "GET", Target: "/x", Access: "allow", Auth: "none",
 			Rate: &policy.RateRule{Algorithm: "sliding-window", Count: 5, WindowSeconds: 60, Key: "subject"}})}, 400, "INVALID_VALUE"},
-		{"stale base", Change{Expected: 7, Policy: mustJSON(e.policy(e.a, true))}, 409, "STALE"},
-		{"unsupported schema version", Change{Policy: json.RawMessage(`{"schema_version":1,"profile":"routing-only"}`)}, 400, "SCHEMA_VERSION_UNSUPPORTED"},
-		{"previous schema version", Change{Policy: json.RawMessage(`{"schema_version":2,"profile":"jwt-rbac"}`)}, 400, "SCHEMA_VERSION_UNSUPPORTED"},
-		{"profile without authentication", Change{Policy: withProfile(e.policy(e.a, true), "routing-only")}, 400, "UNSUPPORTED_FEATURE"},
-		{"profile claiming full enforcement", Change{Policy: withProfile(e.policy(e.a, true), "protected")}, 400, "UNSUPPORTED_FEATURE"},
-		{"permit for unknown role", Change{Policy: withPermit(e.policy(e.a, true), policy.Permit{Role: "ADMIN", Operation: "write-a"})}, 400, "UNKNOWN_REFERENCE"},
-		{"subject with unknown role", Change{Policy: withSubject(e.policy(e.a, true), testissuer.Subject{ID: "s-1", Status: "active", Roles: []string{"ADMIN"}})}, 400, "UNKNOWN_FIELD"},
-		{"subject with unknown status", Change{Policy: withSubject(e.policy(e.a, true), testissuer.Subject{ID: "s-1", Status: "suspended", Roles: []string{"STAFF"}})}, 400, "UNKNOWN_FIELD"},
-		{"subject with invalid identifier", Change{Policy: withSubject(e.policy(e.a, true), testissuer.Subject{ID: "s 1", Status: "active", Roles: []string{"STAFF"}})}, 400, "UNKNOWN_FIELD"},
+		{"stale base", controller.Change{Expected: 7, Policy: mustJSON(e.policy(e.a, true))}, 409, "STALE"},
+		{"unsupported schema version", controller.Change{Policy: json.RawMessage(`{"schema_version":1,"profile":"routing-only"}`)}, 400, "SCHEMA_VERSION_UNSUPPORTED"},
+		{"previous schema version", controller.Change{Policy: json.RawMessage(`{"schema_version":2,"profile":"jwt-rbac"}`)}, 400, "SCHEMA_VERSION_UNSUPPORTED"},
+		{"profile without authentication", controller.Change{Policy: withProfile(e.policy(e.a, true), "routing-only")}, 400, "UNSUPPORTED_FEATURE"},
+		{"profile claiming full enforcement", controller.Change{Policy: withProfile(e.policy(e.a, true), "protected")}, 400, "UNSUPPORTED_FEATURE"},
+		{"permit for unknown role", controller.Change{Policy: withPermit(e.policy(e.a, true), policy.Permit{Role: "ADMIN", Operation: "write-a"})}, 400, "UNKNOWN_REFERENCE"},
+		{"subject with unknown role", controller.Change{Policy: withSubject(e.policy(e.a, true), testissuer.Subject{ID: "s-1", Status: "active", Roles: []string{"ADMIN"}})}, 400, "UNKNOWN_FIELD"},
+		{"subject with unknown status", controller.Change{Policy: withSubject(e.policy(e.a, true), testissuer.Subject{ID: "s-1", Status: "suspended", Roles: []string{"STAFF"}})}, 400, "UNKNOWN_FIELD"},
+		{"subject with invalid identifier", controller.Change{Policy: withSubject(e.policy(e.a, true), testissuer.Subject{ID: "s 1", Status: "active", Roles: []string{"STAFF"}})}, 400, "UNKNOWN_FIELD"},
 	}
 	for i, tc := range cases {
 		tc.change.ID = fmt.Sprintf("invalid-%d", i)
@@ -85,7 +86,7 @@ func TestInvalidCandidateLeavesStateUnchanged(t *testing.T) {
 		t.Errorf("repeated member: %d %s", code, body)
 	}
 
-	oversize := Change{ID: "oversize", Expected: 1, Policy: json.RawMessage(`{"upstreams":[],"operations":[],"pad":"` + strings.Repeat("x", 70000) + `"}`)}
+	oversize := controller.Change{ID: "oversize", Expected: 1, Policy: json.RawMessage(`{"upstreams":[],"operations":[],"pad":"` + strings.Repeat("x", 70000) + `"}`)}
 	if _, code := e.publish(oversize); code != http.StatusRequestEntityTooLarge {
 		t.Errorf("oversize change: %d", code)
 	}
@@ -105,7 +106,7 @@ func TestInvalidCandidateLeavesStateUnchanged(t *testing.T) {
 		t.Fatalf("routing used %s, want %s", g, before.Generation)
 	}
 
-	outcome, code := e.publish(Change{ID: "valid", Expected: 1, Policy: mustJSON(e.policy(e.a, true))})
+	outcome, code := e.publish(controller.Change{ID: "valid", Expected: 1, Policy: mustJSON(e.policy(e.a, true))})
 	if code != http.StatusOK || outcome.Revision != 2 {
 		t.Fatalf("valid change: %d %+v", code, outcome)
 	}
@@ -145,7 +146,7 @@ func TestConcurrentAndStalePublications(t *testing.T) {
 	e.start(binaries.fault)
 
 	type result struct {
-		outcome Outcome
+		outcome controller.Outcome
 		code    int
 	}
 	results := make([]result, 2)
@@ -155,7 +156,7 @@ func TestConcurrentAndStalePublications(t *testing.T) {
 	for i := range results {
 		wg.Go(func() {
 			<-start
-			outcome, code := e.publish(Change{ID: fmt.Sprintf("race-%d", i), Expected: 1, Policy: mustJSON(policies[i])})
+			outcome, code := e.publish(controller.Change{ID: fmt.Sprintf("race-%d", i), Expected: 1, Policy: mustJSON(policies[i])})
 			results[i] = result{outcome, code}
 		})
 	}
@@ -177,11 +178,11 @@ func TestConcurrentAndStalePublications(t *testing.T) {
 	}
 	committed := results[winner].outcome
 
-	replay, code := e.publish(Change{ID: committed.Transition, Expected: 1, Policy: mustJSON(policies[winner])})
+	replay, code := e.publish(controller.Change{ID: committed.Transition, Expected: 1, Policy: mustJSON(policies[winner])})
 	if code != http.StatusOK || replay.Revision != committed.Revision {
 		t.Fatalf("replay: %d %+v, want recorded revision %d", code, replay, committed.Revision)
 	}
-	reused, code := e.publish(Change{ID: committed.Transition, Expected: 2, Policy: mustJSON(policies[1-winner])})
+	reused, code := e.publish(controller.Change{ID: committed.Transition, Expected: 2, Policy: mustJSON(policies[1-winner])})
 	if code != http.StatusUnprocessableEntity || reused.Reason != "TRANSITION_ID_REUSED" {
 		t.Fatalf("reused identity: %d %+v", code, reused)
 	}

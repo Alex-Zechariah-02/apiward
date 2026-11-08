@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/audit"
+	"github.com/Alex-Zechariah-02/apiward/internal/controller"
 	"github.com/Alex-Zechariah-02/apiward/internal/policy"
 	"github.com/Alex-Zechariah-02/apiward/internal/store"
 	"github.com/Alex-Zechariah-02/apiward/internal/testissuer"
@@ -30,9 +31,10 @@ func TestEnforcementRefusals(t *testing.T) {
 			Headers: json.RawMessage(`{"type":"object","additionalProperties":true,"required":["X-Probe"],"properties":{"X-Probe":{"type":"string","enum":["on"]}}}`)},
 	)
 	p.Permits = append(p.Permits, policy.Permit{Role: "WRITER", Operation: "strict"})
-	controller, _, f := e.serveEnforcement(p, 0)
+	seed(t, e.database, p, seedOptions{})
+	controller, _ := e.own(e.controllerConfig())
 	blocked := store.BlockedAccounts{"carol": {Subject: "carol", Reason: "test containment"}}
-	controller.blocked.Store(&blocked)
+	f := e.serveAuthority(controller, fixedAuthority{Controller: controller, blocked: &blocked})
 
 	bearer := func(subject string) string { return "Bearer " + issuer.TokenFor(t, subject) }
 	claims := func(changes map[string]any) string {
@@ -241,7 +243,7 @@ func TestEnforcementRateLimit(t *testing.T) {
 
 	next := p
 	next.Roles = append(slices.Clone(p.Roles), policy.Role{ID: "OTHER"})
-	if outcome, status := c.Publish(context.Background(), "test", Change{ID: "rate-continuity", Expected: 1, Policy: mustJSON(next)}); status != http.StatusOK {
+	if outcome, status := c.Publish(context.Background(), "test", controller.Change{ID: "rate-continuity", Expected: 1, Policy: mustJSON(next)}); status != http.StatusOK {
 		t.Fatalf("publication: %d %+v", status, outcome)
 	}
 	if code, _ := get("alice"); code != http.StatusTooManyRequests {

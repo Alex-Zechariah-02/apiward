@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Alex-Zechariah-02/apiward/internal/controller"
 	"github.com/Alex-Zechariah-02/apiward/internal/policy"
 )
 
@@ -44,7 +45,7 @@ func TestSchemaFollowsCapturedGeneration(t *testing.T) {
 		result <- code
 	}()
 	waitForFile(t, holdFile)
-	outcome, code := e.publish(Change{ID: "numbers", Expected: 1, Policy: mustJSON(withSchema(numberSchema))})
+	outcome, code := e.publish(controller.Change{ID: "numbers", Expected: 1, Policy: mustJSON(withSchema(numberSchema))})
 	if code != http.StatusOK {
 		t.Fatalf("publish: %d %+v", code, outcome)
 	}
@@ -96,7 +97,7 @@ func TestSchemaFollowsCapturedGeneration(t *testing.T) {
 		if i%2 == 1 {
 			schema, kind = numberSchema, "number"
 		}
-		outcome, code := e.publish(Change{ID: fmt.Sprintf("swap-%d", i), Expected: revision, Policy: mustJSON(withSchema(schema))})
+		outcome, code := e.publish(controller.Change{ID: fmt.Sprintf("swap-%d", i), Expected: revision, Policy: mustJSON(withSchema(schema))})
 		if code != http.StatusOK {
 			t.Fatalf("swap %d: %d %+v", i, code, outcome)
 		}

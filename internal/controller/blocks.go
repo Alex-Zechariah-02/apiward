@@ -2,7 +2,7 @@
 // blocked accounts, blocked addresses and reloaded keys, each with its
 // receipt.
 
-package gateway
+package controller
 
 import (
 	"context"
@@ -107,7 +107,9 @@ func (c *Controller) reloadKeys(ctx context.Context, t store.TransitionRecord) (
 	if err != nil {
 		return c.rejectControl(ctx, t, "KEYS_INVALID", now)
 	}
-	return c.finishControl(ctx, t, list{Items: loaded.Keys()}, nil, func() {
+	return c.finishControl(ctx, t, struct {
+		Items []pipeline.KeyInfo `json:"items"`
+	}{loaded.Keys()}, nil, func() {
 		loaded.AdoptUses(c.verifier.Load())
 		c.verifier.Store(loaded)
 	}, now)

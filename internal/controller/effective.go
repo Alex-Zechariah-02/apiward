@@ -1,6 +1,6 @@
 // Applying active overrides to a base generation.
 
-package gateway
+package controller
 
 import (
 	"cmp"
@@ -105,6 +105,12 @@ func applyOverride(p *policy.Policy, o store.Override) error {
 // one generation. It expires at the earliest of the provisional deadline (if
 // any) and the overrides' expiry times, so a generation never serves past the
 // first of them. Its identity names the base revision and every override.
+// CandidateGeneration compiles p, stored with parent revision parent, with
+// overrides applied, as an activation would publish it; it publishes nothing.
+func CandidateGeneration(p policy.Policy, parent int64, overrides []store.Override) (*compile.Generation, error) {
+	return effectiveGeneration(p, parent, time.Time{}, overrides)
+}
+
 func effectiveGeneration(base policy.Policy, revision int64, deadline time.Time, overrides []store.Override) (*compile.Generation, error) {
 	if len(overrides) > store.MaxActiveOverrides {
 		return nil, policy.Invalid("LIMIT_EXCEEDED", "overrides")

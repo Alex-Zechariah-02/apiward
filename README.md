@@ -170,6 +170,7 @@ Each package under `internal/` imports only the packages listed before it; a tes
 - `internal/session`: administrator sessions, held only in memory as token hashes and bounded in number, and the random tokens the Admin API and operator commands hand out.
 - `internal/monitor`: observes without deciding: the window of recent requests and its live views, request metrics, traffic summaries, advice checks, impact previews and the security log search.
 - `internal/pipeline`: the data-plane request pipeline and its built-in controls (token verification, roles and blocked accounts, rate limits, body and header validation); it reads published policy but can never publish it, and forwards only a request that passed every stage.
+- `internal/controller`: the one authority that changes what is enforced: it publishes policy versions, runs confirmed activation with automatic rollback and temporary rules with their expiry, recovers unfinished changes at startup, and publishes reloaded trust keys and blocked accounts and addresses. Each change is a recorded, audited transition made under one lock; nothing else can publish.
 - `internal/testissuer`: test support only, never imported by production code: an RS256 key generated in memory per test run and the tokens signed with it.
 - `internal/openapi`: the offline OpenAPI import and export; it turns a description into a candidate policy, checks it with the compiler, and writes one API of a policy back as a description.
 - `internal/gateway`: the gateway itself, which uses the packages above.

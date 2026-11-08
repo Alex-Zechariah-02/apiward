@@ -11,6 +11,10 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/Alex-Zechariah-02/apiward/internal/compile"
+	"github.com/Alex-Zechariah-02/apiward/internal/controller"
+	"github.com/Alex-Zechariah-02/apiward/internal/pipeline"
 )
 
 // publishOnRead is a request body that publishes a new generation when the
@@ -39,10 +43,10 @@ func TestEnforcementUsesCapturedGeneration(t *testing.T) {
 	// The next generation sends API a to B and requires the member "x".
 	next := e.policy(e.b, false)
 	next.Operations[1].Body = jsonBody(1024, `{"type":"object","additionalProperties":true,"required":["x"],"properties":{"x":{"type":"integer"}}}`)
-	var published Outcome
+	var published controller.Outcome
 	body := &publishOnRead{data: strings.NewReader(`{"n":1}`), publish: func() {
 		var status int
-		published, status = c.Publish(context.Background(), "test", Change{ID: "during-request", Expected: 1, Policy: mustJSON(next)})
+		published, status = c.Publish(context.Background(), "test", controller.Change{ID: "during-request", Expected: 1, Policy: mustJSON(next)})
 		if status != http.StatusOK {
 			t.Errorf("publication during the request: %d %+v", status, published)
 		}
@@ -84,7 +88,7 @@ func TestEnforcementWithoutUsableGeneration(t *testing.T) {
 		e := newEnv(t)
 		c, _ := e.own(e.controllerConfig())
 		f := &memoryForwarder{}
-		h, err := newHandler(c, 0, f.forward)
+		h, err := newHandler(c, pipeline.NewLimiter(), 0, f.forward)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -98,12 +102,13 @@ func TestEnforcementWithoutUsableGeneration(t *testing.T) {
 	t.Run("past its deadline", func(t *testing.T) {
 		e := newEnv(t)
 		policy := e.policy(e.a, false)
-		c, _, f := e.serveEnforcement(policy, 0)
-		stale, err := effectiveGeneration(policy, 1, time.Now().Add(-time.Second), nil)
+		seed(t, e.database, policy, seedOptions{})
+		c, _ := e.own(e.controllerConfig())
+		stale, err := compile.Compile(policy, 1, time.Now().Add(-time.Second))
 		if err != nil {
 			t.Fatal(err)
 		}
-		c.current.Store(stale)
+		f := e.serveAuthority(c, fixedAuthority{Controller: c, generation: stale})
 		resp, body := e.exchange(http.MethodGet, "/a/x", "", "", "")
 		_, id := requestID(resp, body)
 		if resp.StatusCode != http.StatusServiceUnavailable || len(f.handed()) != 0 {
@@ -111,12 +116,6 @@ func TestEnforcementWithoutUsableGeneration(t *testing.T) {
 		}
 		if ev := e.eventOf(id, 1); ev["stage"] != "CAPTURE" || ev["error"] != "gateway_unavailable" {
 			t.Fatalf("refusal event %v", ev)
-		}
-		// No stored deadline lies behind it, so the controller stops serving
-		// rather than trust it.
-		waitFor(t, time.Now().Add(5*time.Second), "the controller to withdraw the generation", func() bool { return c.Current() == nil })
-		if reason := e.unavailableReason(); !strings.Contains(reason, "expired but no stored deadline has passed") {
-			t.Fatalf("reason %q", reason)
 		}
 		e.assertReceipts(0, 0, 0)
 	})
@@ -164,7 +163,7 @@ func TestEnforcementGenerationsUnderConcurrency(t *testing.T) {
 			if i%2 == 1 {
 				policy, dial = toA, e.a.addr
 			}
-			outcome, status := c.Publish(context.Background(), "test", Change{ID: fmt.Sprintf("concurrent-%d", i), Expected: expected, Policy: mustJSON(policy)})
+			outcome, status := c.Publish(context.Background(), "test", controller.Change{ID: fmt.Sprintf("concurrent-%d", i), Expected: expected, Policy: mustJSON(policy)})
 			if status != http.StatusOK {
 				t.Errorf("publication %d: %d %+v", i, status, outcome)
 				return

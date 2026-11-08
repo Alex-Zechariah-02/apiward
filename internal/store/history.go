@@ -11,7 +11,21 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/Alex-Zechariah-02/apiward/internal/policy"
 )
+
+// Policy returns stored revision id decoded; a missing revision is an error.
+func (s *DB) Policy(ctx context.Context, id int64) (policy.Policy, error) {
+	r, found, err := s.Revision(ctx, id)
+	if err == nil && !found {
+		err = fmt.Errorf("revision %d missing", id)
+	}
+	if err != nil {
+		return policy.Policy{}, err
+	}
+	return policy.DecodePolicy(r.Document)
+}
 
 func (s *DB) Revision(ctx context.Context, id int64) (RevisionInfo, bool, error) {
 	var r RevisionInfo
