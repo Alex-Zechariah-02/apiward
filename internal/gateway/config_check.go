@@ -64,7 +64,7 @@ func (f nativeFile) check() (nativeConfig, error) {
 			return nativeConfig{}, fmt.Errorf("%s must be an absolute path", file.name)
 		}
 	}
-	if err := checkDataListen(d.Listen, g.AdminListen); err != nil {
+	if err := checkDataListen(d.Listen, g.AdminListen, d.ListenAllInterfaces); err != nil {
 		return nativeConfig{}, err
 	}
 	metrics, err := demoports.Offset("127.0.0.1:9450")
@@ -75,10 +75,14 @@ func (f nativeFile) check() (nativeConfig, error) {
 		metrics = *g.MetricsListen
 	}
 	address, err := netip.ParseAddrPort(metrics)
-	if err != nil || !address.Addr().IsLoopback() || address.Port() == 0 || metrics == d.Listen || metrics == g.AdminListen {
-		return nativeConfig{}, errors.New("gateway.metrics_listen must be a separate loopback address with a nonzero port")
+	if err != nil || (!address.Addr().IsLoopback() && !g.MetricsListenAny) || address.Port() == 0 || metrics == d.Listen || metrics == g.AdminListen {
+		return nativeConfig{}, errors.New("gateway.metrics_listen must be a separate loopback address with a nonzero port (any address only with gateway.metrics_listen_any)")
 	}
 	cfg.metricsListen = metrics
+	if err := checkTransport(d, metrics, g.AdminListen); err != nil {
+		return nativeConfig{}, err
+	}
+	cfg.tls, cfg.redirect = d.TLS, d.RedirectHTTP
 
 	durations := []struct {
 		name      string
@@ -134,14 +138,14 @@ func (f nativeFile) check() (nativeConfig, error) {
 }
 
 // checkDataListen requires the data-plane address to be a literal IP address
-// and port that names one interface, and to differ from the admin address.
-// An IPv4-mapped IPv6 address is checked as the IPv4 address it binds:
-// "[::ffff:0.0.0.0]" listens on every interface.
-func checkDataListen(listen, adminListen string) error {
+// and port that names one interface, or every interface when all is set, and
+// to differ from the admin address. An IPv4-mapped IPv6 address is checked
+// as the IPv4 address it binds: "[::ffff:0.0.0.0]" listens on every interface.
+func checkDataListen(listen, adminListen string, all bool) error {
 	addr, err := netip.ParseAddrPort(listen)
 	ip := addr.Addr().Unmap()
-	if err != nil || addr.Port() == 0 || ip.IsUnspecified() || ip.IsMulticast() {
-		return fmt.Errorf("data.listen %q must be a literal IP address of one interface with a port", listen)
+	if err != nil || addr.Port() == 0 || (ip.IsUnspecified() && !all) || ip.IsMulticast() {
+		return fmt.Errorf("data.listen %q must be a literal IP address of one interface with a port (all interfaces only with data.listen_all_interfaces)", listen)
 	}
 	if admin, err := netip.ParseAddrPort(adminListen); err == nil && admin.Addr().Unmap() == ip && admin.Port() == addr.Port() {
 		return errors.New("data.listen and gateway.admin_listen must be different addresses")

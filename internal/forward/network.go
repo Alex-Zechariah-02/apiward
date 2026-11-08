@@ -103,9 +103,9 @@ func loadProfile(s ProfileSettings) (*profile, error) {
 	if s.ClientCertificateFile == "" {
 		return p, nil
 	}
-	certificate, err := loadClientCertificate(s.ClientCertificateFile, s.ClientKeyFile)
+	certificate, err := LoadCertificate(s.ClientCertificateFile, s.ClientKeyFile)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("client certificate: %w", err)
 	}
 	expires := certificate.Leaf.NotAfter.UTC()
 	p.certificate, p.info.ClientCertificate, p.info.ExpiresAt = certificate, true, &expires
@@ -155,36 +155,40 @@ func loadRoots(path string) (*x509.CertPool, error) {
 	return roots, nil
 }
 
-func loadClientCertificate(certificateFile, keyFile string) (*tls.Certificate, error) {
+// LoadCertificate reads a certificate chain (leaf first) and its private key
+// from absolute paths: the key a PKCS #8 RSA key of at least 2,048 bits or
+// an ECDSA P-256 key, in a file the group and others cannot read on Unix.
+// The returned certificate's Leaf is parsed.
+func LoadCertificate(certificateFile, keyFile string) (*tls.Certificate, error) {
 	chain, err := readPEMFile(certificateFile)
 	if err != nil {
-		return nil, fmt.Errorf("client_certificate_file: %w", err)
+		return nil, fmt.Errorf("certificate file: %w", err)
 	}
 	if err := checkKeyFile(keyFile); err != nil {
-		return nil, fmt.Errorf("client_key_file: %w", err)
+		return nil, fmt.Errorf("key file: %w", err)
 	}
 	key, err := readPEMFile(keyFile)
 	if err != nil {
-		return nil, fmt.Errorf("client_key_file: %w", err)
+		return nil, fmt.Errorf("key file: %w", err)
 	}
 	if block, _ := pem.Decode(key); block == nil || block.Type != "PRIVATE KEY" {
-		return nil, errors.New("client_key_file must hold a PKCS #8 PRIVATE KEY block")
+		return nil, errors.New("the key file must hold a PKCS #8 PRIVATE KEY block")
 	}
 	certificate, err := tls.X509KeyPair(chain, key)
 	if err != nil {
-		return nil, errors.New("the client certificate and key do not form a pair")
+		return nil, errors.New("the certificate and key do not form a pair")
 	}
 	switch k := certificate.PrivateKey.(type) {
 	case *rsa.PrivateKey:
 		if k.N.BitLen() < minRSABits {
-			return nil, fmt.Errorf("an RSA client key must have at least %d bits", minRSABits)
+			return nil, fmt.Errorf("an RSA key must have at least %d bits", minRSABits)
 		}
 	case *ecdsa.PrivateKey:
 		if k.Curve != elliptic.P256() {
-			return nil, errors.New("an ECDSA client key must use P-256")
+			return nil, errors.New("an ECDSA key must use P-256")
 		}
 	default:
-		return nil, errors.New("the client key must be RSA or ECDSA P-256")
+		return nil, errors.New("the key must be RSA or ECDSA P-256")
 	}
 	return &certificate, nil
 }

@@ -72,6 +72,10 @@ type Config struct {
 	// the startup configuration, never from HTTP; nil refuses every key
 	// reload.
 	ReloadKeys func() (pipeline.TrustConfig, *forward.Network, error)
+	// ReloadCertificate reads the data listener's certificate files again
+	// on every key reload, whatever its result; it records its own failure.
+	// nil when the data listener has no certificate.
+	ReloadCertificate func()
 }
 
 // Controller is the only component that changes the effective policy. It owns

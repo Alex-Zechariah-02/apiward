@@ -70,6 +70,7 @@ type gatewaySettings struct {
 	AuditLog             string               `json:"audit_log"`
 	AdminListen          string               `json:"admin_listen"`
 	MetricsListen        *string              `json:"metrics_listen"`
+	MetricsListenAny     bool                 `json:"metrics_listen_any"`
 	AdminIdleTimeout     *string              `json:"admin_idle_timeout"`
 	AdminSessionLifetime *string              `json:"admin_session_lifetime"`
 	AuditTimeout         *string              `json:"audit_timeout"`
@@ -81,13 +82,18 @@ type gatewaySettings struct {
 
 // dataSettings are the data-plane server's settings.
 type dataSettings struct {
-	Listen            string  `json:"listen"`
-	MaxBodyBytes      *int64  `json:"max_body_bytes"`
-	MaxHeaderBytes    *int    `json:"max_header_bytes"`
-	ReadHeaderTimeout *string `json:"read_header_timeout"`
-	ReadTimeout       *string `json:"read_timeout"`
-	WriteTimeout      *string `json:"write_timeout"`
-	IdleTimeout       *string `json:"idle_timeout"`
+	Listen string `json:"listen"`
+	// ListenAllInterfaces allows an unspecified listen address, which binds
+	// every interface: a deliberate choice, for containers and servers.
+	ListenAllInterfaces bool              `json:"listen_all_interfaces"`
+	TLS                 *dataTLS          `json:"tls"`
+	RedirectHTTP        *redirectSettings `json:"redirect_http"`
+	MaxBodyBytes        *int64            `json:"max_body_bytes"`
+	MaxHeaderBytes      *int              `json:"max_header_bytes"`
+	ReadHeaderTimeout   *string           `json:"read_header_timeout"`
+	ReadTimeout         *string           `json:"read_timeout"`
+	WriteTimeout        *string           `json:"write_timeout"`
+	IdleTimeout         *string           `json:"idle_timeout"`
 }
 
 // upstreamSettings bound each exchange with an upstream and say which
@@ -113,6 +119,10 @@ type nativeConfig struct {
 	writeTimeout      time.Duration
 	idleTimeout       time.Duration
 	upstream          forward.UpstreamTimeouts
+	// tls is the data listener's TLS; nil serves plain HTTP. redirect is
+	// the HTTP-to-HTTPS listener; nil when there is none.
+	tls      *dataTLS
+	redirect *redirectSettings
 	// adminUI is an optional directory of built dashboard files, served by
 	// the admin listener so the dashboard shares the Admin API's origin.
 	adminUI string

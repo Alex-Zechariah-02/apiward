@@ -92,6 +92,9 @@ func (c *Controller) reloadKeys(ctx context.Context, t store.TransitionRecord) (
 		return body, status
 	}
 	now := compile.TrustedNow()
+	if c.config.ReloadCertificate != nil {
+		c.config.ReloadCertificate()
+	}
 	if c.config.ReloadKeys == nil {
 		return c.rejectControl(ctx, t, "KEYS_INVALID", now)
 	}

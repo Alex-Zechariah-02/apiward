@@ -111,14 +111,26 @@ type deployment struct {
 	ui      fs.FS
 	logger  *slog.Logger
 	metrics *http.Server
+	// certificate is the data listener's; nil when it serves plain HTTP.
+	certificate *servingCertificate
 }
 
 // openDeployment opens cfg's deployment and builds its handlers; it binds no
 // listener. When it returns an error, everything it opened is released.
 func openDeployment(cfg nativeConfig, logger *slog.Logger) (*deployment, error) {
+	certificate, err := openCertificate(cfg.tls, logger)
+	if err != nil {
+		return nil, err
+	}
+	if certificate != nil {
+		cfg.controller.ReloadCertificate = certificate.reload
+	}
 	c, ui, err := openController(cfg.controller, cfg.adminUI, logger)
 	if err != nil {
 		return nil, err
+	}
+	if certificate != nil {
+		certificate.audit = c.Audit()
 	}
 	proxy, err := forward.NewUpstreamProxy(cfg.upstream, c.Network, logger)
 	if err != nil {
@@ -141,8 +153,9 @@ func openDeployment(cfg nativeConfig, logger *slog.Logger) (*deployment, error) 
 		limiter:     limiter,
 		ui:          ui,
 		logger:      logger,
+		certificate: certificate,
 		metrics: &http.Server{
-			Handler:           monitor.Metrics(c.Observations(), c.Gauges),
+			Handler:           health(monitor.Metrics(c.Observations(), c.Gauges), func() bool { return ready(c, certificate) }),
 			ReadHeaderTimeout: 5 * time.Second,
 			WriteTimeout:      5 * time.Second,
 			IdleTimeout:       30 * time.Second,
@@ -217,4 +230,14 @@ func newHandler(c *controller.Controller, limiter *pipeline.Limiter, maxBodyByte
 		d.AuditTimeout = c.Settings().AuditTimeout
 	}
 	return pipeline.New(d)
+}
+
+// ready reports whether the gateway can admit requests: the controller is in
+// normal mode with a published policy, the security log has not failed, and
+// the data listener's certificate, if any, is valid now.
+func ready(c *controller.Controller, certificate *servingCertificate) bool {
+	if c.State() != store.ModeNormal || c.Current() == nil || c.Audit().Failed() {
+		return false
+	}
+	return certificate == nil || certificate.valid(time.Now())
 }

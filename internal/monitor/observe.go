@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/audit"
@@ -67,7 +68,12 @@ type Observations struct {
 	done    chan struct{}
 	closed  bool
 	metrics requestMetrics
+	// redirects counts the redirect listener's answers; it needs no lock.
+	redirects atomic.Uint64
 }
+
+// Redirected counts one answer of the HTTP-to-HTTPS redirect listener.
+func (o *Observations) Redirected() { o.redirects.Add(1) }
 
 func New() *Observations {
 	return &Observations{viewers: map[*Viewer]bool{}, done: make(chan struct{})}

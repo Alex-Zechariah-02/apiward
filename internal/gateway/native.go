@@ -6,6 +6,7 @@ package gateway
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"flag"
 	"fmt"
@@ -33,6 +34,7 @@ const (
 
 const nativeUsage = `usage: gateway run --config <file>
   gateway version
+  gateway health --config <file>
   gateway install --config <file> --admin <name>
   gateway enrol --config <file> --admin <name> --permissions <list>
   gateway migrate --config <file>
@@ -54,7 +56,7 @@ func Main(args []string) int {
 	}
 	options := []string{"config"}
 	switch command {
-	case "run", "migrate":
+	case "run", "migrate", "health":
 	case "install":
 		options = append(options, "admin")
 	case "enrol":
@@ -88,8 +90,11 @@ func Main(args []string) int {
 		}
 		values[name] = parsed[name].value
 	}
-	if command == "run" {
+	switch command {
+	case "run":
 		return runNative(values["config"], logger)
+	case "health":
+		return checkHealth(values["config"])
 	}
 	cfg, err := loadNativeConfig(values["config"])
 	if err == nil {
@@ -135,6 +140,10 @@ func runNative(configPath string, logger *slog.Logger) int {
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
 	defer signal.Stop(signals)
+	// SIGHUP reloads the data listener's certificate (no effect on Windows).
+	hangups := make(chan os.Signal, 1)
+	signal.Notify(hangups, syscall.SIGHUP)
+	defer signal.Stop(hangups)
 
 	settings, err := LoadSettings(configPath)
 	if err != nil {
@@ -148,12 +157,19 @@ func runNative(configPath string, logger *slog.Logger) int {
 	}
 
 	status := exitStopped
-	select {
-	case sig := <-signals:
-		logger.Info("stopping", "signal", sig.String())
-	case err := <-g.served:
-		logger.Error("data listener failed; stopping", "error", err)
-		status = exitFailed
+	for running := true; running; {
+		select {
+		case <-hangups:
+			if g.certificate != nil {
+				g.certificate.reload()
+			}
+		case sig := <-signals:
+			logger.Info("stopping", "signal", sig.String())
+			running = false
+		case err := <-g.served:
+			logger.Error("a listener failed; stopping", "error", err)
+			status, running = exitFailed, false
+		}
 	}
 	go func() {
 		<-signals
@@ -173,8 +189,13 @@ type nativeGateway struct {
 	controller *controller.Controller
 	data       *http.Server
 	metrics    *http.Server
-	// served receives the data-plane and metrics servers' Serve results.
+	redirect   *http.Server // nil without a redirect listener
+	// certificate is the data listener's; nil when it serves plain HTTP.
+	certificate *servingCertificate
+	// served receives the data-plane, metrics and redirect servers' Serve
+	// results; done closes when the stop begins.
 	served chan error
+	done   chan struct{}
 	stop   func() error
 }
 
@@ -194,13 +215,21 @@ func startNative(cfg nativeConfig, logger *slog.Logger) (*nativeGateway, error) 
 	if err != nil {
 		return nil, errors.Join(classify(ErrListen, fmt.Errorf("data listener: %w", err)), c.Stop())
 	}
-	metricsListener, err := d.listen(true)
+	redirectListener, err := listenRedirect(cfg.redirect)
 	if err != nil {
 		listener.Close()
 		return nil, errors.Join(err, c.Stop())
 	}
+	metricsListener, err := d.listen(true)
+	if err != nil {
+		closeListeners(listener, redirectListener)
+		return nil, errors.Join(err, c.Stop())
+	}
+	if d.certificate != nil {
+		listener = tls.NewListener(listener, d.certificate.config())
+	}
 
-	// HTTP/1.0 and HTTP/1.1 only, over plain TCP.
+	// HTTP/1.0 and HTTP/1.1 only, over plain TCP or TLS.
 	protocols := new(http.Protocols)
 	protocols.SetHTTP1(true)
 	data := &http.Server{
@@ -212,10 +241,17 @@ func startNative(cfg nativeConfig, logger *slog.Logger) (*nativeGateway, error) 
 		ErrorLog:                     slog.NewLogLogger(logger.Handler(), slog.LevelWarn),
 	}
 	cfg.server().Apply(data)
-	g := &nativeGateway{controller: c, data: data, metrics: d.metrics, served: make(chan error, 2)}
+	g := &nativeGateway{controller: c, data: data, metrics: d.metrics, certificate: d.certificate, served: make(chan error, 3), done: make(chan struct{})}
 	g.stop = sync.OnceValue(g.shutdown)
 	go func() { g.served <- g.data.Serve(listener) }()
 	go func() { g.served <- g.metrics.Serve(metricsListener) }()
+	if redirectListener != nil {
+		g.redirect = redirectServer(cfg.redirect.Origin, c.Observations())
+		go func() { g.served <- g.redirect.Serve(redirectListener) }()
+	}
+	if g.certificate != nil {
+		go g.certificate.watchExpiry(g.done)
+	}
 
 	logger.Info("listening", "data", listener.Addr().String(), "admin", cfg.controller.AdminListen)
 	d.logAdmission(logger)
@@ -230,9 +266,15 @@ func startNative(cfg nativeConfig, logger *slog.Logger) (*nativeGateway, error) 
 // own auditDrainWait. It returns nil only when every step completed.
 func (g *nativeGateway) shutdown() error {
 	g.controller.BeginStop()
+	close(g.done)
 	ctx, cancel := context.WithTimeout(context.Background(), controller.ShutdownWait)
 	defer cancel()
 	var errs []error
+	if g.redirect != nil {
+		if err := g.redirect.Shutdown(ctx); err != nil {
+			errs = append(errs, fmt.Errorf("redirect listener shutdown: %w", err), g.redirect.Close())
+		}
+	}
 	if err := g.metrics.Shutdown(ctx); err != nil {
 		errs = append(errs, fmt.Errorf("metrics listener shutdown: %w", err), g.metrics.Close())
 	}
