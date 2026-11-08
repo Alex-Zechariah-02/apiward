@@ -11,8 +11,8 @@ import (
 
 	"github.com/Alex-Zechariah-02/apiward/internal/audit"
 	"github.com/Alex-Zechariah-02/apiward/internal/controller"
+	"github.com/Alex-Zechariah-02/apiward/internal/issuertest"
 	"github.com/Alex-Zechariah-02/apiward/internal/policy"
-	"github.com/Alex-Zechariah-02/apiward/internal/testissuer"
 )
 
 // allStages is the stage map of a request that passed every control and was
@@ -104,7 +104,7 @@ func TestEarlyRefusalsStopThePath(t *testing.T) {
 		status     int
 		want       map[string]any
 	}{
-		{"forged token", valid, []string{"Authorization", "Bearer " + testissuer.New(2048).TokenFor(t, "cust-001")}, 401, expectedStages(routed, "JWT", audit.StageReject)},
+		{"forged token", valid, []string{"Authorization", "Bearer " + issuertest.New(2048).TokenFor(t, "cust-001")}, 401, expectedStages(routed, "JWT", audit.StageReject)},
 		{"wrong role", valid, bearer(t, "staff-01"), 403, expectedStages(append(slices.Clone(routed), "JWT"), "RBAC", audit.StageReject)},
 		{"wrong role with an invalid body", `{"x":`, bearer(t, "mgr-01"), 403, expectedStages(append(slices.Clone(routed), "JWT"), "RBAC", audit.StageReject)},
 		{"first admitted", valid, bearer(t, "cust-001"), 201, nil},

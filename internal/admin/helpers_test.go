@@ -10,15 +10,15 @@ import (
 	"testing"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/controller"
+	"github.com/Alex-Zechariah-02/apiward/internal/issuertest"
 	"github.com/Alex-Zechariah-02/apiward/internal/pipeline"
-	"github.com/Alex-Zechariah-02/apiward/internal/testdb"
-	"github.com/Alex-Zechariah-02/apiward/internal/testissuer"
+	"github.com/Alex-Zechariah-02/apiward/internal/storetest"
 )
 
-var issuer = testissuer.New(2048)
+var issuer = issuertest.New(2048)
 
 // openController opens a controller whose confirmed policy is
-// testdb.Protected and stops it when the test ends. Its admin address is
+// storetest.Protected and stops it when the test ends. Its admin address is
 // never served.
 func openController(t *testing.T) *controller.Controller {
 	t.Helper()
@@ -28,10 +28,10 @@ func openController(t *testing.T) *controller.Controller {
 		t.Fatal(err)
 	}
 	database := filepath.Join(dir, "gateway.db")
-	testdb.Seed(t, database, testdb.Protected(), testdb.Options{})
+	storetest.Seed(t, database, storetest.Protected(), storetest.Options{})
 	c, err := controller.Prepare(controller.Config{
 		Database: database, AuditLog: filepath.Join(dir, "audit.log"), AdminListen: "127.0.0.1:1",
-		JWT: pipeline.TrustConfig{Issuer: testissuer.Name, Audience: testissuer.Audience,
+		JWT: pipeline.TrustConfig{Issuer: issuertest.Name, Audience: issuertest.Audience,
 			Keys: []pipeline.VerificationKey{{Kid: "test-a", PublicKeyFile: key}}},
 	}, slog.New(slog.DiscardHandler))
 	if err == nil {

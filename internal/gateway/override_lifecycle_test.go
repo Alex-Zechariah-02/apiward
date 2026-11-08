@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Alex-Zechariah-02/apiward/internal/issuertest"
 	"github.com/Alex-Zechariah-02/apiward/internal/policy"
 	"github.com/Alex-Zechariah-02/apiward/internal/store"
-	"github.com/Alex-Zechariah-02/apiward/internal/testissuer"
 )
 
 // Each supported override changes enforcement at once, exactly as its type
@@ -61,7 +61,7 @@ func TestOverrideLifecycle(t *testing.T) {
 	// The granted permit still needs a valid token of a known subject.
 	e.resetReceivers()
 	for _, header := range [][]string{nil, {"Authorization", "Bearer x.y.z"}, {"Authorization", "Bearer " + issuer.TokenFor(t, "mallory")},
-		{"Authorization", "Bearer " + testissuer.HMACToken(issuer.PublicPEM(), testissuer.ClaimsJSON(testissuer.ValidClaims("bob")))}} {
+		{"Authorization", "Bearer " + issuertest.HMACToken(issuer.PublicPEM(), issuertest.ClaimsJSON(issuertest.ValidClaims("bob")))}} {
 		code, _ := e.request(http.MethodPost, "/a/item", "application/json", `{"n":1}`, append(header, "X-Gateway-Roles", "READER,WRITER")...)
 		if code != http.StatusUnauthorized && code != http.StatusForbidden {
 			t.Fatalf("POST /a/item with %v: %d", header, code)

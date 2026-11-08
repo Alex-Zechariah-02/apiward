@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/audit"
-	"github.com/Alex-Zechariah-02/apiward/internal/testissuer"
+	"github.com/Alex-Zechariah-02/apiward/internal/issuertest"
 )
 
 // Authentication and authorisation events record what actually ran, with the
@@ -41,7 +41,7 @@ func TestAuthenticationEvents(t *testing.T) {
 		{"no token", http.MethodGet, "/a/x", "", "", 0, []expected{
 			{"request.rejected", "JWT", "missing_credential", "", "unauthenticated", 401, expectedStages(routed, "JWT", audit.StageReject)},
 		}},
-		{"expired token", http.MethodGet, "/a/x", "", issuer.Token(t, testissuer.Changed(testissuer.ValidClaims("alice"), map[string]any{"exp": time.Now().Add(-time.Minute).Unix()})), 0, []expected{
+		{"expired token", http.MethodGet, "/a/x", "", issuer.Token(t, issuertest.Changed(issuertest.ValidClaims("alice"), map[string]any{"exp": time.Now().Add(-time.Minute).Unix()})), 0, []expected{
 			{"request.rejected", "JWT", "expired", "", "unauthenticated", 401, expectedStages(routed, "JWT", audit.StageReject)},
 		}},
 		{"unknown subject", http.MethodGet, "/a/x", "", issuer.TokenFor(t, "mallory"), 0, []expected{
@@ -110,7 +110,7 @@ func TestCredentialsNeverRecorded(t *testing.T) {
 	e.start(binaries.plain)
 
 	valid := issuer.TokenFor(t, "alice")
-	forged := testissuer.New(2048).TokenFor(t, "alice")
+	forged := issuertest.New(2048).TokenFor(t, "alice")
 	multiline := issuer.SignRaw(`{"alg":"RS256","kid":"test-a"}`, `{"iss":"https://issuer.test","aud":"gateway.test","sub":"alice\n{\"kind\":\"forged\"}","exp":9999999999}`)
 	privatePEM := "-----BEGIN PRIVATE KEY-----MIIEvQIBADANBgkqhkiG9w0BAQEFAASC-----END PRIVATE KEY-----"
 	requests := [][]string{

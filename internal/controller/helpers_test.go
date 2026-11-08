@@ -12,13 +12,13 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/Alex-Zechariah-02/apiward/internal/issuertest"
 	"github.com/Alex-Zechariah-02/apiward/internal/pipeline"
 	"github.com/Alex-Zechariah-02/apiward/internal/policy"
 	"github.com/Alex-Zechariah-02/apiward/internal/store"
-	"github.com/Alex-Zechariah-02/apiward/internal/testissuer"
 )
 
-var issuer = testissuer.New(2048)
+var issuer = issuertest.New(2048)
 
 // env is one disposable deployment directory.
 type env struct {
@@ -41,7 +41,7 @@ func (e *env) controllerConfig() Config {
 		Database:    e.database,
 		AuditLog:    filepath.Join(e.dir, "audit.log"),
 		AdminListen: "127.0.0.1:1",
-		JWT: pipeline.TrustConfig{Issuer: testissuer.Name, Audience: testissuer.Audience,
+		JWT: pipeline.TrustConfig{Issuer: issuertest.Name, Audience: issuertest.Audience,
 			Keys: []pipeline.VerificationKey{{Kid: "test-a", PublicKeyFile: filepath.Join(e.dir, "issuer.pem")}}},
 	}
 }

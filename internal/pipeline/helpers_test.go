@@ -6,12 +6,12 @@ import (
 	"fmt"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/compile"
+	"github.com/Alex-Zechariah-02/apiward/internal/issuertest"
 	"github.com/Alex-Zechariah-02/apiward/internal/policy"
-	"github.com/Alex-Zechariah-02/apiward/internal/testissuer"
 )
 
 // issuer signs the tokens of every test in the package.
-var issuer = testissuer.New(2048)
+var issuer = issuertest.New(2048)
 
 // quota compiles a per-subject sliding-window rate rule of count requests per
 // window milliseconds, which must be whole seconds, through the compiler.

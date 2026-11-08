@@ -11,8 +11,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Alex-Zechariah-02/apiward/internal/issuertest"
 	"github.com/Alex-Zechariah-02/apiward/internal/store"
-	"github.com/Alex-Zechariah-02/apiward/internal/testissuer"
 )
 
 // legacyCaddyFile is e's deployment as the retired Caddy-hosted gateway was
@@ -35,7 +35,7 @@ func legacyCaddyFile(e *env) []byte {
 // address, the trust key, the dashboard directory) are refused the same way.
 func TestNativeStartupRefusesConfiguration(t *testing.T) {
 	privateKey := filepath.Join(t.TempDir(), "private.pem")
-	der, _ := x509.MarshalPKCS8PrivateKey(testissuer.New(2048).Key())
+	der, _ := x509.MarshalPKCS8PrivateKey(issuertest.New(2048).Key())
 	if err := os.WriteFile(privateKey, pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der}), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -93,12 +93,12 @@ func TestNativeStartupRefusesConfiguration(t *testing.T) {
 		}, "literal loopback address"},
 		{"private key as the trust key", func(e *env) {
 			s := e.nativeSettings()
-			section(s, "gateway")["jwt"] = testTrust(testissuer.Name, testissuer.Audience, privateKey)
+			section(s, "gateway")["jwt"] = testTrust(issuertest.Name, issuertest.Audience, privateKey)
 			e.writeNative(s)
 		}, "exactly one PEM PUBLIC KEY block"},
 		{"missing trust key", func(e *env) {
 			s := e.nativeSettings()
-			section(s, "gateway")["jwt"] = testTrust(testissuer.Name, testissuer.Audience, filepath.Join(e.dir, "absent.pem"))
+			section(s, "gateway")["jwt"] = testTrust(issuertest.Name, issuertest.Audience, filepath.Join(e.dir, "absent.pem"))
 			e.writeNative(s)
 		}, "jwt: opening public key"},
 		{"dashboard directory without index.html", func(e *env) {

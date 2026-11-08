@@ -9,9 +9,9 @@ import (
 	"time"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/compile"
+	"github.com/Alex-Zechariah-02/apiward/internal/issuertest"
 	"github.com/Alex-Zechariah-02/apiward/internal/policy"
 	fixture "github.com/Alex-Zechariah-02/apiward/internal/services/testfixture"
-	"github.com/Alex-Zechariah-02/apiward/internal/testissuer"
 )
 
 // Body schemas of the fixture writes. They state the request shape the
@@ -152,7 +152,7 @@ func TestPolicyAgreesWithCatalogue(t *testing.T) {
 	}
 
 	for _, want := range c.Subjects {
-		gotRoles := testissuer.Roles(want.ID)
+		gotRoles := issuertest.Roles(want.ID)
 		wantRoles := slices.Sorted(slices.Values(want.Roles))
 		if !slices.Equal(gotRoles, wantRoles) {
 			t.Errorf("subject %s: issuer %v, catalogue %+v", want.ID, gotRoles, want)

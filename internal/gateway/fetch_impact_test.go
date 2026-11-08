@@ -8,8 +8,8 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/Alex-Zechariah-02/apiward/internal/issuertest"
 	"github.com/Alex-Zechariah-02/apiward/internal/policy"
-	"github.com/Alex-Zechariah-02/apiward/internal/testissuer"
 )
 
 func TestFetchImpactOfNewRole(t *testing.T) {
@@ -18,7 +18,7 @@ func TestFetchImpactOfNewRole(t *testing.T) {
 	seed(t, e.database, p, seedOptions{})
 	e.start(binaries.plain)
 	admin := e.mustLogin(harnessAdmin, harnessPassword)
-	token := issuer.Token(t, testissuer.Changed(testissuer.ValidClaims("alien-account"), map[string]any{"roles": []string{"ALIEN"}}))
+	token := issuer.Token(t, issuertest.Changed(issuertest.ValidClaims("alien-account"), map[string]any{"roles": []string{"ALIEN"}}))
 	if code, _ := e.get("/a/new-role", "Authorization", "Bearer "+token); code != 403 {
 		t.Fatalf("unknown role: %d", code)
 	}

@@ -12,7 +12,7 @@ import (
 	"github.com/Alex-Zechariah-02/apiward/internal/compile"
 	"github.com/Alex-Zechariah-02/apiward/internal/policy"
 	"github.com/Alex-Zechariah-02/apiward/internal/store"
-	"github.com/Alex-Zechariah-02/apiward/internal/testdb"
+	"github.com/Alex-Zechariah-02/apiward/internal/storetest"
 )
 
 // Only the supported controls and actions can be requested, each with
@@ -91,8 +91,8 @@ func TestOverrideRequestGrammar(t *testing.T) {
 // nothing else, refuses a change that no longer does what its type says, and
 // produces the same generation whatever order the overrides come in.
 func TestApplyOverrides(t *testing.T) {
-	basePolicy := testdb.Protected()
-	basePolicy.Operations[0].Rate = testdb.Rate(4, 60) // read-a
+	basePolicy := storetest.Protected()
+	basePolicy.Operations[0].Rate = storetest.Rate(4, 60) // read-a
 	pristine := string(mustJSON(basePolicy))
 
 	stored := func(id int64, r OverrideRequest) store.Override {

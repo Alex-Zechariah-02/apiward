@@ -21,9 +21,9 @@ import (
 	"github.com/Alex-Zechariah-02/apiward/internal/admin"
 	"github.com/Alex-Zechariah-02/apiward/internal/compile"
 	"github.com/Alex-Zechariah-02/apiward/internal/controller"
+	"github.com/Alex-Zechariah-02/apiward/internal/issuertest"
 	"github.com/Alex-Zechariah-02/apiward/internal/pipeline"
 	"github.com/Alex-Zechariah-02/apiward/internal/store"
-	"github.com/Alex-Zechariah-02/apiward/internal/testissuer"
 )
 
 // These tests own the controller in the test process, as the gateway
@@ -55,7 +55,7 @@ func (e *env) controllerConfig() controller.Config {
 		Database:    e.database,
 		AuditLog:    e.auditLog,
 		AdminListen: e.admin,
-		JWT:         testTrust(testissuer.Name, testissuer.Audience, e.publicKey),
+		JWT:         testTrust(issuertest.Name, issuertest.Audience, e.publicKey),
 	}
 }
 
@@ -211,7 +211,7 @@ func TestControllerOwnedByApplication(t *testing.T) {
 // goroutine started.
 func TestControllerRefusesInvalidConfiguration(t *testing.T) {
 	privateKey := filepath.Join(t.TempDir(), "private.pem")
-	der, _ := x509.MarshalPKCS8PrivateKey(testissuer.New(2048).Key())
+	der, _ := x509.MarshalPKCS8PrivateKey(issuertest.New(2048).Key())
 	if err := os.WriteFile(privateKey, pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der}), 0o600); err != nil {
 		t.Fatal(err)
 	}

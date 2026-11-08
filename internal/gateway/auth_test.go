@@ -12,9 +12,9 @@ import (
 	"time"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/audit"
+	"github.com/Alex-Zechariah-02/apiward/internal/issuertest"
 	"github.com/Alex-Zechariah-02/apiward/internal/pipeline"
 	"github.com/Alex-Zechariah-02/apiward/internal/policy"
-	"github.com/Alex-Zechariah-02/apiward/internal/testissuer"
 )
 
 // These tests run bearer authentication and role authorisation through the
@@ -98,15 +98,15 @@ func TestAuthenticationThroughGateway(t *testing.T) {
 
 	now := time.Now().Unix()
 	claims := func(changes map[string]any) string {
-		return issuer.Token(t, testissuer.Changed(testissuer.ValidClaims("staff-01"), changes))
+		return issuer.Token(t, issuertest.Changed(issuertest.ValidClaims("staff-01"), changes))
 	}
 	valid := issuer.TokenFor(t, "staff-01")
 	segments := strings.Split(valid, ".")
 	signature, _ := base64.RawURLEncoding.DecodeString(segments[2])
 	signature[0] ^= 0x80
 	tampered := segments[0] + "." + segments[1] + "." + base64.RawURLEncoding.EncodeToString(signature)
-	elevated := segments[0] + "." + testissuer.EncodeSegment(testissuer.ClaimsJSON(testissuer.ValidClaims("mgr-01"))) + "." + segments[2]
-	payload := testissuer.ClaimsJSON(testissuer.ValidClaims("staff-01"))
+	elevated := segments[0] + "." + issuertest.EncodeSegment(issuertest.ClaimsJSON(issuertest.ValidClaims("mgr-01"))) + "." + segments[2]
+	payload := issuertest.ClaimsJSON(issuertest.ValidClaims("staff-01"))
 
 	type vector struct {
 		name    string
@@ -119,7 +119,7 @@ func TestAuthenticationThroughGateway(t *testing.T) {
 	vectors := []vector{
 		{"valid token", []string{"Authorization", "Bearer " + valid}, "", 200, "", "staff-01"},
 		{"missing required issuer and audience", []string{"Authorization", "Bearer " + claims(map[string]any{"iss": nil, "aud": nil})}, "", 401, "invalid_claims", ""},
-		{"aud array naming this gateway", []string{"Authorization", "Bearer " + claims(map[string]any{"aud": []string{"other", testissuer.Audience}})}, "", 200, "", "staff-01"},
+		{"aud array naming this gateway", []string{"Authorization", "Bearer " + claims(map[string]any{"aud": []string{"other", issuertest.Audience}})}, "", 200, "", "staff-01"},
 
 		{"no credential", nil, "", 401, "missing_credential", ""},
 		{"token in the query string", nil, "?access_token=" + valid, 401, "missing_credential", ""},
@@ -130,14 +130,14 @@ func TestAuthenticationThroughGateway(t *testing.T) {
 		{"basic credentials", []string{"Authorization", "Basic c3RhZmYtMDE6cGFzc3dvcmQ="}, "", 401, "malformed_credential", ""},
 		{"truncated token", []string{"Authorization", "Bearer " + segments[0] + "." + segments[1]}, "", 401, "malformed_credential", ""},
 		{"oversize token", []string{"Authorization", "Bearer " + valid + strings.Repeat("A", pipeline.MaxTokenBytes)}, "", 401, "malformed_credential", ""},
-		{"alg none without signature", []string{"Authorization", "Bearer " + testissuer.EncodeSegment(`{"alg":"none"}`) + "." + testissuer.EncodeSegment(payload) + "."}, "", 401, "malformed_credential", ""},
-		{"alg none with a fake signature", []string{"Authorization", "Bearer " + testissuer.EncodeSegment(`{"alg":"none"}`) + "." + testissuer.EncodeSegment(payload) + ".e30"}, "", 401, "unsupported_header", ""},
-		{"HS256 keyed with the public key", []string{"Authorization", "Bearer " + testissuer.HMACToken(issuer.PublicPEM(), payload)}, "", 401, "unsupported_header", ""},
+		{"alg none without signature", []string{"Authorization", "Bearer " + issuertest.EncodeSegment(`{"alg":"none"}`) + "." + issuertest.EncodeSegment(payload) + "."}, "", 401, "malformed_credential", ""},
+		{"alg none with a fake signature", []string{"Authorization", "Bearer " + issuertest.EncodeSegment(`{"alg":"none"}`) + "." + issuertest.EncodeSegment(payload) + ".e30"}, "", 401, "unsupported_header", ""},
+		{"HS256 keyed with the public key", []string{"Authorization", "Bearer " + issuertest.HMACToken(issuer.PublicPEM(), payload)}, "", 401, "unsupported_header", ""},
 		{"key URL in jku", []string{"Authorization", "Bearer " + issuer.SignRaw(`{"alg":"RS256","kid":"test-a","jku":"http://`+keyServer.addr+`/jwks"}`, payload)}, "", 401, "unsupported_header", ""},
 		{"certificate URL in x5u", []string{"Authorization", "Bearer " + issuer.SignRaw(`{"alg":"RS256","kid":"test-a","x5u":"http://`+keyServer.addr+`/cert"}`, payload)}, "", 401, "unsupported_header", ""},
 		{"signature bit flipped", []string{"Authorization", "Bearer " + tampered}, "", 401, "invalid_signature", ""},
 		{"payload swapped for another subject", []string{"Authorization", "Bearer " + elevated}, "", 401, "invalid_signature", ""},
-		{"untrusted RSA key", []string{"Authorization", "Bearer " + testissuer.New(2048).TokenFor(t, "staff-01")}, "", 401, "invalid_signature", ""},
+		{"untrusted RSA key", []string{"Authorization", "Bearer " + issuertest.New(2048).TokenFor(t, "staff-01")}, "", 401, "invalid_signature", ""},
 		{"invalid token with forged internal headers", []string{"Authorization", "Bearer " + tampered, "X-Gateway-Subject", "staff-01", "X-Gateway-Generation", "forged"}, "", 401, "invalid_signature", ""},
 		{"expired", []string{"Authorization", "Bearer " + claims(map[string]any{"exp": now - 60})}, "", 401, "expired", ""},
 		{"not yet valid", []string{"Authorization", "Bearer " + claims(map[string]any{"nbf": now + 600})}, "", 401, "not_yet_valid", ""},
@@ -211,12 +211,12 @@ func TestAuthenticationThroughGateway(t *testing.T) {
 func TestForgedRolesGrantNothing(t *testing.T) {
 	e, fixtures := newFixtureEnv(t)
 
-	forgedClaims := testissuer.ValidClaims("cust-001")
+	forgedClaims := issuertest.ValidClaims("cust-001")
 	forgedClaims["roles"] = []string{"MANAGER", "ADMIN"}
 	forgedClaims["role"] = "ADMIN"
 	forgedClaims["groups"] = []string{"MANAGER"}
 	forgedClaims["scope"] = "reports.sales admin"
-	forgedToken := testissuer.New(2048).Token(t, forgedClaims)
+	forgedToken := issuertest.New(2048).Token(t, forgedClaims)
 
 	attempts := []struct {
 		name   string
@@ -227,14 +227,14 @@ func TestForgedRolesGrantNothing(t *testing.T) {
 		status int
 	}{
 		{"untrusted token claiming MANAGER and ADMIN", http.MethodGet, "/reports/sales", "", []string{"Authorization", "Bearer " + forgedToken}, 401},
-		{"untrusted zero-role subject claiming MANAGER", http.MethodGet, "/orders", "", []string{"Authorization", "Bearer " + testissuer.New(2048).Token(t, testissuer.Changed(testissuer.ValidClaims("nobody-01"), map[string]any{"roles": []string{"STAFF", "MANAGER"}}))}, 401},
+		{"untrusted zero-role subject claiming MANAGER", http.MethodGet, "/orders", "", []string{"Authorization", "Bearer " + issuertest.New(2048).Token(t, issuertest.Changed(issuertest.ValidClaims("nobody-01"), map[string]any{"roles": []string{"STAFF", "MANAGER"}}))}, 401},
 		{"forged identity headers beside a valid token", http.MethodGet, "/reports/sales", "", append(bearer(t, "cust-001"),
 			"X-Gateway-Subject", "mgr-01", "X-Gateway-Roles", "MANAGER", "X-Roles", "MANAGER", "X-User", "mgr-01"), 403},
 		{"role in the query string", http.MethodGet, "/reports/sales?role=MANAGER&roles=ADMIN", "", bearer(t, "cust-001"), 403},
 		{"role in the body", http.MethodPost, "/orders", `{"customer":"cust-001","item":"ITM-001","quantity":1,"role":"CUSTOMER"}`, bearer(t, "staff-01"), 403},
 		{"a role name as the subject", http.MethodGet, "/reports/sales", "", bearer(t, "MANAGER"), 403},
 		{"a subject in another case", http.MethodGet, "/reports/sales", "", bearer(t, "MGR-01"), 403},
-		{"the manager's subject from an untrusted key", http.MethodGet, "/reports/sales", "", []string{"Authorization", "Bearer " + testissuer.New(2048).TokenFor(t, "mgr-01")}, 401},
+		{"the manager's subject from an untrusted key", http.MethodGet, "/reports/sales", "", []string{"Authorization", "Bearer " + issuertest.New(2048).TokenFor(t, "mgr-01")}, 401},
 		{"no administrator bypass", http.MethodGet, "/reports/sales", "", bearer(t, "admin"), 403},
 	}
 	for _, a := range attempts {

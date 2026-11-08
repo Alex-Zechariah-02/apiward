@@ -13,8 +13,8 @@ import (
 	"testing"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/controller"
+	"github.com/Alex-Zechariah-02/apiward/internal/issuertest"
 	"github.com/Alex-Zechariah-02/apiward/internal/policy"
-	"github.com/Alex-Zechariah-02/apiward/internal/testissuer"
 )
 
 // Concurrent allowed and denied requests while publications move API a
@@ -218,7 +218,7 @@ func TestNativeForwardingRefusalsReachNoUpstream(t *testing.T) {
 		{"altered signature", "GET", "/a/x", "", "", []string{"Authorization", "Bearer " + segments[0] + "." + segments[1] + ".AAAA" + segments[2][4:]}, 401, "JWT"},
 		{"subject without a permit", "POST", "/a/item", "application/json", `{"n":1}`, bearer(t, "bob"), 403, "RBAC"},
 		{"unknown role claimed in the verified token", "POST", "/a/item", "application/json", `{"n":1}`,
-			[]string{"Authorization", "Bearer " + issuer.Token(t, testissuer.Changed(testissuer.ValidClaims("bob"), map[string]any{"roles": []string{"ADMIN"}}))}, 403, "RBAC"},
+			[]string{"Authorization", "Bearer " + issuer.Token(t, issuertest.Changed(issuertest.ValidClaims("bob"), map[string]any{"roles": []string{"ADMIN"}}))}, 403, "RBAC"},
 		{"media type", "POST", "/a/strict", "text/plain", `{"n":1}`, []string{"Authorization", "Bearer " + token}, 415, "BODY"},
 		{"malformed JSON", "POST", "/a/strict", "application/json", `{"n":`, []string{"Authorization", "Bearer " + token}, 400, "BODY"},
 		{"body schema", "POST", "/a/strict", "application/json", `{"n":"one"}`, []string{"Authorization", "Bearer " + token}, 400, "VALIDATION"},

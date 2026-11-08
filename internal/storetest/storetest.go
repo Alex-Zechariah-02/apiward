@@ -1,10 +1,10 @@
-// Package testdb is test support only, never imported by production code: it
+// Package storetest is test support only, never imported by production code: it
 // seeds a disposable gateway database whose confirmed revision is a given
 // policy, optionally with a provisional revision and its deadline and an
 // administrator, reads single values back for assertions, and builds the
 // small test policies the seeds use. Unit tests of the packages that open a
 // deployment use it instead of the operator's install command.
-package testdb
+package storetest
 
 import (
 	"context"

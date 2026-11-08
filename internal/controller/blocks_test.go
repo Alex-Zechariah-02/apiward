@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/store"
-	"github.com/Alex-Zechariah-02/apiward/internal/testdb"
+	"github.com/Alex-Zechariah-02/apiward/internal/storetest"
 )
 
 // STORE_ERROR says only that this request did not complete. When the record
@@ -19,7 +19,7 @@ import (
 // store can be read, the resend returns the recorded receipt.
 func TestStoreErrorOnResendDoesNotMeanNothingChanged(t *testing.T) {
 	e := newEnv(t)
-	testdb.Seed(t, e.database, testdb.Protected(), testdb.Options{Administrator: "root"})
+	storetest.Seed(t, e.database, storetest.Protected(), storetest.Options{Administrator: "root"})
 	c := e.own(e.controllerConfig())
 	const reason = "store error test"
 	request := struct {

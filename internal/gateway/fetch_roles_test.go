@@ -4,8 +4,8 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/Alex-Zechariah-02/apiward/internal/issuertest"
 	"github.com/Alex-Zechariah-02/apiward/internal/policy"
-	"github.com/Alex-Zechariah-02/apiward/internal/testissuer"
 )
 
 func TestFetchRolesOnlyFromVerifiedToken(t *testing.T) {
@@ -24,7 +24,7 @@ func TestFetchRolesOnlyFromVerifiedToken(t *testing.T) {
 		{"bob", []string{"WRITER", "READER", "WRITER"}, 200, "READER,WRITER"},
 		{"outside-policy-membership", []string{"UNKNOWN"}, 403, ""},
 	} {
-		claims := testissuer.Changed(testissuer.ValidClaims(tc.subject), map[string]any{"roles": tc.roles})
+		claims := issuertest.Changed(issuertest.ValidClaims(tc.subject), map[string]any{"roles": tc.roles})
 		resp, body := e.exchange("POST", "/a/item", "application/json", `{"n":1}`, "Authorization", "Bearer "+issuer.Token(t, claims), "X-Gateway-Roles", "WRITER")
 		if resp.StatusCode != tc.status {
 			t.Errorf("%s %v: %d %s", tc.subject, tc.roles, resp.StatusCode, body)

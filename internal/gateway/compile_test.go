@@ -11,8 +11,8 @@ import (
 	"time"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/compile"
+	"github.com/Alex-Zechariah-02/apiward/internal/issuertest"
 	"github.com/Alex-Zechariah-02/apiward/internal/policy"
-	"github.com/Alex-Zechariah-02/apiward/internal/testissuer"
 )
 
 func TestInvalidReferencesAndConflictsAreRejected(t *testing.T) {
@@ -60,7 +60,7 @@ func TestInvalidReferencesAndConflictsAreRejected(t *testing.T) {
 // The former membership attack vectors now fail at the removed policy field;
 // sub and roles themselves are validated at the verified-token boundary.
 func TestPolicySubjectsRejected(t *testing.T) {
-	for _, subject := range []testissuer.Subject{
+	for _, subject := range []issuertest.Subject{
 		{ID: "s", Status: "active", Roles: []string{"ADMIN"}},
 		{ID: "s", Status: "active", Roles: []string{"customer"}},
 		{ID: "s", Status: "active", Roles: []string{"STAFF", "STAFF"}},
@@ -190,7 +190,7 @@ func TestDenyAllPolicyCompiles(t *testing.T) {
 	for _, op := range p.Operations {
 		_, r := g.Match(strings.Replace(op.Target, "*", "x", 1), op.Method, compile.Inbound{})
 		for _, subject := range []string{"cust-001", "staff-01", "both@example.test", "nobody-01", "former-01"} {
-			if roles, _, reason := g.Authorise(testissuer.Roles(subject), r); reason == "" {
+			if roles, _, reason := g.Authorise(issuertest.Roles(subject), r); reason == "" {
 				t.Errorf("%s allowed %s with roles %v under deny-all", subject, op.ID, roles)
 			}
 		}
@@ -237,7 +237,7 @@ func TestRoleEvaluation(t *testing.T) {
 		if r == nil {
 			t.Fatalf("%s %s matched nothing", tc.method, tc.path)
 		}
-		roles, _, reason := g.Authorise(testissuer.Roles(tc.subject), r)
+		roles, _, reason := g.Authorise(issuertest.Roles(tc.subject), r)
 		if reason != "" {
 			roles = nil
 		} // these cases compare grants, not retained audit roles

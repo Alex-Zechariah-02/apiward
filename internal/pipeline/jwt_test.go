@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Alex-Zechariah-02/apiward/internal/testissuer"
+	"github.com/Alex-Zechariah-02/apiward/internal/issuertest"
 )
 
 // These tests exercise token verification directly, at a fixed time, with
@@ -27,7 +27,7 @@ func testVerifier(t *testing.T) *Verifier {
 	if err := os.WriteFile(path, issuer.PublicPEM(), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	v, err := LoadVerifier(testTrust(testissuer.Name, testissuer.Audience, path))
+	v, err := LoadVerifier(testTrust(issuertest.Name, issuertest.Audience, path))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -39,11 +39,11 @@ func testVerifier(t *testing.T) *Verifier {
 func claimsAt(changes map[string]any) map[string]any {
 	claims := map[string]any{
 		"sub": "staff-01",
-		"iss": testissuer.Name,
-		"aud": testissuer.Audience,
+		"iss": issuertest.Name,
+		"aud": issuertest.Audience,
 		"exp": fixedNow.Unix() + 600,
 	}
-	return testissuer.Changed(claims, changes)
+	return issuertest.Changed(claims, changes)
 }
 
 // authenticate runs the whole authentication stage on Authorization fields.
@@ -95,7 +95,7 @@ func TestBearerCredentialExtraction(t *testing.T) {
 
 func TestSignatureAndAlgorithm(t *testing.T) {
 	v := testVerifier(t)
-	payload := testissuer.ClaimsJSON(claimsAt(nil))
+	payload := issuertest.ClaimsJSON(claimsAt(nil))
 	valid := issuer.SignRaw(`{"alg":"RS256","typ":"JWT","kid":"test-a"}`, payload)
 	segments := strings.Split(valid, ".")
 
@@ -104,10 +104,10 @@ func TestSignatureAndAlgorithm(t *testing.T) {
 	signature, _ := base64.RawURLEncoding.DecodeString(segments[2])
 	signature[10] ^= 0x01
 	badSignature := segments[0] + "." + segments[1] + "." + base64.RawURLEncoding.EncodeToString(signature)
-	elevated := testissuer.ClaimsJSON(claimsAt(map[string]any{"sub": "mgr-01"}))
-	swappedPayload := segments[0] + "." + testissuer.EncodeSegment(elevated) + "." + segments[2]
+	elevated := issuertest.ClaimsJSON(claimsAt(map[string]any{"sub": "mgr-01"}))
+	swappedPayload := segments[0] + "." + issuertest.EncodeSegment(elevated) + "." + segments[2]
 
-	other := testissuer.New(2048)
+	other := issuertest.New(2048)
 
 	cases := []struct {
 		name   string
@@ -119,10 +119,10 @@ func TestSignatureAndAlgorithm(t *testing.T) {
 		{"signature bit flipped", badSignature, "invalid_signature"},
 		{"payload replaced after signing", swappedPayload, "invalid_signature"},
 		{"untrusted key named by a trusted kid", other.SignRaw(`{"alg":"RS256","kid":"test-a"}`, payload), "invalid_signature"},
-		{"alg none with a fake signature", testissuer.EncodeSegment(`{"alg":"none"}`) + "." + testissuer.EncodeSegment(payload) + ".AAAA", "unsupported_header"},
-		{"alg None", testissuer.EncodeSegment(`{"alg":"None"}`) + "." + testissuer.EncodeSegment(payload) + ".AAAA", "unsupported_header"},
-		{"HS256 keyed with the public key", testissuer.HMACToken(issuer.PublicPEM(), payload), "unsupported_header"},
-		{"HS256 keyed with the key's DER", testissuer.HMACToken(publicDER(t), payload), "unsupported_header"},
+		{"alg none with a fake signature", issuertest.EncodeSegment(`{"alg":"none"}`) + "." + issuertest.EncodeSegment(payload) + ".AAAA", "unsupported_header"},
+		{"alg None", issuertest.EncodeSegment(`{"alg":"None"}`) + "." + issuertest.EncodeSegment(payload) + ".AAAA", "unsupported_header"},
+		{"HS256 keyed with the public key", issuertest.HMACToken(issuer.PublicPEM(), payload), "unsupported_header"},
+		{"HS256 keyed with the key's DER", issuertest.HMACToken(publicDER(t), payload), "unsupported_header"},
 		{"RS256 header over an HMAC signature", rs256HeaderOverHMAC(payload), "invalid_signature"},
 		{"PS256", other.SignRaw(`{"alg":"PS256"}`, payload), "unsupported_header"},
 		{"RS512", issuer.SignRaw(`{"alg":"RS512"}`, payload), "unsupported_header"},
@@ -156,24 +156,24 @@ func publicDER(t *testing.T) []byte {
 // rs256HeaderOverHMAC claims RS256 but carries an HMAC signature keyed with
 // the public key: the verifier must use RSA and fail.
 func rs256HeaderOverHMAC(payload string) string {
-	forged := testissuer.HMACToken(issuer.PublicPEM(), payload)
+	forged := issuertest.HMACToken(issuer.PublicPEM(), payload)
 	segments := strings.Split(forged, ".")
-	return testissuer.EncodeSegment(`{"alg":"RS256","kid":"test-a"}`) + "." + segments[1] + "." + segments[2]
+	return issuertest.EncodeSegment(`{"alg":"RS256","kid":"test-a"}`) + "." + segments[1] + "." + segments[2]
 }
 
 func TestHeaderMembers(t *testing.T) {
 	v := testVerifier(t)
-	payload := testissuer.ClaimsJSON(claimsAt(nil))
+	payload := issuertest.ClaimsJSON(claimsAt(nil))
 
 	// A key file that a kid could name: it must never be read.
-	other := testissuer.New(2048)
+	other := issuertest.New(2048)
 	otherKey := filepath.Join(t.TempDir(), "other.pem")
 	os.WriteFile(otherKey, other.PublicPEM(), 0o600)
 
 	cases := []struct {
 		name   string
 		header string
-		signer *testissuer.Issuer
+		signer *issuertest.Issuer
 		reason string
 	}{
 		{"typ JWT", `{"alg":"RS256","typ":"JWT","kid":"test-a"}`, issuer, ""},

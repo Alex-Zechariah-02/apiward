@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Alex-Zechariah-02/apiward/internal/issuertest"
 	"github.com/Alex-Zechariah-02/apiward/internal/pipeline"
 	"github.com/Alex-Zechariah-02/apiward/internal/session"
-	"github.com/Alex-Zechariah-02/apiward/internal/testissuer"
 )
 
 func TestFetchKeyReload(t *testing.T) {
@@ -30,13 +30,13 @@ func TestFetchKeyReload(t *testing.T) {
 	if err := json.Unmarshal([]byte(body), &before); err != nil || len(before.Items) != 1 || before.Items[0].Kid != "test-a" || !strings.HasPrefix(before.Items[0].Fingerprint, "sha256:") || before.Items[0].LoadedAt.IsZero() {
 		t.Fatalf("key metadata: %s (%v)", body, err)
 	}
-	other := testissuer.New(2048)
+	other := issuertest.New(2048)
 	keyFile := filepath.Join(e.dir, "next.pem")
 	if err := os.WriteFile(keyFile, other.PublicPEM(), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	config := e.nativeSettings()
-	trust := testTrust(testissuer.Name, testissuer.Audience, e.publicKey)
+	trust := testTrust(issuertest.Name, issuertest.Audience, e.publicKey)
 	trust.Keys = append(trust.Keys, pipeline.VerificationKey{Kid: "test-b", PublicKeyFile: keyFile})
 	section(config, "gateway")["jwt"] = trust
 	e.writeNative(config)
@@ -53,7 +53,7 @@ func TestFetchKeyReload(t *testing.T) {
 		t.Fatalf("valid reload: %d %s", code, reloaded)
 	}
 	oldToken := issuer.TokenFor(t, "alice")
-	newToken := other.SignRaw(`{"alg":"RS256","typ":"JWT","kid":"test-b"}`, testissuer.ClaimsJSON(testissuer.ValidClaims("alice")))
+	newToken := other.SignRaw(`{"alg":"RS256","typ":"JWT","kid":"test-b"}`, issuertest.ClaimsJSON(issuertest.ValidClaims("alice")))
 	for _, token := range []string{oldToken, newToken} {
 		if code, body := e.get("/a/x", "Authorization", "Bearer "+token); code != http.StatusOK {
 			t.Fatalf("rotated keys: %d %s", code, body)
@@ -146,19 +146,19 @@ func TestFetchKeyReloadPermissionsAndHTTPMaterial(t *testing.T) {
 func TestFetchConcurrentKeyReload(t *testing.T) {
 	e := newEnv(t)
 	seed(t, e.database, e.protectedPolicy(), seedOptions{})
-	other := testissuer.New(2048)
+	other := issuertest.New(2048)
 	keyFile := filepath.Join(e.dir, "concurrent.pem")
 	if err := os.WriteFile(keyFile, other.PublicPEM(), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	config := e.nativeSettings()
-	trust := testTrust(testissuer.Name, testissuer.Audience, e.publicKey)
+	trust := testTrust(issuertest.Name, issuertest.Audience, e.publicKey)
 	trust.Keys = append(trust.Keys, pipeline.VerificationKey{Kid: "test-b", PublicKeyFile: keyFile})
 	section(config, "gateway")["jwt"] = trust
 	e.writeNative(config)
 	e.start(binaries.plain)
 	s := e.mustLogin(harnessAdmin, harnessPassword)
-	tokens := []string{issuer.TokenFor(t, "alice"), other.SignRaw(`{"alg":"RS256","typ":"JWT","kid":"test-b"}`, testissuer.ClaimsJSON(testissuer.ValidClaims("alice")))}
+	tokens := []string{issuer.TokenFor(t, "alice"), other.SignRaw(`{"alg":"RS256","typ":"JWT","kid":"test-b"}`, issuertest.ClaimsJSON(issuertest.ValidClaims("alice")))}
 	var wg sync.WaitGroup
 	for worker := range 4 {
 		wg.Go(func() {

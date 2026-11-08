@@ -11,21 +11,21 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Alex-Zechariah-02/apiward/internal/issuertest"
 	"github.com/Alex-Zechariah-02/apiward/internal/pipeline"
-	"github.com/Alex-Zechariah-02/apiward/internal/testissuer"
 )
 
 // The gateway does not start without valid trust material, and changing a
 // key file alone changes nothing: keys are replaced by a reload or restart.
 func TestTrustMaterialAtStartup(t *testing.T) {
-	other := testissuer.New(2048)
+	other := issuertest.New(2048)
 	privateKey := filepath.Join(t.TempDir(), "private.pem")
 	der, _ := x509.MarshalPKCS8PrivateKey(other.Key())
 	os.WriteFile(privateKey, pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der}), 0o600)
 
 	trust := func(e *env, changes map[string]any) map[string]any {
-		config := map[string]any{"issuer": testissuer.Name, "audience": testissuer.Audience, "keys": []pipeline.VerificationKey{{Kid: "test-a", PublicKeyFile: e.publicKey}}}
-		return testissuer.Changed(config, changes)
+		config := map[string]any{"issuer": issuertest.Name, "audience": issuertest.Audience, "keys": []pipeline.VerificationKey{{Kid: "test-a", PublicKeyFile: e.publicKey}}}
+		return issuertest.Changed(config, changes)
 	}
 	// cause is the part of the startup error that shows why it was refused.
 	// The gateway logs the error as JSON, so quotes inside it appear escaped.
@@ -43,7 +43,7 @@ func TestTrustMaterialAtStartup(t *testing.T) {
 		}, "exactly one PEM PUBLIC KEY block"},
 		{"no issuer", func(e *env) any { return trust(e, map[string]any{"issuer": nil}) }, "gateway.jwt.issuer is required"},
 		{"no audience", func(e *env) any { return trust(e, map[string]any{"audience": nil}) }, "gateway.jwt.audience is required"},
-		{"several audiences", func(e *env) any { return trust(e, map[string]any{"audience": []string{testissuer.Audience, "other"}}) }, "gateway.jwt.audience: a JSON array is not a valid value"},
+		{"several audiences", func(e *env) any { return trust(e, map[string]any{"audience": []string{issuertest.Audience, "other"}}) }, "gateway.jwt.audience: a JSON array is not a valid value"},
 		{"remote key set", func(e *env) any { return trust(e, map[string]any{"jwks_url": "http://127.0.0.1:1/jwks"}) }, `unknown field \"jwks_url\"`},
 		{"second issuer", func(e *env) any { return trust(e, map[string]any{"issuers": []string{"https://other.test"}}) }, `unknown field \"issuers\"`},
 		{"clock leeway", func(e *env) any { return trust(e, map[string]any{"leeway": "30s"}) }, `unknown field \"leeway\"`},

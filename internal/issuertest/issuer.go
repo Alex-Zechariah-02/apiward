@@ -1,7 +1,7 @@
 // The test issuer: an RS256 key held in memory, the claims tests use and the
 // tokens, well-formed or deliberately broken, signed with it.
 
-package testissuer
+package issuertest
 
 import (
 	"crypto"
