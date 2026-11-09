@@ -155,7 +155,9 @@ func targetOf(path string) (string, bool, *refusal) {
 }
 
 // trial compiles the operation alone with the real compiler, so every rule
-// it enforces (targets, header names, schema subset) is checked by one code path.
+// it enforces (targets, header names, schema subset) is checked by one code
+// path. It uses the base's schema version, which decides the upstream forms
+// allowed (an upstream URL needs version 5).
 func (m *mapper) trial(op policy.Operation) *refusal {
 	var upstream policy.Upstream
 	for _, u := range m.options.Base.Upstreams {
@@ -164,7 +166,7 @@ func (m *mapper) trial(op policy.Operation) *refusal {
 		}
 	}
 	single := policy.Policy{
-		SchemaVersion: policy.SchemaVersion, Profile: policy.ProfileCore,
+		SchemaVersion: m.options.Base.SchemaVersion, Profile: policy.ProfileCore,
 		Upstreams:  []policy.Upstream{upstream},
 		APIs:       []policy.API{{ID: m.options.API, Upstream: upstream.ID}},
 		Operations: []policy.Operation{op},

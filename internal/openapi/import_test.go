@@ -75,6 +75,26 @@ func TestImportOpenAPI(t *testing.T) {
 		}
 	})
 
+	t.Run("onto an upstream URL", func(t *testing.T) {
+		// A version 5 base reaching the API's upstream by URL maps the
+		// description exactly as a base that dials it.
+		options := testOptions()
+		options.Base.SchemaVersion = policy.LatestSchemaVersion
+		options.Base.Upstreams[0] = policy.Upstream{ID: "orders-svc", URL: "https://10.0.0.5:8443", TLS: "fetch"}
+		_, report, err := Import(fixture(t, "orders.json"), JSON, options)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, dial, err := Import(fixture(t, "orders.json"), JSON, testOptions())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got, want := generic(t, report), generic(t, dial); !reflect.DeepEqual(got, want) {
+			gotJSON, _ := json.MarshalIndent(got, "", "  ")
+			t.Fatalf("report differs from the dial base's:\n%s", gotJSON)
+		}
+	})
+
 	t.Run("orders policy", func(t *testing.T) {
 		out, _, err := Import(fixture(t, "orders.json"), JSON, testOptions())
 		if err != nil {
