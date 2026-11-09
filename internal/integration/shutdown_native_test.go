@@ -82,8 +82,8 @@ func lossOf(events []map[string]any) int {
 // The native process, stopped by a real Ctrl+Break, writes every event it
 // accepted before the stop, also when they wait behind a writer held until
 // the drain has begun: the process exits with status 0, and the reopened audit
-// file holds each of them once. Events refused because the queue was full are
-// counted in the file, exactly. The next start finds a complete file.
+// file holds each of them once. Events refused because the queue had no room
+// for them are counted in the file, exactly. The next start finds a complete file.
 func TestNativeStopDrainsQueuedEvents(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
@@ -91,7 +91,7 @@ func TestNativeStopDrainsQueuedEvents(t *testing.T) {
 		lost   int
 	}{
 		{"events behind a held writer", 300, 0},
-		{"more events than the queue holds", audit.AuditQueueSize + 10, 10},
+		{"more events than refusals may queue", audit.RecordRoom(audit.AuditQueueSize) + 10, 10},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			e := gatewaytest.NewEnv(t)
@@ -123,7 +123,7 @@ func TestNativeStopDrainsQueuedEvents(t *testing.T) {
 			for i, id := range ids {
 				want := 1
 				if i >= len(ids)-tc.lost {
-					want = 0 // refused: the queue was full
+					want = 0 // refused: no room left for refusals
 				}
 				if recorded[id] != want {
 					t.Fatalf("request %d (%s) recorded %d times, want %d", i, id, recorded[id], want)

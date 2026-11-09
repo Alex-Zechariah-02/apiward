@@ -87,16 +87,26 @@ func (a *AuditLog) Commit(ctx context.Context, e Event) error {
 }
 
 // Record queues an event without waiting. An event that cannot be queued,
-// because the log has failed, its queue is full or it is closing, is counted;
-// the writer writes the count with its next batch, or as it ends.
+// because the log has failed, its queue has no room for it (see RecordRoom)
+// or it is closing, is counted; the writer writes the count with its next
+// batch, or as it ends.
 func (a *AuditLog) Record(e Event) {
 	if a.failed.Load() || a.enqueue(e, nil) != nil {
 		a.lost.Add(1)
 	}
 }
 
+// RecordRoom is how many queued events still leave room for an event nobody
+// waits for: the last quarter of a queue of capacity events is kept for
+// acknowledged ones (admissions, administrator intents). Refused requests
+// need no sign-in, and a flood of their records must not refuse those.
+func RecordRoom(capacity int) int { return capacity - capacity/4 }
+
 // enqueue stamps and queues an event, unless the log is closing or its queue
-// is full. Queueing never waits, so the read lock is held only briefly.
+// has no room for it: an acknowledged event (done set) may take any free
+// place, any other only within RecordRoom. A refused event keeps its
+// sequence number, so the gap stays visible. Queueing never waits, so the
+// read lock is held only briefly.
 func (a *AuditLog) enqueue(e Event, done chan error) error {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
@@ -106,8 +116,13 @@ func (a *AuditLog) enqueue(e Event, done chan error) error {
 	// Counted before the writer can receive it, so written never exceeds
 	// accepted.
 	a.accepted.Add(1)
+	entry := auditEntry{event: a.stamp(e), done: done}
+	if done == nil && len(a.queue) >= RecordRoom(cap(a.queue)) {
+		a.accepted.Add(^uint64(0))
+		return errQueueFull
+	}
 	select {
-	case a.queue <- auditEntry{event: a.stamp(e), done: done}:
+	case a.queue <- entry:
 		return nil
 	default:
 		a.accepted.Add(^uint64(0))

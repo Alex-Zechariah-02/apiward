@@ -28,3 +28,21 @@ func TestAuditQueueIsBounded(t *testing.T) {
 		t.Fatalf("lost %d, want 1", a.lost.Load())
 	}
 }
+
+// Events nobody waits for, such as refused requests, fill at most three
+// quarters of the queue: with the writer stalled, a flood of them is counted
+// as lost and an admission is still queued.
+func TestAuditQueueKeepsRoomForAcknowledged(t *testing.T) {
+	a := &AuditLog{boot: "test", queue: make(chan auditEntry, 8), done: make(chan struct{})}
+	for range 8 {
+		a.Record(Event{Kind: "request.rejected"})
+	}
+	if len(a.queue) != 6 || a.lost.Load() != 2 {
+		t.Fatalf("queued %d, lost %d; want 6 and 2", len(a.queue), a.lost.Load())
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	if err := a.Commit(ctx, Event{Kind: "request.admitted"}); err == nil || !strings.Contains(err.Error(), "timed out") {
+		t.Fatalf("an admission behind a flood of records was not queued: %v", err)
+	}
+}

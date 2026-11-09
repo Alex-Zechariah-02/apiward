@@ -14,15 +14,16 @@ import (
 	"time"
 )
 
-// Events refused because the queue was full are counted, and the count is
-// written with the queued events when the writer continues: the stop
-// reports no loss it did not see and hides none it did.
+// Events refused because the queue had no room for them are counted, and
+// the count is written with the queued events when the writer continues:
+// the stop reports no loss it did not see and hides none it did.
 func TestAuditCloseRecordsLoss(t *testing.T) {
 	a, release := heldAudit(t)
-	for i := range AuditQueueSize + 10 {
+	room := RecordRoom(AuditQueueSize)
+	for i := range room + 10 {
 		a.Record(Event{Kind: "request.rejected", RequestID: strconv.Itoa(i)})
 	}
-	if a.lost.Load() != 10 || a.accepted.Load() != AuditQueueSize {
+	if a.lost.Load() != 10 || a.accepted.Load() != uint64(room) {
 		t.Fatalf("lost %d, accepted %d", a.lost.Load(), a.accepted.Load())
 	}
 	release()
@@ -30,7 +31,7 @@ func TestAuditCloseRecordsLoss(t *testing.T) {
 		t.Fatal(err)
 	}
 	events := fileEvents(t, a.path)
-	if len(events) != AuditQueueSize+1 || lossCounted(events) != 10 || lossRecords(events) != 1 {
+	if len(events) != room+1 || lossCounted(events) != 10 || lossRecords(events) != 1 {
 		t.Fatalf("%d records, loss %d in %d records", len(events), lossCounted(events), lossRecords(events))
 	}
 	for i, e := range events[1:] {
@@ -38,9 +39,9 @@ func TestAuditCloseRecordsLoss(t *testing.T) {
 			t.Fatalf("record %d: request %q, seq %d", i, e.RequestID, e.Seq)
 		}
 	}
-	// The refused events kept their sequence numbers 1025 to 1034, so the
-	// gap is visible; the loss record comes after them.
-	if loss := events[0]; loss.Kind != "audit.loss" || loss.Seq != AuditQueueSize+11 {
+	// The refused events kept their sequence numbers room+1 to room+10, so
+	// the gap is visible; the loss record comes after them.
+	if loss := events[0]; loss.Kind != "audit.loss" || loss.Seq != uint64(room+11) {
 		t.Fatalf("first record %+v", loss)
 	}
 }
@@ -51,14 +52,15 @@ func TestAuditCloseRecordsLoss(t *testing.T) {
 // with the failed write that carried it.
 func TestAuditCloseReportsWriterFailure(t *testing.T) {
 	a, release := heldAudit(t)
-	for i := range AuditQueueSize - 1 {
+	room := RecordRoom(AuditQueueSize)
+	for i := range room {
 		a.Record(Event{Kind: "request.rejected", RequestID: strconv.Itoa(i)})
 	}
 	ack := make(chan error, 1)
 	go func() { ack <- a.Commit(context.Background(), Event{Kind: "request.admitted"}) }()
-	// accepted counts an event before its send completes, so only a full
-	// queue shows the admission has taken the last slot.
-	waitFor(t, time.Now().Add(5*time.Second), "the admission queued", func() bool { return len(a.queue) == AuditQueueSize })
+	// accepted counts an event before its send completes, so only the queue's
+	// length shows the admission has been queued behind the records.
+	waitFor(t, time.Now().Add(5*time.Second), "the admission queued", func() bool { return len(a.queue) == room+1 })
 	for range 3 {
 		a.Record(Event{Kind: "request.rejected"})
 	}
@@ -66,7 +68,7 @@ func TestAuditCloseReportsWriterFailure(t *testing.T) {
 	a.file.Close()
 	release()
 	err := a.Close(context.Background())
-	if err == nil || !strings.Contains(err.Error(), fmt.Sprintf("%d accepted events and the count of 3 refused events not written", AuditQueueSize)) {
+	if err == nil || !strings.Contains(err.Error(), fmt.Sprintf("%d accepted events and the count of 3 refused events not written", room+1)) {
 		t.Fatalf("close after the write failure: %v", err)
 	}
 	if !a.failed.Load() || !errors.Is(<-ack, errAuditFailed) {
@@ -103,12 +105,13 @@ func TestAuditCloseKeepsLossAfterFailedRotation(t *testing.T) {
 	if _, err := a.open(); err != nil {
 		t.Fatal(err)
 	}
-	for i := range AuditQueueSize + 3 {
+	room := RecordRoom(AuditQueueSize)
+	for i := range room + 3 {
 		a.Record(Event{Kind: "request.rejected", RequestID: strconv.Itoa(i)})
 	}
 	go a.run()
 	err := a.Close(context.Background())
-	if err == nil || !strings.Contains(err.Error(), fmt.Sprintf("%d accepted events and the count of 3 refused events not written", AuditQueueSize)) {
+	if err == nil || !strings.Contains(err.Error(), fmt.Sprintf("%d accepted events and the count of 3 refused events not written", room)) {
 		t.Fatalf("close after the failed rotation: %v", err)
 	}
 	if !a.failed.Load() {

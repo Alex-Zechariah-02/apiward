@@ -115,15 +115,17 @@ func TestAuditCloseDrainsAcceptedEvents(t *testing.T) {
 	for _, n := range []int{1, 5, auditBatchSize + 1, AuditQueueSize} {
 		t.Run(strconv.Itoa(n), func(t *testing.T) {
 			a, release := heldAudit(t)
-			commits := min(2, n-1)
+			// Records may fill only RecordRoom places, so a full queue holds
+			// acknowledged events in the rest; the records go first.
+			commits := max(min(2, n-1), n-RecordRoom(AuditQueueSize))
+			for i := range n - commits {
+				a.Record(Event{Kind: "request.rejected", RequestID: strconv.Itoa(i)})
+			}
 			acks := make(chan error, commits)
 			for i := range commits {
 				go func() {
 					acks <- a.Commit(context.Background(), Event{Kind: "request.admitted", RequestID: fmt.Sprintf("commit-%d", i)})
 				}()
-			}
-			for i := range n - commits {
-				a.Record(Event{Kind: "request.rejected", RequestID: strconv.Itoa(i)})
 			}
 			waitFor(t, time.Now().Add(5*time.Second), "every event queued", func() bool { return a.accepted.Load() == uint64(n) })
 			if a.lost.Load() != 0 {
