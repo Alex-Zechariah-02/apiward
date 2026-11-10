@@ -42,7 +42,7 @@ func TestIPv6RateKey(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	key := func(s string) string { return h.rateAddress(netip.MustParseAddr(s)) }
+	key := func(s string) string { return h.rateAddress(netip.MustParseAddr(s), s) }
 	if key("2001:db8::1") != key("2001:db8::ffff:1") || key("2001:db8::1") == key("2001:db8:0:1::1") || key("192.0.2.1") != "192.0.2.1" {
 		t.Fatalf("keys: %s %s %s %s", key("2001:db8::1"), key("2001:db8::ffff:1"), key("2001:db8:0:1::1"), key("192.0.2.1"))
 	}

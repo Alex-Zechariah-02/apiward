@@ -81,6 +81,8 @@ func TestBearerCredentialExtraction(t *testing.T) {
 		{"standard base64 characters", []string{"Bearer " + strings.Replace(token, "-", "+", 1) + "/"}, "malformed_credential"},
 		{"two segments", []string{"Bearer " + token[:strings.LastIndex(token, ".")]}, "malformed_credential"},
 		{"four segments", []string{"Bearer " + token + ".x"}, "malformed_credential"},
+		{"empty payload", []string{"Bearer " + token[:strings.Index(token, ".")+1] + token[strings.LastIndex(token, "."):]}, "malformed_credential"},
+		{"empty header", []string{"Bearer " + token[strings.Index(token, "."):]}, "malformed_credential"},
 		{"empty signature", []string{"Bearer " + token[:strings.LastIndex(token, ".")+1]}, "malformed_credential"},
 		{"oversize", []string{"Bearer " + token + strings.Repeat("A", MaxTokenBytes)}, "malformed_credential"},
 		{"control character", []string{"Bearer " + token + "\x00"}, "malformed_credential"},

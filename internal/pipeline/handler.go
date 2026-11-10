@@ -37,7 +37,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if peer, err := netip.ParseAddrPort(r.RemoteAddr); err == nil {
 		addr := peer.Addr().Unmap()
 		q.event.ClientAddress = addr.String()
-		q.rateAddress = h.rateAddress(addr)
+		q.rateAddress = h.rateAddress(addr, q.event.ClientAddress)
 	}
 	// Keep credentials only for authentication; discard client identity metadata
 	// before any ingress refusal as well as before forwarding.

@@ -45,23 +45,22 @@ func isCompactToken(token string) bool {
 	if len(token) > MaxTokenBytes {
 		return false
 	}
-	segments := strings.Split(token, ".")
-	if len(segments) != 3 {
-		return false
-	}
-	for _, segment := range segments {
-		if segment == "" {
-			return false
-		}
-		for i := 0; i < len(segment); i++ {
-			c := segment[i]
-			alphanumeric := (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')
-			if !alphanumeric && c != '-' && c != '_' {
+	dots, start := 0, 0 // start: index where the current segment begins
+	for i := 0; i < len(token); i++ {
+		c := token[i]
+		if c == '.' {
+			if i == start || dots == 2 {
 				return false
 			}
+			dots, start = dots+1, i+1
+			continue
+		}
+		alphanumeric := (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')
+		if !alphanumeric && c != '-' && c != '_' {
+			return false
 		}
 	}
-	return true
+	return dots == 2 && start < len(token)
 }
 
 // verify checks a compact token at the given time and returns its subject,

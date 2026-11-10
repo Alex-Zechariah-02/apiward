@@ -36,11 +36,12 @@ func (h *Handler) admitAddress(q *request) bool {
 }
 
 // rateAddress is the rate key of a client address: an IPv4 address itself,
-// an IPv6 address masked to the configured prefix. Blocked-address checks
-// and the security log keep the exact address.
-func (h *Handler) rateAddress(addr netip.Addr) string {
+// an IPv6 address masked to the configured prefix. text is addr's text
+// form, already built for the record. Blocked-address checks and the
+// security log keep the exact address.
+func (h *Handler) rateAddress(addr netip.Addr, text string) string {
 	if !addr.Is6() {
-		return addr.String()
+		return text
 	}
 	// New accepts only prefix lengths 48 to 128, which every IPv6 address has.
 	prefix, _ := addr.Prefix(h.ipv6Prefix)

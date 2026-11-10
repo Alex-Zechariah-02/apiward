@@ -37,7 +37,7 @@ func DecodeBounded(data []byte, maxDepth, maxValues int) (any, string) {
 
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.UseNumber()
-	var stack []*container
+	var stack []container
 	values := 0
 	for {
 		token, err := decoder.Token()
@@ -47,7 +47,7 @@ func DecodeBounded(data []byte, maxDepth, maxValues int) (any, string) {
 
 		var top *container
 		if len(stack) > 0 {
-			top = stack[len(stack)-1]
+			top = &stack[len(stack)-1]
 		}
 		if top != nil && top.members != nil && !top.named {
 			if delim, ok := token.(json.Delim); !ok || delim != '}' {
@@ -68,14 +68,15 @@ func DecodeBounded(data []byte, maxDepth, maxValues int) (any, string) {
 				if values > maxValues || len(stack) == maxDepth {
 					return nil, "limit_exceeded"
 				}
-				opened := &container{}
+				opened := container{}
 				if t == '{' {
 					opened.members = map[string]any{}
 				}
 				stack = append(stack, opened)
 				continue
 			}
-			// The container is complete.
+			// The container is complete. top still points at its element:
+			// shortening the slice keeps the backing array.
 			stack = stack[:len(stack)-1]
 			switch {
 			case top.members != nil:
@@ -105,7 +106,7 @@ func DecodeBounded(data []byte, maxDepth, maxValues int) (any, string) {
 			}
 			return value, ""
 		}
-		parent := stack[len(stack)-1]
+		parent := &stack[len(stack)-1]
 		if parent.members != nil {
 			parent.members[parent.name] = value
 			parent.named = false
@@ -129,9 +130,11 @@ func hasLoneSurrogate(data []byte) bool {
 		return rune(code), err == nil && code >= 0xd800 && code <= 0xdfff
 	}
 	for i := 0; i < len(data); i++ {
-		if data[i] != '\\' {
-			continue
+		next := bytes.IndexByte(data[i:], '\\')
+		if next < 0 {
+			return false
 		}
+		i += next
 		code, isSurrogate := surrogate(i)
 		switch {
 		case !isSurrogate:
