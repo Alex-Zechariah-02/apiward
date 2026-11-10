@@ -27,7 +27,7 @@ COPY module ./module
 COPY policy ./policy
 COPY --from=dashboard /src/dashboard/dist ./internal/adminui/dist
 RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
-    go build -trimpath -tags embedui -o /out/gateway ./cmd/gateway
+    go build -trimpath -ldflags="-s -w" -tags embedui -o /out/gateway ./cmd/gateway
 # An empty data folder, so a new named volume mounted on it belongs to the
 # image's user.
 RUN mkdir -m 700 /out/data
