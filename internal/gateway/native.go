@@ -5,7 +5,6 @@
 package gateway
 
 import (
-	"context"
 	"crypto/tls"
 	"errors"
 	"flag"
@@ -192,6 +191,7 @@ type nativeGateway struct {
 	redirect   *http.Server // nil without a redirect listener
 	// certificate is the data listener's; nil when it serves plain HTTP.
 	certificate *servingCertificate
+	upstreams   upstreams
 	// served receives the data-plane, metrics and redirect servers' Serve
 	// results; done closes when the stop begins.
 	served chan error
@@ -241,7 +241,7 @@ func startNative(cfg nativeConfig, logger *slog.Logger) (*nativeGateway, error) 
 		ErrorLog:                     slog.NewLogLogger(logger.Handler(), slog.LevelWarn),
 	}
 	cfg.server().Apply(data)
-	g := &nativeGateway{controller: c, data: data, metrics: d.metrics, certificate: d.certificate, served: make(chan error, 3), done: make(chan struct{})}
+	g := &nativeGateway{controller: c, data: data, metrics: d.metrics, certificate: d.certificate, upstreams: d.upstreams, served: make(chan error, 3), done: make(chan struct{})}
 	g.stop = sync.OnceValue(g.shutdown)
 	go func() { g.served <- g.data.Serve(listener) }()
 	go func() { g.served <- g.metrics.Serve(metricsListener) }()
@@ -256,35 +256,6 @@ func startNative(cfg nativeConfig, logger *slog.Logger) (*nativeGateway, error) 
 	logger.Info("listening", "data", listener.Addr().String(), "admin", cfg.controller.AdminListen)
 	d.logAdmission(logger)
 	return g, nil
-}
-
-// shutdown stops the gateway gracefully: admission ends first, then the data
-// plane stops accepting connections and its requests in progress finish,
-// then the controller stops its Admin API the same way, writes the audit
-// events queued until then and closes the database. Requests in progress on
-// both listeners share one wait of ShutdownWait; the audit drain has its
-// own auditDrainWait. It returns nil only when every step completed.
-func (g *nativeGateway) shutdown() error {
-	g.controller.BeginStop()
-	close(g.done)
-	ctx, cancel := context.WithTimeout(context.Background(), controller.ShutdownWait)
-	defer cancel()
-	var errs []error
-	if g.redirect != nil {
-		if err := g.redirect.Shutdown(ctx); err != nil {
-			errs = append(errs, fmt.Errorf("redirect listener shutdown: %w", err), g.redirect.Close())
-		}
-	}
-	if err := g.metrics.Shutdown(ctx); err != nil {
-		errs = append(errs, fmt.Errorf("metrics listener shutdown: %w", err), g.metrics.Close())
-	}
-	if err := g.data.Shutdown(ctx); err != nil {
-		// Requests still running are cut off; their clients see their
-		// connections close.
-		errs = append(errs, fmt.Errorf("data listener shutdown: %w", err), g.data.Close())
-	}
-	errs = append(errs, g.controller.StopWithin(ctx))
-	return errors.Join(errs...)
 }
 
 // printVersion runs the version command, which takes no options and reads no

@@ -51,6 +51,16 @@ const (
 	defaultIdleKeepAlive = 5 * time.Minute
 	defaultDial          = 2 * time.Second
 	defaultUpstreamWait  = 5 * time.Second
+	// Upstream connection reuse: idle connections per endpoint, closed
+	// after defaultIdleConn, which must stay below the upstream server's
+	// own idle timeout (an upstream with a shorter one needs a lower
+	// setting), and TLS sessions resumed for at most defaultSessionLife.
+	defaultMaxIdle     = 16
+	maxIdlePerUpstream = 1024
+	defaultIdleConn    = 30 * time.Second
+	defaultSessionLife = time.Hour
+	minSessionLife     = time.Minute
+	maxSessionLife     = 24 * time.Hour
 )
 
 // nativeFile is the configuration file as written. A setting that may be
@@ -103,6 +113,9 @@ type upstreamSettings struct {
 	DialTimeout           *string                   `json:"dial_timeout"`
 	ResponseHeaderTimeout *string                   `json:"response_header_timeout"`
 	ReadIdleTimeout       *string                   `json:"read_idle_timeout"`
+	MaxIdlePerUpstream    *int                      `json:"max_idle_per_upstream"`
+	IdleConnTimeout       *string                   `json:"idle_conn_timeout"`
+	TLSSessionLifetime    *string                   `json:"tls_session_lifetime"`
 	AllowPublicAddresses  bool                      `json:"allow_public_addresses"`
 	TLSProfiles           []forward.ProfileSettings `json:"tls_profiles"`
 }
@@ -119,6 +132,7 @@ type nativeConfig struct {
 	writeTimeout      time.Duration
 	idleTimeout       time.Duration
 	upstream          forward.UpstreamTimeouts
+	pool              forward.PoolSettings
 	// tls is the data listener's TLS; nil serves plain HTTP. redirect is
 	// the HTTP-to-HTTPS listener; nil when there is none.
 	tls      *dataTLS

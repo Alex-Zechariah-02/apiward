@@ -57,6 +57,9 @@ type ProfileInfo struct {
 type Network struct {
 	public   bool
 	profiles map[string]*profile
+	// sessions holds each profile's TLS session cache, "" for endpoints
+	// without a profile; empty when resumption is off.
+	sessions map[string]*sessionCache
 }
 
 type profile struct {
@@ -66,12 +69,14 @@ type profile struct {
 }
 
 // LoadNetwork reads every profile's files. It fails on the first profile
-// that is invalid, naming it; it never returns a partial set.
-func LoadNetwork(public bool, settings []ProfileSettings) (*Network, error) {
+// that is invalid, naming it; it never returns a partial set. TLS sessions
+// to upstreams are resumed for at most sessionLifetime; 0 turns resumption
+// off.
+func LoadNetwork(public bool, settings []ProfileSettings, sessionLifetime time.Duration) (*Network, error) {
 	if len(settings) > MaxProfiles {
 		return nil, fmt.Errorf("upstream.tls_profiles holds more than %d profiles", MaxProfiles)
 	}
-	n := &Network{public: public, profiles: map[string]*profile{}}
+	n := &Network{public: public, profiles: map[string]*profile{}, sessions: map[string]*sessionCache{}}
 	for i, s := range settings {
 		if err := policy.CheckID(s.ID, "id"); err != nil {
 			return nil, fmt.Errorf("upstream.tls_profiles[%d].id is not a valid identifier", i)
@@ -84,6 +89,12 @@ func LoadNetwork(public bool, settings []ProfileSettings) (*Network, error) {
 			return nil, fmt.Errorf("upstream TLS profile %q: %w", s.ID, err)
 		}
 		n.profiles[s.ID] = p
+	}
+	if sessionLifetime > 0 {
+		n.sessions[""] = newSessionCache(sessionLifetime)
+		for id := range n.profiles {
+			n.sessions[id] = newSessionCache(sessionLifetime)
+		}
 	}
 	return n, nil
 }
@@ -224,10 +235,13 @@ func (n *Network) Profiles() []ProfileInfo {
 
 // clientConfig is the TLS configuration of a connection to e: TLS 1.2 or
 // later, HTTP/1.1 only, the certificate verified for e's host against the
-// profile's CA pin or the system roots, and the profile's client
-// certificate if it has one.
+// profile's CA pin or the system roots, the profile's client certificate if
+// it has one, and the profile's session cache when resumption is on.
 func (n *Network) clientConfig(e *compile.Endpoint) (*tls.Config, error) {
 	config := &tls.Config{MinVersion: tls.VersionTLS12, ServerName: e.ServerName(), NextProtos: []string{"http/1.1"}}
+	if cache := n.sessions[e.Profile()]; cache != nil {
+		config.ClientSessionCache = cache
+	}
 	if e.Profile() == "" {
 		return config, nil
 	}

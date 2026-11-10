@@ -52,7 +52,7 @@ func TestUpstreamThatStopsReadingTimesOut(t *testing.T) {
 		t.Fatal("no destination")
 	}
 	short := UpstreamTimeouts{Dial: time.Second, ResponseHeader: 300 * time.Millisecond, ReadIdle: time.Second}
-	proxy, err := NewUpstreamProxy(short, closed, slog.New(slog.DiscardHandler))
+	proxy, err := NewUpstreamProxy(short, testPool, closed, slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)
 	}

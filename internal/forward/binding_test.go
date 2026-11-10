@@ -19,9 +19,12 @@ import (
 // bounds are the dial, response-header and read-idle limits used here.
 var bounds = UpstreamTimeouts{Dial: 2 * time.Second, ResponseHeader: 5 * time.Second, ReadIdle: 5 * time.Second}
 
+// testPool is the default pool, so these tests send through it.
+var testPool = PoolSettings{MaxIdle: 16, IdleTimeout: 30 * time.Second}
+
 // closed is the operator default: no public addresses, no TLS profiles.
 func closed() *Network {
-	n, err := LoadNetwork(false, nil)
+	n, err := LoadNetwork(false, nil, 0)
 	if err != nil {
 		panic(err)
 	}
@@ -38,17 +41,17 @@ func TestNativeForwardingProxyRefusesIncompleteSetup(t *testing.T) {
 		"no read-idle bound":       {Dial: time.Second, ResponseHeader: time.Second},
 		"negative read-idle bound": {Dial: time.Second, ResponseHeader: time.Second, ReadIdle: -time.Second},
 	} {
-		if p, err := NewUpstreamProxy(timeouts, closed, logger); p != nil || err == nil {
+		if p, err := NewUpstreamProxy(timeouts, testPool, closed, logger); p != nil || err == nil {
 			t.Errorf("%s: %v, %v", name, p, err)
 		}
 	}
-	if p, err := NewUpstreamProxy(bounds, closed, nil); p != nil || err == nil {
+	if p, err := NewUpstreamProxy(bounds, testPool, closed, nil); p != nil || err == nil {
 		t.Errorf("without a logger: %v, %v", p, err)
 	}
-	if p, err := NewUpstreamProxy(bounds, nil, logger); p != nil || err == nil {
+	if p, err := NewUpstreamProxy(bounds, testPool, nil, logger); p != nil || err == nil {
 		t.Errorf("without network settings: %v, %v", p, err)
 	}
-	p, err := NewUpstreamProxy(bounds, closed, logger)
+	p, err := NewUpstreamProxy(bounds, testPool, closed, logger)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -71,7 +74,7 @@ func TestUnusableBindingSendsNothing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	p, err := NewUpstreamProxy(bounds, closed, slog.New(slog.DiscardHandler))
+	p, err := NewUpstreamProxy(bounds, testPool, closed, slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -1,6 +1,7 @@
-// The upstream proxy: it sends each admitted request, once and on a new
-// connection, to the upstream bound to it, copies the response back through
-// pooled buffers, and classifies an exchange that fails before any response.
+// The upstream proxy: it sends each admitted request once, on an idle pooled
+// connection or a new one, to the upstream bound to it, copies the response
+// back through pooled buffers, and classifies an exchange that fails before
+// any response.
 
 package forward
 
@@ -53,9 +54,11 @@ var (
 )
 
 // upstreamProxy forwards admitted requests to the upstream bound to them,
-// using the standard library's reverse proxy over one dedicated transport.
+// using the standard library's reverse proxy over the connection pool, or
+// over a transport that closes every connection when pooling is off.
 type upstreamProxy struct {
 	transport *http.Transport
+	pool      *connPool // nil: every request on a new connection
 	dialer    *net.Dialer
 	network   func() *Network
 	readIdle  time.Duration
@@ -87,12 +90,15 @@ func (c *copyBuffers) Put(buffer []byte) {
 
 // NewUpstreamProxy returns the proxy whose exchanges are bounded by timeouts.
 // Every timeout must be positive: a zero would leave its phase unbounded.
-// network returns the current upstream network settings at each connection.
-// The reverse proxy's own warnings, such as a failed response body read, go to
-// logger.
-func NewUpstreamProxy(timeouts UpstreamTimeouts, network func() *Network, logger *slog.Logger) (*upstreamProxy, error) {
+// pool bounds the idle connections kept. network returns the current
+// upstream network settings at each connection. The reverse proxy's own
+// warnings, such as a failed response body read, go to logger.
+func NewUpstreamProxy(timeouts UpstreamTimeouts, pool PoolSettings, network func() *Network, logger *slog.Logger) (*upstreamProxy, error) {
 	if timeouts.Dial <= 0 || timeouts.ResponseHeader <= 0 || timeouts.ReadIdle <= 0 {
 		return nil, errors.New("every upstream timeout must be positive")
+	}
+	if pool.MaxIdle < 0 || pool.MaxIdle > 0 && pool.IdleTimeout <= 0 {
+		return nil, errors.New("a pool needs a positive idle timeout")
 	}
 	if logger == nil || network == nil {
 		return nil, errors.New("a logger and the network settings are required")
@@ -114,18 +120,38 @@ func NewUpstreamProxy(timeouts UpstreamTimeouts, network func() *Network, logger
 		DialContext:           p.dial,
 		DialTLSContext:        p.dialTLS,
 		ResponseHeaderTimeout: timeouts.ResponseHeader,
-		// Every request is sent once, on a new connection. A transport that
-		// keeps idle connections resends a request it deems replayable (GET,
-		// HEAD, OPTIONS, or any request with an Idempotency-Key and no body)
-		// when a reused connection fails, though the upstream may already
-		// have acted on it.
+		// This transport sends a request on a new connection only. A
+		// transport that keeps idle connections resends a request it deems
+		// replayable (GET, HEAD, OPTIONS, or any request with an
+		// Idempotency-Key and no body) when a reused connection fails,
+		// though the upstream may already have acted on it; the pool reuses
+		// connections without that resend.
 		DisableKeepAlives: true,
 		// The upstream receives the client's Accept-Encoding, not one the
 		// transport adds, and the client receives the upstream's bytes.
 		DisableCompression: true,
 		Protocols:          protocols,
 	}
+	if pool.MaxIdle > 0 {
+		p.pool = newConnPool(pool, p.transport, network)
+	}
 	return p, nil
+}
+
+// Close closes the idle pooled connections; a request still in progress
+// keeps its connection until it ends.
+func (p *upstreamProxy) Close() {
+	if p.pool != nil {
+		p.pool.close()
+	}
+}
+
+// roundTripper is what the reverse proxy sends through.
+func (p *upstreamProxy) roundTripper() http.RoundTripper {
+	if p.pool != nil {
+		return p.pool
+	}
+	return p.transport
 }
 
 // forward sends an admitted request to the upstream bound to it and copies
@@ -153,7 +179,7 @@ func (p *upstreamProxy) Forward(w http.ResponseWriter, r *http.Request) error {
 	var failure error
 	proxy := &httputil.ReverseProxy{
 		Rewrite:    func(pr *httputil.ProxyRequest) { rewriteToUpstream(pr, d.Endpoint(), d.Path()) },
-		Transport:  p.transport,
+		Transport:  p.roundTripper(),
 		ErrorLog:   p.errorLog,
 		BufferPool: &p.buffers,
 		ModifyResponse: func(res *http.Response) error {

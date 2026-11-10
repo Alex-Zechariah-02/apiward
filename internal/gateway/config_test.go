@@ -59,7 +59,7 @@ func TestNativeConfigSettings(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Without upstream settings: no public addresses and no TLS profiles.
-	closed, err := forward.LoadNetwork(false, nil)
+	closed, err := forward.LoadNetwork(false, nil, time.Hour)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -85,6 +85,7 @@ func TestNativeConfigSettings(t *testing.T) {
 		writeTimeout:      30 * time.Second,
 		idleTimeout:       5 * time.Minute,
 		upstream:          forward.UpstreamTimeouts{Dial: 2 * time.Second, ResponseHeader: 5 * time.Second, ReadIdle: 5 * time.Second},
+		pool:              forward.PoolSettings{MaxIdle: 16, IdleTimeout: 30 * time.Second},
 	}
 	if !reflect.DeepEqual(cfg, want) {
 		t.Fatalf("defaults\n got %+v\nwant %+v", cfg, want)
@@ -100,7 +101,8 @@ func TestNativeConfigSettings(t *testing.T) {
 			"max_body_bytes": 2048, "max_header_bytes": 32768, "read_header_timeout": "2s", "read_timeout": "3s",
 			"write_timeout": "4s", "idle_timeout": "1m",
 		})
-		s["upstream"] = map[string]any{"dial_timeout": "1s", "response_header_timeout": "3s", "read_idle_timeout": "2m"}
+		s["upstream"] = map[string]any{"dial_timeout": "1s", "response_header_timeout": "3s", "read_idle_timeout": "2m",
+			"max_idle_per_upstream": 0, "idle_conn_timeout": "5s", "tls_session_lifetime": "10m"}
 	}))
 	if err != nil {
 		t.Fatal(err)
@@ -110,7 +112,8 @@ func TestNativeConfigSettings(t *testing.T) {
 		c.AuditMaxBytes != 1<<20 || c.AuditMaxFiles != 4 || cfg.adminUI != site ||
 		cfg.maxBodyBytes != 2048 || cfg.headerLimit != 32768 || cfg.readHeaderTimeout != 2*time.Second ||
 		cfg.readTimeout != 3*time.Second || cfg.writeTimeout != 4*time.Second || cfg.idleTimeout != time.Minute ||
-		cfg.upstream != (forward.UpstreamTimeouts{Dial: time.Second, ResponseHeader: 3 * time.Second, ReadIdle: 2 * time.Minute}) {
+		cfg.upstream != (forward.UpstreamTimeouts{Dial: time.Second, ResponseHeader: 3 * time.Second, ReadIdle: 2 * time.Minute}) ||
+		cfg.pool != (forward.PoolSettings{MaxIdle: 0, IdleTimeout: 5 * time.Second}) {
 		t.Fatalf("written settings not taken: %+v", cfg)
 	}
 }

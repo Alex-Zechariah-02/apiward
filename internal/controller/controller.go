@@ -143,7 +143,7 @@ func Prepare(cfg Config, logger *slog.Logger) (*Controller, error) {
 		return nil, err
 	}
 	if cfg.Network == nil {
-		if cfg.Network, err = forward.LoadNetwork(false, nil); err != nil {
+		if cfg.Network, err = forward.LoadNetwork(false, nil, 0); err != nil {
 			return nil, err
 		}
 	}

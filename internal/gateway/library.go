@@ -113,6 +113,7 @@ type deployment struct {
 	metrics *http.Server
 	// certificate is the data listener's; nil when it serves plain HTTP.
 	certificate *servingCertificate
+	upstreams   upstreams
 }
 
 // openDeployment opens cfg's deployment and builds its handlers; it binds no
@@ -132,7 +133,7 @@ func openDeployment(cfg nativeConfig, logger *slog.Logger) (*deployment, error) 
 	if certificate != nil {
 		certificate.audit = c.Audit()
 	}
-	proxy, err := forward.NewUpstreamProxy(cfg.upstream, c.Network, logger)
+	proxy, err := forward.NewUpstreamProxy(cfg.upstream, cfg.pool, c.Network, logger)
 	if err != nil {
 		return nil, errors.Join(classify(ErrConfig, err), c.Stop())
 	}
@@ -154,6 +155,7 @@ func openDeployment(cfg nativeConfig, logger *slog.Logger) (*deployment, error) 
 		ui:          ui,
 		logger:      logger,
 		certificate: certificate,
+		upstreams:   proxy,
 		metrics: &http.Server{
 			Handler:           health(monitor.Metrics(c.Observations(), c.Gauges), func() bool { return ready(c, certificate) }),
 			ReadHeaderTimeout: 5 * time.Second,

@@ -23,7 +23,7 @@ import (
 // closedNetwork allows no public address and defines no TLS profile.
 func closedNetwork(t *testing.T) *forward.Network {
 	t.Helper()
-	n, err := forward.LoadNetwork(false, nil)
+	n, err := forward.LoadNetwork(false, nil, 0)
 	if err != nil {
 		t.Fatal(err)
 	}

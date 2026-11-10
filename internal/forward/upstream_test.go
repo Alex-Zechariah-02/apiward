@@ -87,6 +87,24 @@ func (i issuer) file(t *testing.T, dir string) string {
 // returns the gateway's failure reason ("" when forwarded) and the status.
 func send(t *testing.T, n *Network, u policy.Upstream, host string) (string, int) {
 	t.Helper()
+	proxy, err := NewUpstreamProxy(bounds, testPool, func() *Network { return n }, slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := httptest.NewRequest(http.MethodGet, "/x", nil)
+	r.Host = host
+	rec := httptest.NewRecorder()
+	if err := proxy.Forward(rec, r.WithContext(Bind(context.Background(), destination(t, u)))); err != nil {
+		status, _ := ForwardFailure(err)
+		return FailureReason(err), status
+	}
+	return "", rec.Code
+}
+
+// destination is where a policy with the one public operation GET /x on u
+// sends that request.
+func destination(t *testing.T, u policy.Upstream) compile.Destination {
+	t.Helper()
 	p := policy.Policy{SchemaVersion: policy.LatestSchemaVersion, Profile: policy.ProfileCore,
 		Upstreams:  []policy.Upstream{u},
 		APIs:       []policy.API{{ID: "api", Upstream: u.ID}},
@@ -100,24 +118,13 @@ func send(t *testing.T, n *Network, u policy.Upstream, host string) (string, int
 	if !ok {
 		t.Fatal("no destination")
 	}
-	proxy, err := NewUpstreamProxy(bounds, func() *Network { return n }, slog.New(slog.DiscardHandler))
-	if err != nil {
-		t.Fatal(err)
-	}
-	r := httptest.NewRequest(http.MethodGet, "/x", nil)
-	r.Host = host
-	rec := httptest.NewRecorder()
-	if err := proxy.Forward(rec, r.WithContext(Bind(context.Background(), d))); err != nil {
-		status, _ := ForwardFailure(err)
-		return FailureReason(err), status
-	}
-	return "", rec.Code
+	return d
 }
 
 // An address is checked when the connection is made, not only at compile: a
 // public address the operator no longer allows is refused before connecting.
 func TestUpstreamConnectCheck(t *testing.T) {
-	public, _ := LoadNetwork(true, nil)
+	public, _ := LoadNetwork(true, nil, 0)
 	g, err := compile.Compile(policy.Policy{SchemaVersion: policy.LatestSchemaVersion, Profile: policy.ProfileCore,
 		Upstreams: []policy.Upstream{{ID: "u", URL: "http://192.0.2.10:9"}}}, 1, time.Time{})
 	if err != nil || g.CheckNetwork(public) != nil {
@@ -156,7 +163,7 @@ func TestUpstreamTLS(t *testing.T) {
 		{ID: "full", CAFile: ca.file(t, dir), ClientCertificateFile: clientCert, ClientKeyFile: clientKey},
 		{ID: "pin", CAFile: ca.file(t, dir)},
 		{ID: "system"},
-	})
+	}, time.Hour)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -187,7 +194,7 @@ func TestUpstreamTLS(t *testing.T) {
 		"mismatched pair":   {ID: "p", ClientCertificateFile: clientCert, ClientKeyFile: filepath.Join(dir, "server.key")},
 		"bad identifier":    {ID: "bad id"},
 	} {
-		if _, err := LoadNetwork(false, []ProfileSettings{s}); err == nil {
+		if _, err := LoadNetwork(false, []ProfileSettings{s}, 0); err == nil {
 			t.Errorf("%s: loaded", name)
 		}
 	}
@@ -195,7 +202,7 @@ func TestUpstreamTLS(t *testing.T) {
 		if err := os.Chmod(clientKey, 0o644); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := LoadNetwork(false, []ProfileSettings{{ID: "p", ClientCertificateFile: clientCert, ClientKeyFile: clientKey}}); err == nil {
+		if _, err := LoadNetwork(false, []ProfileSettings{{ID: "p", ClientCertificateFile: clientCert, ClientKeyFile: clientKey}}, 0); err == nil {
 			t.Error("a key readable by others loaded")
 		}
 	}

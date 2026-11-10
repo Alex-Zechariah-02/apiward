@@ -123,6 +123,7 @@ func (e *Embedded) shutdown(ctx context.Context) error {
 	if err := e.calls.wait(ctx); err != nil {
 		errs = append(errs, fmt.Errorf("requests in progress: %w", err))
 	}
+	e.deployment.upstreams.Close()
 	errs = append(errs, c.StopWithin(ctx))
 	if err := errors.Join(errs...); err != nil {
 		return classify(ErrIncomplete, err)

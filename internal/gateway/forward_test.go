@@ -41,7 +41,7 @@ func serveNative(e *gatewaytest.Env, policy policy.Policy, timeouts forward.Upst
 		e.T.Fatal(err)
 	}
 	logs := &gatewaytest.LogBuffer{}
-	p, err := forward.NewUpstreamProxy(timeouts, c.Network, slog.New(slog.NewJSONHandler(logs, nil)))
+	p, err := forward.NewUpstreamProxy(timeouts, forward.PoolSettings{MaxIdle: 16, IdleTimeout: 30 * time.Second}, c.Network, slog.New(slog.NewJSONHandler(logs, nil)))
 	if err != nil {
 		e.T.Fatal(err)
 	}

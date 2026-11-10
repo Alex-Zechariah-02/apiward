@@ -138,7 +138,8 @@ func TestNativeForwardingMetadata(t *testing.T) {
 			{"Te", h.Get("Te"), "trailers"},
 			{"Keep-Alive", h.Get("Keep-Alive"), ""},
 			{"Proxy-Connection", h.Get("Proxy-Connection"), ""},
-			{"Connection", h.Get("Connection"), "close"},
+			// The client's Connection field ends at the gateway.
+			{"Connection", h.Get("Connection"), ""},
 			{"response Via", strings.Join(resp.Header.Values("Via"), "|"), "1.1 gateway"},
 			{"response Server", resp.Header.Get("Server"), "upstream-server"},
 			{"response Keep-Alive", resp.Header.Get("Keep-Alive"), ""},

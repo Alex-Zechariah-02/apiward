@@ -84,6 +84,7 @@ func (f nativeFile) check() (nativeConfig, error) {
 	}
 	cfg.tls, cfg.redirect = d.TLS, d.RedirectHTTP
 
+	var sessionLife time.Duration
 	durations := []struct {
 		name      string
 		value     *string
@@ -101,6 +102,8 @@ func (f nativeFile) check() (nativeConfig, error) {
 		{"upstream.dial_timeout", u.DialTimeout, defaultDial, minUpstreamTimeout, maxUpstreamTimeout, &cfg.upstream.Dial},
 		{"upstream.response_header_timeout", u.ResponseHeaderTimeout, defaultUpstreamWait, minUpstreamTimeout, maxUpstreamTimeout, &cfg.upstream.ResponseHeader},
 		{"upstream.read_idle_timeout", u.ReadIdleTimeout, defaultUpstreamWait, minUpstreamTimeout, maxUpstreamTimeout, &cfg.upstream.ReadIdle},
+		{"upstream.idle_conn_timeout", u.IdleConnTimeout, defaultIdleConn, minUpstreamTimeout, maxUpstreamTimeout, &cfg.pool.IdleTimeout},
+		{"upstream.tls_session_lifetime", u.TLSSessionLifetime, defaultSessionLife, minSessionLife, maxSessionLife, &sessionLife},
 	}
 	for _, s := range durations {
 		if *s.into, err = durationSetting(s.name, s.value, s.def, s.low, s.high); err != nil {
@@ -127,7 +130,10 @@ func (f nativeFile) check() (nativeConfig, error) {
 
 	// Profile files are read here, so a missing or invalid one stops the
 	// start, and a reload reads them again with the rest of the file.
-	if cfg.controller.Network, err = forward.LoadNetwork(u.AllowPublicAddresses, u.TLSProfiles); err != nil {
+	if cfg.pool.MaxIdle, err = numberSetting("upstream.max_idle_per_upstream", u.MaxIdlePerUpstream, defaultMaxIdle, 0, maxIdlePerUpstream); err != nil {
+		return nativeConfig{}, err
+	}
+	if cfg.controller.Network, err = forward.LoadNetwork(u.AllowPublicAddresses, u.TLSProfiles, sessionLife); err != nil {
 		return nativeConfig{}, err
 	}
 
