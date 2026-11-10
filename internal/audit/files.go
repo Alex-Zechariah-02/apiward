@@ -10,8 +10,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"strconv"
-	"strings"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/fault"
 )
@@ -22,15 +20,26 @@ const (
 	DefaultAuditFiles = 8
 )
 
+// Settings bound the log: the size of each file, how many files it keeps,
+// what it does when all are in use (FullRefuse or FullEvict) and how many
+// records its queue holds (QueueSize).
+type Settings struct {
+	MaxBytes int64
+	MaxFiles int
+	WhenFull string
+	Queue    int
+}
+
 // OpenAudit never fails: an unusable file yields a log in the failed state,
 // which refuses every acknowledgement and therefore every admission.
-func OpenAudit(path string, maxBytes int64, maxFiles int) *AuditLog {
+func OpenAudit(path string, s Settings) *AuditLog {
 	a := &AuditLog{
 		boot:     NewRequestID()[:16],
 		path:     path,
-		maxBytes: maxBytes,
-		maxFiles: maxFiles,
-		queue:    make(chan auditEntry, AuditQueueSize),
+		maxBytes: s.MaxBytes,
+		maxFiles: s.MaxFiles,
+		evict:    s.WhenFull == FullEvict,
+		queue:    make(chan auditEntry, max(s.Queue, AuditQueueSize)),
 		done:     make(chan struct{}),
 	}
 	incomplete, err := a.open()
@@ -71,10 +80,11 @@ func (a *AuditLog) open() (int64, error) {
 	if err != nil {
 		return -1, err
 	}
-	a.rotated, a.next, err = rotatedFiles(a.path)
+	set, err := rotatedFiles(a.path)
 	if err != nil {
 		return -1, err
 	}
+	a.rotated, a.next, a.rotatedBytes = set.count, set.next, set.bytes
 	file, err := os.OpenFile(a.path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
 	if err != nil {
 		return -1, err
@@ -119,34 +129,11 @@ func incompleteRecord(path string) (int64, error) {
 	return start + int64(bytes.LastIndexByte(tail, '\n')+1), nil
 }
 
-// rotatedFiles counts the files named "<path>.<n>" and returns the next
-// unused n.
-func rotatedFiles(path string) (int, int, error) {
-	entries, err := os.ReadDir(filepath.Dir(path))
-	if err != nil {
-		return 0, 0, err
-	}
-	count, next := 0, 1
-	prefix := filepath.Base(path) + "."
-	for _, entry := range entries {
-		suffix, found := strings.CutPrefix(entry.Name(), prefix)
-		n, err := strconv.Atoi(suffix)
-		if !found || err != nil || n < 1 {
-			continue
-		}
-		count++
-		next = max(next, n+1)
-	}
-	return count, next, nil
-}
-
 // rotate closes the active file, renames it to the next rotated name and
-// opens a new active file. Every batch was synced when written, so closing
-// loses nothing.
+// opens a new active file; makeRoom has freed a slot for it. Every batch was
+// synced when written, so closing loses nothing.
 func (a *AuditLog) rotate() (string, error) {
-	if a.rotated >= a.maxFiles-1 {
-		return "", fmt.Errorf("audit storage full: %d files of up to %d bytes exist; archive the rotated files and restart", a.maxFiles, a.maxBytes)
-	}
+	closed := a.size
 	err := a.file.Close()
 	a.file = nil
 	if err != nil {
@@ -163,6 +150,7 @@ func (a *AuditLog) rotate() (string, error) {
 	}
 	a.file, a.size = file, 0
 	a.rotated++
+	a.rotatedBytes += closed
 	a.next++
 	a.publishUsage()
 	return filepath.Base(rotated), nil
@@ -174,8 +162,9 @@ func (a *AuditLog) Usage() (activeBytes, activeLimit, files, filesLimit int64) {
 	return a.activeBytes.Load(), a.maxBytes, a.files.Load(), int64(a.maxFiles)
 }
 
-// Failed reports whether the log has failed and refuses new records.
-func (a *AuditLog) Failed() bool { return a.failed.Load() }
+// Failed reports whether the log refuses new records: it has failed, or
+// every file is in use.
+func (a *AuditLog) Failed() bool { return a.failed.Load() || a.full.Load() }
 
 // OpenErr is why the log could not open its file, or nil.
 func (a *AuditLog) OpenErr() error { return a.openErr }

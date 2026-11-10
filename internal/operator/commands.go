@@ -34,6 +34,7 @@ type Config struct {
 	AuditLog      string
 	AuditMaxBytes int64
 	AuditMaxFiles int
+	AuditWhenFull string
 	AuditTimeout  time.Duration
 	KeyFiles      []string
 }
@@ -48,7 +49,7 @@ type operatorContext struct {
 // existing database call it only after that database proved not to be held
 // by a running gateway, whose audit log has a single writer.
 func (o *operatorContext) openAudit() {
-	o.audit = audit.OpenAudit(o.config.AuditLog, o.config.AuditMaxBytes, o.config.AuditMaxFiles)
+	o.audit = audit.OpenAudit(o.config.AuditLog, audit.Settings{MaxBytes: o.config.AuditMaxBytes, MaxFiles: o.config.AuditMaxFiles, WhenFull: o.config.AuditWhenFull})
 }
 
 // close writes the command's queued audit events and closes the log; an

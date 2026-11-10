@@ -7,25 +7,28 @@ import (
 	"context"
 	"errors"
 	"fmt"
-
-	"github.com/Alex-Zechariah-02/apiward/internal/controller"
+	"time"
 )
 
 // upstreams is the upstream proxy as a deployment owns it: its idle
 // connections close when the deployment stops.
 type upstreams interface{ Close() }
 
-// shutdown stops the gateway gracefully: admission ends first, then the data
-// plane stops accepting connections and its requests in progress finish, the
-// idle upstream connections close, then the controller stops its Admin API
-// the same way, writes the audit events queued until then and closes the
-// database. Requests in progress on
-// both listeners share one wait of ShutdownWait; the audit drain has its
-// own auditDrainWait. It returns nil only when every step completed.
+// shutdown stops the gateway gracefully. /readyz answers 503 first, for the
+// configured delay while every listener still serves, so a load balancer
+// stops sending requests; then admission ends, the data plane stops
+// accepting connections and its requests in progress finish, the idle
+// upstream connections close, then the controller stops its Admin API the
+// same way, writes the audit events queued until then and closes the
+// database. Requests in progress on every listener share one wait of grace;
+// the audit drain keeps its own AuditDrainWait. It returns nil only when
+// every step completed.
 func (g *nativeGateway) shutdown() error {
+	g.draining.Store(true)
+	time.Sleep(g.delay)
 	g.controller.BeginStop()
 	close(g.done)
-	ctx, cancel := context.WithTimeout(context.Background(), controller.ShutdownWait)
+	ctx, cancel := context.WithTimeout(context.Background(), g.grace)
 	defer cancel()
 	var errs []error
 	if g.redirect != nil {

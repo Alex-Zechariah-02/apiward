@@ -12,13 +12,13 @@ import (
 	"github.com/Alex-Zechariah-02/apiward/internal/compile"
 )
 
-// The fixed checks, rule set version "checks-0.3": static
+// The fixed checks, rule set version "checks-0.4": static
 // configuration warnings, unused permissions from observed traffic, and
 // alerts. They advise only: nothing here blocks, changes or activates
 // anything, and nothing runs on the request path. Each answer names the
 // rule set version so findings can be traced to the rules that made them.
 const (
-	AdviceRules = "checks-0.3"
+	AdviceRules = "checks-0.4"
 
 	// Unused permissions are withheld until the request records read from
 	// the security log span this long and number this many.
@@ -35,8 +35,10 @@ const (
 	spikeFactor          = 3.0
 	spikeLowTrafficShare = 0.5
 
-	// NearlyFull is the share of a store that raises an alert.
+	// NearlyFull is the share of a store that raises an alert; Filling, the
+	// share of the security log budget that raises an earlier one.
 	NearlyFull = 0.9
+	Filling    = 0.7
 )
 
 type Finding struct {

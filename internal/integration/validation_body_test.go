@@ -4,6 +4,7 @@ package integration
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -38,8 +39,10 @@ func TestBodyCeilingAppliesToActualBytes(t *testing.T) {
 		policy.Operation{ID: "equal", API: "a", Method: "POST", Target: "/a/equal", Access: "allow", Auth: "none", Body: gatewaytest.JSONBody(16384, gatewaytest.AnyObject)},
 	)
 	gatewaytest.Seed(t, e.Database, p, gatewaytest.SeedOptions{})
+	e.Interruptible = true
 	e.Start(gatewaytest.Binaries.Plain)
 	const global = 16384
+	var ingressIDs []string
 	routed := []string{"INGRESS", "CAPTURE", "CANONICAL", "ROUTE", "ACCESS"}
 
 	operations := []struct {
@@ -72,13 +75,14 @@ func TestBodyCeilingAppliesToActualBytes(t *testing.T) {
 				}
 
 				stage, reason := gatewaytest.SizeRefusal(framing, size, global)
-				want := gatewaytest.ExpectedStages(nil, "INGRESS", audit.StageReject)
-				if stage == "BODY" {
-					want = gatewaytest.Public(gatewaytest.ExpectedStages(routed, "BODY", audit.StageReject))
-				}
+				want := gatewaytest.Public(gatewaytest.ExpectedStages(routed, "BODY", audit.StageReject))
 				_, id := gatewaytest.RequestID(&http.Response{StatusCode: status}, reply)
-				events := e.RequestEvents(id, 1)
-				if status != http.StatusRequestEntityTooLarge || len(events) != 1 || events[0]["kind"] != "request.rejected" ||
+				if stage == "INGRESS" {
+					ingressIDs = append(ingressIDs, id)
+					if status != http.StatusRequestEntityTooLarge {
+						t.Errorf("%s: status %d (%s), want 413 at INGRESS", name, status, reply)
+					}
+				} else if events := e.RequestEvents(id, 1); status != http.StatusRequestEntityTooLarge || len(events) != 1 || events[0]["kind"] != "request.rejected" ||
 					events[0]["stage"] != stage || events[0]["status"] != float64(413) || events[0]["error"] != "payload_too_large" ||
 					!gatewaytest.SameStages(events[0]["stages"], want) {
 					t.Errorf("%s: status %d (%s), events %v, want 413 at %s", name, status, reply, events, stage)
@@ -112,6 +116,11 @@ func TestBodyCeilingAppliesToActualBytes(t *testing.T) {
 	if elapsed := time.Since(started); resp.StatusCode != http.StatusRequestEntityTooLarge || !resp.Close || elapsed > 5*time.Second {
 		t.Errorf("stalled chunked body: %d after %v, connection closed %v; want 413 at once with the connection closed", resp.StatusCode, elapsed, resp.Close)
 	}
+	conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+	if _, err := conn.Read(make([]byte, 1)); !errors.Is(err, io.EOF) {
+		t.Errorf("stalled chunked body: the gateway kept the connection open after its 413 (%v)", err)
+	}
+	conn.Close()
 
 	// Framing as the HTTP server reads it: an invalid chunk fails the read; a
 	// chunked body overrides a declared length (RFC 9112 section 6.3), so a
@@ -180,4 +189,11 @@ func TestBodyCeilingAppliesToActualBytes(t *testing.T) {
 		t.Fatalf("concurrent: %d accepted, %d received, equal %v", len(accepted), len(received), slices.Equal(received, accepted))
 	}
 	e.AssertReceipts(32, 0, 0)
+	// Declared lengths above the global ceiling are counted at ingress.
+	if got := e.IngressSummary(); got["too_large"] != len(ingressIDs) || len(got) != 1 || len(ingressIDs) != 2 {
+		t.Errorf("ingress summary %v for %d declared refusals, want 2 too_large", got, len(ingressIDs))
+	}
+	if ev := gatewaytest.RecordOf(e.AuditEvents(), ingressIDs); ev != nil {
+		t.Errorf("ingress refusal recorded on its own: %v", ev)
+	}
 }

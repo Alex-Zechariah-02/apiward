@@ -35,7 +35,7 @@ func (c *Controller) Start(admin http.Handler) error {
 
 // Stop begins the stop (see BeginStop), shuts the Admin API down, waiting at
 // most ShutdownWait for admin requests in progress, then closes the
-// audit log, waiting at most auditDrainWait for the events queued until then
+// audit log, waiting at most AuditDrainWait for the events queued until then
 // to be written, and the database. It returns nil only when every step
 // completed. It also releases a controller that was never started. Stop may
 // be called any number of times, also concurrently: the controller stops
@@ -93,6 +93,8 @@ func (c *Controller) shutdown(ctx context.Context) error {
 	// a request cut off by an incomplete listener shutdown, is counted as lost.
 	pending, _ := c.audit.Unconfirmed()
 	c.logger.Info("draining the audit log", "pending", pending)
+	// The drain has its own bound: a listener that used the whole stop
+	// bound must not leave the records unconfirmed.
 	drain, cancel := context.WithTimeout(context.Background(), audit.AuditDrainWait)
 	defer cancel()
 	errs := []error{err, c.audit.Close(drain)}

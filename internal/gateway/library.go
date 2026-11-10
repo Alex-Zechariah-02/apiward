@@ -12,6 +12,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"sync/atomic"
 	"time"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/admin"
@@ -138,6 +139,9 @@ type deployment struct {
 	// certificate is the data listener's; nil when it serves plain HTTP.
 	certificate *servingCertificate
 	upstreams   upstreams
+	// draining is set when a stop begins: /readyz answers 503 from then on,
+	// while the listeners still serve for the stop's delay.
+	draining atomic.Bool
 }
 
 // openDeployment opens cfg's deployment and builds its handlers; it binds no
@@ -171,7 +175,7 @@ func openDeployment(cfg nativeConfig, logger *slog.Logger) (*deployment, error) 
 	if err != nil {
 		return nil, errors.Join(classify(ErrConfig, err), c.Stop())
 	}
-	return &deployment{
+	d := &deployment{
 		config:      cfg,
 		controller:  c,
 		enforcement: enforcement,
@@ -180,14 +184,15 @@ func openDeployment(cfg nativeConfig, logger *slog.Logger) (*deployment, error) 
 		logger:      logger,
 		certificate: certificate,
 		upstreams:   proxy,
-		metrics: &http.Server{
-			Handler:           health(monitor.Metrics(c.Observations(), c.Gauges), func() bool { return ready(c, certificate) }),
-			ReadHeaderTimeout: 5 * time.Second,
-			WriteTimeout:      5 * time.Second,
-			IdleTimeout:       30 * time.Second,
-			MaxHeaderBytes:    defaultHeaderBytes,
-		},
-	}, nil
+	}
+	d.metrics = &http.Server{
+		Handler:           health(monitor.Metrics(c.Observations(), c.Gauges), func() bool { return !d.draining.Load() && ready(c, certificate) }),
+		ReadHeaderTimeout: 5 * time.Second,
+		WriteTimeout:      5 * time.Second,
+		IdleTimeout:       30 * time.Second,
+		MaxHeaderBytes:    defaultHeaderBytes,
+	}
+	return d, nil
 }
 
 // openController checks cfg, reads the dashboard files in ui (none when

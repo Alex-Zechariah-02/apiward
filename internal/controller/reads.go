@@ -52,16 +52,25 @@ func (c *Controller) Reads() store.Reads {
 	return c.store
 }
 
-// Gauges reads the published policy revision, active temporary rules and
-// blocked accounts for the metrics listener.
-func (c *Controller) Gauges() (revision int64, overrides, blocked int) {
+// Gauges reads the published policy revision, active temporary rules,
+// blocked accounts and the audit log's bytes and budget for the metrics
+// listener.
+func (c *Controller) Gauges() []monitor.Gauge {
+	var revision, overrides, blocked int64
 	if generation := c.Current(); generation != nil {
-		revision, overrides = generation.Revision, len(generation.Overrides)
+		revision, overrides = generation.Revision, int64(len(generation.Overrides))
 	}
 	if accounts := c.blocked.Load(); accounts != nil {
-		blocked = len(*accounts)
+		blocked = int64(len(*accounts))
 	}
-	return revision, overrides, blocked
+	used, budget := c.audit.Budget()
+	return []monitor.Gauge{
+		{Name: "gateway_policy_revision", Value: revision},
+		{Name: "gateway_temporary_rules_active", Value: overrides},
+		{Name: "gateway_blocked_accounts", Value: blocked},
+		{Name: "gateway_audit_bytes", Value: used},
+		{Name: "gateway_audit_budget_bytes", Value: budget},
+	}
 }
 
 // Capture reads the generation in force and the stored authority together,

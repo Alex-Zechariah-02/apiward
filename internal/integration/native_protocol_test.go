@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net"
 	"net/http"
 	"strings"
@@ -31,6 +32,7 @@ func TestNativeDataPlaneProtocol(t *testing.T) {
 	data["read_timeout"] = "2s"
 	data["idle_timeout"] = "1s"
 	e.WriteNative(settings)
+	e.Interruptible = true
 	e.Start(gatewaytest.Binaries.Plain)
 
 	resp, body := e.RawResponse("GET /a/x HTTP/1.1\r\nHost: api.example:8080\r\nX-Forwarded-For: 203.0.113.9\r\nConnection: close\r\n\r\n")
@@ -57,7 +59,9 @@ func TestNativeDataPlaneProtocol(t *testing.T) {
 		t.Fatal("a TLS handshake succeeded")
 	}
 
-	// Request forms enforcement refuses at INGRESS, each with its event.
+	// Request forms enforcement refuses at INGRESS, each counted in the
+	// ingress summary.
+	var ingressIDs []string
 	for _, request := range []string{
 		"GET /a/x HTTP/1.1\r\nHost: gw\r\nConnection: Upgrade, HTTP2-Settings\r\nUpgrade: h2c\r\nHTTP2-Settings: AAMAAABkAAQAAP__\r\n\r\n",
 		"OPTIONS * HTTP/1.1\r\nHost: gw\r\nConnection: close\r\n\r\n",
@@ -67,8 +71,9 @@ func TestNativeDataPlaneProtocol(t *testing.T) {
 	} {
 		resp, body := e.RawResponse(request)
 		_, id := gatewaytest.RequestID(resp, body)
-		if events := e.RequestEvents(id, 1); resp.StatusCode != http.StatusBadRequest || len(events) != 1 || events[0]["stage"] != "INGRESS" {
-			t.Errorf("%q: %d %s, events %v", strings.SplitN(request, "\r\n", 2)[0], resp.StatusCode, body, events)
+		ingressIDs = append(ingressIDs, id)
+		if resp.StatusCode != http.StatusBadRequest || id == "" {
+			t.Errorf("%q: %d %s", strings.SplitN(request, "\r\n", 2)[0], resp.StatusCode, body)
 		}
 	}
 	// Requests net/http itself refuses before any handler runs.
@@ -146,6 +151,16 @@ func TestNativeDataPlaneProtocol(t *testing.T) {
 		}
 	}
 	e.AssertReceipts(5, 0, 0)
+	// Targets: the asterisk and absolute forms above and the HTTP/2 preface
+	// ("PRI *") of the prior-knowledge client; the declared 513-byte body is
+	// the one ingress refusal by size.
+	want := map[string]int{"upgrade": 2, "target": 3, "connect": 1, "too_large": 1}
+	if got := e.IngressSummary(); !maps.Equal(got, want) {
+		t.Errorf("ingress summary %v, want %v", got, want)
+	}
+	if ev := gatewaytest.RecordOf(e.AuditEvents(), ingressIDs); ev != nil {
+		t.Errorf("ingress refusal recorded on its own: %v", ev)
+	}
 }
 
 // newPriorKnowledgeClient returns a client that speaks HTTP/2 over plain

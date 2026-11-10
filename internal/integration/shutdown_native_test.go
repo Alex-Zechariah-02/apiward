@@ -208,3 +208,35 @@ func TestNativeStopReportsAuditFailure(t *testing.T) {
 		})
 	}
 }
+
+// With a stop delay, readiness is refused as soon as the stop begins while
+// the data plane still answers, so a load balancer can stop sending requests
+// before the listeners close; the stop then completes.
+func TestNativeStopDelayRefusesReadiness(t *testing.T) {
+	e := gatewaytest.NewEnv(t)
+	gatewaytest.Seed(t, e.Database, e.Policy(e.A, false), gatewaytest.SeedOptions{})
+	settings := e.NativeSettings()
+	gatewaytest.Section(settings, "gateway")["shutdown_delay"] = "3s"
+	e.WriteNative(settings)
+	e.Interruptible = true
+	e.Start(gatewaytest.Binaries.Plain)
+	ready := func() int {
+		reply, err := http.Get("http://" + e.Metrics + "/readyz")
+		if err != nil {
+			return 0
+		}
+		reply.Body.Close()
+		return reply.StatusCode
+	}
+	if code := ready(); code != http.StatusOK {
+		t.Fatalf("readiness before the stop: %d", code)
+	}
+	gatewaytest.Interrupt(t, e.Process)
+	gatewaytest.WaitFor(t, time.Now().Add(2*time.Second), "readiness to be refused", func() bool { return ready() == http.StatusServiceUnavailable })
+	if code, _ := e.Get("/d"); code != http.StatusForbidden {
+		t.Fatalf("data plane during the delay: %d, want the policy's 403", code)
+	}
+	if code := e.WaitExit(); code != gatewaytest.ExitStopped {
+		t.Fatalf("exit status %d\n%s", code, e.Output)
+	}
+}

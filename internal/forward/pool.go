@@ -23,6 +23,9 @@ type PoolSettings struct {
 	// upstream server's own idle timeout, so the gateway, not the upstream,
 	// ends an idle connection.
 	IdleTimeout time.Duration
+	// EjectAfter is how many consecutive connection failures eject an
+	// endpoint, so requests to it fail at once for a while; 0 never ejects.
+	EjectAfter int
 }
 
 // poolKey names the connections one request may reuse: the same endpoint

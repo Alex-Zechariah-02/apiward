@@ -194,3 +194,46 @@ func SameStages(got any, want map[string]any) bool {
 	b, _ := json.Marshal(want)
 	return bytes.Equal(a, b)
 }
+
+// IngressSummary stops the gateway gracefully, so it writes the ingress
+// refusals counted since its last summary, and returns every summary's
+// counts by reason. The gateway must have been started Interruptible.
+func (e *Env) IngressSummary() map[string]int {
+	e.T.Helper()
+	Interrupt(e.T, e.Process)
+	if code := e.WaitExit(); code != ExitStopped {
+		e.T.Fatalf("exit status %d\n%s", code, e.Output)
+	}
+	return SummaryCounts(e.AuditEvents())
+}
+
+// SummaryCounts adds up the ingress summaries among events by reason.
+func SummaryCounts(events []map[string]any) map[string]int {
+	counts := map[string]int{}
+	for _, ev := range events {
+		if ev["kind"] != "audit.ingress_summary" {
+			continue
+		}
+		reasons, _ := ev["counts"].(map[string]any)
+		for reason, n := range reasons {
+			count, _ := n.(float64)
+			counts[reason] += int(count)
+		}
+	}
+	return counts
+}
+
+// RecordOf returns a record of one of the requests ids among events, or nil
+// when none has one.
+func RecordOf(events []map[string]any, ids []string) map[string]any {
+	wanted := map[any]bool{}
+	for _, id := range ids {
+		wanted[id] = true
+	}
+	for _, ev := range events {
+		if wanted[ev["request_id"]] {
+			return ev
+		}
+	}
+	return nil
+}

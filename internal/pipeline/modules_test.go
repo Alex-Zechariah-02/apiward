@@ -107,7 +107,7 @@ func serve(t *testing.T, members map[string]string) (int, bool, map[string]any) 
 		t.Fatal(err)
 	}
 	path := filepath.Join(t.TempDir(), "audit.log")
-	log := audit.OpenAudit(path, 1<<20, 4)
+	log := audit.OpenAudit(path, audit.Settings{MaxBytes: 1 << 20, MaxFiles: 4})
 	forwarded := false
 	h, err := New(Deps{Authority: fixedAuthority{g}, Audit: log, Observations: monitor.New(policy.DefaultWindow, policy.DefaultAPIs), Limiter: NewLimiter(policy.DefaultRateCounters), Clock: NewClock(), AuditTimeout: time.Second,
 		Forward: func(w http.ResponseWriter, _ *http.Request) error {

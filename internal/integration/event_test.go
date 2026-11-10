@@ -78,9 +78,7 @@ func TestEventEnvelopeReflectsStagesReached(t *testing.T) {
 		}},
 		{"protocol upgrade", func() (int, string) {
 			return gatewaytest.RequestID(e.Exchange(http.MethodGet, "/a/x", "", "", "Connection", "Upgrade", "Upgrade", "websocket"))
-		}, []expected{
-			{"request.rejected", "INGRESS", "reject", "bad_request", "", 400, gatewaytest.ExpectedStages(nil, "INGRESS", audit.StageReject)},
-		}},
+		}, nil}, // counted in the ingress summary, not recorded on its own
 		{"non-canonical path", func() (int, string) { return gatewaytest.RequestID(e.Exchange(http.MethodGet, "/a/%2e%2e/d", "", "")) }, []expected{
 			{"request.rejected", "CANONICAL", "reject", "bad_request", "", 400, gatewaytest.ExpectedStages([]string{"INGRESS", "CAPTURE"}, "CANONICAL", audit.StageReject)},
 		}},

@@ -38,6 +38,7 @@ const (
 const (
 	minServerTimeout     = time.Second
 	maxServerTimeout     = 10 * time.Minute
+	maxShutdownDelay     = time.Minute
 	minUpstreamTimeout   = time.Second
 	maxUpstreamTimeout   = 5 * time.Minute
 	minAuditTimeout      = 100 * time.Millisecond
@@ -61,6 +62,8 @@ const (
 	maxConnectionsLimit   = 65536
 	maxInFlightLimit      = 65536
 	defaultMaxIdle        = 16
+	defaultEjectAfter     = 5 // Envoy outlier detection's consecutive_5xx default
+	maxEjectAfter         = 1000
 	maxIdlePerUpstream    = 1024
 	defaultIdleConn       = 30 * time.Second
 	defaultSessionLife    = time.Hour
@@ -104,6 +107,9 @@ type gatewaySettings struct {
 	AuditTimeout         *string              `json:"audit_timeout"`
 	AuditMaxBytes        *int64               `json:"audit_max_bytes"`
 	AuditMaxFiles        *int                 `json:"audit_max_files"`
+	AuditWhenFull        string               `json:"audit_when_full"`
+	ShutdownGrace        *string              `json:"shutdown_grace"`
+	ShutdownDelay        *string              `json:"shutdown_delay"`
 	JWT                  pipeline.TrustConfig `json:"jwt"`
 	AdminUI              *string              `json:"admin_ui"`
 }
@@ -136,6 +142,7 @@ type upstreamSettings struct {
 	ResponseHeaderTimeout *string                   `json:"response_header_timeout"`
 	ReadIdleTimeout       *string                   `json:"read_idle_timeout"`
 	MaxIdlePerUpstream    *int                      `json:"max_idle_per_upstream"`
+	EjectAfter            *int                      `json:"eject_after"`
 	IdleConnTimeout       *string                   `json:"idle_conn_timeout"`
 	TLSSessionLifetime    *string                   `json:"tls_session_lifetime"`
 	AllowPublicAddresses  bool                      `json:"allow_public_addresses"`
@@ -159,8 +166,13 @@ type nativeConfig struct {
 	readTimeout       time.Duration
 	writeTimeout      time.Duration
 	idleTimeout       time.Duration
-	upstream          forward.UpstreamTimeouts
-	pool              forward.PoolSettings
+	// shutdownGrace bounds a graceful stop's wait for requests in progress
+	// on every listener; the audit drain keeps its own bound. shutdownDelay
+	// is how long /readyz answers 503 before the listeners stop.
+	shutdownGrace time.Duration
+	shutdownDelay time.Duration
+	upstream      forward.UpstreamTimeouts
+	pool          forward.PoolSettings
 	// tls is the data listener's TLS; nil serves plain HTTP. redirect is
 	// the HTTP-to-HTTPS listener; nil when there is none.
 	tls      *dataTLS
@@ -178,7 +190,7 @@ func operatorConfig(c controller.Config) operator.Config {
 		keys[i] = key.PublicKeyFile
 	}
 	return operator.Config{Database: c.Database, AuditLog: c.AuditLog, AuditMaxBytes: c.AuditMaxBytes,
-		AuditMaxFiles: c.AuditMaxFiles, AuditTimeout: c.AuditTimeout, KeyFiles: keys}
+		AuditMaxFiles: c.AuditMaxFiles, AuditWhenFull: c.AuditWhenFull, AuditTimeout: c.AuditTimeout, KeyFiles: keys}
 }
 
 // loadNativeConfig reads and checks the configuration file at path. The

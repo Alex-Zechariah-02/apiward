@@ -111,11 +111,13 @@ func TestAuditCloseKeepsLossAfterFailedRotation(t *testing.T) {
 	}
 	go a.run()
 	err := a.Close(context.Background())
-	if err == nil || !strings.Contains(err.Error(), fmt.Sprintf("%d accepted events and the count of 3 refused events not written", room)) {
+	// The refused batch is counted with the refusals, as lost, and the log is
+	// full rather than failed: it writes again once a file is moved away.
+	if err == nil || !strings.Contains(err.Error(), fmt.Sprintf("0 accepted events and the count of %d refused events not written", room+3)) {
 		t.Fatalf("close after the failed rotation: %v", err)
 	}
-	if !a.failed.Load() {
-		t.Fatal("the failed rotation did not fail the log")
+	if a.failed.Load() || !a.full.Load() {
+		t.Fatalf("after the failed rotation: failed %v, full %v; want full only", a.failed.Load(), a.full.Load())
 	}
 	if events := fileEvents(t, path); len(events) != 1 || events[0].Kind != "earlier" {
 		t.Fatalf("records after the failed rotation: %+v", events)

@@ -6,11 +6,14 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"strconv"
 	"time"
 )
 
 const (
+	// AuditQueueSize is the smallest queue; QueueSize grows it with the
+	// requests a deployment admits at once.
 	AuditQueueSize = 1024
 	auditBatchSize = 128
 	MaxLoggedPath  = 256
@@ -22,6 +25,14 @@ const (
 	AuditDrainWait = 5 * time.Second
 )
 
+// QueueSize is the queue that keeps an acknowledged record of every request
+// in flight from being refused for want of room: records nobody waits for
+// take at most RecordRoom, three quarters, so the last quarter must hold one
+// admission per request in flight.
+func QueueSize(maxInFlight int64) int {
+	return max(AuditQueueSize, int(4*maxInFlight))
+}
+
 // EventSchema is the version of the event envelope below.
 const EventSchema = 7
 
@@ -29,6 +40,8 @@ var (
 	errAuditFailed = errors.New("audit log unavailable")
 	errAuditClosed = errors.New("closed")
 	errQueueFull   = errors.New("queue full")
+	// errStorageFull refuses a batch while every audit file is in use.
+	errStorageFull = fmt.Errorf("%w: storage full", errAuditFailed)
 )
 
 // Event is one security record. Client-controlled strings are bounded and
@@ -86,6 +99,15 @@ type Event struct {
 	Lost     uint64    `json:"lost,omitempty"`
 	File     string    `json:"file,omitempty"`   // audit file named by audit.* events
 	Offset   int64     `json:"offset,omitempty"` // start of an incomplete record
+	// An evicted file's size, SHA-256 and the times of its first and last
+	// records; an ingress summary's interval and counts per reason and per
+	// client address.
+	Bytes     int64             `json:"bytes,omitempty"`
+	Digest    string            `json:"sha256,omitempty"`
+	First     time.Time         `json:"first_record,omitzero"`
+	Last      time.Time         `json:"last_record,omitzero"`
+	Counts    map[string]uint64 `json:"counts,omitempty"`
+	Addresses []AddressCount    `json:"addresses,omitempty"`
 	// Private replay context; neither the durable envelope nor the public Event
 	// exposes this flag or retains the credential that led to it.
 	identityKnown bool

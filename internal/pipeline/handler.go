@@ -6,8 +6,6 @@ import (
 	"context"
 	"net/http"
 	"net/netip"
-	"slices"
-	"strconv"
 	"strings"
 	"time"
 
@@ -27,6 +25,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		event:        audit.Event{RequestID: audit.NewRequestID(), Time: time.Now().UTC(), Method: r.Method, Path: r.URL.Path},
 		bodyPending:  r.ProtoMajor == 1 && (r.ContentLength != 0 || len(r.TransferEncoding) > 0),
 	}
+	defer q.recoverPanic()
 	w.Header().Set("X-Request-Id", q.event.RequestID)
 	if len(h.extensions) > 0 {
 		q.event.Modules = make(map[string]string, len(h.extensions))
@@ -50,27 +49,16 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if h.inFlight.Add(1) > h.maxInFlight {
 		h.inFlight.Add(-1)
 		w.Header().Set("Retry-After", "1")
-		q.reject(audit.StageIngress, http.StatusServiceUnavailable, "overloaded")
+		q.summarise("overloaded", http.StatusServiceUnavailable, "overloaded")
 		return
 	}
 	defer h.inFlight.Add(-1)
 
-	// Ingress: only origin-form targets, no tunnelling, bounded declared size.
-	// A protocol upgrade would turn an admitted request into a raw stream the
-	// policy never sees. The proxy removes every header named in Connection,
-	// so naming a gateway header there would strip it after it is set here.
-	// HTTP/2 reads an unparseable Content-Length as 0 and keeps the stream
-	// open, where HTTP/1 refuses the request; both are refused here.
-	if !strings.HasPrefix(r.RequestURI, "/") ||
-		r.Method == http.MethodConnect ||
-		r.Header.Get("Upgrade") != "" ||
-		slices.ContainsFunc(connectionNames(r.Header), compile.IsGatewayHeader) ||
-		slices.ContainsFunc(r.Header.Values("Content-Length"), func(v string) bool { return v != strconv.FormatInt(r.ContentLength, 10) }) {
-		q.reject(audit.StageIngress, http.StatusBadRequest, "bad_request")
+	if reason := h.ingressRefusal(r); reason == "too_large" {
+		q.summarise(reason, http.StatusRequestEntityTooLarge, "payload_too_large")
 		return
-	}
-	if r.ContentLength > h.maxBodyBytes {
-		q.reject(audit.StageIngress, http.StatusRequestEntityTooLarge, "payload_too_large")
+	} else if reason != "" {
+		q.summarise(reason, http.StatusBadRequest, "bad_request")
 		return
 	}
 	if !h.admitAddress(q) {

@@ -1,11 +1,15 @@
-// Client addresses at ingress: refusal of those on the blocked address list,
-// and the key an address-based rate counter uses for each.
+// Ingress checks: requests no policy can act on, client addresses on the
+// blocked address list, and the key an address-based rate counter uses for
+// each address.
 
 package pipeline
 
 import (
 	"net/http"
 	"net/netip"
+	"slices"
+	"strconv"
+	"strings"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/audit"
 	"github.com/Alex-Zechariah-02/apiward/internal/compile"
@@ -33,6 +37,31 @@ func (h *Handler) admitAddress(q *request) bool {
 		return false
 	}
 	return true
+}
+
+// ingressRefusal names why a request no policy can act on is refused, or
+// returns "": only origin-form targets, no tunnelling, bounded declared size.
+// A protocol upgrade would turn an admitted request into a raw stream the
+// policy never sees. The proxy removes every header named in Connection, so
+// naming a gateway header there would strip it after it is set. HTTP/2 reads
+// an unparseable Content-Length as 0 and keeps the stream open, where HTTP/1
+// refuses the request; both are refused.
+func (h *Handler) ingressRefusal(r *http.Request) string {
+	switch {
+	case r.Method == http.MethodConnect:
+		return "connect"
+	case !strings.HasPrefix(r.RequestURI, "/"):
+		return "target"
+	case r.Header.Get("Upgrade") != "":
+		return "upgrade"
+	case slices.ContainsFunc(connectionNames(r.Header), compile.IsGatewayHeader):
+		return "connection_header"
+	case slices.ContainsFunc(r.Header.Values("Content-Length"), func(v string) bool { return v != strconv.FormatInt(r.ContentLength, 10) }):
+		return "content_length"
+	case r.ContentLength > h.maxBodyBytes:
+		return "too_large"
+	}
+	return ""
 }
 
 // rateAddress is the rate key of a client address: an IPv4 address itself,

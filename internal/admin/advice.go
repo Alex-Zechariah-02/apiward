@@ -65,12 +65,27 @@ func (s *Server) handleAlerts(w http.ResponseWriter, r *http.Request, who caller
 	if s.audit.Failed() {
 		items = append(items, monitor.Finding{ID: "A2", Severity: "critical", Object: "security_log", Message: "The security log cannot be written, so the gateway refuses requests it cannot record."})
 	}
-	if active, activeLimit, files, filesLimit := s.audit.Usage(); files >= filesLimit && float64(active) >= monitor.NearlyFull*float64(activeLimit) {
-		items = append(items, monitor.Finding{ID: "A3", Severity: "high", Object: "security_log", Message: "The security log is nearly full. Move earlier log files to an archive before it fills, or the gateway will stop accepting requests."})
+	// A log that evicts its oldest file never fills, so A3 does not apply.
+	if alert := logFilling(s.audit.Budget()); alert != nil && !s.audit.Evicts() {
+		items = append(items, *alert)
 	}
 	if float64(s.limiter.Size()) >= monitor.NearlyFull*float64(s.limiter.Capacity()) {
 		items = append(items, monitor.Finding{ID: "A4", Severity: "medium", Object: "rate_counters", Message: "Rate limit counters are nearly full. When they run out, requests that need a new counter are refused."})
 	}
 	monitor.SortFindings(items)
 	pipeline.WriteJSON(w, http.StatusOK, map[string]any{"rules": monitor.AdviceRules, "evaluated_at": now.UTC(), "alerts": items})
+}
+
+// logFilling is alert A3: the security log's files hold at least Filling
+// (medium) or NearlyFull (critical) of its budget, files × file size.
+func logFilling(used, budget int64) *monitor.Finding {
+	share := float64(used) / float64(budget)
+	switch {
+	case budget <= 0 || share < monitor.Filling:
+		return nil
+	case share < monitor.NearlyFull:
+		return &monitor.Finding{ID: "A3", Severity: "medium", Object: "security_log", Message: "The security log has used most of its space. Move earlier log files to an archive before it fills."}
+	default:
+		return &monitor.Finding{ID: "A3", Severity: "critical", Object: "security_log", Message: "The security log is nearly full. Move earlier log files to an archive now, or the gateway will stop accepting requests when it fills."}
+	}
 }

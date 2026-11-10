@@ -67,13 +67,19 @@ func (m *requestMetrics) Record(event RequestView) {
 
 // Metrics serves the metrics listener from the observations and the
 // published gauges, which published reads from the controller.
-func Metrics(o *Observations, published func() (revision int64, overrides, blocked int)) http.Handler {
+func Metrics(o *Observations, gauges func() []Gauge) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		serveMetrics(w, r, o, published)
+		serveMetrics(w, r, o, gauges)
 	})
 }
 
-func serveMetrics(w http.ResponseWriter, r *http.Request, o *Observations, published func() (revision int64, overrides, blocked int)) {
+// Gauge is one gauge sample the metrics listener reports as read.
+type Gauge struct {
+	Name  string
+	Value int64
+}
+
+func serveMetrics(w http.ResponseWriter, r *http.Request, o *Observations, gauges func() []Gauge) {
 	if r.Method != "GET" || r.RequestURI != "/metrics" {
 		http.NotFound(w, r)
 		return
@@ -101,12 +107,8 @@ func serveMetrics(w http.ResponseWriter, r *http.Request, o *Observations, publi
 	}
 	dropped := o.dropped
 	o.mu.Unlock()
-	revision, overrides, blocked := published()
-	for _, gauge := range []struct {
-		name  string
-		value any
-	}{{"gateway_policy_revision", revision}, {"gateway_temporary_rules_active", overrides}, {"gateway_blocked_accounts", blocked}} {
-		fmt.Fprintf(&body, "# TYPE %s gauge\n%s %v\n", gauge.name, gauge.name, gauge.value)
+	for _, gauge := range gauges() {
+		fmt.Fprintf(&body, "# TYPE %s gauge\n%s %d\n", gauge.Name, gauge.Name, gauge.Value)
 	}
 	fmt.Fprintf(&body, "# TYPE gateway_event_stream_dropped_total counter\ngateway_event_stream_dropped_total %d\n", dropped)
 	fmt.Fprintf(&body, "# TYPE gateway_redirects_total counter\ngateway_redirects_total %d\n", o.redirects.Load())

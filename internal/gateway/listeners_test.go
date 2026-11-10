@@ -138,7 +138,7 @@ func TestRedirectListener(t *testing.T) {
 		}
 	}
 	metrics := httptest.NewRecorder()
-	monitor.Metrics(observed, func() (int64, int, int) { return 0, 0, 0 }).ServeHTTP(metrics, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	monitor.Metrics(observed, func() []monitor.Gauge { return nil }).ServeHTTP(metrics, httptest.NewRequest(http.MethodGet, "/metrics", nil))
 	if !strings.Contains(metrics.Body.String(), "gateway_redirects_total 3\n") {
 		t.Fatalf("metrics:\n%s", metrics.Body.String())
 	}

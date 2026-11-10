@@ -64,7 +64,11 @@ type Config struct {
 	AuditTimeout         time.Duration
 	AuditMaxBytes        int64
 	AuditMaxFiles        int
-	JWT                  pipeline.TrustConfig
+	// AuditWhenFull is audit.FullRefuse (the default) or audit.FullEvict.
+	AuditWhenFull string
+	// AuditQueue is the audit queue's size; audit.QueueSize derives it.
+	AuditQueue int
+	JWT        pipeline.TrustConfig
 	// Limits are the capacity ceilings: policy size and counts, rate
 	// counters, recent requests kept.
 	Limits policy.Limits
@@ -183,7 +187,7 @@ func (c *Controller) Open() error {
 		ownership.Close()
 		return err
 	}
-	c.audit = audit.OpenAudit(cfg.AuditLog, cfg.AuditMaxBytes, cfg.AuditMaxFiles)
+	c.audit = audit.OpenAudit(cfg.AuditLog, audit.Settings{MaxBytes: cfg.AuditMaxBytes, MaxFiles: cfg.AuditMaxFiles, WhenFull: cfg.AuditWhenFull, Queue: cfg.AuditQueue})
 
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -232,6 +236,9 @@ func (cfg *Config) applyDefaults() error {
 	if cfg.AuditMaxFiles == 0 {
 		cfg.AuditMaxFiles = audit.DefaultAuditFiles
 	}
+	if cfg.AuditWhenFull == "" {
+		cfg.AuditWhenFull = audit.FullRefuse
+	}
 	if cfg.AdminIdleTimeout == 0 {
 		cfg.AdminIdleTimeout = DefaultIdle
 	}
@@ -247,6 +254,9 @@ func (cfg *Config) applyDefaults() error {
 	}
 	if cfg.AuditMaxFiles < 2 || cfg.AuditMaxFiles > MaxAuditFiles {
 		return fmt.Errorf("audit_max_files must be 2 to %d", MaxAuditFiles)
+	}
+	if cfg.AuditWhenFull != audit.FullRefuse && cfg.AuditWhenFull != audit.FullEvict {
+		return fmt.Errorf("audit_when_full must be %q or %q", audit.FullRefuse, audit.FullEvict)
 	}
 	for _, setting := range []time.Duration{cfg.AdminIdleTimeout, cfg.AdminSessionLifetime} {
 		if setting < MinSession || setting > MaxSession {

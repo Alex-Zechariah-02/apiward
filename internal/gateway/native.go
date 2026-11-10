@@ -15,7 +15,9 @@ import (
 	"os"
 	"os/signal"
 	"sync"
+	"sync/atomic"
 	"syscall"
+	"time"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/admin"
 	"github.com/Alex-Zechariah-02/apiward/internal/controller"
@@ -197,6 +199,11 @@ type nativeGateway struct {
 	served chan error
 	done   chan struct{}
 	stop   func() error
+	// draining makes /readyz answer 503; set for delay before the
+	// listeners stop, all of which then share grace.
+	draining *atomic.Bool
+	grace    time.Duration
+	delay    time.Duration
 }
 
 // startNative opens the deployment for cfg and serves it: the controller with
@@ -241,7 +248,8 @@ func startNative(cfg nativeConfig, logger *slog.Logger) (*nativeGateway, error) 
 		ErrorLog:                     slog.NewLogLogger(logger.Handler(), slog.LevelWarn),
 	}
 	server.Apply(data)
-	g := &nativeGateway{controller: c, data: data, metrics: d.metrics, certificate: d.certificate, upstreams: d.upstreams, served: make(chan error, 3), done: make(chan struct{})}
+	g := &nativeGateway{controller: c, data: data, metrics: d.metrics, certificate: d.certificate, upstreams: d.upstreams, served: make(chan error, 3), done: make(chan struct{}),
+		draining: &d.draining, grace: d.config.shutdownGrace, delay: d.config.shutdownDelay}
 	g.stop = sync.OnceValue(g.shutdown)
 	go func() { g.served <- g.data.Serve(listener) }()
 	go func() { g.served <- g.metrics.Serve(metricsListener) }()

@@ -49,8 +49,10 @@ func TestBodyCeilingAtFixtures(t *testing.T) {
 			}
 		}
 		gatewaytest.Seed(t, e.Database, p, gatewaytest.SeedOptions{})
+		e.Interruptible = true
 		e.Start(gatewaytest.Binaries.Plain)
 		ceiling := min(c.global, c.operation)
+		var ingressIDs []string
 
 		for _, framing := range bodyFramings {
 			for _, size := range []int{ceiling, ceiling + 1} {
@@ -72,13 +74,14 @@ func TestBodyCeilingAtFixtures(t *testing.T) {
 				}
 
 				stage, _ := gatewaytest.SizeRefusal(framing, size, c.global)
-				want := gatewaytest.ExpectedStages(nil, "INGRESS", audit.StageReject)
-				if stage == "BODY" {
-					want = gatewaytest.ExpectedStages(authenticated, "BODY", audit.StageReject)
-				}
+				want := gatewaytest.ExpectedStages(authenticated, "BODY", audit.StageReject)
 				_, id := gatewaytest.RequestID(&http.Response{StatusCode: status}, reply)
-				events := e.RequestEvents(id, 1)
-				if status != http.StatusRequestEntityTooLarge || len(events) != 1 || events[0]["stage"] != stage || !gatewaytest.SameStages(events[0]["stages"], want) {
+				if stage == "INGRESS" {
+					ingressIDs = append(ingressIDs, id)
+					if status != http.StatusRequestEntityTooLarge {
+						t.Errorf("%s: status %d (%s), want 413 at INGRESS", name, status, reply)
+					}
+				} else if events := e.RequestEvents(id, 1); status != http.StatusRequestEntityTooLarge || len(events) != 1 || events[0]["stage"] != stage || !gatewaytest.SameStages(events[0]["stages"], want) {
 					t.Errorf("%s: status %d (%s), events %v, want 413 at %s", name, status, reply, events, stage)
 				}
 				if len(receipts) != before || orders.State().SHA256 != state {
@@ -94,7 +97,12 @@ func TestBodyCeilingAtFixtures(t *testing.T) {
 		if strings.Contains(string(log), token) || strings.Contains(string(log), "quantity") || strings.Contains(string(log), "ITM-001") {
 			t.Errorf("%s: the audit log records the token or body content", c.name)
 		}
-		e.Stop()
+		if got := e.IngressSummary(); got["too_large"] != len(ingressIDs) || len(got) > 1 {
+			t.Errorf("%s: ingress summary %v, want %d too_large", c.name, got, len(ingressIDs))
+		}
+		if ev := gatewaytest.RecordOf(e.AuditEvents(), ingressIDs); ev != nil {
+			t.Errorf("%s: ingress refusal recorded on its own: %v", c.name, ev)
+		}
 	}
 	accepted := len(configs) * len(bodyFramings)
 	if counts := gatewaytest.ReceiptCounts(fixtures); counts["orders"] != accepted || counts["inventory"] != 0 || counts["reports"] != 0 {

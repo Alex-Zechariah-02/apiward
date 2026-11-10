@@ -265,25 +265,29 @@ func TestUpstreamFailureUnderFiveControls(t *testing.T) {
 	wg.Wait()
 	// 25 requests, quota 20: 20 pass RATE (some with invalid bodies), 5 are
 	// refused 429. Of those 20, the invalid ones are refused 400 and the
-	// valid ones meet the closed port: 502.
-	if statuses[http.StatusTooManyRequests] != 5 || statuses[http.StatusBadRequest]+statuses[http.StatusBadGateway] != 20 || statuses[http.StatusOK] != 0 {
+	// valid ones meet the closed port: 502, or 503 for those that arrive
+	// after five connection failures have ejected the upstream.
+	unavailable := statuses[http.StatusBadGateway] + statuses[http.StatusServiceUnavailable]
+	if statuses[http.StatusTooManyRequests] != 5 || statuses[http.StatusBadRequest]+unavailable != 20 || statuses[http.StatusOK] != 0 {
 		t.Fatalf("statuses %v", statuses)
 	}
 	e.AssertReceipts(0, 0, 0)
 	events := e.EventsWhen(func(events []map[string]any) bool {
-		return gatewaytest.CountKind(events, "request.forwarded") == statuses[http.StatusBadGateway]
+		return gatewaytest.CountKind(events, "request.forwarded") == unavailable
 	})
 	failed := 0
 	for _, ev := range events {
 		if ev["kind"] == "request.forwarded" {
-			if ev["decision"] != "upstream_failure" || ev["error"] != "upstream_unavailable" || ev["upstream"] != "Z" || ev["subject"] != "alice" {
+			reason, _ := ev["reason"].(string)
+			if ev["decision"] != "upstream_failure" || ev["error"] != "upstream_unavailable" || ev["upstream"] != "Z" || ev["subject"] != "alice" ||
+				(reason != "not_sent" && reason != "upstream_ejected") {
 				t.Fatalf("outcome %v", ev)
 			}
 			failed++
 		}
 	}
-	if failed != statuses[http.StatusBadGateway] || failed == 0 {
-		t.Fatalf("%d upstream failure events for %d 502 replies", failed, statuses[http.StatusBadGateway])
+	if failed != unavailable || failed == 0 {
+		t.Fatalf("%d upstream failure events for %d 502 and 503 replies", failed, unavailable)
 	}
 	t.Logf("statuses %v", statuses)
 }

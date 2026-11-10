@@ -96,6 +96,8 @@ func (f nativeFile) check() (nativeConfig, error) {
 		{"gateway.admin_idle_timeout", g.AdminIdleTimeout, controller.DefaultIdle, controller.MinSession, controller.MaxSession, &cfg.controller.AdminIdleTimeout},
 		{"gateway.admin_session_lifetime", g.AdminSessionLifetime, controller.DefaultLifetime, controller.MinSession, controller.MaxSession, &cfg.controller.AdminSessionLifetime},
 		{"gateway.audit_timeout", g.AuditTimeout, controller.DefaultAuditWait, minAuditTimeout, maxAuditTimeout, &cfg.controller.AuditTimeout},
+		{"gateway.shutdown_grace", g.ShutdownGrace, controller.ShutdownWait, minServerTimeout, maxServerTimeout, &cfg.shutdownGrace},
+		{"gateway.shutdown_delay", g.ShutdownDelay, 0, 0, maxShutdownDelay, &cfg.shutdownDelay},
 		{"data.read_header_timeout", d.ReadHeaderTimeout, defaultReadHeader, minServerTimeout, maxServerTimeout, &cfg.readHeaderTimeout},
 		{"data.read_timeout", d.ReadTimeout, defaultRead, minServerTimeout, maxServerTimeout, &cfg.readTimeout},
 		{"data.write_timeout", d.WriteTimeout, defaultWrite, minServerTimeout, maxServerTimeout, &cfg.writeTimeout},
@@ -128,6 +130,8 @@ func (f nativeFile) check() (nativeConfig, error) {
 	if cfg.limits.MaxInFlight, err = numberSetting("data.max_in_flight", d.MaxInFlight, pipeline.DefaultMaxInFlight, 1, maxInFlightLimit); err != nil {
 		return nativeConfig{}, err
 	}
+	cfg.controller.AuditQueue = audit.QueueSize(cfg.limits.MaxInFlight)
+	cfg.controller.AuditWhenFull = g.AuditWhenFull
 	if cfg.limits.IPv6RatePrefix, err = numberSetting("data.ipv6_rate_prefix", d.IPv6RatePrefix, pipeline.DefaultIPv6RatePrefix, pipeline.MinIPv6RatePrefix, 128); err != nil {
 		return nativeConfig{}, err
 	}
@@ -144,6 +148,9 @@ func (f nativeFile) check() (nativeConfig, error) {
 
 	// Profile files are read here, so a missing or invalid one stops the
 	// start, and a reload reads them again with the rest of the file.
+	if cfg.pool.EjectAfter, err = numberSetting("upstream.eject_after", u.EjectAfter, defaultEjectAfter, 0, maxEjectAfter); err != nil {
+		return nativeConfig{}, err
+	}
 	if cfg.pool.MaxIdle, err = numberSetting("upstream.max_idle_per_upstream", u.MaxIdlePerUpstream, defaultMaxIdle, 0, maxIdlePerUpstream); err != nil {
 		return nativeConfig{}, err
 	}

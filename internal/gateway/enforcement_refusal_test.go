@@ -23,7 +23,8 @@ import (
 )
 
 // Every refusal is decided at its stage, answered with its status, error code
-// and request identifier, recorded with its reason, and never handed on.
+// and request identifier, recorded with its reason (an ingress refusal in the
+// ingress summary), and never handed on.
 func TestEnforcementRefusals(t *testing.T) {
 	e := gatewaytest.NewEnv(t)
 	p := e.ProtectedPolicy()
@@ -62,12 +63,12 @@ func TestEnforcementRefusals(t *testing.T) {
 		reason  string
 		allowed string // expected Allow header
 	}{
-		{name: "absolute-form target", raw: raw("GET http://" + e.A.Addr + "/a/x HTTP/1.1\r\n"), status: 400, code: "bad_request", stage: "INGRESS"},
-		{name: "tunnel", raw: raw("CONNECT " + e.A.Addr + " HTTP/1.1\r\n"), status: 400, code: "bad_request", stage: "INGRESS"},
-		{name: "protocol upgrade", raw: raw("GET /a/x HTTP/1.1\r\nUpgrade: websocket\r\n"), status: 400, code: "bad_request", stage: "INGRESS"},
-		{name: "Connection naming a gateway header", raw: raw("GET /a/x HTTP/1.1\r\nConnection: X-Gateway-Subject\r\n"), status: 400, code: "bad_request", stage: "INGRESS"},
+		{name: "absolute-form target", raw: raw("GET http://" + e.A.Addr + "/a/x HTTP/1.1\r\n"), status: 400, code: "bad_request", stage: "INGRESS", reason: "target"},
+		{name: "tunnel", raw: raw("CONNECT " + e.A.Addr + " HTTP/1.1\r\n"), status: 400, code: "bad_request", stage: "INGRESS", reason: "connect"},
+		{name: "protocol upgrade", raw: raw("GET /a/x HTTP/1.1\r\nUpgrade: websocket\r\n"), status: 400, code: "bad_request", stage: "INGRESS", reason: "upgrade"},
+		{name: "Connection naming a gateway header", raw: raw("GET /a/x HTTP/1.1\r\nConnection: X-Gateway-Subject\r\n"), status: 400, code: "bad_request", stage: "INGRESS", reason: "connection_header"},
 		{name: "declared length above the global ceiling", raw: raw("POST /a/item HTTP/1.1\r\nContent-Type: application/json\r\nContent-Length: 16385\r\n"),
-			status: 413, code: "payload_too_large", stage: "INGRESS"},
+			status: 413, code: "payload_too_large", stage: "INGRESS", reason: "too_large"},
 		{name: "encoded dot segment", raw: raw("GET /a/%2e%2e/x HTTP/1.1\r\n"), status: 400, code: "bad_request", stage: "CANONICAL"},
 		{name: "empty segment", raw: raw("GET /a//x HTTP/1.1\r\n"), status: 400, code: "bad_request", stage: "CANONICAL"},
 		{name: "unknown target", method: "GET", path: "/zzz", status: 404, code: "not_found", stage: "ROUTE"},
@@ -105,6 +106,7 @@ func TestEnforcementRefusals(t *testing.T) {
 		{name: "repeated header", raw: raw("GET /a/probe HTTP/1.1\r\nX-Probe: on\r\nX-Probe: on\r\n"),
 			status: 400, code: "bad_request", stage: "VALIDATION", reason: "repeated_header"},
 	}
+	summarised, ingressIDs := map[string]int{}, []string{}
 	for _, tc := range cases {
 		var resp *http.Response
 		var body string
@@ -128,9 +130,10 @@ func TestEnforcementRefusals(t *testing.T) {
 		if tc.stage == "JWT" && resp.Header.Get("WWW-Authenticate") != "Bearer" {
 			t.Errorf("%s: WWW-Authenticate %q", tc.name, resp.Header.Get("WWW-Authenticate"))
 		}
-		ev := eventOf(e, reply.RequestID, 1)
-		reason, _ := ev["reason"].(string)
-		if ev["kind"] != "request.rejected" || ev["stage"] != tc.stage || ev["error"] != tc.code ||
+		if tc.stage == "INGRESS" {
+			summarised[tc.reason]++
+			ingressIDs = append(ingressIDs, reply.RequestID)
+		} else if ev, reason := eventReason(e, reply.RequestID); ev["kind"] != "request.rejected" || ev["stage"] != tc.stage || ev["error"] != tc.code ||
 			ev["status"] != float64(tc.status) || ev["decision"] != "reject" || reason != tc.reason {
 			t.Errorf("%s: event %v, want %s at %s (%q)", tc.name, ev, tc.code, tc.stage, tc.reason)
 		}
@@ -151,6 +154,7 @@ func TestEnforcementRefusals(t *testing.T) {
 		t.Fatalf("handed %+v", got)
 	}
 	e.AssertReceipts(0, 0, 0)
+	checkIngressSummary(t, e, controller, summarised, ingressIDs)
 }
 
 // The effective body ceiling, the smaller of the global and the operation's,
@@ -166,8 +170,9 @@ func TestEnforcementBodyCeiling(t *testing.T) {
 		policy.Operation{ID: "equal", API: "a", Method: "POST", Target: "/a/equal", Access: "allow", Auth: "none", Body: gatewaytest.JSONBody(2048, gatewaytest.AnyObject)},
 	)
 	const global = 2048
-	_, _, f := serveEnforcement(e, p, pipeline.Limits{MaxBodyBytes: global})
+	c, _, f := serveEnforcement(e, p, pipeline.Limits{MaxBodyBytes: global})
 	routed := []string{"INGRESS", "CAPTURE", "CANONICAL", "ROUTE", "ACCESS"}
+	summarised, ingressIDs := map[string]int{}, []string{}
 	operations := []struct {
 		name, path string
 		ceiling    int
@@ -196,14 +201,15 @@ func TestEnforcementBodyCeiling(t *testing.T) {
 					continue
 				}
 				stage, reason := gatewaytest.SizeRefusal(framing, size, global)
-				want := gatewaytest.ExpectedStages(nil, "INGRESS", audit.StageReject)
-				if stage == "BODY" {
-					want = gatewaytest.Public(gatewaytest.ExpectedStages(routed, "BODY", audit.StageReject))
-				}
 				_, id := gatewaytest.RequestID(&http.Response{StatusCode: status}, reply)
-				ev := eventOf(e, id, 1)
-				if got, _ := ev["reason"].(string); status != http.StatusRequestEntityTooLarge || ev["stage"] != stage || got != reason ||
-					ev["error"] != "payload_too_large" || !gatewaytest.SameStages(ev["stages"], want) {
+				if stage == "INGRESS" {
+					summarised[reason]++
+					ingressIDs = append(ingressIDs, id)
+					if status != http.StatusRequestEntityTooLarge {
+						t.Errorf("%s: status %d (%s), want 413 at INGRESS", name, status, reply)
+					}
+				} else if ev, got := eventReason(e, id); status != http.StatusRequestEntityTooLarge || ev["stage"] != stage || got != reason ||
+					ev["error"] != "payload_too_large" || !gatewaytest.SameStages(ev["stages"], gatewaytest.Public(gatewaytest.ExpectedStages(routed, "BODY", audit.StageReject))) {
 					t.Errorf("%s: status %d (%s), event %v, want 413 at %s", name, status, reply, ev, stage)
 				}
 				if n := len(f.handed()); n != handed {
@@ -213,6 +219,7 @@ func TestEnforcementBodyCeiling(t *testing.T) {
 		}
 	}
 	e.AssertReceipts(0, 0, 0)
+	checkIngressSummary(t, e, c, summarised, ingressIDs)
 }
 
 // Rate limits count admitted requests per verified subject; a refusal is

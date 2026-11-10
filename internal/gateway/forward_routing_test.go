@@ -115,7 +115,7 @@ func TestNativeForwardingRoutingTable(t *testing.T) {
 			{ID: "archive", API: "orders", Method: "DELETE", Target: "/orders/archive", Access: "deny", Auth: "none"},
 		},
 	}
-	serveNative(e, policy, forwardTimeouts)
+	c, _ := serveNative(e, policy, forwardTimeouts)
 
 	rows := []struct {
 		request string
@@ -171,21 +171,26 @@ func TestNativeForwardingRoutingTable(t *testing.T) {
 		}
 	}
 
-	// Protocol switches and tunnels are refused at ingress, with an event.
+	// Protocol switches and tunnels are refused at ingress and counted in
+	// the ingress summary, with the absolute-form and asterisk targets and
+	// the tunnel above.
 	switches := []string{
 		"GET /orders/42 HTTP/1.1\r\nHost: gw\r\nConnection: Upgrade\r\nUpgrade: websocket\r\n\r\n",
 		"GET /orders/42 HTTP/1.1\r\nHost: gw\r\nUpgrade: websocket\r\n\r\n",
 		"GET /orders/42 HTTP/1.1\r\nHost: gw\r\nConnection: Upgrade, HTTP2-Settings\r\nUpgrade: h2c\r\nHTTP2-Settings: AAMAAABkAAQAAP__\r\n\r\n",
 	}
 	e.ResetReceivers()
+	var ids []string
 	for _, request := range switches {
 		resp, body := e.RawResponse(request)
 		_, id := gatewaytest.RequestID(resp, body)
-		if events := e.RequestEvents(id, 1); resp.StatusCode != http.StatusBadRequest || len(events) != 1 || events[0]["stage"] != "INGRESS" {
-			t.Errorf("%q: %d %s, events %v", request, resp.StatusCode, body, events)
+		ids = append(ids, id)
+		if resp.StatusCode != http.StatusBadRequest || id == "" {
+			t.Errorf("%q: %d %s", request, resp.StatusCode, body)
 		}
 	}
 	e.AssertReceipts(0, 0, 0)
+	checkIngressSummary(t, e, c, map[string]int{"upgrade": 3, "target": 2, "connect": 1}, ids)
 }
 
 // Every refusal by the five controls or the audit gate happens before the
@@ -226,10 +231,16 @@ func TestNativeForwardingRefusalsReachNoUpstream(t *testing.T) {
 		{"header schema", "GET", "/b/probe", "", "", []string{"X-Probe", "off"}, 400, "VALIDATION"},
 		{"Connection naming a gateway header", "GET", "/a/x", "", "", []string{"Authorization", "Bearer " + token, "Connection", "X-Gateway-Subject"}, 400, "INGRESS"},
 	}
+	var ingressIDs []string
 	for _, tc := range refusals {
 		resp, body := e.Exchange(tc.method, tc.path, tc.ctype, tc.body, tc.header...)
 		_, id := gatewaytest.RequestID(resp, body)
-		if ev := eventOf(e, id, 1); resp.StatusCode != tc.status || ev["stage"] != tc.stage {
+		if tc.stage == "INGRESS" {
+			ingressIDs = append(ingressIDs, id)
+			if resp.StatusCode != tc.status {
+				t.Errorf("%s: %d %s, want %d", tc.name, resp.StatusCode, body, tc.status)
+			}
+		} else if ev := eventOf(e, id, 1); resp.StatusCode != tc.status || ev["stage"] != tc.stage {
 			t.Errorf("%s: %d %s, event %v, want %d at %s", tc.name, resp.StatusCode, body, ev, tc.status, tc.stage)
 		}
 		e.AssertReceipts(0, 0, 0)
@@ -259,5 +270,9 @@ func TestNativeForwardingRefusalsReachNoUpstream(t *testing.T) {
 		if r.Authorization {
 			t.Error("the credential reached the upstream")
 		}
+	}
+	// Written before the admissions above, which waited for their records.
+	if ev := gatewaytest.RecordOf(e.AuditEvents(), ingressIDs); ev != nil {
+		t.Errorf("ingress refusal recorded on its own: %v", ev)
 	}
 }

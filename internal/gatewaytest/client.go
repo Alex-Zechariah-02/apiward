@@ -177,7 +177,7 @@ func (e *Env) SendBody(framing, path, body string, header ...string) (int, strin
 // when the body is read.
 func SizeRefusal(framing string, size, global int) (string, string) {
 	if framing == "declared" && size > global {
-		return "INGRESS", ""
+		return "INGRESS", "too_large"
 	}
 	return "BODY", "too_large"
 }

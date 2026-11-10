@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -18,7 +19,7 @@ import (
 
 func TestInFlightCapRefuses(t *testing.T) {
 	e := gatewaytest.NewEnv(t)
-	_, _, f := serveEnforcement(e, e.Policy(e.A, true), pipeline.Limits{MaxInFlight: 1})
+	c, _, f := serveEnforcement(e, e.Policy(e.A, true), pipeline.Limits{MaxInFlight: 1})
 	held, proceed := make(chan struct{}), make(chan struct{})
 	release := sync.OnceFunc(func() { close(proceed) })
 	t.Cleanup(release)
@@ -40,14 +41,14 @@ func TestInFlightCapRefuses(t *testing.T) {
 
 	resp, body := e.Exchange(http.MethodGet, "/a/x", "", "")
 	_, refused := gatewaytest.RequestID(resp, body)
-	event := eventOf(e, refused, 1)
-	if resp.StatusCode != http.StatusServiceUnavailable || resp.Header.Get("Retry-After") != "1" || event["stage"] != "INGRESS" || event["error"] != "overloaded" {
-		t.Fatalf("second request at the cap: %d Retry-After %q, event %v", resp.StatusCode, resp.Header.Get("Retry-After"), event)
+	if resp.StatusCode != http.StatusServiceUnavailable || resp.Header.Get("Retry-After") != "1" || !strings.Contains(body, "overloaded") {
+		t.Fatalf("second request at the cap: %d Retry-After %q, %s", resp.StatusCode, resp.Header.Get("Retry-After"), body)
 	}
 	release()
 	if resp, body := e.Exchange(http.MethodGet, "/a/x", "", ""); resp.StatusCode != http.StatusOK {
 		t.Fatalf("after the held request ended: %d %s", resp.StatusCode, body)
 	}
+	checkIngressSummary(t, e, c, map[string]int{"overloaded": 1}, []string{refused})
 }
 
 func TestConnectionCapClosesExtra(t *testing.T) {

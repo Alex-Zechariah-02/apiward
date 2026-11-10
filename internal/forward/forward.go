@@ -65,6 +65,7 @@ type upstreamProxy struct {
 	writeIdle time.Duration
 	errorLog  *log.Logger
 	buffers   copyBuffers
+	ejector   *ejector
 }
 
 // copySize is the buffer the reverse proxy copies a response body through:
@@ -110,6 +111,7 @@ func NewUpstreamProxy(timeouts UpstreamTimeouts, pool PoolSettings, network func
 		readIdle:  timeouts.ReadIdle,
 		writeIdle: timeouts.ResponseHeader,
 		errorLog:  slog.NewLogLogger(logger.Handler(), slog.LevelWarn),
+		ejector:   newEjector(pool.EjectAfter),
 	}
 	// Every connection, whatever the policy or DNS said, is checked on the
 	// address it is about to connect to.
@@ -174,6 +176,10 @@ func (p *upstreamProxy) Forward(w http.ResponseWriter, r *http.Request) error {
 	if !bound || d.Endpoint() == nil || !compile.IsCanonical(d.Path()) {
 		return fmt.Errorf("%w: %w", ErrNoUpstream, errNotSent)
 	}
+	address := d.Endpoint().Address()
+	if !p.ejector.admit(address, time.Now()) {
+		return fmt.Errorf("%w: %w", errEjected, errNotSent)
+	}
 
 	// The exchange ends when the client goes away, through its request's
 	// context, or when the response body stalls.
@@ -183,6 +189,8 @@ func (p *upstreamProxy) Forward(w http.ResponseWriter, r *http.Request) error {
 	ctx = httptrace.WithClientTrace(ctx, &httptrace.ClientTrace{
 		GotConn: func(httptrace.GotConnInfo) { connected.Store(true) },
 	})
+	// Deferred, so a response aborted after it started still counts.
+	defer func() { p.ejector.settle(address, connected.Load(), r.Context().Err() != nil) }()
 
 	var failure error
 	proxy := &httputil.ReverseProxy{
@@ -211,24 +219,6 @@ func (p *upstreamProxy) Forward(w http.ResponseWriter, r *http.Request) error {
 		return nil
 	}
 	return ExchangeFailure(failure, connected.Load(), r.Context().Err() != nil)
-}
-
-// ExchangeFailure classifies an exchange that failed before any response by
-// what is known about delivery and, for the gateway's answer, whether the
-// upstream timed out.
-func ExchangeFailure(err error, connected, clientGone bool) error {
-	switch {
-	case !connected:
-		return fmt.Errorf("%w: %w", errNotSent, err)
-	case clientGone:
-		return fmt.Errorf("%w: %w", errClientGone, err)
-	}
-	// Once connected, only the response-header timeout ends the exchange
-	// with a timeout error.
-	if netErr, ok := errors.AsType[net.Error](err); ok && netErr.Timeout() {
-		return fmt.Errorf("%w: %w: %w", ErrUpstreamTimeout, errMaybeSent, err)
-	}
-	return fmt.Errorf("%w: %w", errMaybeSent, err)
 }
 
 // rewriteToUpstream addresses the outbound request to the endpoint with the
@@ -264,8 +254,6 @@ func rewriteToUpstream(pr *httputil.ProxyRequest, e *compile.Endpoint, path stri
 	pr.Out.Header.Add("Via", via(pr.In.ProtoMajor, pr.In.ProtoMinor))
 }
 
-// via is the gateway's Via field value for a message received with the given
-// HTTP version (RFC 9110, section 7.6.3).
 // via is the Via entry for a message of the given protocol version: HTTP/2
 // and later have no minor version (RFC 9110 section 7.6.3).
 func via(major, minor int) string {

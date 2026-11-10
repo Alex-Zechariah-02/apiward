@@ -74,6 +74,7 @@ func TestNativeConfigSettings(t *testing.T) {
 			AuditTimeout:         2 * time.Second,
 			AuditMaxBytes:        64 << 20,
 			AuditMaxFiles:        8,
+			AuditQueue:           1024,
 			JWT:                  gatewaytest.TestTrust("issuer", "gateway", filepath.Join(dir, "issuer.pem")),
 			Network:              closed,
 			Limits:               policy.Limits{PolicyBytes: 64 << 10, APIs: 64, Operations: 256, Roles: 64, Permits: 4096, RateCounters: 262144, Window: 10000},
@@ -88,8 +89,9 @@ func TestNativeConfigSettings(t *testing.T) {
 		readTimeout:       10 * time.Second,
 		writeTimeout:      30 * time.Second,
 		idleTimeout:       5 * time.Minute,
+		shutdownGrace:     5 * time.Second,
 		upstream:          forward.UpstreamTimeouts{Dial: 2 * time.Second, ResponseHeader: 5 * time.Second, ReadIdle: 5 * time.Second},
-		pool:              forward.PoolSettings{MaxIdle: 16, IdleTimeout: 30 * time.Second},
+		pool:              forward.PoolSettings{MaxIdle: 16, IdleTimeout: 30 * time.Second, EjectAfter: 5},
 	}
 	if !reflect.DeepEqual(cfg, want) {
 		t.Fatalf("defaults\n got %+v\nwant %+v", cfg, want)
@@ -100,13 +102,14 @@ func TestNativeConfigSettings(t *testing.T) {
 		maps.Copy(s["gateway"].(map[string]any), map[string]any{
 			"admin_idle_timeout": "10m", "admin_session_lifetime": "1h", "audit_timeout": "1s",
 			"audit_max_bytes": 1 << 20, "audit_max_files": 4, "admin_ui": site,
+			"audit_when_full": "evict_oldest", "shutdown_grace": "30s", "shutdown_delay": "2s",
 		})
 		maps.Copy(s["data"].(map[string]any), map[string]any{
 			"max_body_bytes": 2048, "max_header_bytes": 32768, "read_header_timeout": "2s", "read_timeout": "3s",
-			"write_timeout": "4s", "idle_timeout": "1m", "max_in_flight": 32, "ipv6_rate_prefix": 56, "max_connections": 100, "http2": false,
+			"write_timeout": "4s", "idle_timeout": "1m", "max_in_flight": 512, "ipv6_rate_prefix": 56, "max_connections": 100, "http2": false,
 		})
 		s["upstream"] = map[string]any{"dial_timeout": "1s", "response_header_timeout": "3s", "read_idle_timeout": "2m",
-			"max_idle_per_upstream": 0, "idle_conn_timeout": "5s", "tls_session_lifetime": "10m"}
+			"max_idle_per_upstream": 0, "idle_conn_timeout": "5s", "tls_session_lifetime": "10m", "eject_after": 0}
 		s["limits"] = map[string]any{"policy_bytes": 32 << 10, "apis": 256, "operations": 4096, "roles": 1, "permits": 65536,
 			"rate_counters": 1 << 20, "monitor_window": 100000}
 	}))
@@ -116,7 +119,8 @@ func TestNativeConfigSettings(t *testing.T) {
 	c := cfg.controller
 	if c.AdminIdleTimeout != 10*time.Minute || c.AdminSessionLifetime != time.Hour || c.AuditTimeout != time.Second ||
 		c.AuditMaxBytes != 1<<20 || c.AuditMaxFiles != 4 || cfg.adminUI != site ||
-		cfg.limits != (pipeline.Limits{MaxBodyBytes: 2048, MaxInFlight: 32, IPv6RatePrefix: 56}) || cfg.maxConnections != 100 || cfg.http2 || cfg.headerLimit != 32768 || cfg.readHeaderTimeout != 2*time.Second ||
+		c.AuditWhenFull != "evict_oldest" || c.AuditQueue != 2048 || cfg.shutdownGrace != 30*time.Second || cfg.shutdownDelay != 2*time.Second ||
+		cfg.limits != (pipeline.Limits{MaxBodyBytes: 2048, MaxInFlight: 512, IPv6RatePrefix: 56}) || cfg.maxConnections != 100 || cfg.http2 || cfg.headerLimit != 32768 || cfg.readHeaderTimeout != 2*time.Second ||
 		cfg.readTimeout != 3*time.Second || cfg.writeTimeout != 4*time.Second || cfg.idleTimeout != time.Minute ||
 		cfg.upstream != (forward.UpstreamTimeouts{Dial: time.Second, ResponseHeader: 3 * time.Second, ReadIdle: 2 * time.Minute}) ||
 		cfg.pool != (forward.PoolSettings{MaxIdle: 0, IdleTimeout: 5 * time.Second}) ||
