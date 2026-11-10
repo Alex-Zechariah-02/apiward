@@ -41,7 +41,7 @@ type SeedOptions struct {
 
 // Seed creates a disposable database whose confirmed revision 1 is policy,
 // with the harness administrator enrolled.
-func Seed(t *testing.T, path string, policy policy.Policy, opts SeedOptions) {
+func Seed(t testing.TB, path string, policy policy.Policy, opts SeedOptions) {
 	t.Helper()
 	if opts.Mode == "" {
 		opts.Mode = store.ModeNormal

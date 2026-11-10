@@ -25,7 +25,7 @@ var issuedPorts = struct {
 // outgoing connections, so a connection the tests open cannot take the port
 // in the meantime. Test packages run at the same time, so each has its own
 // block, and no port is returned twice.
-func FreeAddr(t *testing.T) string {
+func FreeAddr(t testing.TB) string {
 	t.Helper()
 	issuedPorts.Lock()
 	defer issuedPorts.Unlock()
