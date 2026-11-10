@@ -186,6 +186,16 @@ func TestRollbackRestoresConfirmedBase(t *testing.T) {
 	if code, outcome, body := e.Resolve(harness, "rollback", 1, `"r1"`, "no-provisional-rollback"); code != http.StatusConflict || outcome.Reason != "NO_PROVISIONAL" {
 		t.Fatalf("rollback without a provisional base: %d %s", code, body)
 	}
+	// A body that names no revision must not match the absent provisional
+	// base and start a rollback of nothing.
+	for _, action := range []string{"rollback", "confirm"} {
+		if code, outcome, body := e.Resolve(harness, action, 0, `"r1"`, "no-revision-"+action); code != http.StatusConflict || outcome.Reason != "NO_PROVISIONAL" {
+			t.Fatalf("%s naming no revision: %d %s", action, code, body)
+		}
+	}
+	if code, _, body := e.Resolve(harness, "rollback", 1, `"r1"`, "no-provisional-rollback-again"); code != http.StatusConflict {
+		t.Fatalf("controller after a request naming no revision: %d %s", code, body)
+	}
 
 	events := e.EventsWhen(func(events []map[string]any) bool { return gatewaytest.CountKind(events, "cpa.rolled_back") > 0 })
 	if ev := findTransition(events, "cpa.rolled_back", rolledBack.Transition); ev == nil || ev["revision"] != float64(1) ||

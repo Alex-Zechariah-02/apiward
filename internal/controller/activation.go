@@ -166,7 +166,9 @@ func (c *Controller) Resolve(ctx context.Context, t store.TransitionRecord, prov
 	if a.Mode != store.ModeNormal {
 		return c.reject(ctx, t, "INVALID_STATE", "", now)
 	}
-	if a.Provisional != provisional {
+	// Revision 0 means "no provisional base", so a request naming it can never
+	// match one; without this, 0 equals the absent base and starts a rollback.
+	if provisional <= 0 || a.Provisional != provisional {
 		earlier, found, err := c.store.Activation(ctx, "revision", provisional)
 		switch {
 		case err != nil:
