@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/netip"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -24,7 +25,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		observations: h.observations,
 		started:      time.Now(),
 		event:        audit.Event{RequestID: audit.NewRequestID(), Time: time.Now().UTC(), Method: r.Method, Path: r.URL.Path},
-		bodyPending:  r.ContentLength != 0 || len(r.TransferEncoding) > 0,
+		bodyPending:  r.ProtoMajor == 1 && (r.ContentLength != 0 || len(r.TransferEncoding) > 0),
 	}
 	w.Header().Set("X-Request-Id", q.event.RequestID)
 	if len(h.extensions) > 0 {
@@ -58,10 +59,13 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// A protocol upgrade would turn an admitted request into a raw stream the
 	// policy never sees. The proxy removes every header named in Connection,
 	// so naming a gateway header there would strip it after it is set here.
+	// HTTP/2 reads an unparseable Content-Length as 0 and keeps the stream
+	// open, where HTTP/1 refuses the request; both are refused here.
 	if !strings.HasPrefix(r.RequestURI, "/") ||
 		r.Method == http.MethodConnect ||
 		r.Header.Get("Upgrade") != "" ||
-		slices.ContainsFunc(connectionNames(r.Header), compile.IsGatewayHeader) {
+		slices.ContainsFunc(connectionNames(r.Header), compile.IsGatewayHeader) ||
+		slices.ContainsFunc(r.Header.Values("Content-Length"), func(v string) bool { return v != strconv.FormatInt(r.ContentLength, 10) }) {
 		q.reject(audit.StageIngress, http.StatusBadRequest, "bad_request")
 		return
 	}

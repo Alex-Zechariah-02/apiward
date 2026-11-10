@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"slices"
 	"strings"
 	"testing"
@@ -255,4 +256,36 @@ func TestEnforcementRateLimit(t *testing.T) {
 		t.Fatalf("%d requests handed on, want 3", n)
 	}
 	e.AssertReceipts(0, 0, 0)
+}
+
+// HTTP/2 reads an unparseable Content-Length as 0 and keeps the stream open
+// (net/http/internal/http2 server.go, processHeaders); such a request is
+// refused at ingress, as HTTP/1 refuses it, and never reaches an upstream.
+func TestUnparsedContentLength(t *testing.T) {
+	e := gatewaytest.NewEnv(t)
+	_, h, f := serveEnforcement(e, e.Policy(e.A, false), pipeline.Limits{})
+	req := httptest.NewRequest(http.MethodGet, "/a/x", strings.NewReader("smuggled"))
+	req.ProtoMajor, req.ProtoMinor, req.ContentLength = 2, 0, 0
+	req.Header.Set("Content-Length", "abc")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest || len(f.handed()) != 0 {
+		t.Fatalf("%d, %d handed on; want 400 at ingress, none handed on", rec.Code, len(f.handed()))
+	}
+}
+
+// A refused HTTP/1 request with an unread body closes its connection; an
+// HTTP/2 one does not, since that would end every stream on the connection.
+func TestRefusalCloseOnlyHTTP1(t *testing.T) {
+	e := gatewaytest.NewEnv(t)
+	_, h, _ := serveEnforcement(e, e.Policy(e.A, false), pipeline.Limits{})
+	for major, want := range map[int]string{1: "close", 2: ""} {
+		req := httptest.NewRequest(http.MethodGet, "/a/x", strings.NewReader("unexpected"))
+		req.ProtoMajor = major
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		if rec.Code != http.StatusBadRequest || rec.Header().Get("Connection") != want {
+			t.Errorf("HTTP/%d: %d, Connection %q; want 400, %q", major, rec.Code, rec.Header().Get("Connection"), want)
+		}
+	}
 }

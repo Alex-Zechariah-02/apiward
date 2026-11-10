@@ -154,12 +154,17 @@ func (s *servingCertificate) watchExpiry(done <-chan struct{}) {
 	}
 }
 
-// config is the data listener's TLS: 1.2 or later, HTTP/1.1 only, the
-// current certificate for every handshake.
-func (s *servingCertificate) config() *tls.Config {
+// config is the data listener's TLS: 1.2 or later, HTTP/2 offered first
+// when http2 is set, else HTTP/1.1 only, the current certificate for every
+// handshake.
+func (s *servingCertificate) config(http2 bool) *tls.Config {
+	protocols := []string{"http/1.1"}
+	if http2 {
+		protocols = []string{"h2", "http/1.1"}
+	}
 	return &tls.Config{
 		MinVersion: tls.VersionTLS12,
-		NextProtos: []string{"http/1.1"},
+		NextProtos: protocols,
 		GetCertificate: func(*tls.ClientHelloInfo) (*tls.Certificate, error) {
 			return s.current.Load(), nil
 		},

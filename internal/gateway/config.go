@@ -120,6 +120,7 @@ type dataSettings struct {
 	MaxHeaderBytes      *int              `json:"max_header_bytes"`
 	MaxConnections      *int              `json:"max_connections"`
 	MaxInFlight         *int64            `json:"max_in_flight"`
+	HTTP2               *bool             `json:"http2"`
 	IPv6RatePrefix      *int              `json:"ipv6_rate_prefix"`
 	ReadHeaderTimeout   *string           `json:"read_header_timeout"`
 	ReadTimeout         *string           `json:"read_timeout"`
@@ -150,7 +151,9 @@ type nativeConfig struct {
 	// key prefix.
 	limits pipeline.Limits
 	// maxConnections bounds the data listener's open connections.
-	maxConnections    int
+	maxConnections int
+	// http2 allows HTTP/2 on a TLS data listener (the default).
+	http2             bool
 	headerLimit       int
 	readHeaderTimeout time.Duration
 	readTimeout       time.Duration

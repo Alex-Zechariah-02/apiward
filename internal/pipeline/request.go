@@ -20,8 +20,10 @@ type request struct {
 	// rateAddress keys the client's address-based rate counters: the
 	// address, or for IPv6 its configured prefix.
 	rateAddress string
-	// bodyPending is true while a declared request body has not been
-	// consumed by validation.
+	// bodyPending is true while a declared HTTP/1 request body has not been
+	// consumed by validation. HTTP/2 needs no connection close for it: the
+	// server resets the stream, and "Connection: close" would end every
+	// stream on the connection (a GOAWAY).
 	bodyPending bool
 }
 

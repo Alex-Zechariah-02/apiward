@@ -258,7 +258,12 @@ func rewriteToUpstream(pr *httputil.ProxyRequest, e *compile.Endpoint, path stri
 
 // via is the gateway's Via field value for a message received with the given
 // HTTP version (RFC 9110, section 7.6.3).
+// via is the Via entry for a message of the given protocol version: HTTP/2
+// and later have no minor version (RFC 9110 section 7.6.3).
 func via(major, minor int) string {
+	if major >= 2 {
+		return strconv.Itoa(major) + " gateway"
+	}
 	return strconv.Itoa(major) + "." + strconv.Itoa(minor) + " gateway"
 }
 

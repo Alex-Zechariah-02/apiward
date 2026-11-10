@@ -49,8 +49,8 @@ func writeCertificate(t *testing.T, certFile, keyFile, host string, serial int64
 	return certificate
 }
 
-// The data listener serves TLS from files: the upstream learns the request
-// came over https, a failed reload keeps the served certificate and is
+// The data listener serves TLS from files and HTTP/2 by ALPN: the upstream
+// learns the request came over https in HTTP/2, a failed reload keeps the served certificate and is
 // recorded, a good one replaces it, and readiness reflects the gateway.
 func TestDataListenerTLSFiles(t *testing.T) {
 	e := gatewaytest.NewEnv(t)
@@ -77,13 +77,13 @@ func TestDataListenerTLSFiles(t *testing.T) {
 		for _, c := range []*x509.Certificate{first, g.certificate.current.Load().Leaf} {
 			roots.AddCert(c)
 		}
-		client := &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{RootCAs: roots, NextProtos: []string{"h2", "http/1.1"}}}}
+		client := &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{RootCAs: roots}, ForceAttemptHTTP2: true}}
 		reply, err := client.Get("https://" + e.DataAddr + "/a/x")
 		if err != nil {
 			t.Fatal(err)
 		}
 		defer reply.Body.Close()
-		if reply.StatusCode != http.StatusOK || reply.TLS.NegotiatedProtocol != "http/1.1" {
+		if reply.StatusCode != http.StatusOK || reply.TLS.NegotiatedProtocol != "h2" || reply.ProtoMajor != 2 {
 			t.Fatalf("%d over %q", reply.StatusCode, reply.TLS.NegotiatedProtocol)
 		}
 		return reply.TLS.PeerCertificates[0]
@@ -91,7 +91,7 @@ func TestDataListenerTLSFiles(t *testing.T) {
 	if served().SerialNumber.Int64() != 1 {
 		t.Fatal("not the configured certificate")
 	}
-	if receipts := e.A.Receipts(); len(receipts) != 1 || receipts[0].Headers.Get("X-Forwarded-Proto") != "https" {
+	if receipts := e.A.Receipts(); len(receipts) != 1 || receipts[0].Headers.Get("X-Forwarded-Proto") != "https" || receipts[0].Headers.Get("Via") != "2 gateway" {
 		t.Fatalf("upstream receipts %+v", receipts)
 	}
 	if err := os.WriteFile(keyFile, []byte("not a key"), 0o600); err != nil {

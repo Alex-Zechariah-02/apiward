@@ -178,6 +178,23 @@ func TestServerSettings(t *testing.T) {
 		t.Fatalf("applied settings: header bytes %d, timeouts %s %s %s %s", server.MaxHeaderBytes,
 			server.ReadHeaderTimeout, server.ReadTimeout, server.WriteTimeout, server.IdleTimeout)
 	}
+	if !server.Protocols.HTTP1() || !server.Protocols.HTTP2() || server.Protocols.UnencryptedHTTP2() ||
+		server.HTTP2.MaxConcurrentStreams != maxStreams || server.HTTP2.MaxReceiveBufferPerConnection != receiveBuffer {
+		t.Fatalf("applied protocols %v, HTTP/2 settings %+v", server.Protocols, server.HTTP2)
+	}
+
+	// With HTTP/2 off, the host serves HTTP/1 only.
+	data["http2"] = false
+	e.WriteNative(settings)
+	cfg, err := loadNativeConfig(e.Config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server = http.Server{}
+	cfg.server().Apply(&server)
+	if server.Protocols.HTTP2() {
+		t.Fatalf("data.http2 false still serves HTTP/2: %v", server.Protocols)
+	}
 }
 
 // kinds counts the lifecycle kinds err matches; each error has exactly one.

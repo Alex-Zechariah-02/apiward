@@ -83,6 +83,7 @@ func (f nativeFile) check() (nativeConfig, error) {
 		return nativeConfig{}, err
 	}
 	cfg.tls, cfg.redirect = d.TLS, d.RedirectHTTP
+	cfg.http2 = d.HTTP2 == nil || *d.HTTP2
 
 	var sessionLife time.Duration
 	durations := []struct {

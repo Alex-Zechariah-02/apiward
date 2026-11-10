@@ -18,7 +18,8 @@
 //	err = gw.Stop(ctx)
 //
 // The host must apply ServerSettings to its server (header size and
-// timeouts bound slow and oversized clients) and must not rewrite a
+// timeouts bound slow and oversized clients; the HTTP/1 and HTTP/2
+// protocols and HTTP/2 stream limits are set too) and must not rewrite a
 // request's RemoteAddr from client-supplied headers: address lists and
 // per-address rate limits read it.
 package apiward

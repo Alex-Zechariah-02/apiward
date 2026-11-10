@@ -226,22 +226,21 @@ func startNative(cfg nativeConfig, logger *slog.Logger) (*nativeGateway, error) 
 		return nil, errors.Join(err, c.Stop())
 	}
 	listener = capConnections(listener, cfg.maxConnections, c.Observations().ConnectionRefused)
+	server := cfg.server()
+	// HTTP/2 only over TLS, negotiated by ALPN: a plain listener serves
+	// HTTP/1 alone, so a client cannot start HTTP/2 by prior knowledge.
+	server.HTTP2 = server.HTTP2 && d.certificate != nil
 	if d.certificate != nil {
-		listener = tls.NewListener(listener, d.certificate.config())
+		listener = tls.NewListener(listener, d.certificate.config(server.HTTP2))
 	}
-
-	// HTTP/1.0 and HTTP/1.1 only, over plain TCP or TLS.
-	protocols := new(http.Protocols)
-	protocols.SetHTTP1(true)
 	data := &http.Server{
-		Handler:   d.enforcement,
-		Protocols: protocols,
+		Handler: d.enforcement,
 		// "OPTIONS *" reaches enforcement, which refuses every target that
 		// is not in origin form, instead of being answered by net/http.
 		DisableGeneralOptionsHandler: true,
 		ErrorLog:                     slog.NewLogLogger(logger.Handler(), slog.LevelWarn),
 	}
-	cfg.server().Apply(data)
+	server.Apply(data)
 	g := &nativeGateway{controller: c, data: data, metrics: d.metrics, certificate: d.certificate, upstreams: d.upstreams, served: make(chan error, 3), done: make(chan struct{})}
 	g.stop = sync.OnceValue(g.shutdown)
 	go func() { g.served <- g.data.Serve(listener) }()
