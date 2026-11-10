@@ -23,7 +23,7 @@ import (
 // publishAuthority compiles committed authority, the active base with its
 // active overrides, and swaps it in.
 func (c *Controller) publishAuthority(a store.Authority) bool {
-	g, err := authorityGeneration(c.network.Load(), a, a.Overrides)
+	g, err := authorityGeneration(c.network.Load(), a, a.Overrides, c.config.Limits)
 	if err != nil {
 		c.unavailable(fmt.Sprintf("stored revision %d with overrides %v: %v", a.Revision, overrideIDs(a.Overrides), err))
 		return false
@@ -35,9 +35,9 @@ func (c *Controller) publishAuthority(a store.Authority) bool {
 }
 
 // authorityGeneration compiles the active base of a with the given overrides,
-// keeping a provisional base's deadline.
-func authorityGeneration(network compile.Network, a store.Authority, overrides []store.Override) (*compile.Generation, error) {
-	p, err := policy.DecodePolicy(a.Document)
+// keeping a provisional base's deadline, within limits.
+func authorityGeneration(network compile.Network, a store.Authority, overrides []store.Override, limits policy.Limits) (*compile.Generation, error) {
+	p, err := policy.DecodePolicy(a.Document, limits)
 	if err != nil {
 		return nil, err
 	}
@@ -45,7 +45,7 @@ func authorityGeneration(network compile.Network, a store.Authority, overrides [
 	if a.Provisional != 0 {
 		deadline = a.Deadline
 	}
-	return effectiveGeneration(network, p, a.Revision, deadline, overrides)
+	return effectiveGeneration(network, p, a.Revision, deadline, overrides, limits)
 }
 
 func overrideIDs(overrides []store.Override) []int64 {
@@ -58,11 +58,11 @@ func overrideIDs(overrides []store.Override) []int64 {
 
 // compileEffective compiles a stored revision with the given overrides.
 func (c *Controller) compileEffective(ctx context.Context, revision int64, deadline time.Time, overrides []store.Override) (*compile.Generation, error) {
-	p, err := c.store.Policy(ctx, revision)
+	p, err := c.store.Policy(ctx, revision, c.config.Limits)
 	if err != nil {
 		return nil, err
 	}
-	return effectiveGeneration(c.network.Load(), p, revision, deadline, overrides)
+	return effectiveGeneration(c.network.Load(), p, revision, deadline, overrides, c.config.Limits)
 }
 
 // publish applies a complete proposed policy: compile it with the
@@ -71,7 +71,7 @@ func (c *Controller) compileEffective(ctx context.Context, revision int64, deadl
 // outcome event. Callers have checked that the policy changes no target the
 // overrides depend on.
 func (c *Controller) publish(ctx context.Context, t store.TransitionRecord, policy policy.Policy, change store.RevisionChange, overrides []store.Override, now time.Time) (Outcome, int) {
-	if _, err := effectiveGeneration(c.network.Load(), policy, 0, change.Deadline, overrides); err != nil {
+	if _, err := effectiveGeneration(c.network.Load(), policy, 0, change.Deadline, overrides, c.config.Limits); err != nil {
 		code, field := policyRejection(err)
 		return c.reject(ctx, t, code, field, now)
 	}
@@ -88,7 +88,7 @@ func (c *Controller) publish(ctx context.Context, t store.TransitionRecord, poli
 	}
 	fault.CrashPoint("after-commit")
 
-	g, err := effectiveGeneration(c.network.Load(), policy, revision, change.Deadline, overrides)
+	g, err := effectiveGeneration(c.network.Load(), policy, revision, change.Deadline, overrides, c.config.Limits)
 	if err != nil {
 		c.unavailable(fmt.Sprintf("compiling committed revision %d: %v", revision, err))
 		return Outcome{Transition: t.ID, Outcome: "committed", Reason: "PUBLICATION_FAILED"}, http.StatusInternalServerError
@@ -185,7 +185,7 @@ func (c *Controller) Publish(ctx context.Context, actor string, change Change) (
 	if a.Provisional != 0 {
 		return c.reject(ctx, t, "PROVISIONAL_ACTIVE", "", now)
 	}
-	policy, err := policy.DecodePolicy(change.Policy)
+	policy, err := policy.DecodePolicy(change.Policy, c.config.Limits)
 	if err != nil {
 		code, field := policyRejection(err)
 		return c.reject(ctx, t, code, field, now)
@@ -200,7 +200,7 @@ func (c *Controller) Publish(ctx context.Context, actor string, change Change) (
 // policy that would replace the active base of a while changing or
 // invalidating an active override. It reports whether it refused.
 func (c *Controller) rejectConflict(ctx context.Context, t store.TransitionRecord, a store.Authority, next policy.Policy, now time.Time) (Outcome, int, bool) {
-	current, err := policy.DecodePolicy(a.Document)
+	current, err := policy.DecodePolicy(a.Document, c.config.Limits)
 	if err != nil {
 		result, status := c.storeFailure(t.ID, err)
 		return result, status, true

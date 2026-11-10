@@ -10,8 +10,6 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-
-	"github.com/Alex-Zechariah-02/apiward/internal/policy"
 )
 
 var durationBuckets = [...]float64{.001, .005, .01, .025, .05, .1, .25, .5, 1, 2.5, 5, 10}
@@ -25,6 +23,7 @@ type durationMetric struct {
 type requestMetrics struct {
 	counts    map[metricLabels]uint64
 	durations map[string]*durationMetric
+	apis      int // the policy's API ceiling, which bounds durations
 }
 
 // Called under observations.mu. Only compiler-defined identifiers and gateway
@@ -49,7 +48,7 @@ func (m *requestMetrics) Record(event RequestView) {
 		labels.api, labels.operation = "unknown", "unknown"
 	}
 	m.counts[labels]++
-	if m.durations[api] == nil && len(m.durations) >= policy.MaxAPIs {
+	if m.durations[api] == nil && len(m.durations) >= m.apis {
 		api = "unknown"
 	}
 	if m.durations[api] == nil {

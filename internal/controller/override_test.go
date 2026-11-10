@@ -157,7 +157,7 @@ func TestApplyOverrides(t *testing.T) {
 	// The same overrides in any order give one generation; none gives the
 	// base's own generation identity.
 	deadline := time.Time{}
-	first, err := effectiveGeneration(closedNetwork(t), basePolicy, 7, deadline, all)
+	first, err := effectiveGeneration(closedNetwork(t), basePolicy, 7, deadline, all, policy.Limits{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -167,23 +167,23 @@ func TestApplyOverrides(t *testing.T) {
 	for range 50 {
 		shuffled := slices.Clone(all)
 		rand.Shuffle(len(shuffled), func(i, j int) { shuffled[i], shuffled[j] = shuffled[j], shuffled[i] })
-		again, err := effectiveGeneration(closedNetwork(t), basePolicy, 7, deadline, shuffled)
+		again, err := effectiveGeneration(closedNetwork(t), basePolicy, 7, deadline, shuffled, policy.Limits{})
 		if err != nil || again.ID != first.ID {
 			t.Fatalf("order %v gave %v %v, want %s", overrideIDs(shuffled), again, err, first.ID)
 		}
 	}
-	plain, err := compile.Compile(basePolicy, 7, deadline)
+	plain, err := compile.Compile(basePolicy, 7, deadline, policy.Limits{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	none, err := effectiveGeneration(closedNetwork(t), basePolicy, 7, deadline, nil)
+	none, err := effectiveGeneration(closedNetwork(t), basePolicy, 7, deadline, nil, policy.Limits{})
 	if err != nil || none.ID != plain.ID || len(none.Overrides) != 0 {
 		t.Fatalf("no overrides: %v %v, want %s", none, err, plain.ID)
 	}
 	// The generation expires at the earliest expiry of its overrides.
 	soon := slices.Clone(all)
 	soon[2].ExpiresAt = time.UnixMilli(time.Now().Add(time.Minute).UnixMilli())
-	g, err := effectiveGeneration(closedNetwork(t), basePolicy, 7, time.UnixMilli(time.Now().Add(2*time.Minute).UnixMilli()), soon)
+	g, err := effectiveGeneration(closedNetwork(t), basePolicy, 7, time.UnixMilli(time.Now().Add(2*time.Minute).UnixMilli()), soon, policy.Limits{})
 	if err != nil || !g.NotAfter.Equal(soon[2].ExpiresAt) {
 		t.Fatalf("NotAfter %v, want %v (%v)", g.NotAfter, soon[2].ExpiresAt, err)
 	}
@@ -209,7 +209,7 @@ func TestApplyOverrides(t *testing.T) {
 		if _, err := applyOverrides(basePolicy, r.list); overrideErrorCode(err) != r.want {
 			t.Errorf("%s: %v, want %s", r.name, err, r.want)
 		}
-		if g, err := effectiveGeneration(closedNetwork(t), basePolicy, 7, deadline, r.list); g != nil || err == nil {
+		if g, err := effectiveGeneration(closedNetwork(t), basePolicy, 7, deadline, r.list, policy.Limits{}); g != nil || err == nil {
 			t.Errorf("%s: a generation was compiled", r.name)
 		}
 	}
@@ -221,7 +221,7 @@ func TestApplyOverrides(t *testing.T) {
 		t.Errorf("permit exception on a denied operation: %v", err)
 	}
 	tooMany := make([]store.Override, store.MaxActiveOverrides+1)
-	if _, err := effectiveGeneration(closedNetwork(t), basePolicy, 7, deadline, tooMany); overrideErrorCode(err) != "LIMIT_EXCEEDED@overrides" {
+	if _, err := effectiveGeneration(closedNetwork(t), basePolicy, 7, deadline, tooMany, policy.Limits{}); overrideErrorCode(err) != "LIMIT_EXCEEDED@overrides" {
 		t.Errorf("too many overrides: %v", err)
 	}
 }

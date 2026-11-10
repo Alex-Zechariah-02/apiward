@@ -59,7 +59,7 @@ func TestUpstreamSchema5(t *testing.T) {
 		"dial equals url": {upstreams(v5, policy.Upstream{ID: "a", Dial: "127.0.0.1:80"},
 			policy.Upstream{ID: "b", URL: "http://127.0.0.1"}), "INVALID_UPSTREAM@upstreams[1].url"},
 	} {
-		_, err := Compile(tc.p, 1, time.Time{})
+		_, err := Compile(tc.p, 1, time.Time{}, policy.Limits{})
 		if got := refusal(err); got != tc.want {
 			t.Errorf("%s: %s, want %s", name, got, tc.want)
 		}
@@ -67,7 +67,7 @@ func TestUpstreamSchema5(t *testing.T) {
 
 	// The operator's settings decide profiles and public literals.
 	g, err := Compile(upstreams(v5, policy.Upstream{ID: "a", URL: "https://10.0.0.5", TLS: "fetch"},
-		policy.Upstream{ID: "b", URL: "http://192.0.2.10"}), 1, time.Time{})
+		policy.Upstream{ID: "b", URL: "http://192.0.2.10"}), 1, time.Time{}, policy.Limits{})
 	if err != nil {
 		t.Fatal(err)
 	}

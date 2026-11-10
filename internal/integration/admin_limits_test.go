@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/Alex-Zechariah-02/apiward/internal/compile"
 	"github.com/Alex-Zechariah-02/apiward/internal/gatewaytest"
 	"github.com/Alex-Zechariah-02/apiward/internal/monitor"
 	"github.com/Alex-Zechariah-02/apiward/internal/session"
@@ -14,10 +13,14 @@ import (
 )
 
 // The limits read reports each built-in limit with its current use, taken
-// from the component that owns it, and needs a signed-in administrator.
+// from the component that owns it (configured ceilings included), and needs
+// a signed-in administrator.
 func TestAdminLimits(t *testing.T) {
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.ProtectedPolicy(), gatewaytest.SeedOptions{})
+	settings := e.NativeSettings()
+	settings["limits"] = map[string]any{"rate_counters": 1000, "monitor_window": 500}
+	e.WriteNative(settings)
 	e.Start(gatewaytest.Binaries.Plain)
 	if code, _, _ := e.AdminSend("GET", "/admin/limits", ""); code != 401 {
 		t.Fatalf("limits without a session: %d", code)
@@ -38,7 +41,7 @@ func TestAdminLimits(t *testing.T) {
 	}
 	want := map[string]int64{
 		"temporary_rules": store.MaxActiveOverrides, "live_views": monitor.MaxStreams, "administrator_sessions": session.Max,
-		"rate_counters": compile.MaxCounters, "recent_requests": monitor.RecentLimit,
+		"rate_counters": 1000, "recent_requests": 500,
 	}
 	for name, max := range want {
 		if limits[name].Max != max {

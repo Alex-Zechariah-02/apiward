@@ -137,6 +137,10 @@ func (f nativeFile) check() (nativeConfig, error) {
 		return nativeConfig{}, err
 	}
 
+	if cfg.controller.Limits, err = f.Limits.check(); err != nil {
+		return nativeConfig{}, err
+	}
+
 	// Profile files are read here, so a missing or invalid one stops the
 	// start, and a reload reads them again with the rest of the file.
 	if cfg.pool.MaxIdle, err = numberSetting("upstream.max_idle_per_upstream", u.MaxIdlePerUpstream, defaultMaxIdle, 0, maxIdlePerUpstream); err != nil {
@@ -150,6 +154,35 @@ func (f nativeFile) check() (nativeConfig, error) {
 		cfg.adminUI = *g.AdminUI
 	}
 	return cfg, nil
+}
+
+// check resolves the capacity ceilings: each omitted one takes its default,
+// a written one must be 1 to its maximum (policy.Limits.Resolve).
+func (s limitSettings) check() (policy.Limits, error) {
+	var l policy.Limits
+	for _, setting := range []struct {
+		name  string
+		value *int
+		into  *int
+	}{
+		{"policy_bytes", s.PolicyBytes, &l.PolicyBytes},
+		{"apis", s.APIs, &l.APIs},
+		{"operations", s.Operations, &l.Operations},
+		{"roles", s.Roles, &l.Roles},
+		{"permits", s.Permits, &l.Permits},
+		{"rate_counters", s.RateCounters, &l.RateCounters},
+		{"monitor_window", s.MonitorWindow, &l.Window},
+	} {
+		if setting.value == nil {
+			continue
+		}
+		// Zero means "default" to Resolve, so a written zero is refused here.
+		if *setting.value < 1 {
+			return policy.Limits{}, fmt.Errorf("limits.%s must be at least 1", setting.name)
+		}
+		*setting.into = *setting.value
+	}
+	return l.Resolve()
 }
 
 // checkDataListen requires the data-plane address to be a literal IP address

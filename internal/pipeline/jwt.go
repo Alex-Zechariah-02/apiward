@@ -172,7 +172,7 @@ func (v *Verifier) checkClaims(payload []byte, now time.Time) (verifiedToken, st
 	roles := []string{}
 	if value, present := claims["roles"]; present {
 		items, ok := value.([]any)
-		if !ok || len(items) > policy.MaxRoles {
+		if !ok || len(items) > policy.MaxTokenRoles {
 			return verifiedToken{}, "invalid_claims"
 		}
 		for _, item := range items {

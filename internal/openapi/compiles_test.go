@@ -23,11 +23,11 @@ func TestImportCompiles(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		decoded, err := policy.DecodePolicy(document)
+		decoded, err := policy.DecodePolicy(document, policy.Limits{})
 		if err != nil {
 			t.Fatalf("%s: decode: %v", name, err)
 		}
-		if _, err := compile.Compile(decoded, 1, time.Time{}); err != nil {
+		if _, err := compile.Compile(decoded, 1, time.Time{}, policy.Limits{}); err != nil {
 			t.Fatalf("%s: compile: %v", name, err)
 		}
 	}
@@ -37,7 +37,7 @@ func TestImportCompiles(t *testing.T) {
 	options := testOptions()
 	options.Base.Operations = nil
 	options.Base.Permits = nil
-	for i := range policy.MaxOperations - 1 {
+	for i := range policy.DefaultOperations - 1 {
 		options.Base.Operations = append(options.Base.Operations, policy.Operation{
 			ID: fmt.Sprintf("inventory.op%d", i), API: "inventory", Method: "GET",
 			Target: fmt.Sprintf("/inventory/%d", i), Access: "allow", Auth: "required",
@@ -57,7 +57,7 @@ func TestImportSizeAsWritten(t *testing.T) {
 	long := strings.Repeat("x", 200)
 	for i := 0; ; i++ {
 		compact, _ := json.Marshal(options.Base)
-		if len(compact) > policy.MaxPolicyBytes-3000 {
+		if len(compact) > policy.DefaultPolicyBytes-3000 {
 			break
 		}
 		options.Base.Operations = append(options.Base.Operations, policy.Operation{

@@ -12,6 +12,7 @@ import (
 	"github.com/Alex-Zechariah-02/apiward/internal/controller"
 	"github.com/Alex-Zechariah-02/apiward/internal/issuertest"
 	"github.com/Alex-Zechariah-02/apiward/internal/pipeline"
+	"github.com/Alex-Zechariah-02/apiward/internal/policy"
 	"github.com/Alex-Zechariah-02/apiward/internal/storetest"
 )
 
@@ -47,5 +48,5 @@ func openController(t *testing.T) *controller.Controller {
 // testServer is the Admin API of c with its own rate counters and no
 // dashboard files.
 func testServer(c *controller.Controller) *Server {
-	return New(Deps{Control: c, Limiter: pipeline.NewLimiter(), Logger: slog.New(slog.DiscardHandler)})
+	return New(Deps{Control: c, Limiter: pipeline.NewLimiter(policy.DefaultRateCounters), Logger: slog.New(slog.DiscardHandler)})
 }

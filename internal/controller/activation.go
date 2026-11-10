@@ -56,7 +56,7 @@ func (c *Controller) EstablishBase(ctx context.Context, kind, actor string, cand
 	case record.Checksum != checksum || store.DocumentChecksum(record.Document) != checksum:
 		return c.reject(ctx, t, "PRECONDITION_FAILED", "checksum", now)
 	}
-	policy, err := policy.DecodePolicy(record.Document)
+	policy, err := policy.DecodePolicy(record.Document, c.config.Limits)
 	if err != nil {
 		code, field := policyRejection(err)
 		return c.reject(ctx, t, code, field, now)
@@ -120,7 +120,7 @@ func (c *Controller) Activate(ctx context.Context, t store.TransitionRecord, can
 	case store.DocumentChecksum(record.Document) != record.Checksum:
 		return c.reject(ctx, t, "CANDIDATE_INTEGRITY", "", now)
 	}
-	policy, err := policy.DecodePolicy(record.Document)
+	policy, err := policy.DecodePolicy(record.Document, c.config.Limits)
 	if err != nil {
 		code, field := policyRejection(err)
 		return c.reject(ctx, t, code, field, now)

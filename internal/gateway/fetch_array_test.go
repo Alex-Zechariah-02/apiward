@@ -20,7 +20,7 @@ func TestFetchArraySchemas(t *testing.T) {
 			schema = `{"type":"object","additionalProperties":false,"required":["items"],"properties":{"items":` + items + `}}`
 		}
 		p := schemaPolicy(schema)
-		g, err := compile.Compile(p, 1, time.Time{})
+		g, err := compile.Compile(p, 1, time.Time{}, policy.Limits{})
 		if err != nil {
 			t.Errorf("wrapped=%t: array schema refused: %v", wrapped, err)
 			continue

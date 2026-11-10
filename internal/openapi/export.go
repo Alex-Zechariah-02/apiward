@@ -53,7 +53,7 @@ func (r *ExportReport) Exit() int {
 // description as JSON-ready values and the report, or an error, in which
 // case nothing may be written. It has no side effects.
 func Export(p policy.Policy, options ExportOptions) (map[string]any, *ExportReport, error) {
-	if _, err := compile.Compile(p, 0, time.Time{}); err != nil {
+	if _, err := compile.Compile(p, 0, time.Time{}, policy.Limits{}); err != nil {
 		return nil, nil, fmt.Errorf("the policy is not valid: %w", err)
 	}
 	index := slices.IndexFunc(p.APIs, func(a policy.API) bool { return a.ID == options.API })

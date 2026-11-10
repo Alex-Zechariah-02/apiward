@@ -105,7 +105,7 @@ func TestUnusableBindingSendsNothing(t *testing.T) {
 	}
 	for _, dial := range []string{"localhost:" + port, "192.0.2.1:80", "127.0.0.1"} {
 		p := policy.Policy{SchemaVersion: policy.SchemaVersion, Profile: policy.ProfileCore, Upstreams: []policy.Upstream{{ID: "u", Dial: dial}}}
-		if g, err := compile.Compile(p, 1, time.Time{}); g != nil || err == nil {
+		if g, err := compile.Compile(p, 1, time.Time{}, policy.Limits{}); g != nil || err == nil {
 			t.Errorf("dial %q compiled", dial)
 		}
 	}

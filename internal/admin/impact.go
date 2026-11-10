@@ -29,7 +29,7 @@ func (s *Server) candidateGeneration(w http.ResponseWriter, r *http.Request, id 
 		adminError(w, http.StatusNotFound, "not_found", "")
 		return nil, nil, false
 	}
-	policy, err := policy.DecodePolicy(stored.Document)
+	policy, err := policy.DecodePolicy(stored.Document, s.config.Limits)
 	if err != nil {
 		adminError(w, http.StatusUnprocessableEntity, "candidate_invalid", "")
 		return nil, nil, false
@@ -41,7 +41,7 @@ func (s *Server) candidateGeneration(w http.ResponseWriter, r *http.Request, id 
 		adminError(w, 503, "gateway_unavailable", "")
 		return nil, nil, false
 	}
-	candidate, err = controller.CandidateGeneration(s.control.Network(), policy, stored.Parent, authority.Overrides)
+	candidate, err = controller.CandidateGeneration(s.control.Network(), policy, stored.Parent, authority.Overrides, s.config.Limits)
 	if err != nil {
 		adminError(w, http.StatusUnprocessableEntity, "candidate_invalid", "")
 		return nil, nil, false

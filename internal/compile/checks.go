@@ -8,19 +8,25 @@ import (
 	"github.com/Alex-Zechariah-02/apiward/internal/policy"
 )
 
-func checkCounts(p policy.Policy) error {
-	limits := []struct {
+// checkCounts refuses a policy with more upstreams, APIs, operations, roles
+// or permits than limits allow, and limits out of range.
+func checkCounts(p policy.Policy, limits policy.Limits) error {
+	limits, err := limits.Resolve()
+	if err != nil {
+		return policy.Invalid("LIMIT_EXCEEDED", "")
+	}
+	counts := []struct {
 		field string
 		count int
 		limit int
 	}{
-		{"upstreams", len(p.Upstreams), policy.MaxUpstreams},
-		{"apis", len(p.APIs), policy.MaxAPIs},
-		{"operations", len(p.Operations), policy.MaxOperations},
-		{"roles", len(p.Roles), policy.MaxRoles},
-		{"permits", len(p.Permits), policy.MaxPermits},
+		{"upstreams", len(p.Upstreams), limits.APIs},
+		{"apis", len(p.APIs), limits.APIs},
+		{"operations", len(p.Operations), limits.Operations},
+		{"roles", len(p.Roles), limits.Roles},
+		{"permits", len(p.Permits), limits.Permits},
 	}
-	for _, l := range limits {
+	for _, l := range counts {
 		if l.count > l.limit {
 			return policy.Invalid("LIMIT_EXCEEDED", "%s", l.field)
 		}

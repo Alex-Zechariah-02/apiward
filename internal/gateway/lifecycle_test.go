@@ -22,6 +22,7 @@ import (
 	"github.com/Alex-Zechariah-02/apiward/internal/gatewaytest"
 	"github.com/Alex-Zechariah-02/apiward/internal/issuertest"
 	"github.com/Alex-Zechariah-02/apiward/internal/pipeline"
+	"github.com/Alex-Zechariah-02/apiward/internal/policy"
 	"github.com/Alex-Zechariah-02/apiward/internal/store"
 )
 
@@ -56,7 +57,7 @@ func own(e *gatewaytest.Env, cfg controller.Config) (*controller.Controller, *ga
 // testAdmin returns the Admin API handler of c with its own rate counters and
 // no dashboard files.
 func testAdmin(c *controller.Controller) http.Handler {
-	return admin.New(admin.Deps{Control: c, Limiter: pipeline.NewLimiter(), Logger: slog.New(slog.DiscardHandler)}).Handler()
+	return admin.New(admin.Deps{Control: c, Limiter: pipeline.NewLimiter(policy.DefaultRateCounters), Logger: slog.New(slog.DiscardHandler)}).Handler()
 }
 
 // Stack frames of the goroutines a controller starts.
@@ -121,12 +122,12 @@ func assertReleased(t *testing.T, c *controller.Controller, cfg controller.Confi
 // everything, once, however often it is called.
 func TestControllerOwnedByApplication(t *testing.T) {
 	e := gatewaytest.NewEnv(t)
-	policy := e.ProtectedPolicy()
-	gatewaytest.Seed(t, e.Database, policy, gatewaytest.SeedOptions{})
+	document := e.ProtectedPolicy()
+	gatewaytest.Seed(t, e.Database, document, gatewaytest.SeedOptions{})
 	writers, servers := goroutines(auditWriter), goroutines(adminServer)
 
 	c, logs := own(e, controllerConfig(e))
-	want, err := compile.Compile(policy, 1, time.Time{})
+	want, err := compile.Compile(document, 1, time.Time{}, policy.Limits{})
 	if err != nil {
 		t.Fatal(err)
 	}

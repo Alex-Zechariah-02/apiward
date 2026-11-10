@@ -19,6 +19,7 @@ import (
 	"github.com/Alex-Zechariah-02/apiward/internal/forward"
 	"github.com/Alex-Zechariah-02/apiward/internal/monitor"
 	"github.com/Alex-Zechariah-02/apiward/internal/pipeline"
+	"github.com/Alex-Zechariah-02/apiward/internal/policy"
 	"github.com/Alex-Zechariah-02/apiward/internal/session"
 	"github.com/Alex-Zechariah-02/apiward/internal/store"
 )
@@ -64,6 +65,9 @@ type Config struct {
 	AuditMaxBytes        int64
 	AuditMaxFiles        int
 	JWT                  pipeline.TrustConfig
+	// Limits are the capacity ceilings: policy size and counts, rate
+	// counters, recent requests kept.
+	Limits policy.Limits
 	// Network holds the upstream network settings; nil allows no public
 	// address and defines no TLS profile.
 	Network *forward.Network
@@ -149,7 +153,7 @@ func Prepare(cfg Config, logger *slog.Logger) (*Controller, error) {
 	}
 	c := &Controller{
 		config:       cfg,
-		observations: monitor.New(),
+		observations: monitor.New(cfg.Limits.Window, cfg.Limits.APIs),
 		sessions:     session.New(cfg.AdminIdleTimeout, cfg.AdminSessionLifetime),
 		logger:       logger,
 	}
@@ -233,6 +237,10 @@ func (cfg *Config) applyDefaults() error {
 	}
 	if cfg.AdminSessionLifetime == 0 {
 		cfg.AdminSessionLifetime = DefaultLifetime
+	}
+	var err error
+	if cfg.Limits, err = cfg.Limits.Resolve(); err != nil {
+		return err
 	}
 	if cfg.AuditMaxBytes < MinAuditBytes || cfg.AuditMaxBytes > MaxAuditBytes {
 		return fmt.Errorf("audit_max_bytes must be %d to %d", MinAuditBytes, MaxAuditBytes)

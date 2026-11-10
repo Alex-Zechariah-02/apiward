@@ -30,14 +30,11 @@ const (
 // rather than activated with controls it cannot run.
 const ProfileCore = "core"
 
+// MaxTokenRoles bounds the roles one token may carry, whatever the policy's
+// role ceiling: it is part of the token size bound.
 const (
-	MaxPolicyBytes   = 64 << 10
 	MaxPolicyDepth   = 16
-	MaxUpstreams     = 64
-	MaxAPIs          = 64
-	MaxOperations    = 256
-	MaxRoles         = 64
-	MaxPermits       = 4096
+	MaxTokenRoles    = 64
 	MaxIDLength      = 64
 	MaxSubjectLength = 128
 	MaxTargetLength  = 256
@@ -138,11 +135,13 @@ var AllowedMethods = map[string]bool{
 	http.MethodPatch: true, http.MethodDelete: true, http.MethodOptions: true,
 }
 
-// DecodePolicy parses a policy document. It rejects oversized or deeply
-// nested input, repeated or non-lowercase member names, unknown fields,
-// unsupported schema versions and trailing data.
-func DecodePolicy(document []byte) (Policy, error) {
-	if len(document) > MaxPolicyBytes {
+// DecodePolicy parses a policy document. It rejects input larger than
+// limits.PolicyBytes (zero: the default) or deeply nested, repeated or
+// non-lowercase member names, unknown fields, unsupported schema versions and
+// trailing data. Limits out of range are refused as LIMIT_EXCEEDED.
+func DecodePolicy(document []byte, limits Limits) (Policy, error) {
+	limits, err := limits.Resolve()
+	if err != nil || len(document) > limits.PolicyBytes {
 		return Policy{}, Invalid("LIMIT_EXCEEDED", "")
 	}
 	if err := CheckMembers(document, MaxPolicyDepth); err != nil {

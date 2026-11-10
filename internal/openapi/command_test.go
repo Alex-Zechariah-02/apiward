@@ -60,7 +60,7 @@ func TestImportCommand(t *testing.T) {
 			t.Fatalf("exit %d: %s", code, stderr.String())
 		}
 		document, _ := os.ReadFile(run.out)
-		if _, err := policy.DecodePolicy(document); err != nil || !bytes.HasSuffix(document, []byte("}\n")) {
+		if _, err := policy.DecodePolicy(document, policy.Limits{}); err != nil || !bytes.HasSuffix(document, []byte("}\n")) {
 			t.Fatalf("policy file: %v", err)
 		}
 		raw, _ := os.ReadFile(run.report)
@@ -147,7 +147,7 @@ func TestImportCommand(t *testing.T) {
 		run := newRun(t, "orders.json", fixture(t, "orders.json"))
 		full := testBase()
 		full.Operations, full.Permits = nil, nil
-		for i := range policy.MaxOperations - 1 {
+		for i := range policy.DefaultOperations - 1 {
 			full.Operations = append(full.Operations, policy.Operation{ID: fmt.Sprintf("inventory.op%d", i),
 				API: "inventory", Method: "GET", Target: fmt.Sprintf("/inventory/%d", i), Access: "allow", Auth: "required"})
 		}
@@ -187,7 +187,7 @@ func TestExportCommand(t *testing.T) {
 		code := Command([]string{"import-openapi", "--spec", out, "--api", "shop", "--upstream", "shop-svc", "--base", source,
 			"--with-permits", "--out", imported, "--report", importReport}, &stderr)
 		back, _ := os.ReadFile(imported)
-		decoded, err := policy.DecodePolicy(back)
+		decoded, err := policy.DecodePolicy(back, policy.Limits{})
 		if code != ExitComplete || err != nil {
 			t.Fatalf("import exit %d, %v: %s", code, err, stderr.String())
 		}

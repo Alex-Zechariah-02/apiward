@@ -191,12 +191,12 @@ func compiles(result policy.Policy) error {
 	if err != nil {
 		return err
 	}
-	if len(document) > policy.MaxPolicyBytes {
+	if len(document) > policy.DefaultPolicyBytes {
 		err = policy.Invalid("LIMIT_EXCEEDED", "size")
 	} else {
 		var decoded policy.Policy
-		if decoded, err = policy.DecodePolicy(document); err == nil {
-			_, err = compile.Compile(decoded, 0, time.Time{})
+		if decoded, err = policy.DecodePolicy(document, policy.Limits{}); err == nil {
+			_, err = compile.Compile(decoded, 0, time.Time{}, policy.Limits{})
 		}
 	}
 	if err != nil {

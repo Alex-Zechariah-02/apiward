@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/compile"
+	"github.com/Alex-Zechariah-02/apiward/internal/policy"
 )
 
 // A provisional generation expires at its deadline on whichever clock
@@ -16,7 +17,7 @@ import (
 // TestOverrideExpiryUnderClockChanges.)
 func TestDeadlinePredicate(t *testing.T) {
 	deadline := time.UnixMilli(time.Now().Add(time.Hour).UnixMilli())
-	g, err := compile.Compile(threeAPIPolicy(), 2, deadline)
+	g, err := compile.Compile(threeAPIPolicy(), 2, deadline, policy.Limits{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,7 +65,7 @@ func TestDeadlinePredicate(t *testing.T) {
 	if now := compile.TrustedTime(wallDeadline.Add(-time.Minute), time.Hour); suspended.Expired(now) {
 		t.Fatalf("expired before either clock reached the deadline (trusted time %v)", now)
 	}
-	confirmed, err := compile.Compile(threeAPIPolicy(), 2, time.Time{})
+	confirmed, err := compile.Compile(threeAPIPolicy(), 2, time.Time{}, policy.Limits{})
 	if err != nil || confirmed.Expired(compile.TrustedNow().Add(1000*time.Hour)) {
 		t.Fatalf("a confirmed generation expired: %v", err)
 	}

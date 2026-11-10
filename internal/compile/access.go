@@ -44,7 +44,7 @@ func NewQuestion(method, path, host string, headers map[string]string, roles []s
 	if !ok {
 		return q, "path"
 	}
-	if len(roles) > policy.MaxRoles || slices.ContainsFunc(roles, func(role string) bool { return role == "" || len(role) > policy.MaxIDLength }) {
+	if len(roles) > policy.MaxTokenRoles || slices.ContainsFunc(roles, func(role string) bool { return role == "" || len(role) > policy.MaxIDLength }) {
 		return q, "roles"
 	}
 	if len(host) > maxQuestionHost {

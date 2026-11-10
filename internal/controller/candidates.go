@@ -39,10 +39,10 @@ func (c *Controller) StageCandidate(ctx context.Context, t store.TransitionRecor
 	if t.Expected.Int64 != parent {
 		return c.reject(ctx, t, "PRECONDITION_FAILED", "", now)
 	}
-	policy, err := policy.DecodePolicy(document)
+	policy, err := policy.DecodePolicy(document, c.config.Limits)
 	if err == nil {
 		var g *compile.Generation
-		if g, err = compile.Compile(policy, 0, time.Time{}); err == nil {
+		if g, err = compile.Compile(policy, 0, time.Time{}, c.config.Limits); err == nil {
 			err = g.CheckNetwork(c.network.Load())
 		}
 	}

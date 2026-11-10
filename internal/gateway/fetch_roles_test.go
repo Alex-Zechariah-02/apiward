@@ -13,7 +13,7 @@ func TestFetchRejectsLegacyPolicyAndSubjects(t *testing.T) {
 		`{"schema_version":3,"profile":"core"}`:               "SCHEMA_VERSION_UNSUPPORTED",
 		`{"schema_version":4,"profile":"core","subjects":[]}`: "UNKNOWN_FIELD",
 	} {
-		if _, err := policy.DecodePolicy([]byte(document)); errorCode(err) != want {
+		if _, err := policy.DecodePolicy([]byte(document), policy.Limits{}); errorCode(err) != want {
 			t.Errorf("%s: %s, want %s", document, errorCode(err), want)
 		}
 	}

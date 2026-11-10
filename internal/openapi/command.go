@@ -177,11 +177,11 @@ func runExport(values map[string]string, stderr io.Writer) (int, error) {
 
 // readPolicy reads and strictly decodes a policy file.
 func readPolicy(path, name string) (policy.Policy, error) {
-	document, err := readLimited(path, policy.MaxPolicyBytes, name)
+	document, err := readLimited(path, policy.DefaultPolicyBytes, name)
 	if err != nil {
 		return policy.Policy{}, err
 	}
-	p, err := policy.DecodePolicy(document)
+	p, err := policy.DecodePolicy(document, policy.Limits{})
 	if err != nil {
 		return policy.Policy{}, fmt.Errorf("%s policy refused: %w", name, err)
 	}

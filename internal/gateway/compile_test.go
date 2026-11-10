@@ -74,7 +74,7 @@ func TestPolicySubjectsRejected(t *testing.T) {
 		{ID: "café", Status: "active"},
 		{ID: strings.Repeat("s", policy.MaxSubjectLength+1), Status: "active"},
 	} {
-		if _, err := policy.DecodePolicy(gatewaytest.WithSubject(threeAPIPolicy(), subject)); errorCode(err) != "UNKNOWN_FIELD" {
+		if _, err := policy.DecodePolicy(gatewaytest.WithSubject(threeAPIPolicy(), subject), policy.Limits{}); errorCode(err) != "UNKNOWN_FIELD" {
 			t.Errorf("legacy membership %+v: %v", subject, err)
 		}
 	}
@@ -139,7 +139,7 @@ func TestSpecificityIgnoresDeclarationOrder(t *testing.T) {
 		}
 		q := p
 		q.Operations = shuffled
-		g, err := compile.Compile(q, 1, time.Time{})
+		g, err := compile.Compile(q, 1, time.Time{}, policy.Limits{})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -173,7 +173,7 @@ func TestDenyAllPolicyCompiles(t *testing.T) {
 		p.Operations[i].Access = "deny"
 	}
 	p.Permits = nil
-	g, err := compile.Compile(p, 1, time.Time{})
+	g, err := compile.Compile(p, 1, time.Time{}, policy.Limits{})
 	if err != nil {
 		t.Fatalf("deny-all policy rejected: %v", err)
 	}
@@ -198,7 +198,7 @@ func TestDenyAllPolicyCompiles(t *testing.T) {
 	}
 
 	empty := policy.Policy{SchemaVersion: policy.SchemaVersion, Profile: policy.ProfileCore}
-	if _, err := compile.Compile(empty, 1, time.Time{}); err != nil {
+	if _, err := compile.Compile(empty, 1, time.Time{}, policy.Limits{}); err != nil {
 		t.Fatalf("empty policy rejected: %v", err)
 	}
 }
@@ -206,7 +206,7 @@ func TestDenyAllPolicyCompiles(t *testing.T) {
 // Roles are flat: a subject is allowed an operation exactly when one of its
 // own trusted roles holds a permit for that operation.
 func TestRoleEvaluation(t *testing.T) {
-	g, err := compile.Compile(threeAPIPolicy(), 1, time.Time{})
+	g, err := compile.Compile(threeAPIPolicy(), 1, time.Time{}, policy.Limits{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -258,21 +258,21 @@ func FuzzDecodeAndCompile(f *testing.F) {
 	f.Add([]byte(`{"schema_version":4,"profile":"core","roles":[{"id":"R"}],"subjects":[{"id":"s","status":"active","roles":["R","R"]}]}`))
 	f.Add([]byte(`[[[[[[[[[[]]]]]]]]]]`))
 	f.Fuzz(func(t *testing.T, document []byte) {
-		p, err := policy.DecodePolicy(document)
+		p, err := policy.DecodePolicy(document, policy.Limits{})
 		if err != nil {
 			if _, ok := errors.AsType[*policy.PolicyError](err); !ok {
 				t.Fatalf("untyped error %v", err)
 			}
 			return
 		}
-		first, err := compile.Compile(p, 1, time.Time{})
+		first, err := compile.Compile(p, 1, time.Time{}, policy.Limits{})
 		if err != nil {
 			if _, ok := errors.AsType[*policy.PolicyError](err); !ok {
 				t.Fatalf("untyped error %v", err)
 			}
 			return
 		}
-		second, _ := compile.Compile(p, 1, time.Time{})
+		second, _ := compile.Compile(p, 1, time.Time{}, policy.Limits{})
 		if second == nil || first.ID != second.ID {
 			t.Fatal("accepted policy compiled to different identities")
 		}

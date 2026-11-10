@@ -76,7 +76,7 @@ func TestWhenCompile(t *testing.T) {
 	variant(&p, 0, "orders.v2", v2).Access = "deny"
 	both := variant(&p, 0, "orders.both", policy.When{Hosts: host.Hosts, Headers: v2.Headers})
 	both.Rate = &policy.RateRule{Algorithm: "sliding-window", Count: 5, WindowSeconds: 60, Key: "subject"}
-	g, err := compile.Compile(p, 1, time.Time{})
+	g, err := compile.Compile(p, 1, time.Time{}, policy.Limits{})
 	if err != nil {
 		t.Fatal(err)
 	}

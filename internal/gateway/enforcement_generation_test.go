@@ -16,6 +16,7 @@ import (
 	"github.com/Alex-Zechariah-02/apiward/internal/controller"
 	"github.com/Alex-Zechariah-02/apiward/internal/gatewaytest"
 	"github.com/Alex-Zechariah-02/apiward/internal/pipeline"
+	"github.com/Alex-Zechariah-02/apiward/internal/policy"
 )
 
 // publishOnRead is a request body that publishes a new generation when the
@@ -89,7 +90,7 @@ func TestEnforcementWithoutUsableGeneration(t *testing.T) {
 		e := gatewaytest.NewEnv(t)
 		c, _ := own(e, controllerConfig(e))
 		f := &memoryForwarder{}
-		h, err := newHandler(c, pipeline.NewLimiter(), pipeline.Limits{}, f.forward)
+		h, err := newHandler(c, pipeline.NewLimiter(policy.DefaultRateCounters), pipeline.Limits{}, f.forward)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -102,10 +103,10 @@ func TestEnforcementWithoutUsableGeneration(t *testing.T) {
 
 	t.Run("past its deadline", func(t *testing.T) {
 		e := gatewaytest.NewEnv(t)
-		policy := e.Policy(e.A, false)
-		gatewaytest.Seed(t, e.Database, policy, gatewaytest.SeedOptions{})
+		document := e.Policy(e.A, false)
+		gatewaytest.Seed(t, e.Database, document, gatewaytest.SeedOptions{})
 		c, _ := own(e, controllerConfig(e))
-		stale, err := compile.Compile(policy, 1, time.Now().Add(-time.Second))
+		stale, err := compile.Compile(document, 1, time.Now().Add(-time.Second), policy.Limits{})
 		if err != nil {
 			t.Fatal(err)
 		}

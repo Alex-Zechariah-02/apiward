@@ -13,7 +13,7 @@ import (
 
 func policyFixture(t *testing.T, name string) policy.Policy {
 	t.Helper()
-	p, err := policy.DecodePolicy(fixture(t, name))
+	p, err := policy.DecodePolicy(fixture(t, name), policy.Limits{})
 	if err != nil {
 		t.Fatalf("%s: %v", name, err)
 	}

@@ -25,6 +25,7 @@ import (
 
 	"github.com/Alex-Zechariah-02/apiward/internal/gatewaytest"
 	"github.com/Alex-Zechariah-02/apiward/internal/monitor"
+	"github.com/Alex-Zechariah-02/apiward/internal/policy"
 )
 
 // writeCertificate writes a self-signed certificate for host and its PKCS #8
@@ -121,7 +122,7 @@ func TestDataListenerTLSFiles(t *testing.T) {
 // The redirect answers 308 to the configured origin whatever the client
 // names as host, keeps the path and query, and counts its answers.
 func TestRedirectListener(t *testing.T) {
-	observed := monitor.New()
+	observed := monitor.New(policy.DefaultWindow, policy.DefaultAPIs)
 	h := redirect("https://api.example.com", observed)
 	for target, want := range map[string]string{
 		"/orders?id=7":          "https://api.example.com/orders?id=7",

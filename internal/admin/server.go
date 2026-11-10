@@ -18,14 +18,16 @@ import (
 )
 
 const (
-	maxAdminBody     = 4 << 10
-	maxCandidateBody = 80 << 10
-	defaultPageSize  = 50
-	maxPageSize      = 100
-	sessionCookie    = "__Host-gateway-admin"
-	csrfHeader       = "X-CSRF-Token"
-	minKeyLength     = 16
-	maxKeyLength     = 64
+	maxAdminBody = 4 << 10
+	// policyMargin is the room a request body has beyond the policy it
+	// carries, for its envelope and the policy's indentation.
+	policyMargin    = 16 << 10
+	defaultPageSize = 50
+	maxPageSize     = 100
+	sessionCookie   = "__Host-gateway-admin"
+	csrfHeader      = "X-CSRF-Token"
+	minKeyLength    = 16
+	maxKeyLength    = 64
 )
 
 // caller is the authenticated administrator of one admin request.
@@ -269,4 +271,9 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		state = "unavailable"
 	}
 	pipeline.WriteJSON(w, http.StatusOK, map[string]string{"state": state})
+}
+
+// policyBody bounds a request body that carries a whole policy.
+func (s *Server) policyBody() int64 {
+	return int64(s.config.Limits.PolicyBytes) + policyMargin
 }

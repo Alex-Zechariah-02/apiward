@@ -79,7 +79,7 @@ func (s *Server) handlePostCandidate(w http.ResponseWriter, r *http.Request, who
 	var body struct {
 		Policy json.RawMessage `json:"policy"`
 	}
-	if !decodeBody(w, r, maxCandidateBody, &body) {
+	if !decodeBody(w, r, s.policyBody(), &body) {
 		return
 	}
 	var compact bytes.Buffer
@@ -206,10 +206,10 @@ func (s *Server) handleProvisional(w http.ResponseWriter, r *http.Request, who c
 	}
 	var before, after policy.Policy
 	if err == nil {
-		before, err = s.store.Policy(ctx, a.Confirmed)
+		before, err = s.store.Policy(ctx, a.Confirmed, s.config.Limits)
 	}
 	if err == nil {
-		after, err = s.store.Policy(ctx, a.Provisional)
+		after, err = s.store.Policy(ctx, a.Provisional, s.config.Limits)
 	}
 	if err != nil {
 		s.logger.Error("reading the provisional base", "error", err)

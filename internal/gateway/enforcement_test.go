@@ -96,7 +96,7 @@ func serveEnforcement(e *gatewaytest.Env, policy policy.Policy, limits pipeline.
 	gatewaytest.Seed(e.T, e.Database, policy, gatewaytest.SeedOptions{})
 	c, _ := own(e, controllerConfig(e))
 	f := &memoryForwarder{}
-	h, err := newHandler(c, pipeline.NewLimiter(), limits, f.forward)
+	h, err := newHandler(c, pipeline.NewLimiter(c.Settings().Limits.RateCounters), limits, f.forward)
 	if err != nil {
 		e.T.Fatal(err)
 	}
@@ -111,7 +111,7 @@ func serveAuthority(e *gatewaytest.Env, c *controller.Controller, authority pipe
 	f := &memoryForwarder{}
 	h, err := pipeline.New(pipeline.Deps{
 		Authority: authority, Audit: c.Audit(), Observations: c.Observations(),
-		Limiter: pipeline.NewLimiter(), Clock: pipeline.NewClock(), AuditTimeout: c.Settings().AuditTimeout, Forward: f.forward,
+		Limiter: pipeline.NewLimiter(policy.DefaultRateCounters), Clock: pipeline.NewClock(), AuditTimeout: c.Settings().AuditTimeout, Forward: f.forward,
 	})
 	if err != nil {
 		e.T.Fatal(err)
@@ -178,10 +178,10 @@ func TestNewHandlerRefusesIncompleteSetup(t *testing.T) {
 	if h, err := newHandler(nil, nil, pipeline.Limits{}, forward); h != nil || err == nil {
 		t.Fatalf("without a controller: %v, %v", h, err)
 	}
-	if h, err := newHandler(c, pipeline.NewLimiter(), pipeline.Limits{}, nil); h != nil || err == nil {
+	if h, err := newHandler(c, pipeline.NewLimiter(policy.DefaultRateCounters), pipeline.Limits{}, nil); h != nil || err == nil {
 		t.Fatalf("without a forwarder: %v, %v", h, err)
 	}
-	if h, err := newHandler(c, pipeline.NewLimiter(), pipeline.Limits{}, forward); h == nil || err != nil {
+	if h, err := newHandler(c, pipeline.NewLimiter(policy.DefaultRateCounters), pipeline.Limits{}, forward); h == nil || err != nil {
 		t.Fatalf("complete setup: %v, %v", h, err)
 	}
 }

@@ -171,7 +171,7 @@ func (m *mapper) trial(op policy.Operation) *refusal {
 		APIs:       []policy.API{{ID: m.options.API, Upstream: upstream.ID}},
 		Operations: []policy.Operation{op},
 	}
-	_, err := compile.Compile(single, 0, time.Time{})
+	_, err := compile.Compile(single, 0, time.Time{}, policy.Limits{})
 	if err == nil {
 		return nil
 	}

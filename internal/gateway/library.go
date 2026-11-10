@@ -142,7 +142,7 @@ func openDeployment(cfg nativeConfig, logger *slog.Logger) (*deployment, error) 
 	if c.Audit().OpenErr() != nil {
 		return nil, errors.Join(classify(ErrStorage, fmt.Errorf("audit log: %w", c.Audit().OpenErr())), c.Stop())
 	}
-	limiter := pipeline.NewLimiter()
+	limiter := pipeline.NewLimiter(c.Settings().Limits.RateCounters)
 	enforcement, err := newHandler(c, limiter, cfg.limits, proxy.Forward)
 	if err != nil {
 		return nil, errors.Join(classify(ErrConfig, err), c.Stop())

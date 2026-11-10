@@ -21,7 +21,7 @@ func TestPolicyAgreesWithCatalogue(t *testing.T) {
 	p := gatewaytest.FixturePolicy(map[string]*gatewaytest.FixtureProcess{
 		"orders": {Addr: "127.0.0.1:1"}, "inventory": {Addr: "127.0.0.1:2"}, "reports": {Addr: "127.0.0.1:3"},
 	})
-	if _, err := compile.Compile(p, 1, time.Time{}); err != nil {
+	if _, err := compile.Compile(p, 1, time.Time{}, policy.Limits{}); err != nil {
 		t.Fatalf("fixture policy does not compile: %v", err)
 	}
 

@@ -112,7 +112,7 @@ func TestCandidateStagingChangesNothingEnforced(t *testing.T) {
 		t.Fatalf("staging changed the status: %+v -> %+v", before, after)
 	}
 	_, body, header := e.As(harness, http.MethodGet, "/admin/policy", "")
-	confirmed, err := policy.DecodePolicy(fromJSON[store.RevisionInfo](t, body).Document)
+	confirmed, err := policy.DecodePolicy(fromJSON[store.RevisionInfo](t, body).Document, policy.Limits{})
 	if err != nil || header.Get("ETag") != `"r1"` || confirmed.APIs[0].Upstream != "A" {
 		t.Fatalf("confirmed policy after staging: %v %s", err, body)
 	}

@@ -27,7 +27,7 @@ func adviceGeneration(t *testing.T) *compile.Generation {
 		},
 		Roles:   []policy.Role{{ID: "READER"}, {ID: "IDLE"}},
 		Permits: []policy.Permit{{Role: "READER", Operation: "read"}},
-	}, 1, time.Time{})
+	}, 1, time.Time{}, policy.Limits{})
 	if err != nil {
 		t.Fatal(err)
 	}

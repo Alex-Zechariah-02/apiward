@@ -39,7 +39,7 @@ func TestRewriteCompile(t *testing.T) {
 
 	p := threeAPIPolicy()
 	p.APIs[0].Forward = &policy.Forward{StripPrefix: "/orders", AddPrefix: "/api/v2"}
-	g, err := compile.Compile(p, 1, time.Time{})
+	g, err := compile.Compile(p, 1, time.Time{}, policy.Limits{})
 	if err != nil {
 		t.Fatal(err)
 	}

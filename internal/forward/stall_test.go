@@ -42,7 +42,7 @@ func TestUpstreamThatStopsReadingTimesOut(t *testing.T) {
 		Upstreams:  []policy.Upstream{{ID: "u", Dial: listener.Addr().String()}},
 		APIs:       []policy.API{{ID: "api", Upstream: "u"}},
 		Operations: []policy.Operation{{ID: "op", API: "api", Method: "POST", Target: "/x", Access: "allow", Auth: "none"}}}
-	g, err := compile.Compile(p, 1, time.Time{})
+	g, err := compile.Compile(p, 1, time.Time{}, policy.Limits{})
 	if err != nil {
 		t.Fatal(err)
 	}

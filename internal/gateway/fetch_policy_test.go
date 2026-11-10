@@ -21,11 +21,11 @@ func TestFetchPolicyVersion4(t *testing.T) {
 			"rate":{"algorithm":"sliding-window","count":60,"window_seconds":60,"key":"client_address"}}],
 		"roles":[{"id":"CUSTOMER"}],"permits":[]
 	}`
-	policy, err := policy.DecodePolicy([]byte(document))
+	decoded, err := policy.DecodePolicy([]byte(document), policy.Limits{})
 	if err != nil {
 		t.Fatalf("Fetch v4 policy must decode: %v", err)
 	}
-	generation, err := compile.Compile(policy, 1, time.Time{})
+	generation, err := compile.Compile(decoded, 1, time.Time{}, policy.Limits{})
 	if err != nil {
 		t.Fatalf("public client-address rate must compile: %v", err)
 	}

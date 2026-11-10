@@ -68,7 +68,7 @@ func (s *Server) confirmedPolicy(w http.ResponseWriter, r *http.Request) (store.
 	}
 	var p policy.Policy
 	if err == nil {
-		p, err = policy.DecodePolicy(revision.Document)
+		p, err = policy.DecodePolicy(revision.Document, s.config.Limits)
 	}
 	if err != nil {
 		s.logger.Error("reading confirmed policy", "error", err)

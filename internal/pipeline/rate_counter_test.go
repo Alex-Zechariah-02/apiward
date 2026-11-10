@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/compile"
+	"github.com/Alex-Zechariah-02/apiward/internal/policy"
 )
 
 // Counter identity and transitions: the counter belongs to the operation and
@@ -17,13 +18,13 @@ func TestRateCounterTransitions(t *testing.T) {
 	key := counterKey{"op", "subject", "alice"}
 
 	t.Run("count change keeps usage", func(t *testing.T) {
-		l := NewLimiter()
+		l := NewLimiter(policy.DefaultRateCounters)
 		runSteps(t, "N=10", l, key, quota(10, 60000), repeatStep(6, 1000, true))
 		runSteps(t, "N=5", l, key, quota(5, 60000), []step{{2000, false}}) // 6+1 > 5
 		runSteps(t, "N=8", l, key, quota(8, 60000), []step{{3000, true}, {3000, true}, {3000, false}})
 	})
 	t.Run("window change carries usage", func(t *testing.T) {
-		l := NewLimiter()
+		l := NewLimiter(policy.DefaultRateCounters)
 		runSteps(t, "W=60s", l, key, quota(10, 60000), repeatStep(8, 1000, true))
 		// At 20 s under W=60 s the usage is 8. It becomes the current count of
 		// a W=30 s counter, so only 2 more fit.
@@ -32,27 +33,27 @@ func TestRateCounterTransitions(t *testing.T) {
 		runSteps(t, "W=30s next bucket", l, key, quota(10, 30000), []step{{30000, false}})
 	})
 	t.Run("window change rounds usage up", func(t *testing.T) {
-		l := NewLimiter()
+		l := NewLimiter(policy.DefaultRateCounters)
 		runSteps(t, "W=1s", l, key, quota(3, 1000), repeatStep(3, 0, true))
 		// At 1.5 s under W=1 s: P=3, d=500, usage 1.5, rounded up to 2. Under
 		// W=10 s with N=3 one more fits.
 		runSteps(t, "W=10s", l, key, quota(3, 10000), []step{{1500, true}, {1500, false}})
 	})
 	t.Run("equivalent rule keeps usage", func(t *testing.T) {
-		l := NewLimiter()
+		l := NewLimiter(policy.DefaultRateCounters)
 		runSteps(t, "first", l, key, quota(3, 60000), repeatStep(3, 1000, true))
 		// A republished generation compiles a new but equal rule object.
 		runSteps(t, "republished", l, key, quota(3, 60000), []step{{1000, false}})
 	})
 	t.Run("rule disabled and enabled keeps usage", func(t *testing.T) {
-		l := NewLimiter()
+		l := NewLimiter(policy.DefaultRateCounters)
 		runSteps(t, "enabled", l, key, quota(3, 60000), repeatStep(3, 1000, true))
 		// While disabled the limiter is not called. Re-enabled within the
 		// window the earlier requests still count.
 		runSteps(t, "re-enabled", l, key, quota(3, 60000), []step{{30000, false}})
 	})
 	t.Run("keys are independent", func(t *testing.T) {
-		l := NewLimiter()
+		l := NewLimiter(policy.DefaultRateCounters)
 		rule := quota(2, 60000)
 		runSteps(t, "alice", l, key, rule, append(repeatStep(2, 1000, true), step{1000, false}))
 		runSteps(t, "bob", l, counterKey{"op", "subject", "bob"}, rule, repeatStep(2, 1000, true))
@@ -64,7 +65,7 @@ func TestRateCounterTransitions(t *testing.T) {
 // Expired counters are removed without changing any decision, and a full
 // table refuses new keys rather than evicting a live counter.
 func TestCounterReclamationAndCapacity(t *testing.T) {
-	l := NewLimiter()
+	l := NewLimiter(policy.DefaultRateCounters)
 	l.capacity = 3
 	rule := quota(1, 1000)
 	for i := range 3 {
@@ -92,7 +93,7 @@ func TestCounterReclamationAndCapacity(t *testing.T) {
 	}
 
 	// The periodic sweep removes only expired counters.
-	l = NewLimiter()
+	l = NewLimiter(policy.DefaultRateCounters)
 	long := quota(compile.MaxRateCount, 3600000)
 	l.admit(counterKey{"long", "subject", "a"}, long, 0)
 	for i := range compile.SweepInterval {
@@ -112,7 +113,7 @@ func TestCounterReclamationAndCapacity(t *testing.T) {
 
 // Simultaneous admissions never exceed the quota, for one key or many.
 func TestConcurrentAdmissionsRespectQuota(t *testing.T) {
-	l := NewLimiter()
+	l := NewLimiter(policy.DefaultRateCounters)
 	rule := quota(1000, 3600000)
 	var admitted atomic.Int64
 	var wg sync.WaitGroup

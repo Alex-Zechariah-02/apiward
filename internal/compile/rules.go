@@ -15,9 +15,6 @@ const (
 	RateKeyAddress   = "client_address"
 	MaxRateCount     = 1_000_000
 	MaxRateWindowSec = 86_400
-	// Subject and public-address cardinality is untrusted. A full table fails
-	// closed; expired counters are swept without resetting live quotas.
-	MaxCounters = 262144
 	// SweepInterval is how many admissions pass between removals of expired
 	// counters.
 	SweepInterval = 1024

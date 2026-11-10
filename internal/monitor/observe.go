@@ -14,7 +14,6 @@ import (
 	"github.com/Alex-Zechariah-02/apiward/internal/policy"
 )
 
-const RecentLimit = 10000
 const QueueSize = 128
 const MaxStreams = 8
 
@@ -56,12 +55,14 @@ type Viewer struct {
 	dropped uint64 // guarded by observations.mu
 }
 
-// Observations owns a fixed-size ring and bounded, nonblocking subscriptions.
+// Observations owns a bounded ring and bounded, nonblocking subscriptions.
 // It has no authority over admission, policy, durable audit or upstream writes.
 type Observations struct {
-	mu      sync.Mutex
-	ring    [RecentLimit]Observed
-	count   int
+	mu sync.Mutex
+	// ring grows to window requests as they arrive, then the newest replaces
+	// the oldest, so an idle gateway holds no window it has not used.
+	ring    []Observed
+	window  int
 	next    uint64
 	viewers map[*Viewer]bool
 	dropped uint64
@@ -80,8 +81,10 @@ func (o *Observations) Redirected() { o.redirects.Add(1) }
 // ConnectionRefused counts one data connection closed at the cap.
 func (o *Observations) ConnectionRefused() { o.refused.Add(1) }
 
-func New() *Observations {
-	return &Observations{viewers: map[*Viewer]bool{}, done: make(chan struct{})}
+// New keeps the last window requests; apis bounds the per-API duration
+// metrics. Both are the resolved capacity limits.
+func New(window, apis int) *Observations {
+	return &Observations{window: window, viewers: map[*Viewer]bool{}, done: make(chan struct{}), metrics: requestMetrics{apis: apis}}
 }
 
 func OptionalString(value string) *string {
@@ -150,9 +153,14 @@ func (o *Observations) Record(event audit.Event) {
 	asserted := append(slices.Clone(view.Roles), event.IgnoredRoles...)
 	slices.Sort(asserted)
 	request := Observed{RequestView: view, sequence: o.next, assertedRoles: asserted, identityKnown: event.IdentityKnown(), routingPath: routingPath}
-	o.ring[(o.next-1)%RecentLimit] = request
-	if o.count < RecentLimit {
-		o.count++
+	if len(o.ring) < o.window {
+		// Grown by hand: append's growth could overshoot the window.
+		if len(o.ring) == cap(o.ring) {
+			o.ring = append(make([]Observed, 0, min(max(2*cap(o.ring), 64), o.window)), o.ring...)
+		}
+		o.ring = append(o.ring, request)
+	} else {
+		o.ring[o.slot(0)] = request
 	}
 	for viewer := range o.viewers {
 		select {
@@ -173,8 +181,8 @@ func (o *Observations) Recent(keep func(*Observed) bool, limit int) []Observed {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	var result []Observed
-	for i := range o.count {
-		request := &o.ring[(o.next-1-uint64(i))%RecentLimit]
+	for i := range len(o.ring) {
+		request := &o.ring[o.slot(i)]
 		if !keep(request) {
 			continue
 		}
@@ -191,18 +199,24 @@ func (o *Observations) Recent(keep func(*Observed) bool, limit int) []Observed {
 func (o *Observations) RetainedSince() (time.Time, bool) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
-	if o.count == 0 {
+	if len(o.ring) == 0 {
 		return time.Time{}, false
 	}
-	return o.ring[(o.next-uint64(o.count))%RecentLimit].Time, o.next > RecentLimit
+	return o.ring[o.slot(len(o.ring)-1)].Time, o.next > uint64(o.window)
+}
+
+// slot is the ring index of the request age places before the newest. While
+// the ring grows, request n sits at index n-1, which the modulus keeps.
+func (o *Observations) slot(age int) uint64 {
+	return (o.next - 1 - uint64(age)) % uint64(o.window)
 }
 
 func (o *Observations) Snapshot() []Observed {
 	o.mu.Lock()
 	defer o.mu.Unlock()
-	result := make([]Observed, o.count)
-	for i := range o.count {
-		result[i] = o.ring[(o.next-1-uint64(i))%RecentLimit]
+	result := make([]Observed, len(o.ring))
+	for i := range result {
+		result[i] = o.ring[o.slot(i)]
 	}
 	return result
 }
@@ -252,8 +266,11 @@ func (o *Observations) Viewers() int {
 func (o *Observations) Retained() int {
 	o.mu.Lock()
 	defer o.mu.Unlock()
-	return o.count
+	return len(o.ring)
 }
+
+// Window returns the number of requests the window keeps at most.
+func (o *Observations) Window() int { return o.window }
 
 // Sequence is the request's position in the window, for paging.
 func (e Observed) Sequence() uint64 { return e.sequence }

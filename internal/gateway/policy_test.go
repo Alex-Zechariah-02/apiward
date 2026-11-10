@@ -54,11 +54,11 @@ func threeAPIPolicy() policy.Policy {
 
 func compileJSON(t *testing.T, document string) error {
 	t.Helper()
-	p, err := policy.DecodePolicy([]byte(document))
+	p, err := policy.DecodePolicy([]byte(document), policy.Limits{})
 	if err != nil {
 		return err
 	}
-	_, err = compile.Compile(p, 1, time.Time{})
+	_, err = compile.Compile(p, 1, time.Time{}, policy.Limits{})
 	return err
 }
 
@@ -76,7 +76,7 @@ func TestValidPolicyCompilesDeterministically(t *testing.T) {
 	p := threeAPIPolicy()
 	original, _ := json.Marshal(p)
 
-	first, err := compile.Compile(p, 7, time.Time{})
+	first, err := compile.Compile(p, 7, time.Time{}, policy.Limits{})
 	if err != nil {
 		t.Fatalf("valid policy rejected: %v", err)
 	}
@@ -85,11 +85,11 @@ func TestValidPolicyCompilesDeterministically(t *testing.T) {
 	}
 
 	// The same document, decoded from JSON, compiles to the same identity.
-	decoded, err := policy.DecodePolicy(original)
+	decoded, err := policy.DecodePolicy(original, policy.Limits{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := compile.Compile(decoded, 7, time.Time{})
+	second, err := compile.Compile(decoded, 7, time.Time{}, policy.Limits{})
 	if err != nil || second.ID != first.ID || first.Profile != policy.ProfileCore {
 		t.Fatalf("recompile: %v, ids %s and %s", err, first.ID, second.ID)
 	}
@@ -111,7 +111,7 @@ func TestValidPolicyCompilesDeterministically(t *testing.T) {
 	}
 
 	// A different revision is a different generation.
-	other, _ := compile.Compile(threeAPIPolicy(), 8, time.Time{})
+	other, _ := compile.Compile(threeAPIPolicy(), 8, time.Time{}, policy.Limits{})
 	if other.ID == first.ID {
 		t.Fatal("revision is not part of the generation identity")
 	}
@@ -187,11 +187,11 @@ func TestPolicyCountAndLengthLimits(t *testing.T) {
 		{"removed subjects at former count bound", head + `,"subjects":[` + repeat(1025, func(i int) string {
 			return fmt.Sprintf(`{"id":"s%d","status":"active","roles":[]}`, i)
 		}) + `]}`},
-		{"too many upstreams", head + `,"upstreams":[` + repeat(policy.MaxUpstreams+1, func(i int) string {
+		{"too many upstreams", head + `,"upstreams":[` + repeat(policy.DefaultAPIs+1, func(i int) string {
 			return fmt.Sprintf(`{"id":"u%d","dial":"127.0.0.1:%d"}`, i, 1000+i)
 		}) + `]}`},
-		{"too many roles", head + `,"roles":[` + repeat(policy.MaxRoles+1, func(i int) string { return fmt.Sprintf(`{"id":"r%d"}`, i) }) + `]}`},
-		{"too many operations", head + `,"operations":[` + repeat(policy.MaxOperations+1, func(i int) string {
+		{"too many roles", head + `,"roles":[` + repeat(policy.DefaultRoles+1, func(i int) string { return fmt.Sprintf(`{"id":"r%d"}`, i) }) + `]}`},
+		{"too many operations", head + `,"operations":[` + repeat(policy.DefaultOperations+1, func(i int) string {
 			return fmt.Sprintf(`{"id":"o%d","api":"a","method":"GET","target":"/o%d","access":"allow","auth":"none"}`, i, i)
 		}) + `]}`},
 	}
@@ -223,6 +223,6 @@ func TestPolicyCountAndLengthLimits(t *testing.T) {
 }
 
 func compileErr(p policy.Policy) error {
-	_, err := compile.Compile(p, 1, time.Time{})
+	_, err := compile.Compile(p, 1, time.Time{}, policy.Limits{})
 	return err
 }

@@ -109,7 +109,7 @@ func destination(t *testing.T, u policy.Upstream) compile.Destination {
 		Upstreams:  []policy.Upstream{u},
 		APIs:       []policy.API{{ID: "api", Upstream: u.ID}},
 		Operations: []policy.Operation{{ID: "op", API: "api", Method: "GET", Target: "/x", Access: "allow", Auth: "none"}}}
-	g, err := compile.Compile(p, 1, time.Time{})
+	g, err := compile.Compile(p, 1, time.Time{}, policy.Limits{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -126,7 +126,7 @@ func destination(t *testing.T, u policy.Upstream) compile.Destination {
 func TestUpstreamConnectCheck(t *testing.T) {
 	public, _ := LoadNetwork(true, nil, 0)
 	g, err := compile.Compile(policy.Policy{SchemaVersion: policy.LatestSchemaVersion, Profile: policy.ProfileCore,
-		Upstreams: []policy.Upstream{{ID: "u", URL: "http://192.0.2.10:9"}}}, 1, time.Time{})
+		Upstreams: []policy.Upstream{{ID: "u", URL: "http://192.0.2.10:9"}}}, 1, time.Time{}, policy.Limits{})
 	if err != nil || g.CheckNetwork(public) != nil {
 		t.Fatalf("a public literal with the switch on: %v", err)
 	}

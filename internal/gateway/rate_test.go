@@ -19,7 +19,7 @@ import (
 func TestRateRuleCompilation(t *testing.T) {
 	p := threeAPIPolicy()
 	p.Operations[0].Rate = gatewaytest.Rate(10, 60)
-	g, err := compile.Compile(p, 1, time.Time{})
+	g, err := compile.Compile(p, 1, time.Time{}, policy.Limits{})
 	if err != nil {
 		t.Fatalf("valid rate rule rejected: %v", err)
 	}
@@ -53,7 +53,7 @@ func TestRateRuleCompilation(t *testing.T) {
 	for _, tc := range cases {
 		p := threeAPIPolicy()
 		p.Operations[0].Rate = &tc.rule
-		g, err := compile.Compile(p, 1, time.Time{})
+		g, err := compile.Compile(p, 1, time.Time{}, policy.Limits{})
 		policyErr, ok := errors.AsType[*policy.PolicyError](err)
 		if g != nil || !ok || policyErr.Code != tc.code || policyErr.Field != tc.field {
 			t.Errorf("%s: generation %v error %v, want %s at %s", tc.name, g != nil, err, tc.code, tc.field)
@@ -71,7 +71,7 @@ func TestRateRuleCompilation(t *testing.T) {
 	p = threeAPIPolicy()
 	p.Operations[0].Rate = gatewaytest.Rate(10, 60)
 	p.Operations[2].Body.Schema = []byte(`{"type":"object","additionalProperties":true,"$ref":"#"}`)
-	if g, err := compile.Compile(p, 1, time.Time{}); g != nil || errorCode(err) != "UNSUPPORTED_FEATURE" {
+	if g, err := compile.Compile(p, 1, time.Time{}, policy.Limits{}); g != nil || errorCode(err) != "UNSUPPORTED_FEATURE" {
 		t.Errorf("valid rate rule with an invalid schema: generation %v error %v", g != nil, err)
 	}
 

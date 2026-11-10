@@ -9,7 +9,6 @@ import (
 
 	"github.com/Alex-Zechariah-02/apiward/internal/controller"
 	"github.com/Alex-Zechariah-02/apiward/internal/pipeline"
-	"github.com/Alex-Zechariah-02/apiward/internal/policy"
 	"github.com/Alex-Zechariah-02/apiward/internal/store"
 )
 
@@ -21,7 +20,7 @@ import (
 func registerTestRoutes(s *Server, mux *http.ServeMux) {
 	s.route(mux, "POST /test/publish", store.PermManagePolicy, func(w http.ResponseWriter, r *http.Request, who caller) {
 		var change controller.Change
-		if !decodeBody(w, r, policy.MaxPolicyBytes, &change) {
+		if !decodeBody(w, r, int64(s.config.Limits.PolicyBytes), &change) {
 			return
 		}
 		outcome, status := s.control.Publish(r.Context(), who.admin.Name, change)

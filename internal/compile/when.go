@@ -168,12 +168,10 @@ func checkVariants(targets map[string]*target, ops []policy.Operation) error {
 	for _, t := range targets {
 		for method, variants := range t.variants {
 			slices.SortStableFunc(variants, func(a, b *Rule) int { return b.when.count() - a.when.count() })
-			for i, v := range variants {
-				for _, o := range variants[:i] {
-					if o.when.count() == v.when.count() && o.when.overlaps(v.when) {
-						return policy.Invalid("TARGET_COLLISION", "operations[%d].when", v.index)
-					}
-				}
+			if err := checkCollisions(variants); err != nil {
+				return err
+			}
+			for _, v := range variants {
 				base := t.methods[method]
 				if base == nil {
 					continue
@@ -188,6 +186,48 @@ func checkVariants(targets map[string]*target, ops []policy.Operation) error {
 		}
 	}
 	return nil
+}
+
+// checkCollisions refuses the first variant, in the given order, that one
+// request could select together with an earlier variant of equal rank. Two
+// conditions on the same header names overlap only when every value is equal,
+// so variants are grouped by their names and values: within one name set only
+// equal values are compared, which keeps the common case (one header, many
+// values) linear; variants with other name sets are compared pairwise.
+func checkCollisions(variants []*Rule) error {
+	var byValues, byNames map[string][]*Rule
+	rank := -1
+	for _, v := range variants {
+		if v.when.count() != rank {
+			rank, byValues, byNames = v.when.count(), map[string][]*Rule{}, map[string][]*Rule{}
+		}
+		names, values := v.when.keys()
+		collides := slices.ContainsFunc(byValues[values], func(o *Rule) bool { return o.when.overlaps(v.when) })
+		for other, group := range byNames {
+			if other != names && slices.ContainsFunc(group, func(o *Rule) bool { return o.when.overlaps(v.when) }) {
+				collides = true
+			}
+		}
+		if collides {
+			return policy.Invalid("TARGET_COLLISION", "operations[%d].when", v.index)
+		}
+		byValues[values] = append(byValues[values], v)
+		byNames[names] = append(byNames[names], v)
+	}
+	return nil
+}
+
+// keys returns the condition's header names, and its names with their values,
+// each sorted by name in one string. Names are header tokens and values
+// visible ASCII, so the separators cannot occur in either.
+func (c *condition) keys() (names, values string) {
+	headers := slices.SortedFunc(slices.Values(c.headers), func(a, b policy.HeaderCondition) int { return strings.Compare(a.Name, b.Name) })
+	var n, v strings.Builder
+	for _, h := range headers {
+		n.WriteString(h.Name + "\x00")
+		v.WriteString(h.Name + "\x00" + h.Value + "\x01")
+	}
+	return n.String(), v.String()
 }
 
 // weaker reports whether a conditioned rule admits a request its

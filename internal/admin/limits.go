@@ -26,6 +26,6 @@ func (s *Server) handleLimits(w http.ResponseWriter, r *http.Request, who caller
 		"audit_files":            limit(auditFiles, auditFilesLimit),
 		"audit_active_bytes":     limit(auditBytes, auditBytesLimit),
 		"rate_counters":          limit(int64(s.limiter.Size()), int64(s.limiter.Capacity())),
-		"recent_requests":        limit(int64(s.observations.Retained()), monitor.RecentLimit),
+		"recent_requests":        limit(int64(s.observations.Retained()), int64(s.observations.Window())),
 	})
 }

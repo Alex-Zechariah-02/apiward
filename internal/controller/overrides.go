@@ -72,7 +72,7 @@ func (c *Controller) ValidateOverride(ctx context.Context, actor string, expecte
 	}
 	o, code, field, holder := proposeOverride(a, expected, request, actor, now)
 	if code == "" {
-		if _, err := authorityGeneration(c.network.Load(), a, append(slices.Clone(a.Overrides), o)); err != nil {
+		if _, err := authorityGeneration(c.network.Load(), a, append(slices.Clone(a.Overrides), o), c.config.Limits); err != nil {
 			code, field = policyRejection(err)
 		}
 	}
@@ -184,7 +184,7 @@ func (c *Controller) publishOverrides(ctx context.Context, t store.TransitionRec
 	if status == store.OverrideActive {
 		next = append(next, o)
 	}
-	g, err := authorityGeneration(c.network.Load(), a, next)
+	g, err := authorityGeneration(c.network.Load(), a, next, c.config.Limits)
 	if err != nil {
 		if status == store.OverrideActive {
 			// The override was never created, so the refusal names none.

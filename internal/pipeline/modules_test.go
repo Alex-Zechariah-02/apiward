@@ -102,14 +102,14 @@ func serve(t *testing.T, members map[string]string) (int, bool, map[string]any) 
 		SchemaVersion: policy.SchemaVersion, Profile: policy.ProfileCore,
 		Upstreams: []policy.Upstream{{ID: "A", Dial: "127.0.0.1:9"}}, APIs: []policy.API{{ID: "a", Upstream: "A"}},
 		Operations: []policy.Operation{op}, Roles: []policy.Role{{ID: "READER"}},
-	}, 1, time.Time{})
+	}, 1, time.Time{}, policy.Limits{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	path := filepath.Join(t.TempDir(), "audit.log")
 	log := audit.OpenAudit(path, 1<<20, 4)
 	forwarded := false
-	h, err := New(Deps{Authority: fixedAuthority{g}, Audit: log, Observations: monitor.New(), Limiter: NewLimiter(), Clock: NewClock(), AuditTimeout: time.Second,
+	h, err := New(Deps{Authority: fixedAuthority{g}, Audit: log, Observations: monitor.New(policy.DefaultWindow, policy.DefaultAPIs), Limiter: NewLimiter(policy.DefaultRateCounters), Clock: NewClock(), AuditTimeout: time.Second,
 		Forward: func(w http.ResponseWriter, _ *http.Request) error {
 			forwarded = true
 			w.WriteHeader(http.StatusOK)
@@ -180,7 +180,7 @@ func TestModuleFailures(t *testing.T) {
 		Upstreams: []policy.Upstream{{ID: "A", Dial: "127.0.0.1:9"}}, APIs: []policy.API{{ID: "a", Upstream: "A"}},
 		Operations: []policy.Operation{{ID: "x", API: "a", Method: "GET", Target: "/a/x", Access: "allow", Auth: "none", Modules: map[string]json.RawMessage{"validate_a": json.RawMessage(`"compile_panic"`)}}},
 		Roles:      []policy.Role{{ID: "READER"}},
-	}, 1, time.Time{})
+	}, 1, time.Time{}, policy.Limits{})
 	if code := problemCode(err); code != "MODULE_FAILED operations[0].validate_a" {
 		t.Errorf("panic in Compile: %v", err)
 	}
@@ -193,16 +193,16 @@ func TestModuleUnknownMember(t *testing.T) {
 		return []byte(`{"schema_version":4,"profile":"core","upstreams":[{"id":"A","dial":"127.0.0.1:9"}],"apis":[{"id":"a","upstream":"A"}],` +
 			`"operations":[{"id":"x","api":"a","method":"GET","target":"/a/x","access":"allow","auth":"none",` + member + `}],"roles":[{"id":"READER"}],"permits":[]}`)
 	}
-	p, err := policy.DecodePolicy(document(`"identity_a":"pass"`))
+	p, err := policy.DecodePolicy(document(`"identity_a":"pass"`), policy.Limits{})
 	if err != nil || string(p.Operations[0].Modules["identity_a"]) != `"pass"` {
 		t.Fatalf("registered member: %v %v", p.Operations, err)
 	}
-	if _, err := policy.DecodePolicy(document(`"missing_module":"pass"`)); problemCode(err) != "UNKNOWN_FIELD " {
+	if _, err := policy.DecodePolicy(document(`"missing_module":"pass"`), policy.Limits{}); problemCode(err) != "UNKNOWN_FIELD " {
 		t.Errorf("unknown member: %v", err)
 	}
-	p, err = policy.DecodePolicy(document(`"ingress_a":"pass"`))
+	p, err = policy.DecodePolicy(document(`"ingress_a":"pass"`), policy.Limits{})
 	if err == nil {
-		_, err = compile.Compile(p, 1, time.Time{})
+		_, err = compile.Compile(p, 1, time.Time{}, policy.Limits{})
 	}
 	if problemCode(err) != "UNKNOWN_FIELD operations[0].ingress_a" {
 		t.Errorf("ingress member: %v", err)

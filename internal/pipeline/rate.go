@@ -107,8 +107,11 @@ type Limiter struct {
 	capacity   int
 }
 
-func NewLimiter() *Limiter {
-	return &Limiter{counters: map[counterKey]*counter{}, capacity: compile.MaxCounters}
+// NewLimiter holds at most capacity counters. Subject and public-address
+// cardinality is untrusted: a full table fails closed, and expired counters
+// are swept without resetting live quotas.
+func NewLimiter(capacity int) *Limiter {
+	return &Limiter{counters: map[counterKey]*counter{}, capacity: capacity}
 }
 
 // admit applies the rule at now (Unix milliseconds): with C requests admitted

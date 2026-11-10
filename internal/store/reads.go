@@ -13,7 +13,7 @@ import (
 // controller.
 type Reads interface {
 	Load(ctx context.Context) (Authority, error)
-	Policy(ctx context.Context, id int64) (policy.Policy, error)
+	Policy(ctx context.Context, id int64, limits policy.Limits) (policy.Policy, error)
 	Revision(ctx context.Context, id int64) (RevisionInfo, bool, error)
 	Revisions(ctx context.Context, after int64, limit int) ([]RevisionInfo, error)
 	Candidate(ctx context.Context, id int64) (CandidateRecord, bool, error)

@@ -108,7 +108,7 @@ func (s *fetchStack) loadPolicy(name string) policy.Policy {
 	if err != nil {
 		s.t.Fatal(err)
 	}
-	p, err := policy.DecodePolicy(data)
+	p, err := policy.DecodePolicy(data, policy.Limits{})
 	if err != nil {
 		s.t.Fatal(err)
 	}

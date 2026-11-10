@@ -10,15 +10,16 @@ import (
 	"time"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/compile"
+	"github.com/Alex-Zechariah-02/apiward/internal/policy"
 )
 
 // A full table of live counters refuses a new key without scanning every
 // counter under the lock.
 func TestFullTableRefusalIsBounded(t *testing.T) {
-	l := NewLimiter()
+	l := NewLimiter(policy.DefaultRateCounters)
 	rule := quota(10, 60_000)
 	now := int64(1_000_000)
-	for i := range compile.MaxCounters {
+	for i := range policy.DefaultRateCounters {
 		if l.admit(counterKey{"search", compile.RateKeyAddress, "2001:db8::" + strconv.Itoa(i)}, rule, now) != rateAdmitted {
 			t.Fatalf("filling the table: counter %d refused", i)
 		}
@@ -42,7 +43,7 @@ func TestLimiterMatchesReference(t *testing.T) {
 	for seed := range uint64(40) {
 		random := rand.New(rand.NewPCG(seed, 99))
 		capacity := []int{4, 16, 4096}[seed%3]
-		l, reference := NewLimiter(), newReferenceLimiter()
+		l, reference := NewLimiter(policy.DefaultRateCounters), newReferenceLimiter()
 		l.capacity, reference.capacity = capacity, capacity
 		now := int64(random.IntN(5_000))
 		for step := range 6_000 {
@@ -81,7 +82,7 @@ type referenceLimiter struct {
 }
 
 func newReferenceLimiter() *referenceLimiter {
-	return &referenceLimiter{counters: map[counterKey]*counter{}, capacity: compile.MaxCounters}
+	return &referenceLimiter{counters: map[counterKey]*counter{}, capacity: policy.DefaultRateCounters}
 }
 
 func (l *referenceLimiter) admit(key counterKey, rule *compile.RateRule, now int64) rateDecision {

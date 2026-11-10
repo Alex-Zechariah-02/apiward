@@ -35,7 +35,7 @@ func TestSchemaCompilation(t *testing.T) {
 		`{"type":"object","additionalProperties":true,"properties":{"v":{"type":["integer","null"],"enum":[1,2,null]}}}`,
 	}
 	for _, schema := range valid {
-		g, err := compile.Compile(schemaPolicy(schema), 1, time.Time{})
+		g, err := compile.Compile(schemaPolicy(schema), 1, time.Time{}, policy.Limits{})
 		if err != nil {
 			t.Errorf("schema %s rejected: %v", schema, err)
 			continue
@@ -101,7 +101,7 @@ func TestSchemaCompilation(t *testing.T) {
 	}
 	for _, tc := range invalid {
 		started := time.Now()
-		g, err := compile.Compile(schemaPolicy(tc.schema), 1, time.Time{})
+		g, err := compile.Compile(schemaPolicy(tc.schema), 1, time.Time{}, policy.Limits{})
 		policyErr, _ := err.(*policy.PolicyError)
 		if g != nil || policyErr == nil || policyErr.Code != tc.code || policyErr.Field != tc.field {
 			t.Errorf("%s: generation %v error %v, want %s at %s", tc.name, g != nil, err, tc.code, tc.field)
@@ -142,7 +142,7 @@ func TestSchemaCompilation(t *testing.T) {
 	for _, tc := range headers {
 		p := threeAPIPolicy()
 		p.Operations[2].Headers = json.RawMessage(tc.schema)
-		_, err := compile.Compile(p, 1, time.Time{})
+		_, err := compile.Compile(p, 1, time.Time{}, policy.Limits{})
 		policyErr, _ := err.(*policy.PolicyError)
 		if tc.code == "" && err != nil || tc.code != "" && (policyErr == nil || policyErr.Code != tc.code || policyErr.Field != tc.field) {
 			t.Errorf("%s: %v, want %q at %s", tc.name, err, tc.code, tc.field)

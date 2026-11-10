@@ -76,8 +76,9 @@ type Rule struct {
 // Compile validates a complete policy and builds its generation. It either
 // returns a complete generation or an error; it never returns a partial one.
 // It has no side effects. A non-zero notAfter is the earliest persisted
-// deadline the generation depends on.
-func Compile(p policy.Policy, revision int64, notAfter time.Time) (*Generation, error) {
+// deadline the generation depends on. The policy must fit limits (zero
+// members: the defaults).
+func Compile(p policy.Policy, revision int64, notAfter time.Time, limits policy.Limits) (*Generation, error) {
 	if p.SchemaVersion != policy.SchemaVersion && p.SchemaVersion != policy.LatestSchemaVersion {
 		return nil, policy.Invalid("SCHEMA_VERSION_UNSUPPORTED", "schema_version")
 	}
@@ -87,7 +88,7 @@ func Compile(p policy.Policy, revision int64, notAfter time.Time) (*Generation, 
 	if p.Profile != policy.ProfileCore {
 		return nil, policy.Invalid("UNSUPPORTED_FEATURE", "profile")
 	}
-	if err := checkCounts(p); err != nil {
+	if err := checkCounts(p, limits); err != nil {
 		return nil, err
 	}
 
@@ -110,6 +111,7 @@ func Compile(p policy.Policy, revision int64, notAfter time.Time) (*Generation, 
 	}
 	targets := map[string]*target{}
 	rules := map[string]*Rule{}
+	schemas := schemaSet{}
 	for i, op := range p.Operations {
 		if err := policy.CheckID(op.ID, "operations[%d].id", i); err != nil {
 			return nil, err
@@ -159,7 +161,7 @@ func Compile(p policy.Policy, revision int64, notAfter time.Time) (*Generation, 
 			public:    op.Auth == "none",
 			roles:     map[string]bool{},
 		}
-		if err := compileControls(op, i, r); err != nil {
+		if err := compileControls(op, i, r, schemas); err != nil {
 			return nil, err
 		}
 		if err := compileModules(op, i, r); err != nil {
@@ -229,8 +231,9 @@ func DenyAll(p policy.Policy) bool {
 }
 
 // compileControls compiles an operation's body schema, header schema and rate
-// rule into its rule. A rule that cannot be compiled rejects the whole policy.
-func compileControls(op policy.Operation, i int, r *Rule) error {
+// rule into its rule, sharing schemas compiled for the same policy. A rule
+// that cannot be compiled rejects the whole policy.
+func compileControls(op policy.Operation, i int, r *Rule, schemas schemaSet) error {
 	var err error
 	if op.When != nil {
 		if r.when, err = compileWhen(op.When, i); err != nil {
@@ -241,14 +244,14 @@ func compileControls(op policy.Operation, i int, r *Rule) error {
 		if op.Body.MaxBytes <= 0 || op.Body.MaxBytes > policy.MaxBodyLimit {
 			return policy.Invalid("INVALID_VALUE", "operations[%d].body.max_bytes", i)
 		}
-		schema, _, err := CompileSchema(op.Body.Schema, SchemaBody, fmt.Sprintf("operations[%d].body.schema", i))
+		schema, _, err := schemas.compile(op.Body.Schema, SchemaBody, fmt.Sprintf("operations[%d].body.schema", i))
 		if err != nil {
 			return err
 		}
 		r.body = &BodyRule{maxBytes: op.Body.MaxBytes, schema: schema}
 	}
 	if op.Headers != nil {
-		r.headers, err = compileHeaders(op.Headers, fmt.Sprintf("operations[%d].headers", i))
+		r.headers, err = compileHeaders(schemas, op.Headers, fmt.Sprintf("operations[%d].headers", i))
 		if err != nil {
 			return err
 		}

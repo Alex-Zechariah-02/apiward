@@ -16,6 +16,7 @@ import (
 	"github.com/Alex-Zechariah-02/apiward/internal/forward"
 	"github.com/Alex-Zechariah-02/apiward/internal/gatewaytest"
 	"github.com/Alex-Zechariah-02/apiward/internal/pipeline"
+	"github.com/Alex-Zechariah-02/apiward/internal/policy"
 )
 
 // configDocument is a complete native configuration whose paths point into
@@ -75,6 +76,7 @@ func TestNativeConfigSettings(t *testing.T) {
 			AuditMaxFiles:        8,
 			JWT:                  gatewaytest.TestTrust("issuer", "gateway", filepath.Join(dir, "issuer.pem")),
 			Network:              closed,
+			Limits:               policy.Limits{PolicyBytes: 64 << 10, APIs: 64, Operations: 256, Roles: 64, Permits: 4096, RateCounters: 262144, Window: 10000},
 		},
 		listen:            "127.0.0.2:9480",
 		metricsListen:     gatewaytest.DemoTestAddress(t, "127.0.0.1:9450"),
@@ -104,6 +106,8 @@ func TestNativeConfigSettings(t *testing.T) {
 		})
 		s["upstream"] = map[string]any{"dial_timeout": "1s", "response_header_timeout": "3s", "read_idle_timeout": "2m",
 			"max_idle_per_upstream": 0, "idle_conn_timeout": "5s", "tls_session_lifetime": "10m"}
+		s["limits"] = map[string]any{"policy_bytes": 32 << 10, "apis": 256, "operations": 4096, "roles": 1, "permits": 65536,
+			"rate_counters": 1 << 20, "monitor_window": 100000}
 	}))
 	if err != nil {
 		t.Fatal(err)
@@ -114,7 +118,8 @@ func TestNativeConfigSettings(t *testing.T) {
 		cfg.limits != (pipeline.Limits{MaxBodyBytes: 2048, MaxInFlight: 32, IPv6RatePrefix: 56}) || cfg.maxConnections != 100 || cfg.headerLimit != 32768 || cfg.readHeaderTimeout != 2*time.Second ||
 		cfg.readTimeout != 3*time.Second || cfg.writeTimeout != 4*time.Second || cfg.idleTimeout != time.Minute ||
 		cfg.upstream != (forward.UpstreamTimeouts{Dial: time.Second, ResponseHeader: 3 * time.Second, ReadIdle: 2 * time.Minute}) ||
-		cfg.pool != (forward.PoolSettings{MaxIdle: 0, IdleTimeout: 5 * time.Second}) {
+		cfg.pool != (forward.PoolSettings{MaxIdle: 0, IdleTimeout: 5 * time.Second}) ||
+		c.Limits != (policy.Limits{PolicyBytes: 32 << 10, APIs: 256, Operations: 4096, Roles: 1, Permits: 65536, RateCounters: 1 << 20, Window: 100000}) {
 		t.Fatalf("written settings not taken: %+v", cfg)
 	}
 }
@@ -155,6 +160,8 @@ func TestNativeConfigRefusals(t *testing.T) {
 			gatewaytest.Section(s, "gateway")["jwt"].(map[string]any)["algorithms"] = []string{"none"}
 		})), `unknown field "algorithms"`},
 		{"wrong type", string(configDocument(t, dir, set("data", "max_body_bytes", "1024"))), "data.max_body_bytes: a JSON string is not a valid value"},
+		{"limit written as zero", string(configDocument(t, dir, set("limits", "operations", 0))), "limits.operations must be at least 1"},
+		{"limit above its maximum", string(configDocument(t, dir, set("limits", "rate_counters", 1<<20+1))), "limits.rate_counters must be 1 to 1048576"},
 		{"fractional number", string(configDocument(t, dir, set("gateway", "audit_max_files", 2.5))), "gateway.audit_max_files"},
 		{"duration as a number", string(configDocument(t, dir, set("data", "read_timeout", 10))), "data.read_timeout"},
 		{"no database", string(configDocument(t, dir, remove("gateway", "database"))), "gateway.database is required"},

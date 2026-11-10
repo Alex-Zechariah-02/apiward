@@ -15,8 +15,9 @@ import (
 	"github.com/Alex-Zechariah-02/apiward/internal/policy"
 )
 
-// Policy returns stored revision id decoded; a missing revision is an error.
-func (s *DB) Policy(ctx context.Context, id int64) (policy.Policy, error) {
+// Policy returns stored revision id decoded within limits; a missing
+// revision is an error.
+func (s *DB) Policy(ctx context.Context, id int64, limits policy.Limits) (policy.Policy, error) {
 	r, found, err := s.Revision(ctx, id)
 	if err == nil && !found {
 		err = fmt.Errorf("revision %d missing", id)
@@ -24,7 +25,7 @@ func (s *DB) Policy(ctx context.Context, id int64) (policy.Policy, error) {
 	if err != nil {
 		return policy.Policy{}, err
 	}
-	return policy.DecodePolicy(r.Document)
+	return policy.DecodePolicy(r.Document, limits)
 }
 
 func (s *DB) Revision(ctx context.Context, id int64) (RevisionInfo, bool, error) {

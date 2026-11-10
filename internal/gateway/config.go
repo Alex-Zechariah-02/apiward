@@ -76,6 +76,19 @@ type nativeFile struct {
 	Gateway  gatewaySettings  `json:"gateway"`
 	Data     dataSettings     `json:"data"`
 	Upstream upstreamSettings `json:"upstream"`
+	Limits   limitSettings    `json:"limits"`
+}
+
+// limitSettings raise or lower the capacity ceilings; each omitted one keeps
+// its default (policy.Limits).
+type limitSettings struct {
+	PolicyBytes   *int `json:"policy_bytes"`
+	APIs          *int `json:"apis"`
+	Operations    *int `json:"operations"`
+	Roles         *int `json:"roles"`
+	Permits       *int `json:"permits"`
+	RateCounters  *int `json:"rate_counters"`
+	MonitorWindow *int `json:"monitor_window"`
 }
 
 // gatewaySettings are the controller's settings, under the names the legacy

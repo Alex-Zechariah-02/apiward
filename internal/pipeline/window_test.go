@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/compile"
+	"github.com/Alex-Zechariah-02/apiward/internal/policy"
 )
 
 // step is one call of the limiter at a time with its expected decision.
@@ -43,7 +44,7 @@ func TestSlidingWindowReferenceVectors(t *testing.T) {
 	key := counterKey{"op", "subject", "alice"}
 
 	// N=10, W=60 s, buckets start at multiples of 60 000 ms.
-	l := NewLimiter()
+	l := NewLimiter(policy.DefaultRateCounters)
 	rule := quota(10, 60000)
 	var steps []step
 	steps = append(steps, repeatStep(10, 1000, true)...)   // bucket 0, fresh: the first 10 are admitted
@@ -62,7 +63,7 @@ func TestSlidingWindowReferenceVectors(t *testing.T) {
 	runSteps(t, "N=10", l, key, rule, steps)
 
 	// N=3, W=1 s: fractional weights at the equality boundary.
-	l = NewLimiter()
+	l = NewLimiter(policy.DefaultRateCounters)
 	rule = quota(3, 1000)
 	runSteps(t, "N=3", l, key, rule, []step{
 		{0, true}, {500, true}, {999, true}, {999, false}, // bucket 0 fills
@@ -80,7 +81,7 @@ func TestSlidingWindowReferenceVectors(t *testing.T) {
 
 	// N=1, W=1 s: one request per bucket at most, and exactly at the
 	// boundary the previous request still weighs fully.
-	l = NewLimiter()
+	l = NewLimiter(policy.DefaultRateCounters)
 	rule = quota(1, 1000)
 	runSteps(t, "N=1", l, key, rule, []step{
 		{10, true}, {999, false},
@@ -128,7 +129,7 @@ func TestSlidingWindowAgainstReferenceModel(t *testing.T) {
 	for _, c := range configs {
 		for seed := uint64(1); seed <= 5; seed++ {
 			random := rand.New(rand.NewPCG(seed, uint64(c.n)))
-			l := NewLimiter()
+			l := NewLimiter(policy.DefaultRateCounters)
 			rule := quota(c.n, c.w)
 			key := counterKey{"op", "subject", "s"}
 			var model referenceCounter
@@ -152,7 +153,7 @@ func TestSlidingWindowAgainstReferenceModel(t *testing.T) {
 // A clock that moves backwards never forgives requests: the previous bucket
 // then weighs fully. A forward jump only ages counts as real time would.
 func TestClockMovementNeverGrantsExtraQuota(t *testing.T) {
-	l := NewLimiter()
+	l := NewLimiter(policy.DefaultRateCounters)
 	rule := quota(3, 1000)
 	key := counterKey{"op", "subject", "alice"}
 	runSteps(t, "clock", l, key, rule, []step{

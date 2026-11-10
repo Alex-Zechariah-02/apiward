@@ -244,7 +244,7 @@ func TestFetchStackScenarios(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := policy.DecodePolicy(exportedData); err != nil {
+	if _, err := policy.DecodePolicy(exportedData, policy.Limits{}); err != nil {
 		t.Fatal(err)
 	}
 	if result := cli(true, "policy", "stage", "-dir", dir, "-file", exported); !strings.Contains(result, "not activated") {

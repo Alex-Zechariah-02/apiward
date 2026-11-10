@@ -47,10 +47,11 @@ const (
 )
 
 // Decode strictly decodes a policy document: unknown, repeated or
-// non-lower-case members and anything after the document are refused with a
-// *PolicyError. It checks the document's shape; Check also checks what it
-// means.
-func Decode(data []byte) (Policy, error) { return document.DecodePolicy(data) }
+// non-lower-case members, anything after the document and a document larger
+// than the gateway's default limit are refused with a *PolicyError. It checks
+// the document's shape; Check also checks what it means, against the
+// gateway's default capacity limits.
+func Decode(data []byte) (Policy, error) { return document.DecodePolicy(data, document.Limits{}) }
 
 // Encode returns the canonical form of p: 2-space JSON with members in
 // struct order and a trailing newline, lists sorted where their order
@@ -78,7 +79,7 @@ type Decision = compile.Answer
 // need a running gateway. A policy the gateway would refuse is returned as
 // its *PolicyError; an invalid request names the refused field.
 func Check(p Policy, req Request) (Decision, error) {
-	generation, err := compile.Compile(p, 0, time.Time{})
+	generation, err := compile.Compile(p, 0, time.Time{}, document.Limits{})
 	if err != nil {
 		return Decision{}, err
 	}

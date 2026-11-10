@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/compile"
+	"github.com/Alex-Zechariah-02/apiward/internal/policy"
 	"github.com/Alex-Zechariah-02/apiward/internal/storetest"
 )
 
@@ -77,7 +78,7 @@ func TestExpiredGenerationWithoutDeadlineIsWithdrawn(t *testing.T) {
 	p := storetest.Policy(false)
 	storetest.Seed(t, e.database, p, storetest.Options{})
 	c := e.own(e.controllerConfig())
-	stale, err := compile.Compile(p, 1, time.Now().Add(-time.Second))
+	stale, err := compile.Compile(p, 1, time.Now().Add(-time.Second), policy.Limits{})
 	if err != nil {
 		t.Fatal(err)
 	}

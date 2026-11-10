@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/audit"
+	"github.com/Alex-Zechariah-02/apiward/internal/policy"
 )
 
 // fillObservations records n requests one second apart, the last at end,
@@ -26,9 +27,9 @@ func fillObservations(o *Observations, n int, end time.Time) {
 // recent returns exactly what filtering a full snapshot the same way
 // returns, newest first, up to its limit, after the ring has wrapped.
 func TestRecentObservationsMatchSnapshotFiltering(t *testing.T) {
-	o := New()
+	o := New(policy.DefaultWindow, policy.DefaultAPIs)
 	end := time.Now().UTC()
-	fillObservations(o, RecentLimit+137, end)
+	fillObservations(o, policy.DefaultWindow+137, end)
 	all := o.Snapshot()
 	cursor := all[500].Sequence()
 	for _, tc := range []struct {
@@ -63,9 +64,9 @@ func TestRecentObservationsMatchSnapshotFiltering(t *testing.T) {
 // full ring by copying every retained request (the former traffic read)
 // with copying only the requests in the window. Diagnostic only.
 func BenchmarkObservationWindowRead(b *testing.B) {
-	o := New()
+	o := New(policy.DefaultWindow, policy.DefaultAPIs)
 	end := time.Now().UTC()
-	fillObservations(o, RecentLimit, end)
+	fillObservations(o, policy.DefaultWindow, end)
 	start := end.Add(-time.Minute)
 	b.Run("snapshot", func(b *testing.B) {
 		b.ReportAllocs()
@@ -94,19 +95,19 @@ func BenchmarkObservationWindowRead(b *testing.B) {
 // A traffic comparison needs to know whether the ring still holds every
 // request back to the start of the earlier window.
 func TestRetainedSinceReportsDroppedRequests(t *testing.T) {
-	o := New()
+	o := New(policy.DefaultWindow, policy.DefaultAPIs)
 	if _, dropped := o.RetainedSince(); dropped {
 		t.Fatal("an empty ring reports dropped requests")
 	}
 	end := time.Date(2026, 10, 29, 12, 0, 0, 0, time.UTC)
-	fillObservations(o, RecentLimit, end)
+	fillObservations(o, policy.DefaultWindow, end)
 	oldest, dropped := o.RetainedSince()
-	if dropped || !oldest.Equal(end.Add(-time.Duration(RecentLimit-1)*time.Second)) {
+	if dropped || !oldest.Equal(end.Add(-time.Duration(policy.DefaultWindow-1)*time.Second)) {
 		t.Fatalf("full ring: oldest %v, dropped %v", oldest, dropped)
 	}
 	fillObservations(o, 1, end.Add(time.Second))
 	oldest, dropped = o.RetainedSince()
-	if !dropped || !oldest.Equal(end.Add(-time.Duration(RecentLimit-2)*time.Second)) {
+	if !dropped || !oldest.Equal(end.Add(-time.Duration(policy.DefaultWindow-2)*time.Second)) {
 		t.Fatalf("after one more: oldest %v, dropped %v", oldest, dropped)
 	}
 }
