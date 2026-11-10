@@ -29,7 +29,8 @@ type UpstreamTimeouts struct {
 	// Dial bounds establishing the connection.
 	Dial time.Duration
 	// ResponseHeader bounds the wait for the response header once the
-	// request has been written.
+	// request has been written, and each wait for the upstream to take more
+	// of the request while it is written.
 	ResponseHeader time.Duration
 	// ReadIdle bounds each wait for more of the response body: a body that
 	// sends nothing for this long ends the exchange.
@@ -58,6 +59,7 @@ type upstreamProxy struct {
 	dialer    *net.Dialer
 	network   func() *Network
 	readIdle  time.Duration
+	writeIdle time.Duration
 	errorLog  *log.Logger
 	buffers   copyBuffers
 }
@@ -98,9 +100,10 @@ func NewUpstreamProxy(timeouts UpstreamTimeouts, network func() *Network, logger
 	protocols := new(http.Protocols)
 	protocols.SetHTTP1(true)
 	p := &upstreamProxy{
-		network:  network,
-		readIdle: timeouts.ReadIdle,
-		errorLog: slog.NewLogLogger(logger.Handler(), slog.LevelWarn),
+		network:   network,
+		readIdle:  timeouts.ReadIdle,
+		writeIdle: timeouts.ResponseHeader,
+		errorLog:  slog.NewLogLogger(logger.Handler(), slog.LevelWarn),
 	}
 	// Every connection, whatever the policy or DNS said, is checked on the
 	// address it is about to connect to.
@@ -108,7 +111,7 @@ func NewUpstreamProxy(timeouts UpstreamTimeouts, network func() *Network, logger
 	p.transport = &http.Transport{
 		// No Proxy function: the bound address is dialled directly, never
 		// through a proxy named by the environment.
-		DialContext:           p.dialer.DialContext,
+		DialContext:           p.dial,
 		DialTLSContext:        p.dialTLS,
 		ResponseHeaderTimeout: timeouts.ResponseHeader,
 		// Every request is sent once, on a new connection. A transport that

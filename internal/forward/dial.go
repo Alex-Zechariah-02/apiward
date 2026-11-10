@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/netip"
 	"syscall"
+	"time"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/compile"
 )
@@ -35,6 +36,32 @@ func (p *upstreamProxy) checkAddress(_, address string, _ syscall.RawConn) error
 	return nil
 }
 
+// dial connects to address, after checkAddress, for plain and TLS upstreams.
+// The transport starts its response-header timeout only once the whole
+// request is written, so each write here may wait at most writeIdle for the
+// upstream to take more; an upstream that stops reading cannot hold the
+// exchange open.
+func (p *upstreamProxy) dial(ctx context.Context, network, address string) (net.Conn, error) {
+	conn, err := p.dialer.DialContext(ctx, network, address)
+	if err != nil {
+		return nil, err
+	}
+	return &writeBoundConn{Conn: conn, idle: p.writeIdle}, nil
+}
+
+// writeBoundConn sets a fresh write deadline before every write.
+type writeBoundConn struct {
+	net.Conn
+	idle time.Duration
+}
+
+func (c *writeBoundConn) Write(b []byte) (int, error) {
+	if err := c.Conn.SetWriteDeadline(time.Now().Add(c.idle)); err != nil {
+		return 0, err
+	}
+	return c.Conn.Write(b)
+}
+
 // dialTLS connects to the https endpoint the request is bound to and
 // completes the TLS handshake within the dial timeout. The transport passes
 // the request's context, so the endpoint comes from its binding; an address
@@ -51,7 +78,7 @@ func (p *upstreamProxy) dialTLS(ctx context.Context, network, address string) (n
 	}
 	ctx, cancel := context.WithTimeout(ctx, p.dialer.Timeout)
 	defer cancel()
-	conn, err := p.dialer.DialContext(ctx, network, address)
+	conn, err := p.dial(ctx, network, address)
 	if err != nil {
 		return nil, err
 	}
