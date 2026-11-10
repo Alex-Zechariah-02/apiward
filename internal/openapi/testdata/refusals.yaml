@@ -12,6 +12,10 @@ paths:
   /bad-id:
     get:
       operationId: list orders
+  /typed-security:
+    get:
+      operationId: typedSecurity
+      security: bearer
   /no-id:
     get:
       summary: No identifier.

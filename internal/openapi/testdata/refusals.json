@@ -178,6 +178,12 @@
         "operationId": "list orders"
       }
     },
+    "/typed-security": {
+      "get": {
+        "operationId": "typedSecurity",
+        "security": "bearer"
+      }
+    },
     "/basic": {
       "get": {
         "operationId": "basic",

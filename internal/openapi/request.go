@@ -23,11 +23,14 @@ func (m *mapper) security(object map[string]any, c *candidate) *refusal {
 	if !stated {
 		requirements, stated = m.root["security"]
 	}
-	list, _ := requirements.([]any)
+	list, isList := requirements.([]any)
 	switch {
 	case !stated:
 		c.op.Auth, c.entry.Note = "required", NoteDefaultSignIn
 		return nil
+	case !isList:
+		// A malformed requirement must never read as the empty list (public).
+		return refuse(CodeSecurity, "", "The security requirement must be a list.")
 	case len(list) == 0:
 		c.op.Auth, c.entry.Note = "none", "public: consider a rate limit by client address"
 		return nil

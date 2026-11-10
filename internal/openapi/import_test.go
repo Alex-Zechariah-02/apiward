@@ -158,6 +158,7 @@ func TestImportOpenAPI(t *testing.T) {
 			"GET /basic":          {CodeSecurity, ""},
 			"GET /optional":       {CodeSecurity, ""},
 			"GET /unknown-scheme": {CodeSecurity, ""},
+			"GET /typed-security": {CodeSecurity, ""},
 			"POST /form":          {CodeMediaType, ""},
 			"POST /cycle":         {CodeCycle, "#/components/schemas/Tree/properties/child"},
 			"POST /external":      {CodeExternalRef, "#/paths/~1external/post" + body},
