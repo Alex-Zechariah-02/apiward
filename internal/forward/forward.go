@@ -1,3 +1,7 @@
+// The upstream proxy: it sends each admitted request, once and on a new
+// connection, to the upstream bound to it, copies the response back, and
+// classifies an exchange that fails before any response.
+
 package forward
 
 import (
