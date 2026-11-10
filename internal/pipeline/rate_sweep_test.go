@@ -36,6 +36,29 @@ func TestFullTableRefusalIsBounded(t *testing.T) {
 	}
 }
 
+// A sweep removes a bounded number of expired counters, so the one request
+// that triggers it never pays for a whole table of keys that expired together.
+func TestSweepIsBounded(t *testing.T) {
+	const keys = 3 * compile.SweepInterval
+	l := NewLimiter(keys)
+	rule := quota(10, 1_000)
+	for i := range keys {
+		l.admit(counterKey{"search", compile.RateKeyAddress, strconv.Itoa(i)}, rule, 0)
+	}
+	later := int64(10_000) // every counter above has expired
+	if got := l.admit(counterKey{"search", compile.RateKeyAddress, "new"}, rule, later); got != rateAdmitted {
+		t.Fatalf("new key after expiry: %v, want admitted", got)
+	}
+	if got, want := len(l.counters), keys-compile.SweepInterval+1; got != want {
+		t.Fatalf("a full table kept %d counters after making room, want %d", got, want)
+	}
+	l.admissions = compile.SweepInterval - 1
+	l.admit(counterKey{"search", compile.RateKeyAddress, "new"}, rule, later)
+	if got, want := len(l.counters), keys-2*compile.SweepInterval+1; got != want {
+		t.Fatalf("a periodic sweep left %d counters, want %d", got, want)
+	}
+}
+
 // The limiter decides exactly as the original single-map limiter with full
 // sweeps, and keeps exactly the same counters, for random request sequences.
 func TestLimiterMatchesReference(t *testing.T) {

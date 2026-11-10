@@ -125,7 +125,7 @@ func (l *Limiter) admit(key counterKey, rule *compile.RateRule, now int64) rateD
 	c := l.counters[key]
 	if c == nil {
 		if len(l.counters) >= l.capacity {
-			l.sweep(now)
+			l.sweep(now, compile.SweepInterval)
 		}
 		if len(l.counters) >= l.capacity {
 			return rateNoCapacity
@@ -154,16 +154,18 @@ func (l *Limiter) admit(key counterKey, rule *compile.RateRule, now int64) rateD
 
 	l.admissions++
 	if l.admissions%compile.SweepInterval == 0 {
-		l.sweep(now)
+		l.sweep(now, compile.SweepInterval)
 	}
 	return rateAdmitted
 }
 
-// sweep removes counters whose current and previous buckets have both ended.
-// Their estimate is zero, so removing them never changes a decision. It visits
-// only the counters it removes, so a full table of live counters costs no scan.
-func (l *Limiter) sweep(now int64) {
-	for len(l.expiry) > 0 && l.expiry[0].removable() <= now {
+// sweep removes up to budget counters whose current and previous buckets have
+// both ended. Their estimate is zero, so removing them never changes a
+// decision. It visits only the counters it removes, so a full table of live
+// counters costs no scan, and the budget keeps a burst of keys that expired
+// together from stalling the one request that triggers the sweep.
+func (l *Limiter) sweep(now int64, budget int) {
+	for ; budget > 0 && len(l.expiry) > 0 && l.expiry[0].removable() <= now; budget-- {
 		c := heap.Pop(&l.expiry).(*counter)
 		delete(l.counters, c.key)
 	}
