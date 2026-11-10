@@ -3,11 +3,10 @@
 package audit
 
 import (
-	"bytes"
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
-	"fmt"
+	"strconv"
 	"time"
 )
 
@@ -137,21 +136,28 @@ const (
 // an array, so every event carries its own copy.
 type stages [stageCount]string
 
+// stagesSize holds the longest stage record (232 bytes, every stage REJECT),
+// so encoding one never grows the buffer.
+const stagesSize = 256
+
+// MarshalJSON writes every stage in order with its result, a missing one as
+// not run. It appends rather than formats: it runs for every audit record.
 func (s stages) MarshalJSON() ([]byte, error) {
-	var buffer bytes.Buffer
-	buffer.WriteByte('{')
+	out := make([]byte, 0, stagesSize)
+	out = append(out, '{')
 	for i, name := range StageNames {
 		result := s[i]
 		if result == "" {
 			result = StageNotRun
 		}
 		if i > 0 {
-			buffer.WriteByte(',')
+			out = append(out, ',')
 		}
-		fmt.Fprintf(&buffer, "%q:%q", name, result)
+		out = strconv.AppendQuote(out, name)
+		out = append(out, ':')
+		out = strconv.AppendQuote(out, result)
 	}
-	buffer.WriteByte('}')
-	return buffer.Bytes(), nil
+	return append(out, '}'), nil
 }
 
 func NewRequestID() string {
