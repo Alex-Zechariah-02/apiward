@@ -1,6 +1,6 @@
 // The upstream proxy: it sends each admitted request, once and on a new
-// connection, to the upstream bound to it, copies the response back, and
-// classifies an exchange that fails before any response.
+// connection, to the upstream bound to it, copies the response back through
+// pooled buffers, and classifies an exchange that fails before any response.
 
 package forward
 
@@ -17,6 +17,7 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"strconv"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -58,6 +59,28 @@ type upstreamProxy struct {
 	network   func() *Network
 	readIdle  time.Duration
 	errorLog  *log.Logger
+	buffers   copyBuffers
+}
+
+// copySize is the buffer the reverse proxy copies a response body through:
+// the size it allocates for every response when it has no pool.
+const copySize = 32 << 10
+
+// copyBuffers lends the reverse proxy its copy buffers, so a response no
+// longer allocates and clears 32 KiB. The proxy writes only the bytes each
+// read returned, so nothing of an earlier response is ever sent; idle
+// buffers are released by the garbage collector.
+type copyBuffers struct{ pool sync.Pool }
+
+func (c *copyBuffers) Get() []byte {
+	if buffer, ok := c.pool.Get().(*[]byte); ok {
+		return *buffer
+	}
+	return make([]byte, copySize)
+}
+
+func (c *copyBuffers) Put(buffer []byte) {
+	c.pool.Put(&buffer)
 }
 
 // NewUpstreamProxy returns the proxy whose exchanges are bounded by timeouts.
@@ -126,9 +149,10 @@ func (p *upstreamProxy) Forward(w http.ResponseWriter, r *http.Request) error {
 
 	var failure error
 	proxy := &httputil.ReverseProxy{
-		Rewrite:   func(pr *httputil.ProxyRequest) { rewriteToUpstream(pr, d.Endpoint(), d.Path()) },
-		Transport: p.transport,
-		ErrorLog:  p.errorLog,
+		Rewrite:    func(pr *httputil.ProxyRequest) { rewriteToUpstream(pr, d.Endpoint(), d.Path()) },
+		Transport:  p.transport,
+		ErrorLog:   p.errorLog,
+		BufferPool: &p.buffers,
 		ModifyResponse: func(res *http.Response) error {
 			// Every protocol switch is refused at ingress, so an upstream that
 			// switches anyway is not followed into a tunnel. The proxy closes
