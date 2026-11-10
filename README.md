@@ -189,7 +189,7 @@ Each package under `internal/` imports only the packages listed before it; a tes
 
 You need Go 1.26 or newer. `go.mod` selects the Go 1.27.3 toolchain; with `GOTOOLCHAIN=auto`, Go uses or downloads that toolchain when needed. The gateway's programs live in `cmd/`, its code in `internal/`, and the preserved controlled APIs for gateway regression tests in `internal/testfixture`. The Fetch demonstration is its own repository; the gateway's stack and browser tests build its programs from a checkout beside this one (`../fetch`), which CI checks out at the commit named by `FETCH_REF` in `.github/workflows/ci.yml`. Fetch reaches the gateway only through the gateway's programs and public packages. The Dashboard is in `dashboard/`.
 
-- `cmd/gateway` runs the gateway from one strict JSON configuration file. It has the commands `run`, `install`, `enrol`, `backup`, `restore` and `migrate`, each with `--config <file>`, and the offline `policy import-openapi` and `policy export-openapi` (see above). The local commands `install`, `enrol`, `backup`, `restore` and `migrate` run while the gateway is stopped.
+- `cmd/gateway` runs the gateway from one strict JSON configuration file. It has the commands `run`, `install`, `enrol`, `backup`, `restore`, `migrate` and `health`, each with `--config <file>`, and the offline `policy import-openapi` and `policy export-openapi` (see above). The local commands `install`, `enrol`, `backup`, `restore` and `migrate` run while the gateway is stopped.
 
 ```
 go build -trimpath -o <out-dir>/gateway.exe ./cmd/gateway
@@ -224,6 +224,38 @@ go test ./... -count=1
 `gofmt -l` must print nothing. The Fetch stack tests need the Fetch repository checked out as `../fetch`. The gateway regression tests start real gateway and controlled API processes and check independent request receipts. The Fetch integration test starts all five services and walks the role flows, refusals, policy changes, blocks, keys and resets. Tests use isolated synthetic identities and temporary state: the controlled-test issuer is in memory, while real Accounts tests create private signing files in temporary directories. No application signing key is shipped in source. Race and optional WSL checks have separate evidence; an unrun platform check is not implied by a passing Windows suite.
 
 The dashboard is in `dashboard/` (React and TypeScript, built with Vite). Its browser tests drive a real demonstration made by the Fetch demo tool from `../fetch` (see `dashboard/README.md`).
+
+### Container image
+
+`Dockerfile` builds one image of the gateway with the Dashboard inside. Node.js 24 builds the Dashboard, Go 1.27.3 builds a static `gateway` with the `embedui` tag and cgo off, and the program runs on the distroless static Debian 13 image as its `nonroot` user, UID and GID 65532. Every base image is pinned by digest. In a checkout:
+
+```
+docker build -t apiward:dev .
+```
+
+`--build-arg REVISION=$(git rev-parse HEAD)` records the commit in the label `org.opencontainers.image.revision`. `docker buildx build --sbom=true --output type=local,dest=<new-folder> .` also writes the image's software bill of materials as `sbom.spdx.json`; it needs the containerd image store or a `docker-container` builder. No image is published to a registry.
+
+The image runs `gateway run --config /etc/apiward/apiward.json`. Mount the settings, keys and certificates read-only at `/etc/apiward`, with every path in the settings under that folder. The only writable folder is `/var/lib/apiward`, so the settings keep the database and the security log there: mount a local named volume or host folder on it, since SQLite's write-ahead log does not work over a network file system (https://www.sqlite.org/wal.html). Key files must belong to UID 65532 and be readable by it alone (mode 600; for example `sudo chown -R 65532:65532 <folder>`): the gateway refuses a key that others can read. Secrets stay in those files, never in environment variables.
+
+Install the first administrator once, before the first start:
+
+```
+docker run --rm -v apiward-data:/var/lib/apiward -v "$PWD/apiward:/etc/apiward:ro" apiward:dev install --config /etc/apiward/apiward.json --admin <name>
+```
+
+`install` prints a one-time enrolment secret; keep it private. Then start the gateway:
+
+```
+docker run -d --name apiward --network host --read-only --cap-drop ALL \
+  --security-opt no-new-privileges:true --stop-timeout 30 \
+  -v apiward-data:/var/lib/apiward -v "$PWD/apiward:/etc/apiward:ro" apiward:dev
+```
+
+and in the Dashboard choose **First Sign-In with an Enrolment Secret**, then establish the first policy. The image's health check runs `gateway health`, which asks the metrics listener's `/readyz`, so a new gateway reports unhealthy until its first policy is published. `docker stop` sends `SIGTERM`; give the gateway at least 30 seconds to stop (`--stop-timeout 30`, or `stop_grace_period: 30s` in Compose).
+
+The admin listener always stays on loopback and is never published, so the image runs on the host's network (`--network host`) on Linux with Docker Engine. The Dashboard is then on the host's `127.0.0.1`; from another machine, reach it through `ssh -N -L 9440:127.0.0.1:9440 <user>@<host>` with the same port on both ends, since the browser's `Host` must equal the admin listen address. The listeners use the addresses and ports of the settings: `-p` is ignored with host networking, and no address translation sits in the request path. Docker Desktop offers host networking only as an opt-in setting (version 4.34 or later, Settings > Resources > Network, signed in to Docker), at layer 4 and without binding the host's IP addresses, so it is not the documented setup.
+
+The Fetch repository's `compose.yaml` runs this image beside the Fetch services on one Linux host, with settings its demo tool writes; its README, "Containers", walks through a complete first run.
 
 ### Demonstration
 
