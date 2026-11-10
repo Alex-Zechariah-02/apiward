@@ -78,7 +78,8 @@ func TestNativeConfigSettings(t *testing.T) {
 		},
 		listen:            "127.0.0.2:9480",
 		metricsListen:     gatewaytest.DemoTestAddress(t, "127.0.0.1:9450"),
-		maxBodyBytes:      16 << 10,
+		limits:            pipeline.Limits{MaxBodyBytes: 16 << 10, MaxInFlight: 256, IPv6RatePrefix: 64},
+		maxConnections:    1024,
 		headerLimit:       16 << 10,
 		readHeaderTimeout: 5 * time.Second,
 		readTimeout:       10 * time.Second,
@@ -99,7 +100,7 @@ func TestNativeConfigSettings(t *testing.T) {
 		})
 		maps.Copy(s["data"].(map[string]any), map[string]any{
 			"max_body_bytes": 2048, "max_header_bytes": 32768, "read_header_timeout": "2s", "read_timeout": "3s",
-			"write_timeout": "4s", "idle_timeout": "1m",
+			"write_timeout": "4s", "idle_timeout": "1m", "max_in_flight": 32, "ipv6_rate_prefix": 56, "max_connections": 100,
 		})
 		s["upstream"] = map[string]any{"dial_timeout": "1s", "response_header_timeout": "3s", "read_idle_timeout": "2m",
 			"max_idle_per_upstream": 0, "idle_conn_timeout": "5s", "tls_session_lifetime": "10m"}
@@ -110,7 +111,7 @@ func TestNativeConfigSettings(t *testing.T) {
 	c := cfg.controller
 	if c.AdminIdleTimeout != 10*time.Minute || c.AdminSessionLifetime != time.Hour || c.AuditTimeout != time.Second ||
 		c.AuditMaxBytes != 1<<20 || c.AuditMaxFiles != 4 || cfg.adminUI != site ||
-		cfg.maxBodyBytes != 2048 || cfg.headerLimit != 32768 || cfg.readHeaderTimeout != 2*time.Second ||
+		cfg.limits != (pipeline.Limits{MaxBodyBytes: 2048, MaxInFlight: 32, IPv6RatePrefix: 56}) || cfg.maxConnections != 100 || cfg.headerLimit != 32768 || cfg.readHeaderTimeout != 2*time.Second ||
 		cfg.readTimeout != 3*time.Second || cfg.writeTimeout != 4*time.Second || cfg.idleTimeout != time.Minute ||
 		cfg.upstream != (forward.UpstreamTimeouts{Dial: time.Second, ResponseHeader: 3 * time.Second, ReadIdle: 2 * time.Minute}) ||
 		cfg.pool != (forward.PoolSettings{MaxIdle: 0, IdleTimeout: 5 * time.Second}) {

@@ -111,5 +111,6 @@ func serveMetrics(w http.ResponseWriter, r *http.Request, o *Observations, publi
 	}
 	fmt.Fprintf(&body, "# TYPE gateway_event_stream_dropped_total counter\ngateway_event_stream_dropped_total %d\n", dropped)
 	fmt.Fprintf(&body, "# TYPE gateway_redirects_total counter\ngateway_redirects_total %d\n", o.redirects.Load())
+	fmt.Fprintf(&body, "# TYPE gateway_connections_refused_total counter\ngateway_connections_refused_total %d\n", o.refused.Load())
 	fmt.Fprint(w, body.String())
 }

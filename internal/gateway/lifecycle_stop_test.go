@@ -18,6 +18,7 @@ import (
 
 	"github.com/Alex-Zechariah-02/apiward/internal/controller"
 	"github.com/Alex-Zechariah-02/apiward/internal/gatewaytest"
+	"github.com/Alex-Zechariah-02/apiward/internal/pipeline"
 )
 
 // Stop waits a bounded time for an admin request in progress, then closes its
@@ -141,7 +142,7 @@ func TestStopWaitsForMutations(t *testing.T) {
 // it is stopping. The stop that follows writes every event of both requests.
 func TestBeginStopEndsAdmission(t *testing.T) {
 	e := gatewaytest.NewEnv(t)
-	c, _, f := serveEnforcement(e, e.Policy(e.A, true), 0)
+	c, _, f := serveEnforcement(e, e.Policy(e.A, true), pipeline.Limits{})
 	held, proceed := make(chan struct{}), make(chan struct{})
 	release := sync.OnceFunc(func() { close(proceed) })
 	// Registered after the server's cleanup, so it runs first: a failure

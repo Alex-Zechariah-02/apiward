@@ -39,7 +39,7 @@ func (h *Handler) preflight(q *request, g *compile.Generation, path string, in c
 			return true
 		}
 		if limit := rule.PreflightRate(); limit != nil {
-			key := counterKey{operation: rule.API(), keyType: keyPreflight, key: q.event.ClientAddress}
+			key := counterKey{operation: rule.API(), keyType: keyPreflight, key: q.rateAddress}
 			if !h.admitRate(q, audit.StageRoute, key, limit) {
 				return true
 			}

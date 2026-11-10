@@ -192,7 +192,7 @@ func (h *Handler) limit(q *request, rule *compile.Rule) bool {
 	}
 	key := counterKey{operation: rule.Counter(), keyType: rule.RateKey(), key: q.event.Subject}
 	if rule.RateKey() == compile.RateKeyAddress {
-		key.key = q.event.ClientAddress
+		key.key = q.rateAddress
 	}
 	if !h.admitRate(q, audit.StageRate, key, rule.Rate()) {
 		return false

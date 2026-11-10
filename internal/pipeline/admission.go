@@ -1,4 +1,5 @@
-// Refusal of client addresses on the blocked address list, at ingress.
+// Client addresses at ingress: refusal of those on the blocked address list,
+// and the key an address-based rate counter uses for each.
 
 package pipeline
 
@@ -32,4 +33,16 @@ func (h *Handler) admitAddress(q *request) bool {
 		return false
 	}
 	return true
+}
+
+// rateAddress is the rate key of a client address: an IPv4 address itself,
+// an IPv6 address masked to the configured prefix. Blocked-address checks
+// and the security log keep the exact address.
+func (h *Handler) rateAddress(addr netip.Addr) string {
+	if !addr.Is6() {
+		return addr.String()
+	}
+	// New accepts only prefix lengths 48 to 128, which every IPv6 address has.
+	prefix, _ := addr.Prefix(h.ipv6Prefix)
+	return prefix.String()
 }

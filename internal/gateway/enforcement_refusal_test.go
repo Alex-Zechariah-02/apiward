@@ -16,6 +16,7 @@ import (
 	"github.com/Alex-Zechariah-02/apiward/internal/controller"
 	"github.com/Alex-Zechariah-02/apiward/internal/gatewaytest"
 	"github.com/Alex-Zechariah-02/apiward/internal/issuertest"
+	"github.com/Alex-Zechariah-02/apiward/internal/pipeline"
 	"github.com/Alex-Zechariah-02/apiward/internal/policy"
 	"github.com/Alex-Zechariah-02/apiward/internal/store"
 )
@@ -164,7 +165,7 @@ func TestEnforcementBodyCeiling(t *testing.T) {
 		policy.Operation{ID: "equal", API: "a", Method: "POST", Target: "/a/equal", Access: "allow", Auth: "none", Body: gatewaytest.JSONBody(2048, gatewaytest.AnyObject)},
 	)
 	const global = 2048
-	_, _, f := serveEnforcement(e, p, global)
+	_, _, f := serveEnforcement(e, p, pipeline.Limits{MaxBodyBytes: global})
 	routed := []string{"INGRESS", "CAPTURE", "CANONICAL", "ROUTE", "ACCESS"}
 	operations := []struct {
 		name, path string
@@ -220,7 +221,7 @@ func TestEnforcementRateLimit(t *testing.T) {
 	e := gatewaytest.NewEnv(t)
 	p := e.ProtectedPolicy()
 	p.Operations[0].Rate = gatewaytest.Rate(2, 60)
-	c, _, f := serveEnforcement(e, p, 0)
+	c, _, f := serveEnforcement(e, p, pipeline.Limits{})
 	get := func(subject string) (int, string) {
 		resp, body := e.Exchange(http.MethodGet, "/a/x", "", "", "Authorization", "Bearer "+gatewaytest.Issuer.TokenFor(t, subject))
 		_, id := gatewaytest.RequestID(resp, body)

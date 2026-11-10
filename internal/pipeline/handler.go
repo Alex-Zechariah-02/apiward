@@ -34,13 +34,25 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if peer, err := netip.ParseAddrPort(r.RemoteAddr); err == nil {
-		q.event.ClientAddress = peer.Addr().Unmap().String()
+		addr := peer.Addr().Unmap()
+		q.event.ClientAddress = addr.String()
+		q.rateAddress = h.rateAddress(addr)
 	}
 	// Keep credentials only for authentication; discard client identity metadata
 	// before any ingress refusal as well as before forwarding.
 	credentials := r.Header.Values("Authorization")
 	q.event.SetIdentityKnown(len(credentials) == 0)
 	StripUntrusted(r.Header)
+
+	// Overload: past maxInFlight requests, refuse before any token check or
+	// body read, so excess load costs as little as possible.
+	if h.inFlight.Add(1) > h.maxInFlight {
+		h.inFlight.Add(-1)
+		w.Header().Set("Retry-After", "1")
+		q.reject(audit.StageIngress, http.StatusServiceUnavailable, "overloaded")
+		return
+	}
+	defer h.inFlight.Add(-1)
 
 	// Ingress: only origin-form targets, no tunnelling, bounded declared size.
 	// A protocol upgrade would turn an admitted request into a raw stream the

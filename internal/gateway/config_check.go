@@ -121,7 +121,16 @@ func (f nativeFile) check() (nativeConfig, error) {
 	if cfg.controller.AuditMaxFiles, err = numberSetting("gateway.audit_max_files", g.AuditMaxFiles, audit.DefaultAuditFiles, 2, controller.MaxAuditFiles); err != nil {
 		return nativeConfig{}, err
 	}
-	if cfg.maxBodyBytes, err = numberSetting("data.max_body_bytes", d.MaxBodyBytes, pipeline.DefaultMaxBody, 1, policy.MaxBodyLimit); err != nil {
+	if cfg.limits.MaxBodyBytes, err = numberSetting("data.max_body_bytes", d.MaxBodyBytes, pipeline.DefaultMaxBody, 1, policy.MaxBodyLimit); err != nil {
+		return nativeConfig{}, err
+	}
+	if cfg.limits.MaxInFlight, err = numberSetting("data.max_in_flight", d.MaxInFlight, pipeline.DefaultMaxInFlight, 1, maxInFlightLimit); err != nil {
+		return nativeConfig{}, err
+	}
+	if cfg.limits.IPv6RatePrefix, err = numberSetting("data.ipv6_rate_prefix", d.IPv6RatePrefix, pipeline.DefaultIPv6RatePrefix, pipeline.MinIPv6RatePrefix, 128); err != nil {
+		return nativeConfig{}, err
+	}
+	if cfg.maxConnections, err = numberSetting("data.max_connections", d.MaxConnections, defaultMaxConnections, 16, maxConnectionsLimit); err != nil {
 		return nativeConfig{}, err
 	}
 	if cfg.headerLimit, err = numberSetting("data.max_header_bytes", d.MaxHeaderBytes, defaultHeaderBytes, minHeaderBytes, maxHeaderBytes); err != nil {

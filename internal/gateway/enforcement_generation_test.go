@@ -38,7 +38,7 @@ func (b *publishOnRead) Close() error { return nil }
 // metadata all come from it. The next request uses the new generation.
 func TestEnforcementUsesCapturedGeneration(t *testing.T) {
 	e := gatewaytest.NewEnv(t)
-	c, h, f := serveEnforcement(e, e.Policy(e.A, false), 0)
+	c, h, f := serveEnforcement(e, e.Policy(e.A, false), pipeline.Limits{})
 	captured := c.Current()
 
 	// The next generation sends API a to B and requires the member "x".
@@ -89,7 +89,7 @@ func TestEnforcementWithoutUsableGeneration(t *testing.T) {
 		e := gatewaytest.NewEnv(t)
 		c, _ := own(e, controllerConfig(e))
 		f := &memoryForwarder{}
-		h, err := newHandler(c, pipeline.NewLimiter(), 0, f.forward)
+		h, err := newHandler(c, pipeline.NewLimiter(), pipeline.Limits{}, f.forward)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -123,7 +123,7 @@ func TestEnforcementWithoutUsableGeneration(t *testing.T) {
 
 	t.Run("controller stopped", func(t *testing.T) {
 		e := gatewaytest.NewEnv(t)
-		c, _, f := serveEnforcement(e, e.Policy(e.A, false), 0)
+		c, _, f := serveEnforcement(e, e.Policy(e.A, false), pipeline.Limits{})
 		if code, _ := e.Get("/a/x"); code != http.StatusOK {
 			t.Fatalf("before Stop: %d", code)
 		}
@@ -145,7 +145,7 @@ func TestEnforcementWithoutUsableGeneration(t *testing.T) {
 func TestEnforcementGenerationsUnderConcurrency(t *testing.T) {
 	e := gatewaytest.NewEnv(t)
 	toA, toB := e.Policy(e.A, false), e.Policy(e.B, false)
-	c, _, f := serveEnforcement(e, toA, 0)
+	c, _, f := serveEnforcement(e, toA, pipeline.Limits{})
 	var dials sync.Map // generation ID -> the dial of API a in it
 	dials.Store(c.Current().ID, e.A.Addr)
 

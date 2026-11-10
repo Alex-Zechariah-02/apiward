@@ -55,12 +55,17 @@ const (
 	// after defaultIdleConn, which must stay below the upstream server's
 	// own idle timeout (an upstream with a shorter one needs a lower
 	// setting), and TLS sessions resumed for at most defaultSessionLife.
-	defaultMaxIdle     = 16
-	maxIdlePerUpstream = 1024
-	defaultIdleConn    = 30 * time.Second
-	defaultSessionLife = time.Hour
-	minSessionLife     = time.Minute
-	maxSessionLife     = 24 * time.Hour
+	// Data-plane connections: an idle TLS connection measured 20 to 42 KiB
+	// of resident memory, so the default bounds them to about 43 MiB.
+	defaultMaxConnections = 1024
+	maxConnectionsLimit   = 65536
+	maxInFlightLimit      = 65536
+	defaultMaxIdle        = 16
+	maxIdlePerUpstream    = 1024
+	defaultIdleConn       = 30 * time.Second
+	defaultSessionLife    = time.Hour
+	minSessionLife        = time.Minute
+	maxSessionLife        = 24 * time.Hour
 )
 
 // nativeFile is the configuration file as written. A setting that may be
@@ -100,6 +105,9 @@ type dataSettings struct {
 	RedirectHTTP        *redirectSettings `json:"redirect_http"`
 	MaxBodyBytes        *int64            `json:"max_body_bytes"`
 	MaxHeaderBytes      *int              `json:"max_header_bytes"`
+	MaxConnections      *int              `json:"max_connections"`
+	MaxInFlight         *int64            `json:"max_in_flight"`
+	IPv6RatePrefix      *int              `json:"ipv6_rate_prefix"`
 	ReadHeaderTimeout   *string           `json:"read_header_timeout"`
 	ReadTimeout         *string           `json:"read_timeout"`
 	WriteTimeout        *string           `json:"write_timeout"`
@@ -122,10 +130,14 @@ type upstreamSettings struct {
 
 // nativeConfig is a checked configuration of the native gateway.
 type nativeConfig struct {
-	controller        controller.Config
-	listen            string
-	metricsListen     string
-	maxBodyBytes      int64
+	controller    controller.Config
+	listen        string
+	metricsListen string
+	// limits bound enforcement: body ceiling, requests in flight, IPv6 rate
+	// key prefix.
+	limits pipeline.Limits
+	// maxConnections bounds the data listener's open connections.
+	maxConnections    int
 	headerLimit       int
 	readHeaderTimeout time.Duration
 	readTimeout       time.Duration

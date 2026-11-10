@@ -13,7 +13,7 @@ import (
 
 func TestFetchIngressDiscardsClientIdentityHeaders(t *testing.T) {
 	e := gatewaytest.NewEnv(t)
-	_, handler, _ := serveEnforcement(e, e.Policy(e.A, true), 0)
+	_, handler, _ := serveEnforcement(e, e.Policy(e.A, true), pipeline.Limits{})
 	for _, method := range []string{"CONNECT", "POST"} {
 		request := httptest.NewRequest(method, "http://gateway/a/x", nil)
 		request.RequestURI = "/a/x"

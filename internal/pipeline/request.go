@@ -17,6 +17,9 @@ type request struct {
 	audit        *audit.AuditLog
 	observations *monitor.Observations
 	started      time.Time
+	// rateAddress keys the client's address-based rate counters: the
+	// address, or for IPv6 its configured prefix.
+	rateAddress string
 	// bodyPending is true while a declared request body has not been
 	// consumed by validation.
 	bodyPending bool

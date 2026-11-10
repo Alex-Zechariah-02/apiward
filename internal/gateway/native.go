@@ -225,6 +225,7 @@ func startNative(cfg nativeConfig, logger *slog.Logger) (*nativeGateway, error) 
 		closeListeners(listener, redirectListener)
 		return nil, errors.Join(err, c.Stop())
 	}
+	listener = capConnections(listener, cfg.maxConnections, c.Observations().ConnectionRefused)
 	if d.certificate != nil {
 		listener = tls.NewListener(listener, d.certificate.config())
 	}

@@ -89,14 +89,14 @@ func (f *memoryForwarder) setRespond(respond func(w http.ResponseWriter, r *http
 }
 
 // serveEnforcement seeds e's database with policy, owns its controller and
-// serves the enforcement handler, with the global body ceiling maxBodyBytes
-// (0: the default), at e.DataAddr, where the harness request helpers send.
-func serveEnforcement(e *gatewaytest.Env, policy policy.Policy, maxBodyBytes int64) (*controller.Controller, *pipeline.Handler, *memoryForwarder) {
+// serves the enforcement handler within limits (a zero member: its default)
+// at e.DataAddr, where the harness request helpers send.
+func serveEnforcement(e *gatewaytest.Env, policy policy.Policy, limits pipeline.Limits) (*controller.Controller, *pipeline.Handler, *memoryForwarder) {
 	e.T.Helper()
 	gatewaytest.Seed(e.T, e.Database, policy, gatewaytest.SeedOptions{})
 	c, _ := own(e, controllerConfig(e))
 	f := &memoryForwarder{}
-	h, err := newHandler(c, pipeline.NewLimiter(), maxBodyBytes, f.forward)
+	h, err := newHandler(c, pipeline.NewLimiter(), limits, f.forward)
 	if err != nil {
 		e.T.Fatal(err)
 	}
@@ -175,13 +175,13 @@ func TestNewHandlerRefusesIncompleteSetup(t *testing.T) {
 	gatewaytest.Seed(t, e.Database, e.Policy(e.A, false), gatewaytest.SeedOptions{})
 	c, _ := own(e, controllerConfig(e))
 	forward := (&memoryForwarder{}).forward
-	if h, err := newHandler(nil, nil, 0, forward); h != nil || err == nil {
+	if h, err := newHandler(nil, nil, pipeline.Limits{}, forward); h != nil || err == nil {
 		t.Fatalf("without a controller: %v, %v", h, err)
 	}
-	if h, err := newHandler(c, pipeline.NewLimiter(), 0, nil); h != nil || err == nil {
+	if h, err := newHandler(c, pipeline.NewLimiter(), pipeline.Limits{}, nil); h != nil || err == nil {
 		t.Fatalf("without a forwarder: %v, %v", h, err)
 	}
-	if h, err := newHandler(c, pipeline.NewLimiter(), 0, forward); h == nil || err != nil {
+	if h, err := newHandler(c, pipeline.NewLimiter(), pipeline.Limits{}, forward); h == nil || err != nil {
 		t.Fatalf("complete setup: %v, %v", h, err)
 	}
 }
@@ -192,7 +192,7 @@ func TestNewHandlerRefusesIncompleteSetup(t *testing.T) {
 // upstream is contacted.
 func TestEnforcementHandlerAdmits(t *testing.T) {
 	e := gatewaytest.NewEnv(t)
-	c, _, f := serveEnforcement(e, e.ProtectedPolicy(), 0)
+	c, _, f := serveEnforcement(e, e.ProtectedPolicy(), pipeline.Limits{})
 	g := c.Current()
 	admittedFirst := false
 	f.setRespond(func(w http.ResponseWriter, r *http.Request) error {
@@ -251,7 +251,7 @@ func TestEnforcementHandlerAdmits(t *testing.T) {
 // stage passed, and the refusal it cannot record is counted as lost.
 func TestEnforcementAuditFailureBlocksForwarding(t *testing.T) {
 	e := gatewaytest.NewEnv(t)
-	c, _, f := serveEnforcement(e, e.ProtectedPolicy(), 0)
+	c, _, f := serveEnforcement(e, e.ProtectedPolicy(), pipeline.Limits{})
 	if code, _ := e.Get("/a/x", "Authorization", "Bearer "+gatewaytest.Issuer.TokenFor(t, "alice")); code != http.StatusOK {
 		t.Fatalf("before the failure: %d", code)
 	}

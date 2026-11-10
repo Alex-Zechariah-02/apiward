@@ -68,12 +68,17 @@ type Observations struct {
 	done    chan struct{}
 	closed  bool
 	metrics requestMetrics
-	// redirects counts the redirect listener's answers; it needs no lock.
+	// redirects counts the redirect listener's answers and refused the
+	// data connections closed at the connection cap; they need no lock.
 	redirects atomic.Uint64
+	refused   atomic.Uint64
 }
 
 // Redirected counts one answer of the HTTP-to-HTTPS redirect listener.
 func (o *Observations) Redirected() { o.redirects.Add(1) }
+
+// ConnectionRefused counts one data connection closed at the cap.
+func (o *Observations) ConnectionRefused() { o.refused.Add(1) }
 
 func New() *Observations {
 	return &Observations{viewers: map[*Viewer]bool{}, done: make(chan struct{})}

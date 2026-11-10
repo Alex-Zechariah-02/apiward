@@ -16,6 +16,7 @@ import (
 	"github.com/Alex-Zechariah-02/apiward/internal/audit"
 	"github.com/Alex-Zechariah-02/apiward/internal/forward"
 	"github.com/Alex-Zechariah-02/apiward/internal/gatewaytest"
+	"github.com/Alex-Zechariah-02/apiward/internal/pipeline"
 )
 
 // The forwarder's response and failures reach the client and the outcome
@@ -24,7 +25,7 @@ import (
 // request is not recorded as forwarded.
 func TestEnforcementResponses(t *testing.T) {
 	e := gatewaytest.NewEnv(t)
-	_, _, f := serveEnforcement(e, e.Policy(e.A, false), 0)
+	_, _, f := serveEnforcement(e, e.Policy(e.A, false), pipeline.Limits{})
 	forwardedEvent := func(id string) map[string]any { return eventOf(e, id, 2) }
 
 	t.Run("informational then final", func(t *testing.T) {
@@ -139,7 +140,7 @@ func publicAdmitted(forward string) map[string]any {
 // without a binding nowhere (TestNativeForwardingBinding).
 func TestEnforcementTrustedBinding(t *testing.T) {
 	e := gatewaytest.NewEnv(t)
-	_, _, f := serveEnforcement(e, e.Policy(e.A, true), 0)
+	_, _, f := serveEnforcement(e, e.Policy(e.A, true), pipeline.Limits{})
 	// Every field a client could use to name a destination names B.
 	forged := "Host: " + e.B.Addr + "\r\nX-Forwarded-Host: " + e.B.Addr + "\r\nForwarded: host=" + e.B.Addr +
 		"\r\nX-Gateway-Upstream: B\r\nX-Gateway-Dial: " + e.B.Addr + "\r\nConnection: close\r\n\r\n"

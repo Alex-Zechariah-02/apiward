@@ -143,7 +143,7 @@ func openDeployment(cfg nativeConfig, logger *slog.Logger) (*deployment, error) 
 		return nil, errors.Join(classify(ErrStorage, fmt.Errorf("audit log: %w", c.Audit().OpenErr())), c.Stop())
 	}
 	limiter := pipeline.NewLimiter()
-	enforcement, err := newHandler(c, limiter, cfg.maxBodyBytes, proxy.Forward)
+	enforcement, err := newHandler(c, limiter, cfg.limits, proxy.Forward)
 	if err != nil {
 		return nil, errors.Join(classify(ErrConfig, err), c.Stop())
 	}
@@ -222,10 +222,10 @@ func (d *deployment) logAdmission(logger *slog.Logger) {
 }
 
 // newHandler returns the enforcement handler for the policy c publishes,
-// counting rates in limiter. A maxBodyBytes of zero or less selects the
-// default ceiling. forward is called only for admitted requests.
-func newHandler(c *controller.Controller, limiter *pipeline.Limiter, maxBodyBytes int64, forward pipeline.Forward) (*pipeline.Handler, error) {
-	d := pipeline.Deps{Limiter: limiter, Clock: pipeline.NewClock(), MaxBodyBytes: maxBodyBytes, Forward: forward}
+// counting rates in limiter, within limits (a zero member selects its
+// default). forward is called only for admitted requests.
+func newHandler(c *controller.Controller, limiter *pipeline.Limiter, limits pipeline.Limits, forward pipeline.Forward) (*pipeline.Handler, error) {
+	d := pipeline.Deps{Limiter: limiter, Clock: pipeline.NewClock(), Limits: limits, Forward: forward}
 	// A nil controller leaves its dependencies unset, which pipeline.New refuses.
 	if c != nil {
 		d.Authority, d.Audit, d.Observations = c, c.Audit(), c.Observations()
