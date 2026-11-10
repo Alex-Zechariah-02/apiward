@@ -14,6 +14,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -57,6 +58,19 @@ func waitIdle(t *testing.T, p *connPool, want int) {
 		}
 	}
 	t.Fatalf("the pool never held %d idle connections", want)
+}
+
+// An upstream's response header beyond the bound fails the exchange instead
+// of being read into memory.
+func TestOversizeResponseHeaderFails(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("X-Large", strings.Repeat("a", MaxResponseHeaderBytes))
+	}))
+	t.Cleanup(s.Close)
+	_, send := forwarder(t, closed(), testPool, policy.Upstream{ID: "u", Dial: s.Listener.Addr().String()})
+	if reason := send(); reason == "" {
+		t.Fatal("a response header over the bound was forwarded")
+	}
 }
 
 // Two requests share one connection; when the upstream closes it while

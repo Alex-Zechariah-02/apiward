@@ -130,13 +130,21 @@ func NewUpstreamProxy(timeouts UpstreamTimeouts, pool PoolSettings, network func
 		// The upstream receives the client's Accept-Encoding, not one the
 		// transport adds, and the client receives the upstream's bytes.
 		DisableCompression: true,
-		Protocols:          protocols,
+		// Without a bound the transport reads up to 10 MiB of response
+		// header per exchange from an upstream.
+		MaxResponseHeaderBytes: MaxResponseHeaderBytes,
+		Protocols:              protocols,
 	}
 	if pool.MaxIdle > 0 {
 		p.pool = newConnPool(pool, p.transport, network)
 	}
 	return p, nil
 }
+
+// MaxResponseHeaderBytes bounds the response header an upstream may send;
+// a longer one fails the exchange. Envoy's default for HTTP/1 response
+// headers is 80 KiB, NGINX's proxy_buffer_size 4 or 8 KiB.
+const MaxResponseHeaderBytes = 64 << 10
 
 // Close closes the idle pooled connections; a request still in progress
 // keeps its connection until it ends.
