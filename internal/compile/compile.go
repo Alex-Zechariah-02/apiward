@@ -269,6 +269,16 @@ func compileControls(op policy.Operation, i int, r *Rule, schemas schemaSet) err
 	return nil
 }
 
+// Relabel returns a copy of g identified as the generation of revision. p is
+// the effective policy g was compiled from. Compilation does not depend on the
+// revision, so only Revision and ID differ, and g itself stays unchanged.
+func (g *Generation) Relabel(p policy.Policy, revision int64) *Generation {
+	labelled := *g
+	labelled.Revision = revision
+	labelled.ID = GenerationID(p, revision, g.NotAfter, g.Overrides)
+	return &labelled
+}
+
 // GenerationID identifies a generation by its base revision, the overrides
 // applied to it (as "+o<id>.<id>…") and a digest of the compiled document and
 // deadline. A generation without overrides keeps the form "r<revision>-…".

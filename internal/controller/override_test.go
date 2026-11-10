@@ -180,6 +180,19 @@ func TestApplyOverrides(t *testing.T) {
 	if err != nil || none.ID != plain.ID || len(none.Overrides) != 0 {
 		t.Fatalf("no overrides: %v %v, want %s", none, err, plain.ID)
 	}
+	// A publication compiles once for an unknown revision and relabels the
+	// result: it must carry the identity a compile at the revision gives.
+	for _, list := range [][]store.Override{all, nil} {
+		unlabelled, err := effectiveGeneration(closedNetwork(t), basePolicy, 0, deadline, list, policy.Limits{})
+		want, wantErr := effectiveGeneration(closedNetwork(t), basePolicy, 7, deadline, list, policy.Limits{})
+		effective, applyErr := applyOverrides(basePolicy, list)
+		if err != nil || wantErr != nil || applyErr != nil {
+			t.Fatal(err, wantErr, applyErr)
+		}
+		if got := unlabelled.Relabel(effective, 7); got.ID != want.ID || got.Revision != 7 || unlabelled.Revision != 0 {
+			t.Fatalf("relabelled %s r%d (source r%d), want %s", got.ID, got.Revision, unlabelled.Revision, want.ID)
+		}
+	}
 	// The generation expires at the earliest expiry of its overrides.
 	soon := slices.Clone(all)
 	soon[2].ExpiresAt = time.UnixMilli(time.Now().Add(time.Minute).UnixMilli())

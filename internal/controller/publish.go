@@ -71,7 +71,15 @@ func (c *Controller) compileEffective(ctx context.Context, revision int64, deadl
 // outcome event. Callers have checked that the policy changes no target the
 // overrides depend on.
 func (c *Controller) publish(ctx context.Context, t store.TransitionRecord, policy policy.Policy, change store.RevisionChange, overrides []store.Override, now time.Time) (Outcome, int) {
-	if _, err := effectiveGeneration(c.network.Load(), policy, 0, change.Deadline, overrides, c.config.Limits); err != nil {
+	// Compiled before anything is recorded, so a policy that cannot be served
+	// is never committed; the commit then only names its revision.
+	unlabelled, err := effectiveGeneration(c.network.Load(), policy, 0, change.Deadline, overrides, c.config.Limits)
+	if err != nil {
+		code, field := policyRejection(err)
+		return c.reject(ctx, t, code, field, now)
+	}
+	effective, err := applyOverrides(policy, overrides)
+	if err != nil {
 		code, field := policyRejection(err)
 		return c.reject(ctx, t, code, field, now)
 	}
@@ -88,11 +96,7 @@ func (c *Controller) publish(ctx context.Context, t store.TransitionRecord, poli
 	}
 	fault.CrashPoint("after-commit")
 
-	g, err := effectiveGeneration(c.network.Load(), policy, revision, change.Deadline, overrides, c.config.Limits)
-	if err != nil {
-		c.unavailable(fmt.Sprintf("compiling committed revision %d: %v", revision, err))
-		return Outcome{Transition: t.ID, Outcome: "committed", Reason: "PUBLICATION_FAILED"}, http.StatusInternalServerError
-	}
+	g := unlabelled.Relabel(effective, revision)
 	c.current.Store(g)
 	c.state = store.ModeNormal
 	c.scheduleDeadline(g)
