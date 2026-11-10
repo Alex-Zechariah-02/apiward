@@ -96,6 +96,7 @@ func (f nativeFile) check() (nativeConfig, error) {
 		{"gateway.admin_idle_timeout", g.AdminIdleTimeout, controller.DefaultIdle, controller.MinSession, controller.MaxSession, &cfg.controller.AdminIdleTimeout},
 		{"gateway.admin_session_lifetime", g.AdminSessionLifetime, controller.DefaultLifetime, controller.MinSession, controller.MaxSession, &cfg.controller.AdminSessionLifetime},
 		{"gateway.audit_timeout", g.AuditTimeout, controller.DefaultAuditWait, minAuditTimeout, maxAuditTimeout, &cfg.controller.AuditTimeout},
+		{"gateway.audit_sync_window", g.AuditSyncWindow, 0, 0, maxSyncWindow, &cfg.controller.AuditSyncWindow},
 		{"gateway.shutdown_grace", g.ShutdownGrace, controller.ShutdownWait, minServerTimeout, maxServerTimeout, &cfg.shutdownGrace},
 		{"gateway.shutdown_delay", g.ShutdownDelay, 0, 0, maxShutdownDelay, &cfg.shutdownDelay},
 		{"data.read_header_timeout", d.ReadHeaderTimeout, defaultReadHeader, minServerTimeout, maxServerTimeout, &cfg.readHeaderTimeout},

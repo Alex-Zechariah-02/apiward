@@ -43,14 +43,17 @@ type AuditLog struct {
 	next     int      // suffix of the next rotated file; used only by the writer
 	// rotatedBytes is the rotated files' total size; used only by the writer.
 	rotatedBytes int64
-	evict        bool  // delete the oldest rotated file when full
-	openErr      error // why openAudit could not open the file; never changes
-	queue        chan auditEntry
-	failed       atomic.Bool
-	full         atomic.Bool   // every file in use; cleared once a rotation succeeds
-	lost         atomic.Uint64 // events refused and not yet counted in the file
-	seq          atomic.Uint64
-	accepted     atomic.Uint64 // events queued
+	evict        bool // delete the oldest rotated file when full
+	// window is how long a batch with siblings waits for more events
+	// before its sync; 0 syncs each batch as soon as it is drained.
+	window   time.Duration
+	openErr  error // why openAudit could not open the file; never changes
+	queue    chan auditEntry
+	failed   atomic.Bool
+	full     atomic.Bool   // every file in use; cleared once a rotation succeeds
+	lost     atomic.Uint64 // events refused and not yet counted in the file
+	seq      atomic.Uint64
+	accepted atomic.Uint64 // events queued
 	// activeBytes and files copy size and rotated+1 for readers outside the
 	// writer (the limits read); only the writer stores them.
 	activeBytes atomic.Int64

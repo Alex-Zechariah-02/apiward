@@ -39,6 +39,7 @@ const (
 	minServerTimeout     = time.Second
 	maxServerTimeout     = 10 * time.Minute
 	maxShutdownDelay     = time.Minute
+	maxSyncWindow        = 10 * time.Millisecond
 	minUpstreamTimeout   = time.Second
 	maxUpstreamTimeout   = 5 * time.Minute
 	minAuditTimeout      = 100 * time.Millisecond
@@ -108,6 +109,7 @@ type gatewaySettings struct {
 	AuditMaxBytes        *int64               `json:"audit_max_bytes"`
 	AuditMaxFiles        *int                 `json:"audit_max_files"`
 	AuditWhenFull        string               `json:"audit_when_full"`
+	AuditSyncWindow      *string              `json:"audit_sync_window"`
 	ShutdownGrace        *string              `json:"shutdown_grace"`
 	ShutdownDelay        *string              `json:"shutdown_delay"`
 	JWT                  pipeline.TrustConfig `json:"jwt"`

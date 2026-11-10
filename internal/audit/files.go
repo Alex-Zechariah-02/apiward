@@ -10,6 +10,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/fault"
 )
@@ -21,13 +22,14 @@ const (
 )
 
 // Settings bound the log: the size of each file, how many files it keeps,
-// what it does when all are in use (FullRefuse or FullEvict) and how many
-// records its queue holds (QueueSize).
+// what it does when all are in use (FullRefuse or FullEvict), how many
+// records its queue holds (QueueSize) and its sync window (0: none).
 type Settings struct {
 	MaxBytes int64
 	MaxFiles int
 	WhenFull string
 	Queue    int
+	Window   time.Duration
 }
 
 // OpenAudit never fails: an unusable file yields a log in the failed state,
@@ -39,6 +41,7 @@ func OpenAudit(path string, s Settings) *AuditLog {
 		maxBytes: s.MaxBytes,
 		maxFiles: s.MaxFiles,
 		evict:    s.WhenFull == FullEvict,
+		window:   s.Window,
 		queue:    make(chan auditEntry, max(s.Queue, AuditQueueSize)),
 		done:     make(chan struct{}),
 	}

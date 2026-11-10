@@ -68,7 +68,10 @@ type Config struct {
 	AuditWhenFull string
 	// AuditQueue is the audit queue's size; audit.QueueSize derives it.
 	AuditQueue int
-	JWT        pipeline.TrustConfig
+	// AuditSyncWindow is how long the audit writer gathers a batch with
+	// siblings before its sync; 0 syncs each batch at once.
+	AuditSyncWindow time.Duration
+	JWT             pipeline.TrustConfig
 	// Limits are the capacity ceilings: policy size and counts, rate
 	// counters, recent requests kept.
 	Limits policy.Limits
@@ -187,7 +190,7 @@ func (c *Controller) Open() error {
 		ownership.Close()
 		return err
 	}
-	c.audit = audit.OpenAudit(cfg.AuditLog, audit.Settings{MaxBytes: cfg.AuditMaxBytes, MaxFiles: cfg.AuditMaxFiles, WhenFull: cfg.AuditWhenFull, Queue: cfg.AuditQueue})
+	c.audit = audit.OpenAudit(cfg.AuditLog, audit.Settings{MaxBytes: cfg.AuditMaxBytes, MaxFiles: cfg.AuditMaxFiles, WhenFull: cfg.AuditWhenFull, Queue: cfg.AuditQueue, Window: cfg.AuditSyncWindow})
 
 	c.mu.Lock()
 	defer c.mu.Unlock()

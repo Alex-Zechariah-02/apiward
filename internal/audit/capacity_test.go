@@ -12,7 +12,10 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strconv"
+	"sync"
 	"testing"
+	"time"
 )
 
 // commitN commits n events and returns how many were acknowledged.
@@ -124,4 +127,33 @@ func records(t *testing.T, name string) []Event {
 func fileExists(name string) bool {
 	_, err := os.Stat(name)
 	return err == nil
+}
+
+// With a sync window, a lone record is synced at once, and every record is
+// in the file when its commit is acknowledged.
+func TestSyncWindow(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "audit.log")
+	a := OpenAudit(path, Settings{MaxBytes: 1 << 20, MaxFiles: 2, Window: 200 * time.Millisecond})
+	started := time.Now()
+	if commitN(a, 1) != 1 || time.Since(started) > 150*time.Millisecond {
+		t.Fatalf("a lone record waited %v, want no window", time.Since(started))
+	}
+	var wg sync.WaitGroup
+	for i := range 16 {
+		wg.Go(func() {
+			id := strconv.Itoa(i)
+			if err := a.Commit(context.Background(), Event{Kind: "request.admitted", RequestID: id}); err != nil {
+				t.Error(err)
+				return
+			}
+			data, err := os.ReadFile(path)
+			if err != nil || !bytes.Contains(data, []byte(`"request_id":"`+id+`"`)) {
+				t.Errorf("record %s acknowledged before it was in the file", id)
+			}
+		})
+	}
+	wg.Wait()
+	if err := a.Close(context.Background()); err != nil {
+		t.Fatal(err)
+	}
 }

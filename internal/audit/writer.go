@@ -20,6 +20,8 @@ func (a *AuditLog) run() {
 	defer close(a.done)
 	tick := time.NewTicker(SummaryInterval)
 	defer tick.Stop()
+	window := time.NewTimer(0)
+	defer window.Stop()
 	batch := make([]auditEntry, 0, auditBatchSize)
 	for {
 		select {
@@ -35,6 +37,9 @@ func (a *AuditLog) run() {
 				return
 			}
 			batch = a.fill(append(batch[:0], entry))
+			if a.window > 0 && len(batch) > 1 {
+				batch = a.gather(batch, window)
+			}
 			err := a.write(batch)
 			switch {
 			case err == nil:
@@ -68,6 +73,28 @@ func (a *AuditLog) fill(batch []auditEntry) []auditEntry {
 			return batch
 		}
 	}
+	return batch
+}
+
+// gather adds events arriving within the sync window to batch, up to
+// auditBatchSize, so they share its sync: a burst costs one sync instead of
+// one per arrival. Only a batch that already has siblings waits; a lone
+// event is synced at once (PostgreSQL's commit_siblings). No event is
+// acknowledged before the sync that covers it.
+func (a *AuditLog) gather(batch []auditEntry, window *time.Timer) []auditEntry {
+	window.Reset(a.window)
+	for len(batch) < auditBatchSize {
+		select {
+		case entry, open := <-a.queue:
+			if !open {
+				return batch
+			}
+			batch = append(batch, entry)
+		case <-window.C:
+			return batch
+		}
+	}
+	window.Stop()
 	return batch
 }
 

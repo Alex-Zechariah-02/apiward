@@ -102,7 +102,7 @@ func TestNativeConfigSettings(t *testing.T) {
 		maps.Copy(s["gateway"].(map[string]any), map[string]any{
 			"admin_idle_timeout": "10m", "admin_session_lifetime": "1h", "audit_timeout": "1s",
 			"audit_max_bytes": 1 << 20, "audit_max_files": 4, "admin_ui": site,
-			"audit_when_full": "evict_oldest", "shutdown_grace": "30s", "shutdown_delay": "2s",
+			"audit_when_full": "evict_oldest", "shutdown_grace": "30s", "shutdown_delay": "2s", "audit_sync_window": "2ms",
 		})
 		maps.Copy(s["data"].(map[string]any), map[string]any{
 			"max_body_bytes": 2048, "max_header_bytes": 32768, "read_header_timeout": "2s", "read_timeout": "3s",
@@ -119,7 +119,7 @@ func TestNativeConfigSettings(t *testing.T) {
 	c := cfg.controller
 	if c.AdminIdleTimeout != 10*time.Minute || c.AdminSessionLifetime != time.Hour || c.AuditTimeout != time.Second ||
 		c.AuditMaxBytes != 1<<20 || c.AuditMaxFiles != 4 || cfg.adminUI != site ||
-		c.AuditWhenFull != "evict_oldest" || c.AuditQueue != 2048 || cfg.shutdownGrace != 30*time.Second || cfg.shutdownDelay != 2*time.Second ||
+		c.AuditWhenFull != "evict_oldest" || c.AuditQueue != 2048 || c.AuditSyncWindow != 2*time.Millisecond || cfg.shutdownGrace != 30*time.Second || cfg.shutdownDelay != 2*time.Second ||
 		cfg.limits != (pipeline.Limits{MaxBodyBytes: 2048, MaxInFlight: 512, IPv6RatePrefix: 56}) || cfg.maxConnections != 100 || cfg.http2 || cfg.headerLimit != 32768 || cfg.readHeaderTimeout != 2*time.Second ||
 		cfg.readTimeout != 3*time.Second || cfg.writeTimeout != 4*time.Second || cfg.idleTimeout != time.Minute ||
 		cfg.upstream != (forward.UpstreamTimeouts{Dial: time.Second, ResponseHeader: 3 * time.Second, ReadIdle: 2 * time.Minute}) ||
