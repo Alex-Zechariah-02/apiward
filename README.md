@@ -65,7 +65,7 @@ rm -rf internal/adminui/dist && cp -r dashboard/dist internal/adminui/dist
 go build -trimpath -tags embedui -o gateway ./cmd/gateway
 ```
 
-Container image ([reference/container.md](reference/container.md)):
+Container image ([docs/container.md](docs/container.md)):
 
 ```
 docker build -t apiward:dev .
@@ -82,7 +82,7 @@ gateway run --config gateway.json
 2. Open the Dashboard and choose **First Sign-In with an Enrolment Secret**.
 3. Establish the first policy. Until then the gateway forwards nothing.
 
-The settings file is described in [reference/settings.md](reference/settings.md).
+The settings file is described in [docs/settings.md](docs/settings.md).
 
 | Command | Purpose |
 |---|---|
@@ -117,12 +117,12 @@ The settings file is described in [reference/settings.md](reference/settings.md)
 
 | Page | Contents |
 |---|---|
-| [reference/policy.md](reference/policy.md) | Policy document and policy changes |
-| [reference/settings.md](reference/settings.md) | Settings file |
-| [reference/openapi.md](reference/openapi.md) | OpenAPI import and export |
-| [reference/embedding.md](reference/embedding.md) | Embedding and modules |
-| [reference/container.md](reference/container.md) | Container image |
-| [reference/development.md](reference/development.md) | Code layout, builds, checks |
+| [docs/policy.md](docs/policy.md) | Policy document and policy changes |
+| [docs/settings.md](docs/settings.md) | Settings file |
+| [docs/openapi.md](docs/openapi.md) | OpenAPI import and export |
+| [docs/embedding.md](docs/embedding.md) | Embedding and modules |
+| [docs/container.md](docs/container.md) | Container image |
+| [docs/development.md](docs/development.md) | Code layout, builds, checks |
 | [dashboard/README.md](dashboard/README.md) | Dashboard |
 
 ## Tests

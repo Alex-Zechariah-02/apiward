@@ -53,4 +53,4 @@ docker run -d --name apiward --network host --read-only --cap-drop ALL \
 - The listeners use the addresses and ports of the settings: `-p` is ignored with host networking, and no address translation sits in the request path.
 - Docker Desktop offers host networking only as an opt-in setting (version 4.34 or later, Settings > Resources > Network, signed in to Docker), at layer 4 and without binding the host's IP addresses, so it is not the documented setup.
 
-The Fetch repository's `compose.yaml` runs this image beside the Fetch services on one Linux host, with settings its demo tool writes; its `reference/hosts.md`, "Containers", walks through a complete first run.
+The Fetch repository's `compose.yaml` runs this image beside the Fetch services on one Linux host, with settings its demo tool writes; its `docs/hosts.md`, "Containers", walks through a complete first run.
