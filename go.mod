@@ -2,7 +2,7 @@ module github.com/Alex-Zechariah-02/apiward
 
 go 1.26.0
 
-toolchain go1.27.3
+toolchain go1.27.4
 
 // The Dashboard has no Go code.
 ignore ./dashboard

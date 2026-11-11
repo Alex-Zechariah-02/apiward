@@ -189,7 +189,7 @@ Each package under `internal/` imports only the packages listed before it; a tes
 
 ## Build and test
 
-You need Go 1.26 or newer. `go.mod` selects the Go 1.27.3 toolchain; with `GOTOOLCHAIN=auto`, Go uses or downloads that toolchain when needed. The gateway's programs live in `cmd/`, its code in `internal/`, and the preserved controlled APIs for gateway regression tests in `internal/testfixture`. The Fetch demonstration is its own repository; the gateway's stack and browser tests build its programs from a checkout beside this one (`../fetch`), which CI checks out at the commit named by `FETCH_REF` in `.github/workflows/ci.yml`. Fetch reaches the gateway only through the gateway's programs and public packages. The Dashboard is in `dashboard/`.
+You need Go 1.26 or newer. `go.mod` selects the Go 1.27.4 toolchain; with `GOTOOLCHAIN=auto`, Go uses or downloads that toolchain when needed. The gateway's programs live in `cmd/`, its code in `internal/`, and the preserved controlled APIs for gateway regression tests in `internal/testfixture`. The Fetch demonstration is its own repository; the gateway's stack and browser tests build its programs from a checkout beside this one (`../fetch`), which CI checks out at the commit named by `FETCH_REF` in `.github/workflows/ci.yml`. Fetch reaches the gateway only through the gateway's programs and public packages. The Dashboard is in `dashboard/`.
 
 - `cmd/gateway` runs the gateway from one strict JSON configuration file. It has the commands `run`, `install`, `enrol`, `backup`, `restore`, `migrate` and `health`, each with `--config <file>`, and the offline `policy import-openapi` and `policy export-openapi` (see above). The local commands `install`, `enrol`, `backup`, `restore` and `migrate` run while the gateway is stopped.
 
@@ -229,7 +229,7 @@ The dashboard is in `dashboard/` (React and TypeScript, built with Vite). Its br
 
 ### Container image
 
-`Dockerfile` builds one image of the gateway with the Dashboard inside. Node.js 24 builds the Dashboard, Go 1.27.3 builds a static `gateway` with the `embedui` tag and cgo off, and the program runs on the distroless static Debian 13 image as its `nonroot` user, UID and GID 65532. Every base image is pinned by digest. In a checkout:
+`Dockerfile` builds one image of the gateway with the Dashboard inside. Node.js 24 builds the Dashboard, Go 1.27.4 builds a static `gateway` with the `embedui` tag and cgo off, and the program runs on the distroless static Debian 13 image as its `nonroot` user, UID and GID 65532. Every base image is pinned by digest. In a checkout:
 
 ```
 docker build -t apiward:dev .
