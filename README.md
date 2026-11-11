@@ -2,36 +2,37 @@
 
 A lightweight security policy gateway for REST APIs, written in Go.
 
-APIWard sits in front of your APIs and checks every request against one shared policy before it is forwarded. It is a single binary with its own HTTP server, reverse proxy, database and admin Dashboard, built on the Go standard library.
+It checks every request against one policy before forwarding it. One binary: HTTP server, reverse proxy, database and admin Dashboard.
 
 - [Features](#features)
 - [Quick start](#quick-start)
-- [Build from source](#build-from-source)
+- [Build](#build)
 - [Run](#run)
-- [Overview](#overview)
+- [How it works](#how-it-works)
 - [Documentation](#documentation)
 - [Tests](#tests)
 
 ## Features
 
-- **Five security controls** on every request:
-  - **JWT authentication**: RS256 tokens from your identity provider, several keys by `kid`, reloadable
-  - **Role-based access control**, with an instant blocked-accounts list
-  - **Rate limiting**: sliding window, per account or per client address
-  - **Request validation**: JSON body and headers against a bounded JSON Schema
-  - **Security log**: a request is forwarded only after its record is on disk
-- **Default deny.** A request that fails any control never reaches an API.
-- **Safe policy changes.** A new policy runs on trial and rolls back by itself unless an administrator confirms it. Temporary overrides expire on their own.
-- **Admin Dashboard and Admin API** on a loopback-only listener: policy, history, live events, log search, access checker, advice.
-- **Routing extras per API**: path rewrite, host and header conditions, CORS, response headers, address allow lists, TLS and client certificates to upstreams.
-- **Signed identity for upstreams**: an optional signed assertion proves a request passed the gateway.
-- **OpenAPI import and export** of routes and request schemas.
-- **Embeddable**: run it inside a Go program, or add your own checks as compile-time modules.
-- **One static binary**, one SQLite file, no external services. Prometheus metrics, `/livez` and `/readyz` included.
+- **JWT authentication**: RS256 tokens from your identity provider
+- **Role-based access control**, plus an instant blocked-accounts list
+- **Rate limiting**: sliding window, per account or per client address
+- **Request validation**: JSON body and headers against a JSON Schema
+- **Security log**: a request is forwarded only after its record is on disk
+- **Default deny**: a request that fails any check never reaches an API
+- **Safe policy changes**: a new policy runs on trial and rolls back unless confirmed
+- **Dashboard and Admin API**, on a loopback-only listener
+- **Per-API options**: path rewrite, host and header conditions, CORS, response headers, address allow lists, TLS to upstreams
+- **Signed identity**: upstreams can verify that a request passed the gateway
+- **OpenAPI** import and export
+- **Embeddable** in a Go program; custom checks as compile-time modules
+- **No external services**: one SQLite file; Prometheus metrics, `/livez`, `/readyz`
 
 ## Quick start
 
-The fastest way to see APIWard working is the [Fetch](https://github.com/Alex-Zechariah-02/fetch) demonstration: a small shop with five APIs behind the gateway. You need Go 1.26 or newer and Node.js 24.
+Run the [Fetch](https://github.com/Alex-Zechariah-02/fetch) demonstration: a shop with five APIs behind the gateway.
+
+Requires Go 1.26+ and Node.js 24.
 
 ```
 git clone https://github.com/Alex-Zechariah-02/apiward
@@ -40,19 +41,15 @@ cd fetch
 go run ./cmd/demo up
 ```
 
-Then open:
-
-| | |
+| Open | Address |
 |---|---|
 | Dashboard | `http://127.0.0.1:9440/` |
 | Shop, through the gateway | `http://127.0.0.2:9480/` |
 | Metrics | `http://127.0.0.1:9450/metrics` |
 
-The Fetch README lists the demo accounts and commands.
+## Build
 
-## Build from source
-
-Requirements: Go 1.26 or newer (`go.mod` selects the Go 1.27.4 toolchain). The Dashboard also needs Node.js 24.
+Requires Go 1.26+ (`go.mod` selects the 1.27.4 toolchain).
 
 Gateway only:
 
@@ -60,7 +57,7 @@ Gateway only:
 go build -trimpath -o gateway ./cmd/gateway
 ```
 
-Release build, with the Dashboard inside the binary:
+With the Dashboard inside the binary (also requires Node.js 24):
 
 ```
 cd dashboard && npm ci && npm run build && cd ..
@@ -68,7 +65,7 @@ rm -rf internal/adminui/dist && cp -r dashboard/dist internal/adminui/dist
 go build -trimpath -tags embedui -o gateway ./cmd/gateway
 ```
 
-Container image (details in [reference/container.md](reference/container.md)):
+Container image ([reference/container.md](reference/container.md)):
 
 ```
 docker build -t apiward:dev .
@@ -76,52 +73,57 @@ docker build -t apiward:dev .
 
 ## Run
 
-The gateway reads one JSON settings file ([reference/settings.md](reference/settings.md)).
-
 ```
-gateway install --config gateway.json --admin <name>    # once: prints a one-time enrolment secret
+gateway install --config gateway.json --admin <name>
 gateway run --config gateway.json
 ```
 
-Open the Dashboard, choose **First Sign-In with an Enrolment Secret**, and establish the first policy. Until a policy is published the gateway forwards nothing.
+1. `install` prints a one-time enrolment secret. Keep it private.
+2. Open the Dashboard and choose **First Sign-In with an Enrolment Secret**.
+3. Establish the first policy. Until then the gateway forwards nothing.
+
+The settings file is described in [reference/settings.md](reference/settings.md).
 
 | Command | Purpose |
 |---|---|
 | `run` | Run the gateway |
-| `install`, `enrol` | Create the first administrator; add or reset one |
-| `backup`, `restore`, `migrate` | Back up, restore or upgrade the database |
+| `install` | Create the first administrator |
+| `enrol` | Add or reset an administrator |
+| `backup`, `restore` | Back up or restore the database |
+| `migrate` | Upgrade a database from an earlier version |
 | `health` | Exit 0 when the gateway is ready |
-| `jwks` | Print the public key of the identity assertion |
-| `policy import-openapi`, `policy export-openapi` | Convert between OpenAPI and a policy file |
-| `version` | Version, toolchain and compiled-in controls |
+| `jwks` | Print the public key of the signed identity |
+| `policy import-openapi` | Make a policy file from an OpenAPI description |
+| `policy export-openapi` | Write one API of a policy as OpenAPI |
+| `version` | Print the version and compiled-in checks |
 
-Every command except `version` and the two `policy` commands takes `--config <file>`. `install`, `enrol`, `backup`, `restore` and `migrate` run while the gateway is stopped. `install` and `enrol` print a secret: keep their output private.
+- All commands except `version` and `policy` take `--config <file>`.
+- Stop the gateway before `install`, `enrol`, `backup`, `restore` or `migrate`.
 
-## Overview
+## How it works
 
-**One policy.** A policy document lists upstreams, APIs, operations, roles and permits. Each request is decided against exactly one policy version from start to end, then forwarded once, only to the upstream its operation names.
-
-**The pipeline.** Ingress checks, routing, token, roles and blocked accounts, rate limit, body and header validation, security log, forward. The first failing stage answers the request, and the log records which one.
-
-**Changing policy.** Only the gateway's controller publishes a policy. A new policy starts provisional with a confirmation deadline; without confirmation the previous policy returns, also across a restart. A temporary override grants, removes, limits or blocks one thing for up to 24 hours and never weakens token checks, validation or logging.
-
-**Identity.** APIWard verifies tokens and never issues them. Roles come only from verified token claims that the policy defines. Upstreams receive the verified account and roles in `X-Gateway-Subject` and `X-Gateway-Roles`, and optionally in a signed assertion.
-
-**Three listeners.** Data (your APIs; HTTPS with HTTP/2 when given a certificate), admin (Dashboard and Admin API; always loopback, reach it through an SSH tunnel) and metrics (Prometheus, `/livez`, `/readyz`; loopback by default).
-
-**Storage.** One SQLite database holds policy versions, administrators and change history. Requests read immutable in-memory snapshots and never query the database.
+- **Policy**: one document lists upstreams, APIs, operations, roles and permits.
+- **Request path**: ingress checks → route → token → roles → rate limit → validation → security log → forward. The first failing stage answers.
+- **One version per request**: a request is decided against exactly one policy version and forwarded once.
+- **Policy changes**: a new policy is provisional until confirmed; unconfirmed, the previous one returns. Temporary overrides expire by themselves.
+- **Identity**: the gateway verifies tokens and never issues them. Upstreams receive the verified account and roles.
+- **Listeners**:
+  - data: your APIs
+  - admin: Dashboard and Admin API, loopback only
+  - metrics: Prometheus, `/livez`, `/readyz`
+- **Storage**: one SQLite database. Requests read in-memory snapshots, never the database.
 
 ## Documentation
 
 | Page | Contents |
 |---|---|
-| [reference/policy.md](reference/policy.md) | The policy document: operations, conditions, path rewrite, CORS, response headers, address lists, upstreams, capacity limits; policy changes |
-| [reference/settings.md](reference/settings.md) | The settings file: listeners, TLS, overload limits, upstream connections, identity assertion, security log |
-| [reference/openapi.md](reference/openapi.md) | OpenAPI import and export; moving to or from another gateway |
-| [reference/embedding.md](reference/embedding.md) | Running the gateway inside a Go program; compile-time modules |
-| [reference/container.md](reference/container.md) | The container image |
-| [reference/development.md](reference/development.md) | Architecture, code layout, release builds, checks |
-| [dashboard/README.md](dashboard/README.md) | The Dashboard |
+| [reference/policy.md](reference/policy.md) | Policy document and policy changes |
+| [reference/settings.md](reference/settings.md) | Settings file |
+| [reference/openapi.md](reference/openapi.md) | OpenAPI import and export |
+| [reference/embedding.md](reference/embedding.md) | Embedding and modules |
+| [reference/container.md](reference/container.md) | Container image |
+| [reference/development.md](reference/development.md) | Code layout, builds, checks |
+| [dashboard/README.md](dashboard/README.md) | Dashboard |
 
 ## Tests
 
@@ -133,12 +135,14 @@ go vet -tags faultinject ./...
 go test ./... -count=1
 ```
 
-`gofmt -l` must print nothing. The stack tests need the Fetch repository checked out as `../fetch`. Set `EAT_PORT_OFFSET` (for example `1000`) to move every test port.
+- `gofmt -l` must print nothing.
+- The stack tests need Fetch checked out as `../fetch`.
+- `EAT_PORT_OFFSET` (for example `1000`) moves every test port.
 
-## Scope
+## Not covered
 
-APIWard does not cover the full OWASP API Security Top 10, distributed deployments, Kubernetes or automatic certificates (ACME).
+The full OWASP API Security Top 10, distributed deployments, Kubernetes, automatic certificates (ACME).
 
 ## Licence
 
-Apache-2.0 (`LICENSE`). Third-party components are listed in `THIRD_PARTY_NOTICES`.
+Apache-2.0 (`LICENSE`). Third-party components: `THIRD_PARTY_NOTICES`.

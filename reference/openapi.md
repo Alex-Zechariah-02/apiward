@@ -4,7 +4,9 @@ Back to the [README](../README.md).
 
 ## Import an OpenAPI description
 
-`gateway policy import-openapi` turns an OpenAPI 3.0 or 3.1 description (JSON, or YAML 1.2) into a new policy file for review. It runs offline: it reads only the files it is given, never fetches a `$ref`, and never activates anything. Stage the result as a draft, trial it and confirm it like any other change.
+- `gateway policy import-openapi` turns an OpenAPI 3.0 or 3.1 description (JSON, or YAML 1.2) into a new policy file for review.
+- It runs offline: it reads only the files it is given, never fetches a `$ref`, and never activates anything.
+- Stage the result as a draft, trial it and confirm it like any other change.
 
 ```
 gateway policy import-openapi --spec <file.json|.yaml|.yml> --api <id> --upstream <id>
@@ -23,9 +25,20 @@ gateway policy import-openapi --spec <file.json|.yaml|.yml> --api <id> --upstrea
 
 Exit status: `0` every operation mapped; `2` both files written, but some operations were refused or widened (read the report); `1` nothing written (bad flags, unreadable or refused description, an output file exists, or the result does not compile).
 
-**How it maps.** Each path and method becomes one operation `<api>.<operationId>`, allowed, with sign-in required unless the description says `security: []`. No permits are created unless `--with-permits` reads `x-apiward-roles`; grant roles afterwards. A path whose last segment is a parameter (`/orders/{id}`) becomes the prefix `/orders/*`, which also matches deeper paths. Header parameters become the header schema; query, path and cookie parameters are listed as not enforced. A JSON request body becomes a body rule. Schema `$ref`s inside the file are inlined, descriptive keywords (`description`, `example`, `x-…`) are removed, and an object without `additionalProperties` allows extra fields, as OpenAPI does. Every operation is checked by the gateway's own compiler, and the whole result is compiled before anything is written.
+**How it maps.**
 
-**What is refused.** An operation is left out, with a code in the report, when it cannot be expressed exactly: `TRACE` (`METHOD_REFUSED`); a missing or invalid `operationId` (`OPERATION_ID_INVALID`, with a suggestion) or one used twice (`OPERATION_ID_DUPLICATE`); a parameter in the middle of a path (`PATH_TEMPLATE_UNSUPPORTED`); two operations on the same method and target (`TARGET_COLLISION`); API keys, Basic, mutual TLS or optional sign-in (`SECURITY_SCHEME_UNSUPPORTED`); non-JSON bodies (`MEDIA_TYPE_UNSUPPORTED`); a schema keyword the gateway cannot enforce, such as `format`, `pattern` or `oneOf` (`SCHEMA_KEYWORD_UNSUPPORTED`; dropping it would accept more than described); a `$ref` to another file (`EXTERNAL_REF`), a missing one (`REF_INVALID`) or a circular one (`SCHEMA_CYCLE`); a schema deeper than 16 levels or larger than 4,096 values once inlined (`SCHEMA_LIMIT_EXCEEDED`); and anything else the compiler rejects (`COMPILER_REFUSED`, with its code and field). YAML anchors, aliases, merge keys, tags, several documents in one file, duplicate or non-string keys and `.nan`/`.inf` refuse the whole file, naming the line.
+- Each path and method becomes one operation `<api>.<operationId>`, allowed, with sign-in required unless the description says `security: []`.
+- No permits are created unless `--with-permits` reads `x-apiward-roles`; grant roles afterwards.
+- A path whose last segment is a parameter (`/orders/{id}`) becomes the prefix `/orders/*`, which also matches deeper paths.
+- Header parameters become the header schema; query, path and cookie parameters are listed as not enforced.
+- A JSON request body becomes a body rule.
+- Schema `$ref`s inside the file are inlined, descriptive keywords (`description`, `example`, `x-…`) are removed, and an object without `additionalProperties` allows extra fields, as OpenAPI does.
+- Every operation is checked by the gateway's own compiler, and the whole result is compiled before anything is written.
+
+**What is refused.**
+
+- An operation is left out, with a code in the report, when it cannot be expressed exactly: `TRACE` (`METHOD_REFUSED`); a missing or invalid `operationId` (`OPERATION_ID_INVALID`, with a suggestion) or one used twice (`OPERATION_ID_DUPLICATE`); a parameter in the middle of a path (`PATH_TEMPLATE_UNSUPPORTED`); two operations on the same method and target (`TARGET_COLLISION`); API keys, Basic, mutual TLS or optional sign-in (`SECURITY_SCHEME_UNSUPPORTED`); non-JSON bodies (`MEDIA_TYPE_UNSUPPORTED`); a schema keyword the gateway cannot enforce, such as `format`, `pattern` or `oneOf` (`SCHEMA_KEYWORD_UNSUPPORTED`; dropping it would accept more than described); a `$ref` to another file (`EXTERNAL_REF`), a missing one (`REF_INVALID`) or a circular one (`SCHEMA_CYCLE`); a schema deeper than 16 levels or larger than 4,096 values once inlined (`SCHEMA_LIMIT_EXCEEDED`); and anything else the compiler rejects (`COMPILER_REFUSED`, with its code and field).
+- YAML anchors, aliases, merge keys, tags, several documents in one file, duplicate or non-string keys and `.nan`/`.inf` refuse the whole file, naming the line.
 
 **Report.** JSON; every list is always present:
 
@@ -69,12 +82,20 @@ gateway policy export-openapi --policy <policy.json> --api <id>
   --out <new file.json|.yaml|.yml> --report <new file> [--with-upstream]
 ```
 
-Each operation becomes the path and method of its target, with `operationId` = the operation identifier without the `<api>.` prefix. A prefix target `/orders/*` becomes `/orders/{rest}` with `x-apiward-target: /orders/*`. Sign-in required becomes the bearer scheme `apiward`; public becomes `security: []`. A body rule becomes a required `application/json` request body with its schema and `x-apiward-max-bytes`; a header schema becomes header parameters (its root `additionalProperties` is not written, since the gateway checks declared headers only). Access, rate rule and permitted roles go into `x-apiward-access`, `x-apiward-rate` and `x-apiward-roles`; the API's forward rule, browser access, response headers and address allow list go into the root members `x-apiward-forward`, `x-apiward-cors`, `x-apiward-response-headers` and `x-apiward-addresses`, and an operation's conditions into `x-apiward-when`. A description holds one operation per path and method, so a second operation on the same target and method (a conditioned one, after the one without conditions) is not exported and is reported `changed`. The upstream address is written as a server only with `--with-upstream`.
+- Each operation becomes the path and method of its target, with `operationId` = the operation identifier without the `<api>.` prefix.
+- A prefix target `/orders/*` becomes `/orders/{rest}` with `x-apiward-target: /orders/*`.
+- Sign-in required becomes the bearer scheme `apiward`; public becomes `security: []`.
+- A body rule becomes a required `application/json` request body with its schema and `x-apiward-max-bytes`; a header schema becomes header parameters (its root `additionalProperties` is not written, since the gateway checks declared headers only).
+- Access, rate rule and permitted roles go into `x-apiward-access`, `x-apiward-rate` and `x-apiward-roles`; the API's forward rule, browser access, response headers and address allow list go into the root members `x-apiward-forward`, `x-apiward-cors`, `x-apiward-response-headers` and `x-apiward-addresses`, and an operation's conditions into `x-apiward-when`.
+- A description holds one operation per path and method, so a second operation on the same target and method (a conditioned one, after the one without conditions) is not exported and is reported `changed`.
+- The upstream address is written as a server only with `--with-upstream`.
 
 Exit status: `0` the description means exactly what the policy does; `2` both files written, but something differs (read `changed`): a prefix target, which OpenAPI reads as one segment while the gateway also matches deeper paths; an identifier without the `<api>.` prefix, which comes back with it; a target containing `{` or `}`, which is not exported; `1` nothing written. The report lists `exported` (`operation`, `method`, `path`), `changed` (`operation`, `field`, `note`) and `omitted` (what a flag would add).
 
 ## Moving to or from another gateway
 
-An API's routes, methods and request schemas move between gateways through standard OpenAPI. Many gateways can export an API as an OpenAPI description, and `gateway policy import-openapi` turns it into a candidate policy (above). In the other direction, `gateway policy export-openapi` writes a description that other gateways' OpenAPI importers can read; they ignore the `x-apiward-*` members.
+- An API's routes, methods and request schemas move between gateways through standard OpenAPI.
+- Many gateways can export an API as an OpenAPI description, and `gateway policy import-openapi` turns it into a candidate policy (above).
+- In the other direction, `gateway policy export-openapi` writes a description that other gateways' OpenAPI importers can read; they ignore the `x-apiward-*` members.
 
 Sign-in, trusted issuers, roles, rate limits and other gateway-specific settings have no standard form, so they are not translated between products: set them again in the target gateway, and review every imported policy before staging it. Consumers and their credentials stay in the identity provider.
