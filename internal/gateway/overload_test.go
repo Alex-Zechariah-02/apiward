@@ -5,6 +5,7 @@
 package gateway
 
 import (
+	"bufio"
 	"io"
 	"net"
 	"net/http"
@@ -45,8 +46,23 @@ func TestInFlightCapRefuses(t *testing.T) {
 		t.Fatalf("second request at the cap: %d Retry-After %q, %s", resp.StatusCode, resp.Header.Get("Retry-After"), body)
 	}
 	release()
-	if resp, body := e.Exchange(http.MethodGet, "/a/x", "", ""); resp.StatusCode != http.StatusOK {
-		t.Fatalf("after the held request ended: %d %s", resp.StatusCode, body)
+	// The next request goes on the held request's own connection: the server
+	// reads it only after that handler returned, which is when its place is
+	// free. A new connection could be served before then.
+	reader := bufio.NewReader(conn)
+	for _, step := range []string{"the held request", "the request after it"} {
+		if step != "the held request" {
+			io.WriteString(conn, "GET /a/x HTTP/1.1\r\nHost: gw\r\n\r\n")
+		}
+		resp, err := http.ReadResponse(reader, nil)
+		if err != nil {
+			t.Fatalf("%s: %v", step, err)
+		}
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("%s: %d %s", step, resp.StatusCode, body)
+		}
 	}
 	checkIngressSummary(t, e, c, map[string]int{"overloaded": 1}, []string{refused})
 }
