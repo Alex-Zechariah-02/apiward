@@ -32,14 +32,25 @@ RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache
 # image's user.
 RUN mkdir -m 700 /out/data
 
-# The nonroot user of this image is UID and GID 65532 (its /etc/passwd).
-FROM gcr.io/distroless/static-debian13:nonroot@sha256:25ac8f0c3b2334a9eb05452266bd4697864a8c8ef0ef71e5e6480d7f92868329
+# The source of the few system files the gateway reads; its nonroot user is
+# UID and GID 65532 (its /etc/passwd).
+FROM gcr.io/distroless/static-debian13:nonroot@sha256:25ac8f0c3b2334a9eb05452266bd4697864a8c8ef0ef71e5e6480d7f92868329 AS base
+
+# The image holds the program and only what it reads: the certificate
+# authorities that verify an upstream's certificate when a TLS profile names
+# no ca_file, the user and group of UID 65532, and the name resolution order.
+# It has no shell, no time zone data and no media type table; the gateway
+# works in UTC and names its own content types.
+FROM scratch
 ARG REVISION=""
 LABEL org.opencontainers.image.title="APIWard" \
       org.opencontainers.image.description="Security policy gateway for REST APIs" \
       org.opencontainers.image.source="https://github.com/Alex-Zechariah-02/apiward" \
       org.opencontainers.image.licenses="Apache-2.0" \
       org.opencontainers.image.revision="${REVISION}"
+COPY --from=base /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
+COPY --from=base /etc/passwd /etc/group /etc/nsswitch.conf /etc/
+ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
 COPY --from=gateway /out/gateway /usr/local/bin/gateway
 COPY --from=gateway --chown=65532:65532 /out/data /var/lib/apiward
 USER 65532:65532
