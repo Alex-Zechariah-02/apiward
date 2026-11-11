@@ -33,7 +33,7 @@ func testOptions() Options {
 	return Options{API: "orders", Upstream: "orders-svc", Base: testBase(), MaxBodyBytes: DefaultBodyBytes}
 }
 
-func fixture(t *testing.T, name string) []byte {
+func fixture(t testing.TB, name string) []byte {
 	t.Helper()
 	data, err := os.ReadFile(filepath.Join("testdata", name))
 	if err != nil {

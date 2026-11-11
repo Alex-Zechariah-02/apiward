@@ -21,7 +21,7 @@ import (
 // fixedNow is the validation time of every vector below.
 var fixedNow = time.Unix(1_800_000_000, 0)
 
-func testVerifier(t *testing.T) *Verifier {
+func testVerifier(t testing.TB) *Verifier {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "issuer.pem")
 	if err := os.WriteFile(path, issuer.PublicPEM(), 0o600); err != nil {
