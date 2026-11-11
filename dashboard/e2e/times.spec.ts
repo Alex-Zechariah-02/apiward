@@ -1,6 +1,6 @@
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test, type Browser, type BrowserContext, type Page } from '@playwright/test'
-import { adminURL, build, Demo, webRoot } from './env'
+import { adminURL, deployment, type Demo } from './env'
 import { dialogButton, enrol, go, signIn, stage } from './pages'
 import { expectLayoutOnlyStorage } from './storage'
 
@@ -71,7 +71,7 @@ function sessionEnd(target: Page) {
 
 test.describe.serial('One time format and the Time Zone setting', () => {
   test.beforeAll(async ({ browser }) => {
-    demo = new Demo(build(), webRoot())
+    demo = deployment()
     const enrolment = demo.setup()
     await demo.start()
     ;({ context, page } = await newPage(browser))

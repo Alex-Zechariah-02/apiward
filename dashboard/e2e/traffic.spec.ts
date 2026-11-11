@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { expect, test } from '@playwright/test'
-import { adminURL, build, Demo, raw, siteURL, webRoot } from './env'
+import { adminURL, deployment, raw, siteURL } from './env'
 import { dialogButton, enrol, go, nav, record, shot, signIn } from './pages'
 import { expectLayoutOnlyStorage } from './storage'
 import { admin, adminCall, adjust, finish, listAll, open, password, propose, ready, sales, status, token } from './setup'
@@ -213,12 +213,12 @@ test.describe.serial('dashboard', () => {
 })
 
 test('a live stream reconnect discloses the gap and still receives later requests', async ({ browser }) => {
-  const deployment = new Demo(build(), webRoot())
-  const secret = deployment.setup()
+  const fresh = deployment()
+  const secret = fresh.setup()
   const context = await browser.newContext()
   let resume: () => void = () => {}
   try {
-    await deployment.start()
+    await fresh.start()
     const page = await context.newPage()
     await page.goto(adminURL + '/')
     await enrol(page, 'admin', secret, password)
@@ -247,7 +247,7 @@ test('a live stream reconnect discloses the gap and still receives later request
     // this request is recorded, refused and absent from every service receipt.
     const missed = await raw('GET', siteURL + '/orders')
     expect(missed.status).toBe(503)
-    for (const count of Object.values(await deployment.counts())) expect(count).toBe(0)
+    for (const count of Object.values(await fresh.counts())) expect(count).toBe(0)
     resume()
     await expect(stream.getByRole('status')).toHaveText('Live', { timeout: 20_000 })
     const later = await raw('GET', siteURL + '/orders')
@@ -258,6 +258,6 @@ test('a live stream reconnect discloses the gap and still receives later request
   } finally {
     resume()
     await context.close()
-    await deployment.stop()
+    await fresh.stop()
   }
 })

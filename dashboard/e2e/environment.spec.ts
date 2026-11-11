@@ -1,10 +1,10 @@
 // The Dashboard suite's own harness: a demonstration whose startup failed can
 // still be stopped without waiting for an exit that already happened.
 import { expect, test } from '@playwright/test'
-import { build, Demo } from './env'
+import { Demo, prepared } from './env'
 
 test('failed demo startup can still be cleaned up', async () => {
-  const bin = build()
+  const { bin } = prepared()
   // Deliberately omit setup: the owned demo exits before opening listeners.
   const demo = new Demo(bin, '')
   await expect(demo.start()).rejects.toThrow('demo run exited')

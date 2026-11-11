@@ -1,7 +1,7 @@
 import { resolve } from 'node:path'
 import { createServer, type ViteDevServer } from 'vite'
 import { expect, test, type BrowserContext } from '@playwright/test'
-import { adminURL, build, Demo, webRoot } from './env'
+import { adminURL, deployment, type Demo } from './env'
 import { enrol, record, shot, signIn, stage } from './pages'
 
 // Development observations do not establish production content-policy or
@@ -19,7 +19,7 @@ test.describe.serial('Dashboard development server observation', () => {
   })
 
   test('localhost sign-in keeps the Secure cookie and staging reaches the native Gateway', async ({ browser }) => {
-    demo = new Demo(build(), webRoot())
+    demo = deployment()
     const secret = demo.setup()
     await demo.start()
     const bootstrapContext = await browser.newContext()

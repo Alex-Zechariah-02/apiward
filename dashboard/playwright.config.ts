@@ -1,9 +1,13 @@
 import { defineConfig } from '@playwright/test'
 
 // The browser tests run one real deployment in order, so they run serially
-// in one worker. They use the installed Chrome, not a downloaded browser.
+// in one worker: a second deployment beside the first starves both of CPU
+// and their waits time out. The programs and websites are built once per
+// run, by the global setup. The tests use the installed Chrome, not a
+// downloaded browser.
 export default defineConfig({
   testDir: 'e2e',
+  globalSetup: './e2e/prepare.ts',
   workers: 1,
   fullyParallel: false,
   timeout: 180_000,

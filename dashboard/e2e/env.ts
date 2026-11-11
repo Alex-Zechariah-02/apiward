@@ -3,10 +3,10 @@ import { cpSync, existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { request as httpRequest } from 'node:http'
 import { join, resolve } from 'node:path'
 // The shared helpers come from the Fetch repository checked out beside this one.
-import { build, buildApplication, fetchRoot, temporaryDir, httpOrigin, offsetPort } from '../../../fetch/e2e/backend'
+import { buildApplication, fetchRoot, prepared, temporaryDir, httpOrigin, offsetPort } from '../../../fetch/e2e/backend'
 import { Demo as SharedDemo, enrolmentSecret } from '../../../fetch/e2e/demo'
 export type { Receipt } from '../../../fetch/e2e/demo'
-export { adminURL, build, controls, gatewayIdentity, siteURL } from '../../../fetch/e2e/backend'
+export { adminURL, controls, gatewayIdentity, prepared, siteURL } from '../../../fetch/e2e/backend'
 
 export const applicationDist = resolve(process.env.E2E_APP_DIST ?? 'dist')
 
@@ -32,12 +32,12 @@ export function webRoot(): string {
 }
 
 // deployment returns a new, not yet set up demonstration. The backend
-// snapshot and the web root are built once per test run and shared by every
-// suite file; each file still gets its own directory, database and processes.
-let built: { bin: string; web: string } | undefined
+// snapshot and the web root are built once per test run by the global setup
+// (prepare.ts) and shared by every suite file; each file still
+// gets its own directory, database and processes.
 export function deployment(): Demo {
-  built ??= { bin: build(), web: webRoot() }
-  return new Demo(built.bin, built.web)
+  const { bin, web } = prepared()
+  return new Demo(bin, web)
 }
 
 export class Demo extends SharedDemo {
