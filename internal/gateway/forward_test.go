@@ -45,7 +45,7 @@ func serveNative(e *gatewaytest.Env, policy policy.Policy, timeouts forward.Upst
 	if err != nil {
 		e.T.Fatal(err)
 	}
-	h, err := newHandler(c, pipeline.NewLimiter(c.Settings().Limits.RateCounters), pipeline.Limits{}, p.Forward)
+	h, err := newHandler(c, pipeline.NewLimiter(c.Settings().Limits.RateCounters), pipeline.Limits{}, p.Forward, nil)
 	if err != nil {
 		e.T.Fatal(err)
 	}

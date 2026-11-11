@@ -90,7 +90,7 @@ func TestEnforcementWithoutUsableGeneration(t *testing.T) {
 		e := gatewaytest.NewEnv(t)
 		c, _ := own(e, controllerConfig(e))
 		f := &memoryForwarder{}
-		h, err := newHandler(c, pipeline.NewLimiter(policy.DefaultRateCounters), pipeline.Limits{}, f.forward)
+		h, err := newHandler(c, pipeline.NewLimiter(policy.DefaultRateCounters), pipeline.Limits{}, f.forward, nil)
 		if err != nil {
 			t.Fatal(err)
 		}

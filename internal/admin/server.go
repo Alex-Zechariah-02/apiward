@@ -55,6 +55,7 @@ type Server struct {
 	hashing      chan struct{} // bounds concurrent password hashing
 	ui           http.Handler  // the dashboard files; nil when none are configured
 	plain        bool          // the gateway serves the data plane itself over plain HTTP
+	jwks         []byte        // the identity assertion's public key set; nil when none is signed
 	logger       *slog.Logger
 }
 
@@ -62,12 +63,14 @@ type Server struct {
 // rate counters (for the limits view), the dashboard files (nil: none) and
 // the logger. Plain is true when the gateway serves the data plane itself
 // over plain HTTP, so HSTS is never sent; false when a host program owns it.
+// JWKS is the public key set of the identity assertion (nil: none signed).
 type Deps struct {
 	Control *controller.Controller
 	Limiter *pipeline.Limiter
 	UI      http.Handler
 	Plain   bool
 	Logger  *slog.Logger
+	JWKS    []byte
 }
 
 // New returns the Admin API of d.Control.
@@ -76,7 +79,7 @@ func New(d Deps) *Server {
 	return &Server{
 		control: c, config: c.Settings(), store: c.Reads(), audit: c.Audit(),
 		observations: c.Observations(), limiter: d.Limiter, sessions: c.Sessions(),
-		throttle: newThrottle(), hashing: make(chan struct{}, maxHashing), ui: d.UI, plain: d.Plain, logger: d.Logger,
+		throttle: newThrottle(), hashing: make(chan struct{}, maxHashing), ui: d.UI, plain: d.Plain, jwks: d.JWKS, logger: d.Logger,
 	}
 }
 
@@ -86,6 +89,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /admin/health", s.handleHealth)
 	mux.HandleFunc("POST /admin/enrol", s.handleEnrol)
 	mux.HandleFunc("POST /admin/session", s.handleLogin)
+	if s.jwks != nil {
+		// Public keys need no session: upstreams and operators fetch them.
+		mux.HandleFunc("GET "+pipeline.JWKSPath, s.handleJWKS)
+	}
 
 	s.route(mux, "GET /admin/session", 0, s.handleWhoAmI)
 	s.route(mux, "DELETE /admin/session", 0, s.handleLogout)

@@ -175,7 +175,7 @@ func LoadCertificate(certificateFile, keyFile string) (*tls.Certificate, error) 
 	if err != nil {
 		return nil, fmt.Errorf("certificate file: %w", err)
 	}
-	if err := checkKeyFile(keyFile); err != nil {
+	if err := CheckKeyFile(keyFile); err != nil {
 		return nil, fmt.Errorf("key file: %w", err)
 	}
 	key, err := readPEMFile(keyFile)
@@ -204,9 +204,9 @@ func LoadCertificate(certificateFile, keyFile string) (*tls.Certificate, error) 
 	return &certificate, nil
 }
 
-// checkKeyFile refuses a key file whose mode lets the group or others read
+// CheckKeyFile refuses a key file whose mode lets the group or others read
 // it, on systems where the mode means that.
-func checkKeyFile(path string) error {
+func CheckKeyFile(path string) error {
 	info, err := os.Stat(path)
 	if err != nil {
 		return err

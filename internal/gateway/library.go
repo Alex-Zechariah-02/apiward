@@ -171,7 +171,7 @@ func openDeployment(cfg nativeConfig, logger *slog.Logger) (*deployment, error) 
 		return nil, errors.Join(classify(ErrStorage, fmt.Errorf("audit log: %w", c.Audit().OpenErr())), c.Stop())
 	}
 	limiter := pipeline.NewLimiter(c.Settings().Limits.RateCounters)
-	enforcement, err := newHandler(c, limiter, cfg.limits, proxy.Forward)
+	enforcement, err := newHandler(c, limiter, cfg.limits, proxy.Forward, cfg.signer)
 	if err != nil {
 		return nil, errors.Join(classify(ErrConfig, err), c.Stop())
 	}
@@ -232,7 +232,7 @@ func (d *deployment) listen(plain bool) (net.Listener, error) {
 	if d.ui != nil {
 		ui = dashboard(d.ui)
 	}
-	if err := d.controller.Start(admin.New(admin.Deps{Control: d.controller, Limiter: d.limiter, UI: ui, Plain: plain, Logger: d.logger}).Handler()); err != nil {
+	if err := d.controller.Start(admin.New(admin.Deps{Control: d.controller, Limiter: d.limiter, UI: ui, Plain: plain, Logger: d.logger, JWKS: d.config.signer.JWKS()}).Handler()); err != nil {
 		metrics.Close()
 		return nil, classify(ErrListen, fmt.Errorf("admin listener: %w", err))
 	}
@@ -252,9 +252,10 @@ func (d *deployment) logAdmission(logger *slog.Logger) {
 
 // newHandler returns the enforcement handler for the policy c publishes,
 // counting rates in limiter, within limits (a zero member selects its
-// default). forward is called only for admitted requests.
-func newHandler(c *controller.Controller, limiter *pipeline.Limiter, limits pipeline.Limits, forward pipeline.Forward) (*pipeline.Handler, error) {
-	d := pipeline.Deps{Limiter: limiter, Clock: pipeline.NewClock(), Limits: limits, Forward: forward}
+// default). forward is called only for admitted requests, each carrying an
+// identity assertion when signer is set.
+func newHandler(c *controller.Controller, limiter *pipeline.Limiter, limits pipeline.Limits, forward pipeline.Forward, signer *pipeline.Signer) (*pipeline.Handler, error) {
+	d := pipeline.Deps{Limiter: limiter, Clock: pipeline.NewClock(), Limits: limits, Forward: forward, Signer: signer}
 	// A nil controller leaves its dependencies unset, which pipeline.New refuses.
 	if c != nil {
 		d.Authority, d.Audit, d.Observations = c, c.Audit(), c.Observations()

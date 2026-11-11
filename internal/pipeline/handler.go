@@ -217,6 +217,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		q.event.ForwardedPath = destination.Path()
 	}
 
+	assertion, ok := h.assert(q, rule, roles)
+	if !ok {
+		return
+	}
+
 	// Admission requires a durable audit record before anything is forwarded.
 	q.event.Kind, q.event.Stage, q.event.Decision = "request.admitted", audit.StageNames[audit.StageAudit], "admit"
 	ctx, cancel := context.WithTimeout(r.Context(), h.auditTimeout)
@@ -235,6 +240,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// copies were removed at ingress.
 		r.Header.Set("X-Gateway-Subject", q.event.Subject)
 		r.Header.Set("X-Gateway-Roles", strings.Join(roles, ","))
+	}
+	if assertion != "" {
+		r.Header.Set(AssertionHeader, assertion)
 	}
 	r = r.WithContext(forward.Bind(r.Context(), destination))
 	q.pass(audit.StageBind)

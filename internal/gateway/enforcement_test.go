@@ -96,7 +96,7 @@ func serveEnforcement(e *gatewaytest.Env, policy policy.Policy, limits pipeline.
 	gatewaytest.Seed(e.T, e.Database, policy, gatewaytest.SeedOptions{})
 	c, _ := own(e, controllerConfig(e))
 	f := &memoryForwarder{}
-	h, err := newHandler(c, pipeline.NewLimiter(c.Settings().Limits.RateCounters), limits, f.forward)
+	h, err := newHandler(c, pipeline.NewLimiter(c.Settings().Limits.RateCounters), limits, f.forward, nil)
 	if err != nil {
 		e.T.Fatal(err)
 	}
@@ -175,13 +175,13 @@ func TestNewHandlerRefusesIncompleteSetup(t *testing.T) {
 	gatewaytest.Seed(t, e.Database, e.Policy(e.A, false), gatewaytest.SeedOptions{})
 	c, _ := own(e, controllerConfig(e))
 	forward := (&memoryForwarder{}).forward
-	if h, err := newHandler(nil, nil, pipeline.Limits{}, forward); h != nil || err == nil {
+	if h, err := newHandler(nil, nil, pipeline.Limits{}, forward, nil); h != nil || err == nil {
 		t.Fatalf("without a controller: %v, %v", h, err)
 	}
-	if h, err := newHandler(c, pipeline.NewLimiter(policy.DefaultRateCounters), pipeline.Limits{}, nil); h != nil || err == nil {
+	if h, err := newHandler(c, pipeline.NewLimiter(policy.DefaultRateCounters), pipeline.Limits{}, nil, nil); h != nil || err == nil {
 		t.Fatalf("without a forwarder: %v, %v", h, err)
 	}
-	if h, err := newHandler(c, pipeline.NewLimiter(policy.DefaultRateCounters), pipeline.Limits{}, forward); h == nil || err != nil {
+	if h, err := newHandler(c, pipeline.NewLimiter(policy.DefaultRateCounters), pipeline.Limits{}, forward, nil); h == nil || err != nil {
 		t.Fatalf("complete setup: %v, %v", h, err)
 	}
 }

@@ -15,6 +15,13 @@ import (
 	"github.com/Alex-Zechariah-02/apiward/internal/store"
 )
 
+// handleJWKS serves the public key set of the identity assertion the gateway
+// signs for upstreams (RFC 7517). It holds public keys only.
+func (s *Server) handleJWKS(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/jwk-set+json")
+	w.Write(s.jwks)
+}
+
 // handleKeys lists the trusted keys with how many tokens each verified since
 // the gateway started and when it last did; counts only, no key material.
 func (s *Server) handleKeys(w http.ResponseWriter, r *http.Request, who caller) {

@@ -149,6 +149,9 @@ type upstreamSettings struct {
 	TLSSessionLifetime    *string                   `json:"tls_session_lifetime"`
 	AllowPublicAddresses  bool                      `json:"allow_public_addresses"`
 	TLSProfiles           []forward.ProfileSettings `json:"tls_profiles"`
+	// IdentityKey is the private key file the gateway signs an identity
+	// assertion with for each forwarded request; omitted, none is sent.
+	IdentityKey *string `json:"identity_key"`
 }
 
 // nativeConfig is a checked configuration of the native gateway.
@@ -175,6 +178,8 @@ type nativeConfig struct {
 	shutdownDelay time.Duration
 	upstream      forward.UpstreamTimeouts
 	pool          forward.PoolSettings
+	// signer signs the identity assertion for upstreams; nil sends none.
+	signer *pipeline.Signer
 	// tls is the data listener's TLS; nil serves plain HTTP. redirect is
 	// the HTTP-to-HTTPS listener; nil when there is none.
 	tls      *dataTLS

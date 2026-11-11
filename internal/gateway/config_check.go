@@ -158,6 +158,11 @@ func (f nativeFile) check() (nativeConfig, error) {
 	if cfg.controller.Network, err = forward.LoadNetwork(u.AllowPublicAddresses, u.TLSProfiles, sessionLife); err != nil {
 		return nativeConfig{}, err
 	}
+	if u.IdentityKey != nil {
+		if cfg.signer, err = pipeline.LoadSigner(*u.IdentityKey); err != nil {
+			return nativeConfig{}, fmt.Errorf("upstream.identity_key: %w", err)
+		}
+	}
 
 	if g.AdminUI != nil {
 		cfg.adminUI = *g.AdminUI

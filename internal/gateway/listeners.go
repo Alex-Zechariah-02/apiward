@@ -240,6 +240,22 @@ func checkHealth(configPath string) int {
 	return 0
 }
 
+// printJWKS runs the jwks command: it prints the public key set of the
+// identity assertion, for the file an upstream verifies assertions with. It
+// reads only the configuration, so it works before the gateway first runs.
+func printJWKS(configPath string) int {
+	cfg, err := loadNativeConfig(configPath)
+	if err == nil && cfg.signer == nil {
+		err = errors.New("upstream.identity_key is not set")
+	}
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "gateway:", err)
+		return exitFailed
+	}
+	fmt.Println(string(cfg.signer.JWKS()))
+	return 0
+}
+
 // health serves GET /livez and GET /readyz beside the metrics. Their bodies
 // are fixed, so they disclose nothing but the answer.
 func health(metrics http.Handler, ready func() bool) http.Handler {

@@ -39,6 +39,7 @@ const nativeUsage = `usage: gateway run --config <file>
   gateway install --config <file> --admin <name>
   gateway enrol --config <file> --admin <name> --permissions <list>
   gateway migrate --config <file>
+  gateway jwks --config <file>
   gateway backup --config <file> --output <file>
   gateway restore --config <file> --backup <file>
   gateway policy import-openapi --spec <file> --api <id> --upstream <id> --base <file> --out <file> --report <file>
@@ -57,7 +58,7 @@ func Main(args []string) int {
 	}
 	options := []string{"config"}
 	switch command {
-	case "run", "migrate", "health":
+	case "run", "migrate", "health", "jwks":
 	case "install":
 		options = append(options, "admin")
 	case "enrol":
@@ -96,6 +97,8 @@ func Main(args []string) int {
 		return runNative(values["config"], logger)
 	case "health":
 		return checkHealth(values["config"])
+	case "jwks":
+		return printJWKS(values["config"])
 	}
 	cfg, err := loadNativeConfig(values["config"])
 	if err == nil {

@@ -60,6 +60,9 @@ type Handler struct {
 	// ipv6Prefix masks an IPv6 client address for its rate key.
 	ipv6Prefix int
 	forward    Forward
+	// signer signs the identity assertion of each forwarded request; nil
+	// sends none.
+	signer *Signer
 	// held is set while an embedded gateway has not started its own
 	// listeners; every request is then refused at capture, so nothing is
 	// admitted before the Admin API and metrics can observe it.
@@ -103,6 +106,8 @@ type Deps struct {
 	Limits       Limits
 	// Forward is called only for admitted requests.
 	Forward Forward
+	// Signer, when set, signs an identity assertion for each of them.
+	Signer *Signer
 }
 
 // New returns the enforcement handler for the policy d.Authority
@@ -133,7 +138,7 @@ func New(d Deps) (*Handler, error) {
 		authority: d.Authority, audit: d.Audit, observations: d.Observations,
 		limiter: d.Limiter, clock: d.Clock, auditTimeout: d.AuditTimeout,
 		maxBodyBytes: limits.MaxBodyBytes, maxInFlight: limits.MaxInFlight, ipv6Prefix: limits.IPv6RatePrefix,
-		forward: d.Forward, ingress: ingress,
+		forward: d.Forward, signer: d.Signer, ingress: ingress,
 	}
 	for _, c := range extensions {
 		h.extensions = append(h.extensions, c.Info())
