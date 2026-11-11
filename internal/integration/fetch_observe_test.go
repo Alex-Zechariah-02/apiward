@@ -102,7 +102,7 @@ func TestFetchEventsAndTraffic(t *testing.T) {
 			t.Errorf("%s: %d %s", query, code, body)
 		}
 	}
-	code, body, _ = e.As(admin, "GET", "/admin/events?limit=1", "")
+	_, body, _ = e.As(admin, "GET", "/admin/events?limit=1", "")
 	json.Unmarshal([]byte(body), &page)
 	if page.Next == "" {
 		t.Fatal("no continuation cursor")

@@ -1,4 +1,4 @@
-# Checks the gateway, its vulnerability status and the Dashboard on every
+# Checks the gateway, its static analysis, vulnerability status and the Dashboard on every
 # change. The stack and browser tests run the Fetch demonstration from its
 # own repository, checked out beside this one at FETCH_REF.
 name: CI
@@ -66,6 +66,36 @@ jobs:
         with:
           go-version-file: go.mod
       - run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
+
+  lint:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      # Correctness checks beyond go vet, on both build variants.
+      - run: go run honnef.co/go/tools/cmd/staticcheck@v0.8.2 ./...
+      - run: go run honnef.co/go/tools/cmd/staticcheck@v0.8.2 -tags faultinject ./...
+      # Security checks on the shipped code. Two rules are left out after a
+      # review of every finding: G104 (unchecked errors) flags only cleanup,
+      # writes to a client that has gone and audit writes that record their
+      # own failure; G304 (file path from a variable) flags only paths from
+      # the operator's configuration and command line. The test-support
+      # packages are left out because they run commands and open files by
+      # design.
+      - run: >-
+          go run github.com/securego/gosec/v2/cmd/gosec@v2.30.0 -quiet
+          -exclude=G104,G304
+          -exclude-dir=dashboard
+          -exclude-dir=internal/gatewaytest
+          -exclude-dir=internal/testfixture
+          -exclude-dir=internal/issuertest
+          -exclude-dir=internal/storetest
+          ./...
 
   dashboard:
     runs-on: ubuntu-24.04

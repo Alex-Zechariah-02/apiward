@@ -16,6 +16,7 @@ const overrideColumns = `id, type, control, operation, coalesce(role, ''), coale
 
 // Overrides reads the overrides selected by the WHERE and ORDER clause.
 func (s *DB) Overrides(ctx context.Context, clause string, args ...any) ([]Override, error) {
+	// #nosec G202 -- clause is a constant of the calling code; values travel as arguments
 	rows, err := s.db.QueryContext(ctx, `SELECT `+overrideColumns+` FROM override `+clause, args...)
 	if err != nil {
 		return nil, err

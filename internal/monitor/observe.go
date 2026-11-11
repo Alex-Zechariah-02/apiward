@@ -202,13 +202,13 @@ func (o *Observations) RetainedSince() (time.Time, bool) {
 	if len(o.ring) == 0 {
 		return time.Time{}, false
 	}
-	return o.ring[o.slot(len(o.ring)-1)].Time, o.next > uint64(o.window)
+	return o.ring[o.slot(len(o.ring)-1)].Time, o.next > uint64(o.window) // #nosec G115 -- the window is a validated positive size
 }
 
 // slot is the ring index of the request age places before the newest. While
 // the ring grows, request n sits at index n-1, which the modulus keeps.
 func (o *Observations) slot(age int) uint64 {
-	return (o.next - 1 - uint64(age)) % uint64(o.window)
+	return (o.next - 1 - uint64(age)) % uint64(o.window) // #nosec G115 -- age is an index into the ring, never negative
 }
 
 func (o *Observations) Snapshot() []Observed {

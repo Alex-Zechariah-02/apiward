@@ -57,10 +57,10 @@ func TestDamagedOverrideStateAndAuditFailures(t *testing.T) {
 		e := gatewaytest.NewEnv(t)
 		gatewaytest.Seed(t, e.Database, e.ProtectedPolicy(), gatewaytest.SeedOptions{})
 		e.Start(gatewaytest.Binaries.Plain)
-		harness := e.MustLogin(gatewaytest.HarnessAdmin, gatewaytest.HarnessPassword)
+		e.MustLogin(gatewaytest.HarnessAdmin, gatewaytest.HarnessPassword)
 		e.Stop()
 		e.Start(gatewaytest.Binaries.Fault, "GATEWAY_FAULT=audit-full")
-		harness = e.MustLogin(gatewaytest.HarnessAdmin, gatewaytest.HarnessPassword)
+		harness := e.MustLogin(gatewaytest.HarnessAdmin, gatewaytest.HarnessPassword)
 		code, outcome, body := e.CreateOverride(harness, permitOverride(store.OverrideException, "READER", "write-a", 600), `"r1"`, "audit-full-create-01")
 		if code != http.StatusServiceUnavailable || outcome.Reason != "AUDIT_UNAVAILABLE" {
 			t.Fatalf("creation without audit: %d %s", code, body)

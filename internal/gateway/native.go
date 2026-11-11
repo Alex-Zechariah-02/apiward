@@ -243,6 +243,7 @@ func startNative(cfg nativeConfig, logger *slog.Logger) (*nativeGateway, error) 
 	if d.certificate != nil {
 		listener = tls.NewListener(listener, d.certificate.config(server.HTTP2))
 	}
+	// #nosec G112 -- server.Apply below sets the header and other timeouts
 	data := &http.Server{
 		Handler: d.enforcement,
 		// "OPTIONS *" reaches enforcement, which refuses every target that

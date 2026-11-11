@@ -89,7 +89,7 @@ type compiledSchema struct {
 // compile returns raw compiled as CompileSchema would, reusing an earlier
 // result for the same kind and the same compact JSON text.
 func (set schemaSet) compile(raw json.RawMessage, kind schemaKind, field string) (*jsonschema.Schema, map[string]any, error) {
-	key := bytes.NewBuffer([]byte{byte(kind)})
+	key := bytes.NewBuffer([]byte{byte(kind)}) // #nosec G115 -- kind is one of a few small constants
 	if json.Compact(key, raw) != nil {
 		return CompileSchema(raw, kind, field)
 	}

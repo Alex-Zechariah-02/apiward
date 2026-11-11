@@ -123,7 +123,7 @@ func TestCredentialRotationAndRecovery(t *testing.T) {
 	if _, code := e.Login("root", password); code != http.StatusUnauthorized {
 		t.Fatalf("old password after change: %d", code)
 	}
-	current := e.MustLogin("root", changed)
+	e.MustLogin("root", changed)
 
 	// Local recovery: the operator command refuses to run beside the gateway.
 	if out, code := e.RunOperator(gatewaytest.Binaries.Plain, nil, "enrol", "--admin", "root", "--permissions", "read"); code == 0 ||
@@ -137,7 +137,7 @@ func TestCredentialRotationAndRecovery(t *testing.T) {
 	}
 	recovery := gatewaytest.EnrolmentSecret(t, out)
 	e.Start(gatewaytest.Binaries.Plain)
-	current = e.MustLogin("root", changed) // valid until the enrolment is consumed
+	current := e.MustLogin("root", changed) // valid until the enrolment is consumed
 
 	recovered := testPassword()
 	if code, body := enrol(e, "root", recovery, recovered); code != http.StatusCreated || !strings.Contains(body, `["read"]`) {

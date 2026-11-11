@@ -56,6 +56,7 @@ const ActivationColumns = `revision, candidate, rollback_target, deadline, activ
 // Activation reads the activation record selected by column, which is
 // revision or candidate.
 func (s *DB) Activation(ctx context.Context, column string, id int64) (ActivationRecord, bool, error) {
+	// #nosec G202 -- column is a constant of the calling code; the value travels as an argument
 	rows, err := s.db.QueryContext(ctx, `SELECT `+ActivationColumns+` FROM activation WHERE `+column+` = ?`, id)
 	if err != nil {
 		return ActivationRecord{}, false, err

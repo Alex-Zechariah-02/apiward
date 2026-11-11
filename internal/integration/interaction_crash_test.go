@@ -190,7 +190,7 @@ func TestRestartWithOverrides(t *testing.T) {
 	_, activated := e.ProvisionalFrom(harness, upstreamCandidate(e), 1, 60, "restart-provisional")
 	e.Stop()
 	e.Start(gatewaytest.Binaries.Plain)
-	harness = e.MustLogin(gatewaytest.HarnessAdmin, gatewaytest.HarnessPassword)
+	e.MustLogin(gatewaytest.HarnessAdmin, gatewaytest.HarnessPassword)
 	if s := e.Status(); s.Provisional != activated.Provisional || s.Generation != activated.Generation {
 		t.Fatalf("provisional status after restart %+v, activation %+v", s, activated)
 	}
@@ -206,7 +206,7 @@ func TestRestartWithOverrides(t *testing.T) {
 		t.Fatalf("exit code %d", code)
 	}
 	e.Start(gatewaytest.Binaries.Plain)
-	harness = e.MustLogin(gatewaytest.HarnessAdmin, gatewaytest.HarnessPassword)
+	e.MustLogin(gatewaytest.HarnessAdmin, gatewaytest.HarnessPassword)
 	s := e.Status()
 	if s.Confirmed != 1 || s.Provisional != 0 || !strings.HasPrefix(s.Generation, fmt.Sprintf("r1+o%d-", kept.Override)) {
 		t.Fatalf("status after the crashed rollback %+v", s)

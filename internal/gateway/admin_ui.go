@@ -76,7 +76,7 @@ func dashboard(files fs.FS) http.Handler {
 			header.Set("Content-Encoding", encoding)
 		}
 		header.Set("Content-Length", strconv.Itoa(len(data)))
-		w.Write(data)
+		w.Write(data) // #nosec G705 -- a file of the operator's own Dashboard build, sent with its content policy
 	})
 }
 

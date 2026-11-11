@@ -113,6 +113,7 @@ func (s *DB) History(ctx context.Context, filter HistoryFilter, after int64, lim
 	}
 	query := `SELECT ` + historyColumns + ` FROM transition`
 	if len(conditions) > 0 {
+		// #nosec G202 -- every condition is a fixed fragment; values travel as arguments
 		query += ` WHERE ` + strings.Join(conditions, ` AND `)
 	}
 	if filter.NewestFirst {
