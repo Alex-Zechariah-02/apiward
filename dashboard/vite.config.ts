@@ -1,4 +1,7 @@
-import { defineConfig } from 'vite'
+import { readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { gzipSync } from 'node:zlib'
+import { defineConfig, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 
 // EAT_PORT_OFFSET shifts every demonstration address, as in the browser
@@ -22,11 +25,31 @@ function developmentPort(defaultPort: number): number {
 // The Admin API of a running demonstration.
 const adminURL = `http://127.0.0.1:${offsetPort(9440)}`
 
+// compress replaces each built script and style sheet with its gzip copy
+// (name + .gz). The gateway sends that copy as it is to a browser and
+// inflates it for a client that does not accept gzip, so a release binary
+// carries the dashboard once, compressed.
+function compress(): Plugin {
+  return {
+    name: 'compress',
+    apply: 'build',
+    writeBundle(options) {
+      const assets = join(options.dir ?? 'dist', 'assets')
+      for (const name of readdirSync(assets)) {
+        if (!/\.(js|css)$/.test(name)) continue
+        const file = join(assets, name)
+        writeFileSync(`${file}.gz`, gzipSync(readFileSync(file), { level: 9 }))
+        rmSync(file)
+      }
+    },
+  }
+}
+
 // The dashboard is served by the gateway's admin listener at /, which serves
 // only index.html and flat files under /assets/.
 export default defineConfig({
   base: '/',
-  plugins: [react()],
+  plugins: [react(), compress()],
   server: {
     host: 'localhost',
     port: developmentPort(5173),
@@ -46,8 +69,8 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     emptyOutDir: true,
-    // The page's content policy allows only its own script and style files,
-    // so nothing may be inlined.
+    // The page's content policy allows only its own script, style, image and
+    // font files, so nothing may be inlined.
     assetsInlineLimit: 0,
     modulePreload: { polyfill: false },
     sourcemap: false,

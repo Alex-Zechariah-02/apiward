@@ -11,7 +11,7 @@ import (
 )
 
 // TestEmbeddedFiles proves the embedui build embeds the copied build: its
-// page and every asset the page names.
+// page and every asset the page names, as the file or as its gzip copy.
 func TestEmbeddedFiles(t *testing.T) {
 	page, err := fs.ReadFile(Files, "index.html")
 	if err != nil {
@@ -22,8 +22,12 @@ func TestEmbeddedFiles(t *testing.T) {
 		t.Fatal("the embedded page names no assets")
 	}
 	for _, asset := range assets {
-		if _, err := fs.Stat(Files, string(asset[1])); err != nil {
-			t.Errorf("%s: %v", asset[1], err)
+		name := string(asset[1])
+		if _, err := fs.Stat(Files, name); err == nil {
+			continue
+		}
+		if _, err := fs.Stat(Files, name+".gz"); err != nil {
+			t.Errorf("%s: %v", name, err)
 		}
 	}
 }

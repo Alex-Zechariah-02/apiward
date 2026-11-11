@@ -14,7 +14,7 @@ import { expectLayoutOnlyStorage } from './storage'
 
 export const password = 'correct horse battery staple 42'
 export const uiPolicy =
-  "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+  "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
 
 export let demo: Demo
 export let enrolmentSecret: string

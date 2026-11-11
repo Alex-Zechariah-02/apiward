@@ -67,9 +67,9 @@ npm run check   # type checks the application and the tests
 npm run build   # writes dist/
 ```
 
-Point the gateway configuration's `gateway.admin_ui` at the absolute path of `dist/`. The gateway serves `index.html` and the flat `assets/` directory, and nothing else.
+Point the gateway configuration's `gateway.admin_ui` at the absolute path of `dist/`. The gateway serves `index.html` and the flat `assets/` directory, and nothing else. The build holds each script and style sheet only as a gzip copy (`.js.gz`, `.css.gz`), which the gateway sends as it is to a browser and inflates for a client that does not accept gzip. The page is never cached; everything under `assets/` is cached for a year, so every file there must be named after its content, as the build does.
 
-The gateway serves the dashboard under a strict content policy (`default-src 'none'`; scripts, styles, images and connections from its own origin only). The build therefore puts no script or style into the page and calls only relative Admin API paths. The policy has no `font-src`, so Hanken Grotesk and Geist Mono are bundled into the script and registered with the CSS Font Loading API before the page renders; no font file is fetched. Their SIL Open Font License 1.1 notices are in `src/fonts/`.
+The gateway serves the dashboard under a strict content policy (`default-src 'none'`; scripts, styles, images, fonts and connections from its own origin only). The build therefore puts no script or style into the page and calls only relative Admin API paths. Hanken Grotesk and Geist Mono are two font files of the build, registered with the CSS Font Loading API before the page renders. Their SIL Open Font License 1.1 notices are in `src/fonts/`.
 
 ## Development
 

@@ -210,7 +210,7 @@ rm -rf internal/adminui/dist && cp -r dashboard/dist internal/adminui/dist
 go build -trimpath -tags embedui -o <out-dir>/gateway ./cmd/gateway
 ```
 
-A build without the tag needs no Node.js and serves no Dashboard unless `gateway.admin_ui` names a directory of built files. When `admin_ui` is set it is used instead of the embedded build; the start log line `dashboard files` names the source (`directory`, `embedded` or `none`). Either way the Dashboard is served only on the Admin API listener.
+A build without the tag needs no Node.js and serves no Dashboard unless `gateway.admin_ui` names a directory of built files. When `admin_ui` is set it is used instead of the embedded build; the start log line `dashboard files` names the source (`directory`, `embedded` or `none`). Either way the Dashboard is served only on the Admin API listener. The page is never cached; the files under `assets/` are cached by the browser for a year (their names change with their content) and the build's gzip copies of the scripts and style sheets are sent as they are, or inflated for a client that does not accept gzip.
 
 `-trimpath` keeps local build directory names out of the programs. Reproducing an identical binary also requires the same source, toolchain, dependencies, build flags and environment; a release binary also needs the same Dashboard build, made with `npm ci` from `dashboard/package-lock.json`.
 

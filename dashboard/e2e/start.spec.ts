@@ -1,5 +1,6 @@
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { resolve as resolvePath } from 'node:path'
+import { gunzipSync } from 'node:zlib'
 import { expect, test } from '@playwright/test'
 import { adminURL, applicationDist, gatewayIdentity, raw, siteURL } from './env'
 import { dialogButton, enrol, go, moreDetail, nav, record, resolve, revisions, shot, signIn, stage, trial, trialStep } from './pages'
@@ -27,14 +28,16 @@ test.describe.serial('dashboard', () => {
     // The state shown is the gateway's own: a new installation admits nothing.
     await expect(admin.locator('.entry-state')).toContainText('Gateway: New installation, waiting for its first policy')
     await expect(admin.locator('.entry-state code')).toHaveText('bootstrap_locked')
-    // The two typefaces load under the content policy, from the page's own
-    // script, and the page's text and code are set in them.
+    // The two typefaces load under the content policy, as files of the
+    // page's own origin, and the page's text and code are set in them.
     expect(await fontsInUse(admin)).toEqual({ faces: ['Hanken Grotesk:loaded', 'Geist Mono:loaded'], text: true, code: true })
     await shot(admin, '01-sign-in')
 
-    // Every built file is served from /assets/ with a fixed type and the
-    // dashboard's content policy; none is reachable on the data plane, which
-    // admits nothing before the first policy.
+    // Every built file is served from /assets/ with a fixed type, the
+    // dashboard's content policy and a year's caching; a file the build holds
+    // only as a gzip copy reaches a client that does not accept gzip whole.
+    // None is reachable on the data plane, which admits nothing before the
+    // first policy.
     const index = readFileSync(resolvePath(applicationDist, 'index.html'), 'utf8')
     const assets = [...index.matchAll(/(?:src|href)="\/assets\/([^"]+)"/g)].map((m) => m[1])
     expect(assets.map((a) => a.split('.').pop()).sort()).toEqual(['css', 'js', 'svg'])
@@ -45,7 +48,10 @@ test.describe.serial('dashboard', () => {
       expect(reply.status, asset).toBe(200)
       expect(reply.headers['content-type'], asset).toBe(types[asset.split('.').pop()!])
       expect(reply.headers['content-security-policy'], asset).toBe(uiPolicy)
-      expect(reply.body, asset).toBe(readFileSync(resolvePath(applicationDist, 'assets', asset), 'utf8'))
+      expect(reply.headers['cache-control'], asset).toBe('public, max-age=31536000, immutable')
+      const file = resolvePath(applicationDist, 'assets', asset)
+      const built = existsSync(file) ? readFileSync(file, 'utf8') : gunzipSync(readFileSync(`${file}.gz`)).toString('utf8')
+      expect(reply.body, asset).toBe(built)
       const onDataPlane = await raw('GET', `${siteURL}/assets/${asset}`)
       expect(onDataPlane.status, asset).toBe(503)
       expect(onDataPlane.body, asset).not.toBe(reply.body)

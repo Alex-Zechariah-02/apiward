@@ -5,6 +5,8 @@
 package gateway
 
 import (
+	"bytes"
+	"compress/gzip"
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
@@ -27,6 +29,8 @@ func writeDashboard(t *testing.T) string {
 		"assets/app.js":        "console.log('app')",
 		"assets/app.css":       "body{}",
 		"assets/logo.svg":      "<svg xmlns=\"http://www.w3.org/2000/svg\"/>",
+		"assets/font.woff2":    "wOF2",
+		"assets/packed.js.gz":  gzipped(t, "console.log('packed')"),
 		"assets/app.js.map":    "{}",
 		"assets/nested/x.js":   "nested",
 		"secret.txt":           "not for the browser",
@@ -47,24 +51,41 @@ func writeDashboard(t *testing.T) string {
 	return dir
 }
 
+// gzipped is content as a build's gzip copy holds it.
+func gzipped(t *testing.T, content string) string {
+	t.Helper()
+	var packed bytes.Buffer
+	writer := gzip.NewWriter(&packed)
+	if _, err := writer.Write([]byte(content)); err != nil || writer.Close() != nil {
+		t.Fatal("gzip", err)
+	}
+	return packed.String()
+}
+
 // The admin listener serves the dashboard's page and flat assets with a strict
 // content policy, and nothing else: no listing, no fallback page, no other
-// file, and the Admin API keeps its own answers.
+// file, and the Admin API keeps its own answers. The page is never stored;
+// an asset is kept for a year, and one the build compressed is sent as gzip
+// to a client that accepts it and inflated for one that does not.
 func TestDashboardFiles(t *testing.T) {
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.Policy(e.A, false), gatewaytest.SeedOptions{})
 	e.WriteConfig(gatewaytest.ConfigOptions{Admin: map[string]any{"admin_ui": writeDashboard(t)}})
 	e.Start(gatewaytest.Binaries.Plain)
 
-	served := []struct{ path, contentType, body string }{
-		{"/", "text/html; charset=utf-8", "<!doctype html><title>dashboard</title>"},
-		{"/assets/app.js", "text/javascript; charset=utf-8", "console.log('app')"},
-		{"/assets/app.css", "text/css; charset=utf-8", "body{}"},
-		{"/assets/logo.svg", "image/svg+xml", "<svg xmlns=\"http://www.w3.org/2000/svg\"/>"},
+	packed := gzipped(t, "console.log('packed')")
+	served := []struct{ path, accept, contentType, body, encoding, caching string }{
+		{"/", "identity", "text/html; charset=utf-8", "<!doctype html><title>dashboard</title>", "", "no-store"},
+		{"/assets/app.js", "gzip", "text/javascript; charset=utf-8", "console.log('app')", "", assetCaching},
+		{"/assets/app.css", "identity", "text/css; charset=utf-8", "body{}", "", assetCaching},
+		{"/assets/logo.svg", "identity", "image/svg+xml", "<svg xmlns=\"http://www.w3.org/2000/svg\"/>", "", assetCaching},
+		{"/assets/font.woff2", "identity", "font/woff2", "wOF2", "", assetCaching},
+		{"/assets/packed.js", "br, gzip", "text/javascript; charset=utf-8", packed, "gzip", assetCaching},
+		{"/assets/packed.js", "gzip;q=0, identity", "text/javascript; charset=utf-8", "console.log('packed')", "", assetCaching},
 	}
 	for _, f := range served {
-		code, body, header := e.AdminSend(http.MethodGet, f.path, "")
-		if code != http.StatusOK || body != f.body || header.Get("Content-Type") != f.contentType {
+		code, body, header := e.AdminSend(http.MethodGet, f.path, "", "Accept-Encoding", f.accept)
+		if code != http.StatusOK || body != f.body || header.Get("Content-Type") != f.contentType || header.Get("Content-Encoding") != f.encoding {
 			t.Errorf("GET %s: %d %q %q", f.path, code, header.Get("Content-Type"), body)
 			continue
 		}
@@ -72,7 +93,7 @@ func TestDashboardFiles(t *testing.T) {
 			"Content-Security-Policy": uiPolicy,
 			"X-Frame-Options":         "DENY",
 			"Referrer-Policy":         "no-referrer",
-			"Cache-Control":           "no-store",
+			"Cache-Control":           f.caching,
 			"X-Content-Type-Options":  "nosniff",
 		} {
 			if got := header.Get(name); got != want {
@@ -90,7 +111,7 @@ func TestDashboardFiles(t *testing.T) {
 	notServed := []string{
 		"/index.html", "/secret.txt", "/assets/", "/assets", "/assets/app.js.map",
 		"/assets/nested/x.js", "/assets/nested", "/assets/readme.txt", "/assets/upper.JS.html", "/assets/index.html",
-		"/assets/..%2fsecret.txt", "/assets/%2e%2e%2fsecret.txt", "/assets/missing.js",
+		"/assets/..%2fsecret.txt", "/assets/%2e%2e%2fsecret.txt", "/assets/missing.js", "/assets/packed.js.gz",
 		"/admin", "/admin/", "/admin/unknown", "/admin/status/extra", "/demo/", "/orders",
 	}
 	for _, p := range notServed {
