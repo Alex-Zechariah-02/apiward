@@ -136,9 +136,9 @@ func TestObjectOwnershipStaysWithFixture(t *testing.T) {
 			t.Fatalf("%s: fixture receipt %+v", tc.subject, last)
 		}
 		events := e.RequestEvents(last.RequestID, 2)
-		forwarded := gatewaytest.FindEvent(events, "request.forwarded", last.RequestID)
-		if forwarded == nil || stagesOf(forwarded)["RBAC"] != audit.StagePass || forwarded["status"] != float64(tc.status) {
-			t.Fatalf("%s: gateway event %v", tc.subject, forwarded)
+		admitted, forwarded := gatewaytest.FindEvent(events, "request.admitted", last.RequestID), gatewaytest.FindEvent(events, "request.forwarded", last.RequestID)
+		if admitted == nil || forwarded == nil || stagesOf(admitted)["RBAC"] != audit.StagePass || forwarded["status"] != float64(tc.status) {
+			t.Fatalf("%s: gateway events %v", tc.subject, events)
 		}
 	}
 }

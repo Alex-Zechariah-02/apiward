@@ -34,7 +34,7 @@ func QueueSize(maxInFlight int64) int {
 }
 
 // EventSchema is the version of the event envelope below.
-const EventSchema = 7
+const EventSchema = 8
 
 var (
 	errAuditFailed = errors.New("audit log unavailable")

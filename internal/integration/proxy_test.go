@@ -252,8 +252,7 @@ func TestUpstreamFailuresAreContained(t *testing.T) {
 		if outcome == nil {
 			t.Fatal("no outcome event for the aborted response")
 		}
-		stages, _ := outcome["stages"].(map[string]any)
-		if outcome["decision"] != "upstream_failure" || outcome["error"] != "upstream_incomplete" || stages["FORWARD"] != "FAIL" {
+		if outcome["decision"] != "upstream_failure" || outcome["error"] != "upstream_incomplete" || outcome["stages"] != nil {
 			t.Fatalf("outcome event %v", outcome)
 		}
 	})

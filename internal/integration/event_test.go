@@ -44,9 +44,7 @@ func TestEventEnvelopeReflectsStagesReached(t *testing.T) {
 	routed := append(beforeRoute, "ROUTE")
 	checked := append(routed, "ACCESS")
 	admitted := append(checked, "BODY")
-	forwarded := append(admitted, "AUDIT", "BIND")
 	validated := append(slices.Clone(admitted), "VALIDATION")
-	validatedForwarded := append(slices.Clone(validated), "AUDIT", "BIND")
 
 	type expected struct {
 		kind, stage, decision, errorCode, operation string
@@ -63,18 +61,18 @@ func TestEventEnvelopeReflectsStagesReached(t *testing.T) {
 			return code, e.A.Receipts()[len(e.A.Receipts())-1].RequestID
 		}, []expected{
 			{"request.admitted", "AUDIT", "admit", "", "read-a", 0, unvalidated(gatewaytest.Public(gatewaytest.ExpectedStages(admitted, "", "")))},
-			{"request.forwarded", "FORWARD", "forwarded", "", "read-a", 200, unvalidated(gatewaytest.Public(gatewaytest.ExpectedStages(forwarded, "FORWARD", audit.StagePass)))},
+			{"request.forwarded", "FORWARD", "forwarded", "", "read-a", 200, nil},
 		}},
 		{"validated body forwarded", func() (int, string) {
 			code, _ := e.Request(http.MethodPost, "/a/item", "application/json", `{"n":1}`)
 			return code, e.A.Receipts()[len(e.A.Receipts())-1].RequestID
 		}, []expected{
 			{"request.admitted", "AUDIT", "admit", "", "write-a", 0, gatewaytest.Public(gatewaytest.ExpectedStages(validated, "", ""))},
-			{"request.forwarded", "FORWARD", "forwarded", "", "write-a", 200, gatewaytest.Public(gatewaytest.ExpectedStages(validatedForwarded, "FORWARD", audit.StagePass))},
+			{"request.forwarded", "FORWARD", "forwarded", "", "write-a", 200, nil},
 		}},
 		{"upstream refused", func() (int, string) { return gatewaytest.RequestID(e.Exchange(http.MethodGet, "/z", "", "")) }, []expected{
 			{"request.admitted", "AUDIT", "admit", "", "read-z", 0, unvalidated(gatewaytest.Public(gatewaytest.ExpectedStages(admitted, "", "")))},
-			{"request.forwarded", "FORWARD", "upstream_failure", "upstream_unavailable", "read-z", 502, unvalidated(gatewaytest.Public(gatewaytest.ExpectedStages(forwarded, "FORWARD", audit.StageFail)))},
+			{"request.forwarded", "FORWARD", "upstream_failure", "upstream_unavailable", "read-z", 502, nil},
 		}},
 		{"protocol upgrade", func() (int, string) {
 			return gatewaytest.RequestID(e.Exchange(http.MethodGet, "/a/x", "", "", "Connection", "Upgrade", "Upgrade", "websocket"))

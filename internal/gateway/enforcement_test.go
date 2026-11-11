@@ -13,7 +13,6 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/Alex-Zechariah-02/apiward/internal/audit"
 	"github.com/Alex-Zechariah-02/apiward/internal/compile"
 	"github.com/Alex-Zechariah-02/apiward/internal/controller"
 	"github.com/Alex-Zechariah-02/apiward/internal/forward"
@@ -160,15 +159,6 @@ func eventOf(e *gatewaytest.Env, requestID string, want int) map[string]any {
 	return events[want-1]
 }
 
-// admittedStages is the stage map of a forwarded request to an operation
-// without a rate rule, body or header schema.
-func admittedStages(forward string) map[string]any {
-	stages := gatewaytest.ExpectedStages([]string{"INGRESS", "CAPTURE", "CANONICAL", "ROUTE", "ACCESS", "JWT", "RBAC", "BODY", "AUDIT", "BIND"}, "FORWARD", forward)
-	stages["RATE"] = audit.StageNotApplicable
-	stages["VALIDATION"] = audit.StageNotApplicable
-	return stages
-}
-
 // The handler needs a controller and a forwarder.
 func TestNewHandlerRefusesIncompleteSetup(t *testing.T) {
 	e := gatewaytest.NewEnv(t)
@@ -237,7 +227,7 @@ func TestEnforcementHandlerAdmits(t *testing.T) {
 	ev := eventOf(e, h.header.Get("X-Request-Id"), 2)
 	if ev["kind"] != "request.forwarded" || ev["decision"] != "forwarded" || ev["status"] != float64(201) ||
 		ev["generation"] != g.ID || ev["upstream"] != "A" || ev["subject"] != "alice" ||
-		!gatewaytest.SameStages(ev["stages"], admittedStages(audit.StagePass)) {
+		ev["stages"] != nil {
 		t.Fatalf("outcome event %v", ev)
 	}
 	if audit := e.AuditEvents(); strings.Contains(fmt.Sprint(audit), token[:40]) || strings.Contains(fmt.Sprint(audit), "q=1") {

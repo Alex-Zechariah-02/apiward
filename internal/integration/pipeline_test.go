@@ -61,7 +61,7 @@ func TestFiveControlsAdmitValidRequest(t *testing.T) {
 		admitted, forwarded := gatewaytest.FindEvent(events, "request.admitted", receipt.RequestID), gatewaytest.FindEvent(events, "request.forwarded", receipt.RequestID)
 		wantAdmitted := allStages()
 		wantAdmitted["AUDIT"], wantAdmitted["BIND"], wantAdmitted["FORWARD"] = audit.StageNotRun, audit.StageNotRun, audit.StageNotRun
-		if admitted == nil || forwarded == nil || !gatewaytest.SameStages(admitted["stages"], wantAdmitted) || !gatewaytest.SameStages(forwarded["stages"], allStages()) {
+		if admitted == nil || forwarded == nil || !gatewaytest.SameStages(admitted["stages"], wantAdmitted) || forwarded["stages"] != nil {
 			t.Fatalf("%s: events %v", r.path, events)
 		}
 		for _, ev := range events {

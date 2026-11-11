@@ -13,7 +13,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Alex-Zechariah-02/apiward/internal/audit"
 	"github.com/Alex-Zechariah-02/apiward/internal/forward"
 	"github.com/Alex-Zechariah-02/apiward/internal/gatewaytest"
 	"github.com/Alex-Zechariah-02/apiward/internal/pipeline"
@@ -60,7 +59,7 @@ func TestEnforcementResponses(t *testing.T) {
 			_, id := gatewaytest.RequestID(resp, body)
 			ev := forwardedEvent(id)
 			if resp.StatusCode != tc.status || !strings.Contains(body, `"error":"`+tc.code+`"`) || ev["decision"] != "upstream_failure" ||
-				ev["error"] != tc.code || ev["status"] != float64(tc.status) || !gatewaytest.SameStages(ev["stages"], publicAdmitted(audit.StageFail)) {
+				ev["error"] != tc.code || ev["status"] != float64(tc.status) || ev["stages"] != nil {
 				t.Fatalf("%d %s, event %v", resp.StatusCode, body, ev)
 			}
 			if strings.Contains(body, "connection refused") || strings.Contains(body, "source failed") {
@@ -125,14 +124,6 @@ func TestEnforcementResponses(t *testing.T) {
 		}
 	})
 	e.AssertReceipts(0, 0, 0)
-}
-
-// publicAdmitted is admittedStages for a public operation.
-func publicAdmitted(forward string) map[string]any {
-	stages := admittedStages(forward)
-	stages["JWT"] = audit.StageNotApplicable
-	stages["RBAC"] = audit.StageNotApplicable
-	return stages
 }
 
 // The trusted binding comes only from the captured generation: no client

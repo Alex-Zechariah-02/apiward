@@ -53,7 +53,7 @@ func TestAuthenticationEvents(t *testing.T) {
 		}},
 		{"permitted", http.MethodPost, "/a/item", `{"n":1}`, aliceToken, 1, []expected{
 			{"request.admitted", "AUDIT", "", "alice", "", 0, unrated(gatewaytest.ExpectedStages(append(routed, "JWT", "RBAC", "BODY", "VALIDATION"), "", ""))},
-			{"request.forwarded", "FORWARD", "", "alice", "", 200, unrated(gatewaytest.ExpectedStages(append(routed, "JWT", "RBAC", "BODY", "VALIDATION", "AUDIT", "BIND"), "FORWARD", audit.StagePass))},
+			{"request.forwarded", "FORWARD", "", "alice", "", 200, nil},
 		}},
 		{"denied public operation", http.MethodGet, "/d", "", aliceToken, 0, []expected{
 			{"request.rejected", "ACCESS", "", "", "forbidden", 403, gatewaytest.ExpectedStages(routed[:4], "ACCESS", audit.StageReject)},

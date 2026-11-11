@@ -149,7 +149,7 @@ func TestModuleOrder(t *testing.T) {
 		t.Fatalf("answer %d, forwarded %v, ran %v, want %v", code, forwarded, ran, want)
 	}
 	modules, _ := record["modules"].(map[string]any)
-	if record["schema"] != float64(7) || modules["authorise_a"] != "NA" || modules["traffic_b"] != "NA" || modules["identity_b"] != "PASS" || modules["ingress_a"] != "PASS" || len(modules) != 10 {
+	if record["schema"] != float64(audit.EventSchema) || modules["authorise_a"] != "NA" || modules["traffic_b"] != "NA" || modules["identity_b"] != "PASS" || modules["ingress_a"] != "PASS" || len(modules) != 10 {
 		t.Fatalf("record: %v", record)
 	}
 }
