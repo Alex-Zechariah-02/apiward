@@ -50,7 +50,10 @@ jobs:
       - run: go vet ./...
       - run: go vet -tags faultinject ./...
       - run: go test ./... -count=1
-      - run: go test -race ./... -count=1 -timeout 60m
+      # The race detector covers every package but integration, whose tests
+      # drive separately built gateway programs it does not instrument and
+      # which the run above has already made.
+      - run: go test -race $(go list ./... | grep -v '/internal/integration$') -count=1 -timeout 30m
 
   vuln:
     runs-on: ubuntu-24.04
@@ -105,8 +108,7 @@ jobs:
       - run: go -C .. vet -tags embedui ./...
       - run: go -C .. test -tags embedui ./internal/adminui -count=1
       - run: npm audit --audit-level=high
-      # The tests run in the installed Chrome (playwright.config.ts).
-      - run: npx playwright install --with-deps chrome
+      # The tests run in the runner image's Chrome (playwright.config.ts).
       # Failure traces hold page contents and test credentials, so they stay
       # on the machine that ran the tests and are not uploaded.
       - run: npx playwright test
