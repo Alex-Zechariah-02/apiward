@@ -86,7 +86,12 @@ func TestPoolReusesLiveConnections(t *testing.T) {
 	s.Start()
 	t.Cleanup(s.Close)
 	proxy, send := forwarder(t, closed(), testPool, policy.Upstream{ID: "u", Dial: s.Listener.Addr().String()})
-	if send() != "" || send() != "" || conns.Load() != 1 {
+	for range 2 {
+		if reason := send(); reason != "" {
+			t.Fatalf("request: %q", reason)
+		}
+	}
+	if conns.Load() != 1 {
 		t.Fatalf("two requests used %d connections, want 1", conns.Load())
 	}
 	waitIdle(t, proxy.pool, 1)
@@ -146,6 +151,19 @@ func TestPoolNeverResends(t *testing.T) {
 	}
 }
 
+// age makes every session n holds look d older, so a test does not depend
+// on how finely the clock resolves the time between two connections.
+func age(n *Network, d time.Duration) {
+	for _, cache := range n.sessions {
+		cache.mu.Lock()
+		for key, s := range cache.entries {
+			s.added = s.added.Add(-d)
+			cache.entries[key] = s
+		}
+		cache.mu.Unlock()
+	}
+}
+
 // A TLS session is resumed on the next connection within its lifetime, but
 // not after the lifetime, and not by a reloaded network.
 func TestSessionResumption(t *testing.T) {
@@ -162,8 +180,8 @@ func TestSessionResumption(t *testing.T) {
 	s.StartTLS()
 	t.Cleanup(s.Close)
 	u := policy.Upstream{ID: "u", URL: "https://" + s.Listener.Addr().String(), TLS: "full"}
-	load := func(lifetime time.Duration) *Network {
-		n, err := LoadNetwork(false, []ProfileSettings{{ID: "full", CAFile: ca.file(t, dir), ClientCertificateFile: clientCert, ClientKeyFile: clientKey}}, lifetime)
+	load := func() *Network {
+		n, err := LoadNetwork(false, []ProfileSettings{{ID: "full", CAFile: ca.file(t, dir), ClientCertificateFile: clientCert, ClientKeyFile: clientKey}}, time.Hour)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -171,15 +189,16 @@ func TestSessionResumption(t *testing.T) {
 	}
 	noPool := PoolSettings{}
 	for _, step := range []struct {
-		name    string
-		network *Network
-		want    []bool
+		name string
+		aged time.Duration // added to each session's age after every connection
+		want []bool
 	}{
-		{"within the lifetime", load(time.Hour), []bool{false, true}},
-		{"after the lifetime", load(time.Nanosecond), []bool{false, false}},
-		{"after a reload", load(time.Hour), []bool{false}},
+		{"within the lifetime", time.Minute, []bool{false, true}},
+		{"after the lifetime", time.Hour, []bool{false, false}},
+		{"after a reload", 0, []bool{false}},
 	} {
-		_, send := forwarder(t, step.network, noPool, u)
+		network := load()
+		_, send := forwarder(t, network, noPool, u)
 		for i, want := range step.want {
 			if reason := send(); reason != "" {
 				t.Fatalf("%s: %q", step.name, reason)
@@ -187,6 +206,7 @@ func TestSessionResumption(t *testing.T) {
 			if got := <-resumed; got != want {
 				t.Fatalf("%s: connection %d resumed %v, want %v", step.name, i+1, got, want)
 			}
+			age(network, step.aged)
 		}
 	}
 }
