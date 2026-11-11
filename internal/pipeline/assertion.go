@@ -55,12 +55,16 @@ type Signer struct {
 }
 
 // claims is the assertion's payload. A public operation has no account, so
-// "sub" and "roles" are then absent.
+// "sub" and "roles" are then absent. Method and Path name the one request
+// the assertion was made for, as the upstream receives it: the path is the
+// forwarded one, decoded and without the query.
 type claims struct {
 	Issuer   string   `json:"iss"`
 	Audience string   `json:"aud"`
 	Subject  string   `json:"sub,omitempty"`
 	Roles    []string `json:"roles,omitempty"`
+	Method   string   `json:"method"`
+	Path     string   `json:"path"`
 	IssuedAt int64    `json:"iat"`
 	Expires  int64    `json:"exp"`
 	ID       string   `json:"jti"`
@@ -140,14 +144,11 @@ func (s *Signer) JWKS() []byte {
 	return s.jwks
 }
 
-// sign returns the compact assertion for one forwarded request: api is the
-// audience, id the request ID, and subject and roles the verified account
-// (empty on a public operation). It expires AssertionLife after now.
-func (s *Signer) sign(api, id, subject string, roles []string, now time.Time) (string, error) {
-	payload, err := json.Marshal(claims{
-		Issuer: AssertionIssuer, Audience: api, Subject: subject, Roles: roles,
-		IssuedAt: now.Unix(), Expires: now.Add(AssertionLife).Unix(), ID: id,
-	})
+// sign returns the compact assertion for one forwarded request, described by
+// c; it sets the issuer and the times, expiring AssertionLife after now.
+func (s *Signer) sign(c claims, now time.Time) (string, error) {
+	c.Issuer, c.IssuedAt, c.Expires = AssertionIssuer, now.Unix(), now.Add(AssertionLife).Unix()
+	payload, err := json.Marshal(c)
 	if err != nil {
 		return "", err
 	}
@@ -171,18 +172,18 @@ func (s *Signer) sign(api, id, subject string, roles []string, now time.Time) (s
 // assert signs the assertion of a request that passed every check, before
 // its admission is recorded. Without a signer there is none. A request whose
 // assertion cannot be signed is refused: forwarding it bare would let an
-// upstream that requires the assertion see the gateway as an impostor.
-func (h *Handler) assert(q *request, rule *compile.Rule, roles []string) (assertion string, ok bool) {
+// upstream that requires the assertion see the gateway as an impostor. method
+// and path are the request's as forwarded, so the upstream can refuse the
+// assertion on any other request.
+func (h *Handler) assert(q *request, rule *compile.Rule, roles []string, method, path string) (assertion string, ok bool) {
 	if h.signer == nil {
 		return "", true
 	}
-	subject := ""
-	if rule.Public() {
-		roles = nil
-	} else {
-		subject = q.event.Subject
+	c := claims{Audience: rule.API(), ID: q.event.RequestID, Method: method, Path: path}
+	if !rule.Public() {
+		c.Subject, c.Roles = q.event.Subject, roles
 	}
-	assertion, err := h.signer.sign(rule.API(), q.event.RequestID, subject, roles, time.Now())
+	assertion, err := h.signer.sign(c, time.Now())
 	if err != nil {
 		q.reject(audit.StageBind, http.StatusServiceUnavailable, "gateway_unavailable")
 		return "", false

@@ -23,12 +23,15 @@ import (
 	"time"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/gatewaytest"
+	"github.com/Alex-Zechariah-02/apiward/internal/policy"
 )
 
 // With an identity key the upstream receives one assertion per request, made
 // by the gateway and not the client: it verifies with the key set the admin
 // listener and the jwks command publish, and names the API, the verified
-// account, its roles and the request ID, valid for 30 seconds.
+// account, its roles and the request ID, valid for 30 seconds, and the
+// request's method and its path as the upstream receives it: after the API's
+// forward rule, without the query.
 func TestGatewaySignsIdentityAssertion(t *testing.T) {
 	e := gatewaytest.NewEnv(t)
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
@@ -46,7 +49,9 @@ func TestGatewaySignsIdentityAssertion(t *testing.T) {
 	settings := e.NativeSettings()
 	gatewaytest.Section(settings, "upstream")["identity_key"] = keyFile
 	e.WriteNative(settings)
-	gatewaytest.Seed(t, e.Database, e.ProtectedPolicy(), gatewaytest.SeedOptions{})
+	rewritten := e.ProtectedPolicy()
+	rewritten.APIs[0].Forward = &policy.Forward{StripPrefix: "/a", AddPrefix: "/v1"}
+	gatewaytest.Seed(t, e.Database, rewritten, gatewaytest.SeedOptions{})
 	e.Start(gatewaytest.Binaries.Plain)
 
 	// The key set needs no session, and the command prints the same set.
@@ -84,7 +89,7 @@ func TestGatewaySignsIdentityAssertion(t *testing.T) {
 
 	before := time.Now().Unix()
 	header := append(gatewaytest.Bearer(t, "alice"), "X-Gateway-Assertion", "forged")
-	if code, body := e.Get("/a/x", header...); code != http.StatusOK {
+	if code, body := e.Get("/a/x?q=1", header...); code != http.StatusOK {
 		t.Fatalf("admitted read: %d %s", code, body)
 	}
 	receipt := e.A.Receipts()[0]
@@ -98,9 +103,9 @@ func TestGatewaySignsIdentityAssertion(t *testing.T) {
 	}
 	var protected struct{ Alg, Kid, Typ string }
 	var claims struct {
-		Iss, Aud, Sub, Jti string
-		Roles              []string
-		Iat, Exp           int64
+		Iss, Aud, Sub, Jti, Method, Path string
+		Roles                            []string
+		Iat, Exp                         int64
 	}
 	if json.Unmarshal(decode(parts[0]), &protected) != nil || json.Unmarshal(decode(parts[1]), &claims) != nil {
 		t.Fatalf("assertion %q does not decode", values[0])
@@ -110,6 +115,9 @@ func TestGatewaySignsIdentityAssertion(t *testing.T) {
 	if protected.Alg != "ES256" || protected.Kid != set.Keys[0].Kid || len(signature) != 64 ||
 		!ecdsa.Verify(&key.PublicKey, digest[:], new(big.Int).SetBytes(signature[:32]), new(big.Int).SetBytes(signature[32:])) {
 		t.Fatalf("assertion %q with header %+v does not verify with the configured key", values[0], protected)
+	}
+	if receipt.Target != "/v1/x?q=1" || claims.Method != http.MethodGet || claims.Path != "/v1/x" {
+		t.Fatalf("upstream received %s %s with an assertion for %s %s", receipt.Method, receipt.Target, claims.Method, claims.Path)
 	}
 	if claims.Iss != "apiward" || claims.Aud != "a" || claims.Sub != "alice" || !slices.Equal(claims.Roles, []string{"WRITER"}) ||
 		claims.Jti != receipt.RequestID || claims.Exp-claims.Iat != 30 || claims.Iat < before || claims.Iat > time.Now().Unix() {

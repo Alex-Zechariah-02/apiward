@@ -217,7 +217,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		q.event.ForwardedPath = destination.Path()
 	}
 
-	assertion, ok := h.assert(q, rule, roles)
+	assertion, ok := h.assert(q, rule, roles, r.Method, destination.Path())
 	if !ok {
 		return
 	}
