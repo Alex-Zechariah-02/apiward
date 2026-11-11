@@ -141,6 +141,10 @@ func TestNoExampleImports(t *testing.T) {
 		case name == "node_modules", name == "testdata", name == "dashboard", path != root && (strings.HasPrefix(name, ".") || strings.HasPrefix(name, "_")):
 			return filepath.SkipDir
 		}
+		// A folder with its own go.mod is another module, not gateway code.
+		if _, err := os.Stat(filepath.Join(path, "go.mod")); path != root && err == nil {
+			return filepath.SkipDir
+		}
 		for _, tags := range [][]string{nil, {"faultinject"}} {
 			ctx := build.Default
 			ctx.BuildTags = tags

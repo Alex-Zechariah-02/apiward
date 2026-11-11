@@ -104,6 +104,10 @@ func TestPublishOnlyInTests(t *testing.T) {
 		if entry.IsDir() && (entry.Name() == "node_modules" || strings.HasPrefix(entry.Name(), ".")) && path != root {
 			return filepath.SkipDir
 		}
+		// A folder with its own go.mod is another module, not this one's source.
+		if _, err := os.Stat(filepath.Join(path, "go.mod")); entry.IsDir() && path != root && err == nil {
+			return filepath.SkipDir
+		}
 		if entry.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
 			return nil
 		}
