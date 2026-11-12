@@ -71,7 +71,7 @@ func TestPermitUseFromSecurityLog(t *testing.T) {
 	writeAuditFile(t, active+".1", 1, 4, "")
 	writeAuditFile(t, active, 5, 8, "")
 	files, _, _ := LogFiles(active)
-	use, err := PermitUse(dir, files, ExportScan)
+	use, err := (&Summaries{}).PermitUse(dir, files, ExportScan)
 	// Odd records are forwarded (allowed) read-a requests carrying READER.
 	if err != nil || !use.used[[2]string{"READER", "read-a"}] || use.used[[2]string{"WRITER", "read-a"}] {
 		t.Fatalf("used: %v (%v)", use.used, err)
@@ -79,7 +79,7 @@ func TestPermitUseFromSecurityLog(t *testing.T) {
 	if use.requests != 8 || !use.complete || !slices.Equal(use.Searched, []string{"audit.log", "audit.log.1"}) || !use.oldest.Equal(time.Date(2026, 11, 2, 9, 0, 1, 0, time.UTC)) {
 		t.Errorf("coverage: %+v", use)
 	}
-	short, err := PermitUse(dir, files, 300)
+	short, err := (&Summaries{}).PermitUse(dir, files, 300)
 	if err != nil || short.complete || short.requests >= 8 {
 		t.Errorf("a small budget stops early and says so: %+v (%v)", short, err)
 	}

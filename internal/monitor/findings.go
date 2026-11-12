@@ -12,13 +12,21 @@ import (
 	"github.com/Alex-Zechariah-02/apiward/internal/compile"
 )
 
-// The fixed checks, rule set version "checks-0.4": static
+// The fixed checks, rule set version "checks-0.5": static
 // configuration warnings, unused permissions from observed traffic, and
 // alerts. They advise only: nothing here blocks, changes or activates
 // anything, and nothing runs on the request path. Each answer names the
 // rule set version so findings can be traced to the rules that made them.
 const (
-	AdviceRules = "checks-0.4"
+	AdviceRules = "checks-0.5"
+
+	// The security log also raises an alert when, at the active file's write
+	// rate, its remaining budget lasts less than FillingTime (medium) or
+	// NearlyFullTime (critical). The rate counts once the active file holds
+	// RateMinBytes, so a few early records cannot predict a fill.
+	FillingTime    = time.Hour
+	NearlyFullTime = 15 * time.Minute
+	RateMinBytes   = 1 << 20
 
 	// Unused permissions are withheld until the request records read from
 	// the security log span this long and number this many.

@@ -15,6 +15,7 @@ The JSON settings file that `apiward run --config <file>` reads. Upstream TLS pr
 ### Protocols
 
 - It speaks TLS 1.2 or later with HTTP/2 and HTTP/1.1 chosen by ALPN (`"http2": false` under `data` keeps HTTP/1.1 only; at most 100 concurrent streams and 64 KiB of buffered request body per connection), and upstreams then receive `X-Forwarded-Proto: https` and `Via: 2 gateway` for HTTP/2 requests; upstream connections stay HTTP/1.1.
+- HTTP/2 costs CPU: with the Fetch mix it used about 14 % more gateway CPU per request than HTTP/1.1, and a flood of refused requests about twice as much over the same connections; the cost is inside Go's HTTP/2 server, so HTTP/2 stays on by default. Turn it off on a CPU-bound gateway whose clients all speak HTTP/1.1.
 - A plain-HTTP data listener serves HTTP/1 only.
 
 ### Certificate reload
@@ -70,6 +71,9 @@ The JSON settings file that `apiward run --config <file>` reads. Upstream TLS pr
 - A forwarded request has two records with one `request_id`: `request.admitted`, written before forwarding, holds the result of every stage; `request.forwarded`, written after the response, holds the outcome without repeating them (envelope `schema` 8).
 - The log is the file `gateway.audit_log` plus rotated files `<name>.1`, `<name>.2` and so on; a file rotates at `gateway.audit_max_bytes` (4 KiB to 1 GiB, default 64 MiB), and `gateway.audit_max_files` (2 to 1,000, default 8) bounds how many files the log keeps.
 - A forwarded request adds about 1.1 KB (both records, measured with the Fetch mix), so the default 512 MiB lasts about 16 minutes at 500 requests per second.
+- Sizing: the log lasts budget ÷ (bytes per request × requests per second), where budget = `audit_max_bytes` × `audit_max_files`; size it for the time it takes to move rotated files to an archive, with margin.
+- Alert A3 (`GET /admin/alerts`) is raised at 70 % (medium) and 90 % (critical) of the budget, and when, at the active file's write rate, the rest lasts less than 1 hour (medium) or 15 minutes (critical); its message states the estimated time to full. The rate counts once the active file holds 1 MiB. Not raised with `evict_oldest`.
+- The same warning in Prometheus: `predict_linear(gateway_audit_bytes[15m], 3600) >= gateway_audit_budget_bytes` fires when the last 15 minutes' growth would fill the log within an hour.
 - `gateway.audit_when_full` decides what happens when every file is in use: `"refuse"` (default) deletes nothing: it answers every request it would forward `503 gateway_unavailable` and prints one line to standard error until rotated files are moved away, and records that need no acknowledgement (refusals, forwarding outcomes) are only counted meanwhile, the count written as an `audit.loss` event once there is room; `"evict_oldest"` deletes the oldest rotated file and records an `audit.evicted` event with its name, size, SHA-256 and the times of its first and last records.
 - `gateway_audit_bytes` and `gateway_audit_budget_bytes` on the metrics listener show how full the log is, so an alert can fire before it fills; while it is full `/readyz` answers `503`.
 - `gateway.audit_sync_window` (0 to 10 ms, default 0) lets the writer gather more records for one sync when more than one is waiting; every acknowledgement still waits for the sync that covers its record.

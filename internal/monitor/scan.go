@@ -1,8 +1,9 @@
-// Security log file scanning, use summaries and cursors.
+// Security log file scanning and cursors.
 
 package monitor
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
@@ -140,61 +141,6 @@ func scanLinesBackward(path string, end int64, budget *int64, visit func(line []
 	return 0, false, nil
 }
 
-// LogUse is what the security log shows about permission use: the role and
-// endpoint pairs of allowed requests, how many request records were read and
-// how far back they reach.
-type LogUse struct {
-	used     map[[2]string]bool
-	requests int
-	oldest   time.Time
-	complete bool
-	Searched []string
-}
-
-// PermitUse reads the request records of the security log files newest
-// first, at most scan bytes.
-func PermitUse(dir string, files []string, scan int64) (LogUse, error) {
-	use := LogUse{used: map[[2]string]bool{}, Searched: []string{}, complete: true}
-	budget := scan
-	for _, name := range files {
-		if budget <= 0 {
-			use.complete = false
-			break
-		}
-		_, stopped, err := scanLinesBackward(filepath.Join(dir, name), -1, &budget, func(line []byte, _ int64) bool {
-			if !bytes.Contains(line, rejectedKind) && !bytes.Contains(line, forwardedKind) {
-				return false
-			}
-			var record auditRequestRecord
-			if json.Unmarshal(line, &record) != nil || record.RequestID == "" {
-				return false
-			}
-			use.requests++
-			if use.oldest.IsZero() || record.Time.Before(use.oldest) {
-				use.oldest = record.Time
-			}
-			if record.Decision == "forwarded" {
-				for _, role := range record.Roles {
-					use.used[[2]string{role, record.Operation}] = true
-				}
-			}
-			return false
-		})
-		if errors.Is(err, os.ErrNotExist) {
-			continue // archived since it was listed
-		}
-		if err != nil {
-			return use, err
-		}
-		use.Searched = append(use.Searched, name)
-		if stopped {
-			use.complete = false
-			break
-		}
-	}
-	return use, nil
-}
-
 var (
 	rejectedKind  = []byte(`"kind":"request.rejected"`)
 	forwardedKind = []byte(`"kind":"request.forwarded"`)
@@ -226,24 +172,39 @@ func securityLogRecord(line []byte, query Query, result *Result) (RequestView, b
 // firstRecordID is the event ID of a file's first record, which names the
 // file across a rotation; an empty file has none.
 func firstRecordID(path string) (string, error) {
+	record, err := firstRecord(path)
+	return record.ID, err
+}
+
+// FirstRecordTime is when a file's first record was written; zero for an
+// empty file or an unreadable first line.
+func FirstRecordTime(path string) (time.Time, error) {
+	record, err := firstRecord(path)
+	return record.Time, err
+}
+
+type headRecord struct {
+	ID   string    `json:"event_id"`
+	Time time.Time `json:"time"`
+}
+
+// firstRecord decodes a file's first line, reading no further than its end
+// or MaxRecordBytes.
+func firstRecord(path string) (headRecord, error) {
 	file, err := os.Open(path)
 	if err != nil {
-		return "", err
+		return headRecord{}, err
 	}
 	defer file.Close()
-	head := make([]byte, audit.MaxRecordBytes+1)
-	n, err := io.ReadFull(file, head)
-	if err != nil && !errors.Is(err, io.ErrUnexpectedEOF) && !errors.Is(err, io.EOF) {
-		return "", err
+	line, err := bufio.NewReader(io.LimitReader(file, audit.MaxRecordBytes+1)).ReadBytes('\n')
+	if err != nil && !errors.Is(err, io.EOF) {
+		return headRecord{}, err
 	}
-	line, _, _ := bytes.Cut(head[:n], []byte("\n"))
-	var record struct {
-		ID string `json:"event_id"`
+	var record headRecord
+	if json.Unmarshal(bytes.TrimSuffix(line, []byte("\n")), &record) != nil {
+		return headRecord{}, nil
 	}
-	if json.Unmarshal(line, &record) != nil {
-		return "", nil
-	}
-	return record.ID, nil
+	return record, nil
 }
 
 func EncodeCursor(c Cursor) string {

@@ -49,6 +49,7 @@ type Server struct {
 	store        store.Reads
 	audit        *audit.AuditLog
 	observations *monitor.Observations
+	summaries    monitor.Summaries // rotated security log files read for advice
 	limiter      *pipeline.Limiter
 	sessions     *session.Table
 	throttle     *throttle
