@@ -68,6 +68,10 @@ The JSON settings file that `gateway run --config <file>` reads. Upstream TLS pr
 ## Security log
 
 - A forwarded request has two records with one `request_id`: `request.admitted`, written before forwarding, holds the result of every stage; `request.forwarded`, written after the response, holds the outcome without repeating them (envelope `schema` 8).
+- The log is the file `gateway.audit_log` plus rotated files `<name>.1`, `<name>.2` and so on; a file rotates at `gateway.audit_max_bytes` (4 KiB to 1 GiB, default 64 MiB), and `gateway.audit_max_files` (2 to 1,000, default 8) bounds how many files the log keeps.
+- A forwarded request adds about 1.1 KB (both records, measured with the Fetch mix), so the default 512 MiB lasts about 16 minutes at 500 requests per second.
+- `gateway.audit_when_full` decides what happens when every file is in use: `"refuse"` (default) deletes nothing: it answers every request it would forward `503 gateway_unavailable` and prints one line to standard error until rotated files are moved away, and records that need no acknowledgement (refusals, forwarding outcomes) are only counted meanwhile, the count written as an `audit.loss` event once there is room; `"evict_oldest"` deletes the oldest rotated file and records an `audit.evicted` event with its name, size, SHA-256 and the times of its first and last records.
+- `gateway_audit_bytes` and `gateway_audit_budget_bytes` on the metrics listener show how full the log is, so an alert can fire before it fills; while it is full `/readyz` answers `503`.
 - `gateway.audit_sync_window` (0 to 10 ms, default 0) lets the writer gather more records for one sync when more than one is waiting; every acknowledgement still waits for the sync that covers its record.
 - On one CPU a 2 ms window lowered the 95th-percentile latency at the gateway's saturation rate but raised it at two thirds of that rate, so it is off by default: enable it only on a gateway that runs near saturation, after measuring.
 
