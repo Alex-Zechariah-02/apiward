@@ -1,15 +1,68 @@
 // Alert A3 by the share of the security log budget in use and by the time
-// the rest of the budget lasts at the active file's write rate (checks-0.5).
+// the rest of the budget lasts at the active file's recent write rate
+// (checks-0.6).
 
 package admin
 
 import (
+	"bytes"
+	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/monitor"
 )
+
+// TestLogFillingRecentRate writes a slow first hour and a fast last four
+// minutes, then a zero tail as Linux preallocation leaves: the rate read over
+// the last 1 MiB predicts from the fast span; the rate since the file's first
+// record would predict hours.
+func TestLogFillingRecentRate(t *testing.T) {
+	now := time.Now()
+	const size, slow, fast = 1024, 2048, 4096
+	interval := 4 * time.Minute / fast
+	var file bytes.Buffer
+	record := func(i int, at time.Time) {
+		line := fmt.Sprintf(`{"event_id":"e%d","time":%q,"pad":"`, i, at.UTC().Format(time.RFC3339Nano))
+		fmt.Fprintf(&file, "%s%s\"}\n", line, strings.Repeat("x", size-len(line)-3))
+	}
+	for i := range slow {
+		record(i, now.Add(-time.Hour-4*time.Minute+time.Duration(i)*time.Hour/slow))
+	}
+	for i := range fast {
+		record(slow+i, now.Add(-time.Duration(fast-i)*interval))
+	}
+	active := int64(file.Len())
+	file.Write(make([]byte, 64<<10))
+	path := filepath.Join(t.TempDir(), "audit.log")
+	if err := os.WriteFile(path, file.Bytes(), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	recent, first, err := monitor.RecentRecord(path, monitor.RateMinBytes)
+	if err != nil || recent > monitor.RateMinBytes || recent < monitor.RateMinBytes-size {
+		t.Fatalf("recent span %d bytes, err %v", recent, err)
+	}
+	// The remaining budget lasts 10 minutes at the fast span's rate.
+	rate := float64(size) / interval.Seconds()
+	const used = 10 << 20
+	budget := used + int64(rate*600)
+	alert := logFilling(used, budget, pace(active, recent, first, now), false)
+	if severityOf(alert) != "critical" || !strings.Contains(alert.Message, "full in about 10 minutes.") {
+		t.Fatalf("alert %+v, want critical in about 10 minutes", alert)
+	}
+	// A file that rotated in after the size was read holds less than the
+	// span: no rate, so one fresh record cannot predict a fill.
+	fresh := filepath.Join(t.TempDir(), "fresh.log")
+	if err := os.WriteFile(fresh, file.Bytes()[active-size:], 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, first, err := monitor.RecentRecord(fresh, monitor.RateMinBytes); err != nil || !first.IsZero() {
+		t.Fatalf("fresh file: time %v, err %v; want none", first, err)
+	}
+}
 
 func severityOf(alert *monitor.Finding) string {
 	if alert == nil {
@@ -56,7 +109,7 @@ func TestLogFillingTime(t *testing.T) {
 		{"evict_oldest not raised", active, time.Minute, true, "", ""},
 	}
 	for _, tc := range cases {
-		alert := logFilling(used, budget, pace(tc.active, at(tc.left), now), tc.evicts)
+		alert := logFilling(used, budget, pace(tc.active, active, at(tc.left), now), tc.evicts)
 		if severity := severityOf(alert); severity != tc.severity {
 			t.Errorf("%s: severity %q, want %q", tc.name, severity, tc.severity)
 		}

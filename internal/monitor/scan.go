@@ -176,11 +176,50 @@ func firstRecordID(path string) (string, error) {
 	return record.ID, err
 }
 
-// FirstRecordTime is when a file's first record was written; zero for an
-// empty file or an unreadable first line.
-func FirstRecordTime(path string) (time.Time, error) {
-	record, err := firstRecord(path)
-	return record.Time, err
+// RecentRecord finds the first complete record that starts at or after span
+// bytes before the file's logical end (audit.End). It returns the bytes from
+// that record to the end and the record's time; zero time when the file holds
+// less than span or no complete, decodable record starts there. Besides
+// audit.End's search, it reads at most two records.
+func RecentRecord(path string, span int64) (int64, time.Time, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return 0, time.Time{}, err
+	}
+	defer file.Close()
+	end, err := audit.End(file)
+	if err != nil || end < span {
+		return 0, time.Time{}, err // a file just rotated in holds no span yet
+	}
+	// From the byte before the span: a record starts after a line break, so
+	// one that starts exactly at the span's first byte counts.
+	start := max(end-span-1, 0)
+	section := io.NewSectionReader(file, start, end-start)
+	reader := bufio.NewReader(io.LimitReader(section, 2*(audit.MaxRecordBytes+1)))
+	if end > span {
+		skipped, err := reader.ReadBytes('\n')
+		if err != nil {
+			return 0, time.Time{}, ignoreEOF(err)
+		}
+		start += int64(len(skipped))
+	}
+	line, err := reader.ReadBytes('\n')
+	if err != nil {
+		return 0, time.Time{}, ignoreEOF(err) // the line is still being written
+	}
+	var record headRecord
+	if json.Unmarshal(line[:len(line)-1], &record) != nil {
+		return 0, time.Time{}, nil
+	}
+	return end - start, record.Time, nil
+}
+
+// ignoreEOF drops io.EOF, which means no complete line was found.
+func ignoreEOF(err error) error {
+	if errors.Is(err, io.EOF) {
+		return nil
+	}
+	return err
 }
 
 type headRecord struct {

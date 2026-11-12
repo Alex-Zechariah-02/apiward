@@ -78,26 +78,26 @@ func (s *Server) handleAlerts(w http.ResponseWriter, r *http.Request, who caller
 	pipeline.WriteJSON(w, http.StatusOK, map[string]any{"rules": monitor.AdviceRules, "evaluated_at": now.UTC(), "alerts": items})
 }
 
-// writeRate is the active audit file's write rate in bytes per second, read
-// from its first record; 0 when unknown. A log that evicts never fills, so
-// its file is not read.
+// writeRate is the active audit file's recent write rate in bytes per second,
+// read over its last RateMinBytes; 0 when unknown. A log that evicts never
+// fills, so its file is not read.
 func (s *Server) writeRate(now time.Time) float64 {
 	active, _, _, _ := s.audit.Usage()
 	if s.audit.Evicts() || active < monitor.RateMinBytes {
 		return 0
 	}
-	first, err := monitor.FirstRecordTime(s.audit.Path())
+	recent, first, err := monitor.RecentRecord(s.audit.Path(), monitor.RateMinBytes)
 	if err != nil {
 		return 0
 	}
-	return pace(active, first, now)
+	return pace(active, recent, first, now)
 }
 
-// pace is bytes written since first, per second; 0 below RateMinBytes or
-// without a usable start.
-func pace(bytes int64, first, now time.Time) float64 {
+// pace is the bytes written since first, per second; 0 while the active file
+// holds less than RateMinBytes or without a usable start.
+func pace(active, bytes int64, first, now time.Time) float64 {
 	elapsed := now.Sub(first).Seconds()
-	if bytes < monitor.RateMinBytes || first.IsZero() || elapsed <= 0 {
+	if active < monitor.RateMinBytes || first.IsZero() || elapsed <= 0 {
 		return 0
 	}
 	return float64(bytes) / elapsed

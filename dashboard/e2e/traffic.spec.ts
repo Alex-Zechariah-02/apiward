@@ -167,7 +167,7 @@ test.describe.serial('dashboard', () => {
     await go(admin, 'Advice')
     await expect(admin.getByRole('heading', { name: 'Settings to Review' })).toBeVisible()
     await expect(admin.getByText(/Shown once the security log covers 60 minutes/)).toBeVisible()
-    await expect(admin.getByText(/Checked with rule set checks-0\.5/)).toBeVisible()
+    await expect(admin.getByText(/Checked with rule set checks-0\.6/)).toBeVisible()
     await shot(admin, '47-advice')
 
     // The Overview shows exactly the alerts the gateway reports. Whether a
@@ -183,7 +183,7 @@ test.describe.serial('dashboard', () => {
       route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({ rules: 'checks-0.5', evaluated_at: new Date().toISOString(), alerts: [{ id: 'A2', severity: 'critical', object: 'security_log', message: 'The security log cannot be written, so the gateway refuses requests it cannot record.' }] }),
+        body: JSON.stringify({ rules: 'checks-0.6', evaluated_at: new Date().toISOString(), alerts: [{ id: 'A2', severity: 'critical', object: 'security_log', message: 'The security log cannot be written, so the gateway refuses requests it cannot record.' }] }),
       }),
     )
     await go(admin, 'Changes')
