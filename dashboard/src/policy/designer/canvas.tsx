@@ -16,7 +16,7 @@ import { deleteReason, splitKey, type BoxKind } from './model'
 import { type CardNode, edgeTypes, nodeTypes } from './card'
 import { buildGraph, type CanvasProps } from './graph'
 import { useZone } from '../../shared/zone'
-import { allReadable, ease, fitTo, focusOn, motion, useCanvasHeight } from './camera'
+import { fitTo, focusOn, useCanvasHeight } from './camera'
 
 // The Designer's canvas: the draft's boxes and links, moved and fitted to the window.
 
@@ -33,15 +33,13 @@ const gap = 20
 
 function CanvasGraph(props: CanvasProps) {
   const flow = useReactFlow()
-  const travel = motion(420)
   const [message, setMessage] = useState('')
   const measured = useNodesInitialized()
   const placed = useRef(false)
-  // refit is set when groups open or close: once the cards have their new
-  // sizes, the view moves to a group that was opened. After a group closes,
-  // or after Expand All or Collapse All, every card is fitted again when
-  // they can all be read; otherwise the view stays on the closed group.
-  const refit = useRef<{ card?: string; opened: boolean } | null>(null)
+  // refit is set by Expand All and Collapse All: once the cards have their
+  // new sizes, every card is fitted again. Opening or closing one group
+  // leaves the view where it is.
+  const refit = useRef(false)
   const settle = useRef<ReturnType<typeof setTimeout>>(undefined)
   useEffect(() => () => clearTimeout(settle.current), [])
   // Which groups are open. Roles start open; endpoint lists start closed and
@@ -58,15 +56,13 @@ function CanvasGraph(props: CanvasProps) {
   const zone = useZone()
   const graph = useMemo(() => buildGraph(props, zone), [props.policy, props.selection, props.issues, props.overlays, props.provisional, props.refused, props.trace, zone])
 
-  // Cards stand in four columns, each centred on one line as in a pipeline
-  // diagram, and restack as groups open and close.
+  // Cards stand in four columns from one top line, so a group that opens or
+  // closes moves only the cards below it in its own column.
   function laidOut(heights: Record<string, number>): CardNode[] {
     const height = (id: string) => heights[id] ?? 56
     const columns = kinds.map((kind) => graph.cards.filter((card) => card.kind === kind))
-    const totals = columns.map((list) => list.reduce((sum, card) => sum + height(card.id), 0) + Math.max(0, list.length - 1) * gap)
-    const tallest = Math.max(0, ...totals)
     return columns.flatMap((list, index) => {
-      let y = (tallest - totals[index]) / 2
+      let y = 0
       return list.map((card) => {
         const node: CardNode = {
           id: card.id,
@@ -85,7 +81,6 @@ function CanvasGraph(props: CanvasProps) {
             selection: props.selection,
             onSelect: props.onSelect,
             onToggle: () => {
-              refit.current = { card: card.id, opened: !open.has(card.id) }
               setOpen((previous) => {
                 const next = new Set(previous)
                 if (next.has(card.id)) next.delete(card.id)
@@ -112,16 +107,14 @@ function CanvasGraph(props: CanvasProps) {
     setNodes((previous) => {
       const updated = applyNodeChanges(changes, previous)
       if (!changes.some((change) => change.type === 'dimensions')) return updated
-      // The view moves once the cards stop changing size, so it travels to
-      // where they end, not to a frame of their opening.
+      // The view moves once the cards stop changing size, so it lands where
+      // they end, not on a frame of their opening.
       if (refit.current) {
         clearTimeout(settle.current)
         settle.current = setTimeout(() => {
           if (!refit.current) return
-          const { card, opened } = refit.current
-          refit.current = null
-          if (card && (opened || !allReadable(flow, area.current))) focusOn(flow, area.current, flow.getNodesBounds([card]), travel)
-          else fitTo(flow, area.current, travel)
+          refit.current = false
+          fitTo(flow, area.current)
         }, 80)
       }
       return keepMeasured(laidOut(heightsOf(updated)), updated)
@@ -130,10 +123,10 @@ function CanvasGraph(props: CanvasProps) {
   useEffect(() => {
     if (!measured || placed.current) return
     placed.current = true
-    fitTo(flow, area.current, 0)
+    fitTo(flow, area.current)
   }, [measured])
   useEffect(() => {
-    if (placed.current) fitTo(flow, area.current, travel)
+    if (placed.current) fitTo(flow, area.current)
   }, [props.expanded])
 
   const area = useRef<HTMLDivElement>(null)
@@ -142,11 +135,11 @@ function CanvasGraph(props: CanvasProps) {
   const pendingFocus = useRef<ReturnType<typeof setTimeout>>(undefined)
   const height = useCanvasHeight(area, props.expanded)
   useEffect(() => {
-    if (placed.current) fitTo(flow, area.current, travel)
+    if (placed.current) fitTo(flow, area.current)
   }, [height])
   useEffect(() => {
     if (!props.panelOpen) {
-      if (before.current) void flow.setViewport(before.current, { duration: travel, ease })
+      if (before.current) void flow.setViewport(before.current)
       before.current = null
       return
     }
@@ -166,7 +159,7 @@ function CanvasGraph(props: CanvasProps) {
         const box = row.getBoundingClientRect()
         const start = flow.screenToFlowPosition({ x: box.left, y: box.top })
         const end = flow.screenToFlowPosition({ x: box.right, y: box.bottom })
-        focusOn(flow, area.current, { x: start.x, y: start.y, width: end.x - start.x, height: end.y - start.y }, travel)
+        focusOn(flow, area.current, { x: start.x, y: start.y, width: end.x - start.x, height: end.y - start.y })
         return
       }
       const rowBox = row.getBoundingClientRect()
@@ -181,7 +174,7 @@ function CanvasGraph(props: CanvasProps) {
       before.current ??= viewport
       // Move left by what is covered, but never push the row off the left edge.
       const limit = canvasBox.left + room - rowBox.left
-      void flow.setViewport({ ...viewport, x: viewport.x + Math.max(shift, Math.min(0, limit)) }, { duration: travel, ease })
+      void flow.setViewport({ ...viewport, x: viewport.x + Math.max(shift, Math.min(0, limit)) })
     }, 120)
     pendingFocus.current = timer
     return () => clearTimeout(timer)
@@ -193,12 +186,12 @@ function CanvasGraph(props: CanvasProps) {
     clearTimeout(pendingFocus.current)
     pendingFocus.current = undefined
     clearTimeout(settle.current)
-    refit.current = null
+    refit.current = false
   }
 
   function setAll(state: 'open' | 'closed') {
     cancelMoves()
-    refit.current = { opened: false }
+    refit.current = true
     setOpen(state === 'open' ? new Set(graph.cards.filter((card) => card.data.collapsible).map((card) => card.id)) : new Set())
   }
 
@@ -217,7 +210,7 @@ function CanvasGraph(props: CanvasProps) {
             const viewport = flow.getViewport()
             const x = event.key === 'ArrowLeft' ? 32 : event.key === 'ArrowRight' ? -32 : 0
             const y = event.key === 'ArrowUp' ? 32 : event.key === 'ArrowDown' ? -32 : 0
-            void flow.setViewport({ ...viewport, x: viewport.x + x, y: viewport.y + y }, { duration: motion(140), ease })
+            void flow.setViewport({ ...viewport, x: viewport.x + x, y: viewport.y + y })
             return
           }
           if (event.key === 'Escape' && props.expanded) {
@@ -264,7 +257,7 @@ function CanvasGraph(props: CanvasProps) {
               type="button"
               onClick={() => {
                 cancelMoves()
-                fitTo(flow, area.current, 200)
+                fitTo(flow, area.current)
               }}
             >
               Fit

@@ -251,4 +251,34 @@ test.describe.serial('Policy Designer on the native Gateway', () => {
     record('designer-fit-1280', { zoom: await zoom(), cards: cards.length })
     await page.setViewportSize(original)
   })
+
+  test('the canvas view never travels: an arrow key moves it the whole step at once', async () => {
+    await designer()
+    const canvas = page.getByRole('region', { name: 'Policy canvas', exact: true })
+    await canvas.focus()
+    const x = () => page.locator('.react-flow__viewport').evaluate((element) => new DOMMatrix(getComputedStyle(element).transform).e)
+    const before = await x()
+    // Sample the view's x every frame for 400 ms from before a real key
+    // press: a gliding move shows values between the start and the end.
+    type Sampler = { seen: number[]; done: boolean }
+    await canvas.evaluate((element) => {
+      const sampler: Sampler = { seen: [], done: false }
+      ;(window as unknown as { sampler: Sampler }).sampler = sampler
+      const view = element.querySelector('.react-flow__viewport')!
+      const start = performance.now()
+      const frame = () => {
+        sampler.seen.push(new DOMMatrix(getComputedStyle(view).transform).e)
+        if (performance.now() - start < 400) requestAnimationFrame(frame)
+        else sampler.done = true
+      }
+      frame()
+    })
+    await page.keyboard.press('ArrowLeft')
+    await page.waitForFunction(() => (window as unknown as { sampler: Sampler }).sampler.done)
+    const seen = await page.evaluate(() => (window as unknown as { sampler: Sampler }).sampler.seen)
+    const after = before + 32
+    expect(seen[0]).toBeCloseTo(before, 0)
+    expect(seen[seen.length - 1]).toBeCloseTo(after, 0)
+    expect(seen.filter((value) => Math.abs(value - before) > 0.5 && Math.abs(value - after) > 0.5)).toEqual([])
+  })
 })

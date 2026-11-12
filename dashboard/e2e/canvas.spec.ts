@@ -132,18 +132,18 @@ test.describe.serial('Policy Designer on the native Gateway', () => {
     await inventory.click()
     await expect(inventory).toHaveAttribute('aria-expanded', 'true')
     await expect(node('operation:inventory.stock.read')).toBeVisible()
-    // Opening a group brings it into view at a readable size, its heading
-    // inside the canvas, even with another group already open.
+    // Opening a group grows only its card: the view and the other columns
+    // stay where they are.
     const orders = page.getByRole('button', { name: /^Orders API Endpoints \d/ })
+    const view = () => page.locator('.react-flow__viewport').evaluate((element) => getComputedStyle(element).transform)
+    const card = page.locator('.designer-node-api').first()
+    const before = { view: await view(), card: await card.boundingBox() }
     await orders.click()
     await expect(orders).toHaveAttribute('aria-expanded', 'true')
-    const focused = async () => {
-      const canvas = (await page.locator('.designer-canvas').boundingBox())!
-      const heading = (await orders.boundingBox())!
-      const zoom = await page.locator('.react-flow__viewport').evaluate((element) => new DOMMatrix(getComputedStyle(element).transform).a)
-      return zoom >= 0.85 && heading.y >= canvas.y && heading.y + heading.height <= canvas.y + canvas.height && heading.x >= canvas.x
-    }
-    await expect.poll(focused).toBe(true)
+    await expect(page.locator('.designer-row[data-box^="operation:orders."]').first()).toBeVisible()
+    // Past the time a camera move used to take after the cards settled.
+    await page.waitForTimeout(600)
+    expect({ view: await view(), card: await card.boundingBox() }).toEqual(before)
     await capture('designer-group-open')
     await orders.click()
     await expect(orders).toHaveAttribute('aria-expanded', 'false')

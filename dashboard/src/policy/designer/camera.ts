@@ -11,34 +11,23 @@ const padding: NonNullable<FitViewOptions['padding']> = { top: `${toolbar}px`, x
 // A card brought into focus is never shown smaller than this, so its text
 // stays readable.
 const readable = 0.85
-// Camera moves ease in and out over a calm, fixed time; with reduced motion
-// the view changes at once.
-export function motion(ms: number): number {
-  return window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : ms
-}
-export const ease = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2)
+// The view always changes at once: a travelling camera caused motion sickness.
 // fitTo shows the whole diagram in the window, clear of the toolbar and of
 // the side form when it is open, at most at full size. A diagram shorter
 // than the window starts just under the toolbar, not centred far below it.
-export function fitTo(flow: ReactFlowInstance, canvas: HTMLDivElement | null, duration: number) {
+export function fitTo(flow: ReactFlowInstance, canvas: HTMLDivElement | null) {
   if (!canvas) return
   const panel = canvas.closest('.designer-workspace')?.querySelector('.designer-side-panel')
   const covered = panel && panel.getBoundingClientRect().top < canvas.getBoundingClientRect().bottom - 1
   const room: NonNullable<FitViewOptions['padding']> = covered ? { top: `${toolbar}px`, bottom: '24px', left: '24px', right: `${panel.getBoundingClientRect().width + 36}px` } : padding
   const bounds = flow.getNodesBounds(flow.getNodes())
   const view = getViewportForBounds(bounds, canvas.clientWidth, canvas.clientHeight, 0.1, 1, room)
-  void flow.setViewport({ ...view, y: toolbar - bounds.y * view.zoom }, { duration, ease })
-}
-// allReadable says whether fitting every card keeps them at a readable size.
-export function allReadable(flow: ReactFlowInstance, canvas: HTMLDivElement | null): boolean {
-  if (!canvas) return true
-  const bounds = flow.getNodesBounds(flow.getNodes())
-  return Math.min((canvas.clientWidth * (1 - 2 * side)) / bounds.width, (canvas.clientHeight - toolbar - 24) / bounds.height) >= readable
+  void flow.setViewport({ ...view, y: toolbar - bounds.y * view.zoom })
 }
 // focusOn brings one card or row (in the diagram's own coordinates) into
 // the uncovered part of the canvas at a readable size: centred when it
 // fits, its top just under the toolbar when it is taller than the window.
-export function focusOn(flow: ReactFlowInstance, canvas: HTMLDivElement | null, box: { x: number; y: number; width: number; height: number }, duration: number) {
+export function focusOn(flow: ReactFlowInstance, canvas: HTMLDivElement | null, box: { x: number; y: number; width: number; height: number }) {
   if (!canvas) return
   const panel = canvas.closest('.designer-workspace')?.querySelector('.designer-side-panel')
   const canvasBox = canvas.getBoundingClientRect()
@@ -52,7 +41,7 @@ export function focusOn(flow: ReactFlowInstance, canvas: HTMLDivElement | null, 
   const zoom = Math.max(readable, Math.min(1, width / box.width, height / box.height))
   const x = left + (width - box.width * zoom) / 2 - box.x * zoom
   const y = box.height * zoom <= height ? top + (height - box.height * zoom) / 2 - box.y * zoom : top - box.y * zoom
-  void flow.setViewport({ x, y, zoom }, { duration, ease })
+  void flow.setViewport({ x, y, zoom })
 }
 
 // The canvas takes the window's height left between the toolbar above it
