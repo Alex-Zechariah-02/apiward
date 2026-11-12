@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Alex-Zechariah-02/apiward/internal/audit"
 	"github.com/Alex-Zechariah-02/apiward/internal/controller"
 	"github.com/Alex-Zechariah-02/apiward/internal/gatewaytest"
 	"github.com/Alex-Zechariah-02/apiward/internal/policy"
@@ -75,12 +76,16 @@ func TestConcurrencyAndLockContention(t *testing.T) {
 	// record the gateway is still writing.
 	e.EventsWhen(func(events []map[string]any) bool { return gatewaytest.CountKind(events, "admin.read") >= 1 })
 	partial := `{"schema":4,"kind":"request.admitted","id":"in-progress`
-	audit, err := os.OpenFile(e.AuditLog, os.O_APPEND|os.O_WRONLY, 0o600)
+	file, err := os.OpenFile(e.AuditLog, os.O_RDWR, 0o600)
 	if err != nil {
 		t.Fatal(err)
 	}
-	audit.WriteString(partial)
-	audit.Close()
+	end, err := audit.End(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	file.WriteAt([]byte(partial), end)
+	file.Close()
 	for _, command := range [][]string{
 		{"enrol", "--admin", "late", "--permissions", "read"},
 		{"backup", "--output", filepath.Join(e.Dir, "busy.db")},
@@ -95,7 +100,7 @@ func TestConcurrencyAndLockContention(t *testing.T) {
 		}
 	}
 	data, err := os.ReadFile(e.AuditLog)
-	if err != nil || !strings.HasSuffix(string(data), "\n"+partial) {
+	if err != nil || !strings.HasSuffix(string(audit.Content(data)), "\n"+partial) {
 		t.Errorf("a refused operator command wrote to the running gateway's audit log: %q", data[max(0, len(data)-200):])
 	}
 	e.Stop()

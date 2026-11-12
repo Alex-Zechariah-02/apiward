@@ -6,8 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"time"
-
-	"github.com/Alex-Zechariah-02/apiward/internal/fault"
 )
 
 // run is the writer. It writes the queued events in batches, in queue order,
@@ -32,7 +30,7 @@ func (a *AuditLog) run() {
 					a.write(nil)
 				}
 				if a.file != nil {
-					a.fileErr = a.file.Close()
+					a.fileErr = a.closeFile()
 				}
 				return
 			}
@@ -105,7 +103,8 @@ func (a *AuditLog) writeSummary() {
 	}
 }
 
-// write appends batch, after the pending loss count, and syncs it. When a
+// write writes batch at the end of the log, after the pending loss count,
+// and syncs it. When a
 // rotation is due and every file is in use, the batch is refused, its
 // unacknowledged events are counted as lost and the log is full until a
 // later rotation succeeds.
@@ -142,12 +141,11 @@ func (a *AuditLog) write(batch []auditEntry) error {
 		buffer = append(marker, buffer...)
 		a.full.Store(false)
 	}
-	if err := fault.WriteAudit(a.file, buffer); err != nil {
+	if err := a.persist(buffer); err != nil {
 		a.lost.Add(lost)
 		a.Fail(err)
 		return errAuditFailed
 	}
-	a.size += int64(len(buffer))
 	a.publishUsage()
 	return nil
 }

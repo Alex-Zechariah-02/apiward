@@ -49,13 +49,14 @@ func CrashPoint(name string) {
 	}
 }
 
-// WriteAudit appends data and syncs it, unless a fault is injected: no space
-// for any write, a failed sync after any write, and, for a batch holding an
-// admission, a write of half the data, a crash between write and sync, or a
+// WriteAudit writes data at offset and makes it durable with sync, unless a
+// fault is injected: no space for any write, a failed sync after any write,
+// and, for a batch holding an admission, a write of half the data, a crash
+// after half the data (a torn write), a crash between write and sync, or a
 // sync delayed past the acknowledgement wait; or a failed write of a batch
 // holding a request outcome or the outcome of a publishing transition. The
 // writer may also be held before it writes; see holdAudit.
-func WriteAudit(file *os.File, data []byte) error {
+func WriteAudit(file *os.File, data []byte, offset int64, sync func(*os.File) error) error {
 	holdAudit()
 	admission := bytes.Contains(data, []byte(`"kind":"request.admitted"`))
 	outcome := bytes.Contains(data, []byte(`"kind":"request.forwarded"`))
@@ -72,10 +73,13 @@ func WriteAudit(file *os.File, data []byte) error {
 	case faultEnabled("audit-fail-published") && published:
 		return errors.New("injected audit failure writing a transition outcome")
 	case faultEnabled("audit-partial") && admission:
-		file.Write(data[:len(data)/2])
+		file.WriteAt(data[:len(data)/2], offset)
 		return errors.New("injected audit failure after a partial write")
+	case faultEnabled("audit-torn-crash") && admission:
+		file.WriteAt(data[:len(data)/2], offset)
+		os.Exit(faultExitCode)
 	}
-	if _, err := file.Write(data); err != nil {
+	if _, err := file.WriteAt(data, offset); err != nil {
 		return err
 	}
 	switch {
@@ -86,7 +90,7 @@ func WriteAudit(file *os.File, data []byte) error {
 	case faultEnabled("audit-slow-sync") && admission:
 		time.Sleep(3 * time.Second)
 	}
-	return file.Sync()
+	return sync(file)
 }
 
 // holdAudit holds the writer before a write while the file GATEWAY_AUDIT_HOLD

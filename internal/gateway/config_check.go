@@ -133,6 +133,7 @@ func (f nativeFile) check() (nativeConfig, error) {
 	}
 	cfg.controller.AuditQueue = audit.QueueSize(cfg.limits.MaxInFlight)
 	cfg.controller.AuditWhenFull = g.AuditWhenFull
+	cfg.controller.AuditAppend = g.AuditPrefill != nil && !*g.AuditPrefill
 	if cfg.limits.IPv6RatePrefix, err = numberSetting("data.ipv6_rate_prefix", d.IPv6RatePrefix, pipeline.DefaultIPv6RatePrefix, pipeline.MinIPv6RatePrefix, 128); err != nil {
 		return nativeConfig{}, err
 	}

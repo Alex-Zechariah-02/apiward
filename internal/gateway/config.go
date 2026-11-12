@@ -110,6 +110,7 @@ type gatewaySettings struct {
 	AuditMaxFiles        *int                 `json:"audit_max_files"`
 	AuditWhenFull        string               `json:"audit_when_full"`
 	AuditSyncWindow      *string              `json:"audit_sync_window"`
+	AuditPrefill         *bool                `json:"audit_prefill"`
 	ShutdownGrace        *string              `json:"shutdown_grace"`
 	ShutdownDelay        *string              `json:"shutdown_delay"`
 	JWT                  pipeline.TrustConfig `json:"jwt"`
@@ -197,7 +198,7 @@ func operatorConfig(c controller.Config) operator.Config {
 		keys[i] = key.PublicKeyFile
 	}
 	return operator.Config{Database: c.Database, AuditLog: c.AuditLog, AuditMaxBytes: c.AuditMaxBytes,
-		AuditMaxFiles: c.AuditMaxFiles, AuditWhenFull: c.AuditWhenFull, AuditTimeout: c.AuditTimeout, KeyFiles: keys}
+		AuditMaxFiles: c.AuditMaxFiles, AuditWhenFull: c.AuditWhenFull, AuditAppend: c.AuditAppend, AuditTimeout: c.AuditTimeout, KeyFiles: keys}
 }
 
 // loadNativeConfig reads and checks the configuration file at path. The

@@ -16,8 +16,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
-	"github.com/Alex-Zechariah-02/apiward/internal/fault"
 )
 
 // What the log does when every file is in use: refuse every record (and so
@@ -96,10 +94,9 @@ func (a *AuditLog) evictOldest(name string) error {
 	}
 	summary.File = filepath.Base(name)
 	record := appendEvent(nil, a.stamp(summary))
-	if err := fault.WriteAudit(a.file, record); err != nil {
+	if err := a.persist(record); err != nil {
 		return err
 	}
-	a.size += int64(len(record))
 	if err := os.Remove(name); err != nil {
 		return err
 	}

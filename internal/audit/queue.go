@@ -17,7 +17,7 @@ type auditEntry struct {
 	done  chan error // nil for events that need no acknowledgement
 }
 
-// AuditLog appends events to a local file. Events that gate a decision wait
+// AuditLog writes events to a local file. Events that gate a decision wait
 // until the batch containing them has been synced to disk; other events are
 // queued without blocking and counted when they cannot be queued.
 //
@@ -27,7 +27,10 @@ type auditEntry struct {
 // returns nil means every accepted event, and the count of every refused one,
 // is in the file and synced.
 //
-// The active file is rotated to "<path>.<n>" before it would exceed maxBytes.
+// On Linux, unless the settings ask to append, the active file is filled with
+// zero bytes ahead of the writer and written in place; its content ends at
+// End. The active file is rotated to "<path>.<n>" before it would exceed
+// maxBytes.
 // Once maxFiles files exist the log is full: it refuses records, and so
 // protected admission, until an operator moves rotated files away, which it
 // notices at its next rotation; or, when it may evict, it deletes the oldest
@@ -38,9 +41,13 @@ type AuditLog struct {
 	maxBytes int64
 	maxFiles int
 	file     *os.File // used only by the writer, which closes it as it ends
-	size     int64    // bytes in the active file; used only by the writer
-	rotated  int      // rotated files present; used only by the writer
-	next     int      // suffix of the next rotated file; used only by the writer
+	size     int64    // logical size of the active file; used only by the writer
+	// prefill zero-fills the active file ahead of the writer up to filled,
+	// its physical size (see fill.go); used only by the writer.
+	prefill bool
+	filled  int64
+	rotated int // rotated files present; used only by the writer
+	next    int // suffix of the next rotated file; used only by the writer
 	// rotatedBytes is the rotated files' total size; used only by the writer.
 	rotatedBytes int64
 	evict        bool // delete the oldest rotated file when full

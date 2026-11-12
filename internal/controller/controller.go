@@ -71,7 +71,10 @@ type Config struct {
 	// AuditSyncWindow is how long the audit writer gathers a batch with
 	// siblings before its sync; 0 syncs each batch at once.
 	AuditSyncWindow time.Duration
-	JWT             pipeline.TrustConfig
+	// AuditAppend appends to the active audit file instead of zero-filling
+	// it ahead of the writer on Linux (gateway.audit_prefill false).
+	AuditAppend bool
+	JWT         pipeline.TrustConfig
 	// Limits are the capacity ceilings: policy size and counts, rate
 	// counters, recent requests kept.
 	Limits policy.Limits
@@ -190,7 +193,7 @@ func (c *Controller) Open() error {
 		ownership.Close()
 		return err
 	}
-	c.audit = audit.OpenAudit(cfg.AuditLog, audit.Settings{MaxBytes: cfg.AuditMaxBytes, MaxFiles: cfg.AuditMaxFiles, WhenFull: cfg.AuditWhenFull, Queue: cfg.AuditQueue, Window: cfg.AuditSyncWindow})
+	c.audit = audit.OpenAudit(cfg.AuditLog, audit.Settings{MaxBytes: cfg.AuditMaxBytes, MaxFiles: cfg.AuditMaxFiles, WhenFull: cfg.AuditWhenFull, Queue: cfg.AuditQueue, Window: cfg.AuditSyncWindow, Append: cfg.AuditAppend})
 
 	c.mu.Lock()
 	defer c.mu.Unlock()

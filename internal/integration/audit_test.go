@@ -21,7 +21,8 @@ import (
 )
 
 // auditRecords reads every record of the rotated audit files, oldest first,
-// then of the active file, failing on any line that is not one JSON record.
+// then of the active file up to its logical end, failing on any line that is
+// not one JSON record. A rotated file must hold no zero tail.
 func auditRecords(e *gatewaytest.Env) []map[string]any {
 	e.T.Helper()
 	files, _ := filepath.Glob(e.AuditLog + ".*")
@@ -38,6 +39,9 @@ func auditRecords(e *gatewaytest.Env) []map[string]any {
 		data, err := os.ReadFile(file)
 		if err != nil {
 			e.T.Fatal(err)
+		}
+		if file == e.AuditLog {
+			data = audit.Content(data)
 		}
 		for line := range bytes.SplitSeq(bytes.TrimSuffix(data, []byte("\n")), []byte("\n")) {
 			var record map[string]any

@@ -14,12 +14,12 @@ func CancelPoint(context.Context, string) {}
 
 func CrashPoint(string) {}
 
-// WriteAudit appends data and syncs it to disk.
-func WriteAudit(file *os.File, data []byte) error {
-	if _, err := file.Write(data); err != nil {
+// WriteAudit writes data at offset and makes it durable with sync.
+func WriteAudit(file *os.File, data []byte, offset int64, sync func(*os.File) error) error {
+	if _, err := file.WriteAt(data, offset); err != nil {
 		return err
 	}
-	return file.Sync()
+	return sync(file)
 }
 
 func RateClockFault() (int64, bool) { return 0, false }

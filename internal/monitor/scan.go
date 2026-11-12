@@ -68,7 +68,7 @@ func Search(dir string, files []string, start *Cursor, query Query, limit int, s
 	return result, nil
 }
 
-// scanSecurityLogFile searches one file backwards from end (-1: its current
+// scanSecurityLogFile searches one file backwards from end (-1: its logical
 // size). It reports done when the search stops inside the file, with
 // result.next set where it stopped.
 func scanSecurityLogFile(path, name, first string, end int64, query Query, limit int, budget *int64, result *Result) (bool, error) {
@@ -89,7 +89,7 @@ func scanSecurityLogFile(path, name, first string, end int64, query Query, limit
 }
 
 // scanLinesBackward calls visit for each complete line of a file, newest
-// first, from end (-1: its current size), reading at most *budget bytes in
+// first, from end (-1: its logical end, audit.End), reading at most *budget bytes in
 // windows. visit returns true to stop. stop is where reading can resume:
 // lines before it are unread. A line still being written at the end of the
 // file is skipped.
@@ -100,11 +100,9 @@ func scanLinesBackward(path string, end int64, budget *int64, visit func(line []
 	}
 	defer file.Close()
 	if end < 0 {
-		info, err := file.Stat()
-		if err != nil {
+		if end, err = audit.End(file); err != nil {
 			return 0, false, err
 		}
-		end = info.Size()
 	}
 	for end > 0 {
 		if *budget <= 0 {

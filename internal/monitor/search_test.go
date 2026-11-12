@@ -53,8 +53,9 @@ func TestSecurityLogSearch(t *testing.T) {
 	active := filepath.Join(dir, "audit.log")
 	writeAuditFile(t, active+".2", 1, 4, "")
 	writeAuditFile(t, active+".3", 5, 8, "")
-	// The active file ends with a record still being written.
-	writeAuditFile(t, active, 9, 12, `{"event_id":"e-13","kind":"request.forw`)
+	// The active file ends with a record still being written and the zero
+	// tail of a zero-filled file (one 1 MiB fill step).
+	writeAuditFile(t, active, 9, 12, `{"event_id":"e-13","kind":"request.forw`+strings.Repeat("\x00", 1<<20))
 	files, missing, err := LogFiles(active)
 	if err != nil || !slices.Equal(files, []string{"audit.log", "audit.log.3", "audit.log.2"}) || !slices.Equal(missing, []string{"audit.log.1"}) {
 		t.Fatalf("files %v, missing %v (%v)", files, missing, err)

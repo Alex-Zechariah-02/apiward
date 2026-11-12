@@ -8,10 +8,13 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/Alex-Zechariah-02/apiward/internal/audit"
 	"github.com/Alex-Zechariah-02/apiward/internal/gatewaytest"
 )
 
@@ -99,6 +102,7 @@ func TestIncompleteRecordIsRecovered(t *testing.T) {
 	e.EventsWhen(func(events []map[string]any) bool { return gatewaytest.CountKind(events, "request.forwarded") == 1 })
 	e.Stop()
 	complete, _ := os.ReadFile(e.AuditLog)
+	complete = audit.Content(complete)
 
 	e.Start(gatewaytest.Binaries.Fault, "GATEWAY_FAULT=audit-partial")
 	if code, _ := e.Get("/a/x"); code != http.StatusServiceUnavailable {
@@ -109,6 +113,7 @@ func TestIncompleteRecordIsRecovered(t *testing.T) {
 	}
 	e.Stop()
 	partial, _ := os.ReadFile(e.AuditLog)
+	partial = audit.Content(partial)
 	if !bytes.HasPrefix(partial, complete) || len(partial) == len(complete) || partial[len(partial)-1] == '\n' {
 		t.Fatalf("expected an incomplete record after %d complete bytes; file has %d bytes", len(complete), len(partial))
 	}
@@ -124,6 +129,7 @@ func TestIncompleteRecordIsRecovered(t *testing.T) {
 	var marker map[string]any
 	for deadline := time.Now().Add(5 * time.Second); marker == nil && time.Now().Before(deadline); time.Sleep(20 * time.Millisecond) {
 		data, _ = os.ReadFile(e.AuditLog)
+		data = audit.Content(data)
 		for line := range bytes.SplitSeq(data, []byte("\n")) {
 			var ev map[string]any
 			if json.Unmarshal(line, &ev) == nil && ev["kind"] == "audit.recovered" {
@@ -151,6 +157,49 @@ func TestIncompleteRecordIsRecovered(t *testing.T) {
 		t.Fatalf("%d invalid lines, want 1", invalid)
 	}
 	e.AssertReceipts(2, 0, 0)
+}
+
+// A crash in the middle of a write leaves part of a record and, on a
+// zero-filled file, the zero tail. The next start removes the tail and keeps
+// the part as the one incomplete record, named by audit.recovered; every
+// complete record before it is unchanged.
+func TestTornWriteRecovered(t *testing.T) {
+	e := gatewaytest.NewEnv(t)
+	gatewaytest.Seed(t, e.Database, e.Policy(e.A, false), gatewaytest.SeedOptions{})
+	e.Start(gatewaytest.Binaries.Fault, "GATEWAY_FAULT=audit-torn-crash")
+	req, _ := http.NewRequest(http.MethodGet, "http://"+e.DataAddr+"/a/x", http.NoBody)
+	if resp, err := (&http.Client{Timeout: 10 * time.Second}).Do(req); err == nil {
+		resp.Body.Close()
+		t.Fatalf("request answered %d by a process that should have stopped", resp.StatusCode)
+	}
+	if code := e.WaitExit(); code != crashExit {
+		t.Fatalf("exit code %d", code)
+	}
+	raw, _ := os.ReadFile(e.AuditLog)
+	torn := audit.Content(raw)
+	if runtime.GOOS == "linux" && len(raw) == len(torn) {
+		t.Fatal("the crashed zero-filled file has no zero tail")
+	}
+	offset := bytes.LastIndexByte(torn, '\n') + 1
+	if offset == len(torn) {
+		t.Fatal("the crash left no incomplete record")
+	}
+
+	e.Start(gatewaytest.Binaries.Plain)
+	if code, _ := e.Get("/a/x"); code != http.StatusOK {
+		t.Fatalf("after recovery: %d", code)
+	}
+	events := e.EventsWhen(func(events []map[string]any) bool { return gatewaytest.CountKind(events, "audit.recovered") == 1 })
+	marker := events[slices.IndexFunc(events, func(ev map[string]any) bool { return ev["kind"] == "audit.recovered" })]
+	if marker["offset"] != float64(offset) {
+		t.Fatalf("recovery event %v, want offset %d", marker, offset)
+	}
+	data, _ := os.ReadFile(e.AuditLog)
+	data = audit.Content(data)
+	if !bytes.HasPrefix(data, torn) || data[len(torn)] != '\n' || bytes.IndexByte(data, 0) >= 0 {
+		t.Fatal("recovery changed the complete records, left the record unterminated or kept zeros inside the content")
+	}
+	e.AssertReceipts(1, 0, 0)
 }
 
 // A failure to record an outcome after the upstream acted cannot undo that
