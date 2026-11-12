@@ -72,7 +72,7 @@ type AuditLog struct {
 
 func (a *AuditLog) Fail(err error) {
 	if a.failed.CompareAndSwap(false, true) {
-		fmt.Fprintf(os.Stderr, "gateway: audit log failed; protected admission disabled: %v\n", err)
+		fmt.Fprintf(os.Stderr, "apiward: audit log failed; protected admission disabled: %v\n", err)
 	}
 }
 

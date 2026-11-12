@@ -1,12 +1,12 @@
 # Settings reference
 
-The JSON settings file that `gateway run --config <file>` reads. Upstream TLS profiles, connection reuse and address rules are in [policy.md](policy.md), "Upstreams"; capacity limits in "Capacity limits". Back to the [README](../README.md).
+The JSON settings file that `apiward run --config <file>` reads. Upstream TLS profiles, connection reuse and address rules are in [policy.md](policy.md), "Upstreams"; capacity limits in "Capacity limits". Back to the [README](../README.md).
 
 ## Data listener
 
 ### HTTPS
 
-- The data listener serves HTTPS when the settings name certificate files: `"data": {"tls": {"files": {"certificate_file": "/etc/gateway/tls/api.crt", "key_file": "/etc/gateway/tls/api.key"}}}` (absolute paths; chain leaf first; the key as for TLS profiles; the certificate valid when loaded).
+- The data listener serves HTTPS when the settings name certificate files: `"data": {"tls": {"files": {"certificate_file": "/etc/apiward/tls/api.crt", "key_file": "/etc/apiward/tls/api.key"}}}` (absolute paths; chain leaf first; the key as for TLS profiles; the certificate valid when loaded).
 
 ### Overload limits
 
@@ -33,19 +33,19 @@ The JSON settings file that `gateway run --config <file>` reads. Upstream TLS pr
 
 ### Health endpoints
 
-- The metrics listener also answers `GET /livez` (`200 ok` while the process serves) and `GET /readyz` (`200 ok` only in normal mode with a published policy, when the security log has not failed and the certificate, if any, is valid; else `503 unavailable`); `gateway health --config <file>` asks `/readyz` and exits 0 only when ready.
+- The metrics listener also answers `GET /livez` (`200 ok` while the process serves) and `GET /readyz` (`200 ok` only in normal mode with a published policy, when the security log has not failed and the certificate, if any, is valid; else `503 unavailable`); `apiward health --config <file>` asks `/readyz` and exits 0 only when ready.
 
 ## Identity assertion for upstreams
 
 ### What is signed
 
 - Upstreams can verify that a request passed the gateway.
-- With `"upstream": {"identity_key": "/etc/gateway/identity.pem"}` (an ECDSA P-256 private key as one PKCS #8 `PRIVATE KEY` PEM block, readable only by its owner; for example `openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256`), every forwarded request also carries `X-Gateway-Assertion`: a JWT signed with ES256, with `iss` `apiward`, `aud` the API's ID, `sub` and `roles` as in `X-Gateway-Subject` and `X-Gateway-Roles` (both absent on a public operation), `method` and `path` the request's method and its path as the upstream receives it (after the API's forward rule, decoded, without the query), `jti` the request ID, `iat`, and `exp` 30 seconds later.
+- With `"upstream": {"identity_key": "/etc/apiward/identity.pem"}` (an ECDSA P-256 private key as one PKCS #8 `PRIVATE KEY` PEM block, readable only by its owner; for example `openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256`), every forwarded request also carries `X-Gateway-Assertion`: a JWT signed with ES256, with `iss` `apiward`, `aud` the API's ID, `sub` and `roles` as in `X-Gateway-Subject` and `X-Gateway-Roles` (both absent on a public operation), `method` and `path` the request's method and its path as the upstream receives it (after the API's forward rule, decoded, without the query), `jti` the request ID, `iat`, and `exp` 30 seconds later.
 - Its `kid` is the key's RFC 7638 thumbprint.
 
 ### Public key
 
-- The public key is a JSON Web Key Set at `GET /.well-known/apiward/jwks.json` on the admin listener (no session needed), and `gateway jwks --config <file>` prints the same set without a running gateway, for the file an upstream on another host reads.
+- The public key is a JSON Web Key Set at `GET /.well-known/apiward/jwks.json` on the admin listener (no session needed), and `apiward jwks --config <file>` prints the same set without a running gateway, for the file an upstream on another host reads.
 
 ### What an upstream must check
 

@@ -1,63 +1,19 @@
-# Fetch Gateway Dashboard
+# APIWard Dashboard
 
-The administrator dashboard for the EAT40005 Gateway, a security policy gateway for REST APIs. It is a React and TypeScript single-page application that the gateway's admin listener serves at `/`, on the same origin as the protected Admin API.
+The administrator web console for APIWard: React and TypeScript, served by the gateway's admin listener at `/`. It holds no authority: the Admin API checks and decides every action. Pages and behaviour: [docs/dashboard.md](../docs/dashboard.md).
 
-The dashboard holds no authority of its own. The gateway's Admin API authenticates administrators, checks their permissions, the session's CSRF token and the request's `Origin` and `Host` on every call, and decides every change. The dashboard only shows what the Admin API returns and sends what the administrator confirms. Hiding an action an administrator lacks the permission for is a convenience; the server still refuses it.
+## Pages
 
-## What it does
-
-The views are grouped by job.
-
-**Monitor**
-
-- **Overview:** the policy in force, any change on trial with its countdown and **Undo change** and **Review and keep**, the temporary rules in force, traffic in a chosen window, why requests were refused, the latest refusals with the check that decided each, figures per API, and a timeline of policy changes. A new or restored installation is told how to establish its first policy, and every page warns at the top while the gateway is not accepting requests. Once a policy is in force, a Getting started guide ticks off the first steps (a policy in force, a first trial, a trial kept or undone) from what the gateway reports, and hides itself once all are done; **Hide this guide** removes it sooner, and My account shows it again.
-- **Live traffic:** every request as the gateway decides it, streamed as it happens, with a pause for inspection and filters that show only changes (anything but reads) or only refusals. It keeps the latest 1,000 requests and draws the newest 200 that match.
-- **Request details:** every request row on the Overview, Live traffic and the Security log opens that request in a side panel over the page, at the page's own address plus `?ref=`; the browser's Back button closes it. The panel shows when the request arrived, its method and path, the response, the policy version and the account, then each check it passed, the one that decided it and those it never reached, the full reason and the Ref to copy. The **Search** box in every page header opens a full Ref the same way, opens the Security log on an account or endpoint ID (which never enters the address), and finds a draft change (“change 12”), a temporary rule (“rule 3”) or a version (“version 4”).
-- **APIs:** each API's endpoints, who may call them, their rate limits and bodies, its traffic figures, and each endpoint's request rules in words with the exact schema under More details.
-
-**Policy**
-
-- **Policy:** the Policy Designer, one draft in Canvas, Form and JSON views (below). Its "Versions and tables" link opens the policy in force as tables and every version, each of which can be inspected and used to start a draft change.
-- **Roles:** what each role can do under the policy in force, in plain sentences, with any temporary rule that changes it listed beside it and the accounts seen with it in recent requests. The page only reads.
-- **Changes:** the guided way a change goes live. A draft starts on the Policy page or from the active version; pasting or loading a whole JSON document is under **Advanced**. Saving a draft change runs the gateway's own compiler over the whole document; the review lists the differences member by member; an impact preview replays recent requests to show which would now be decided differently; the change then goes on trial with a deadline and is undone by itself unless someone keeps it. Before a trial starts, its dialog says in plain sentences what the change adds, changes and removes; a draft that denies every request or removes a whole API is confirmed by typing “deny all” or the API's ID, and establishing a first policy by typing “deny all”. Past trials are listed with how each ended.
-- **Temporary rules:** allow or restrict something temporarily for a fixed lifetime, checked with the gateway before the rule is added, plus incident quick actions such as freezing ordering for 10 minutes.
-- **Blocking:** block an account instantly, unblock it, and see the accounts and roles in recent traffic. A block is not a policy change: undoing a change never lifts it.
-
-**Admin**
-
-- **History:** every administrative transition, filtered by area, outcome and administrator, read page by page or all at once.
-- **Policy as code:** the policy in force as one JSON document to copy or download, and the Admin API requests a script uses to read it and to save a draft change from a file.
-- **Team:** the gateway's administrators and their permissions, the token signing keys it trusts, with a reload from the operator's settings, and the running build (version, Go toolchain and every compiled-in control with the phase it runs at). Adding an administrator stays an operator command.
-- **My account:** session details, your permissions in plain words, the gateway's address, and password change.
-
-The Changes, Temporary rules, Blocking, Roles and APIs pages open with the same list toolbar: a **Filter** box that narrows the rows already read (it sends nothing to the gateway), how many rows it leaves ("2 of 5 roles"; a paged list says "loaded"), and the list's main action at the right. **Add a temporary rule** there opens a step-by-step version of the rule form that ends on a review and then asks the usual confirmation.
-
-The sidebar starts wide, with its group names, the environment ("Local gateway" when the Dashboard is served from this computer) and its exact address; narrowing it to a strip of icons is one click away and remembered in the browser. Controls move briefly and subtly when their state changes, and only colour and opacity change when the operating system asks for reduced motion.
-
-A notification bar at the top of every page names what changed between the gateway's status reads: a trial starting or ending, temporary rules added or ended, the signing keys reloaded, and a security log that cannot be written. It makes no requests of its own. A notice stays until it is dismissed or another page opens; a problem stays on every page until it is dismissed.
-
-Every change is confirmed in a dialog that states its consequence. A change whose answer is lost is reported as an unknown outcome and never resent by itself; resending it explicitly reuses its idempotency key, so the gateway applies it at most once. Every refusal, warning and unknown outcome reads the same way: a plain title, what to do next, and a collapsed **More details** with the exact error code, HTTP status, field and IDs, each with a copy button. "Refused", "Applied, but …" and "No answer from the gateway" stay distinct.
-
-Sign-in uses a password, and first sign-in an operator-issued enrolment secret. The session is an HttpOnly, `Secure`, `SameSite=Strict`, host-only cookie that page scripts cannot read. Browser storage holds only the Policy Designer's box positions (`eat40005.policy-designer.layout.v1`) and, when chosen, the appearance (`gateway.theme`, light or dark; the default follows the computer).
-
-## Policy Designer
-
-Edit one draft in Canvas, Form or JSON. Boxes show roles, endpoints, APIs and service addresses; arrows show permissions and routing. The checks on an endpoint stay in the gateway's enforcement order, with the same names as Live traffic. The Form tab offers every editing option by keyboard.
-
-**Templates** prepares a common change in the draft: limit sign-in attempts, read-only access for a role to an API, removing a role's access to an API, or a tighter rate limit on an endpoint. A template only edits the unsaved draft and says what it changed; the draft still goes through the gateway's check, a trial and keeping like any other change.
-
-**Step by step** walks through three common edits in a short dialog: give a role access, change a rate limit, or add an endpoint. Each ends on a review listing what the draft gains, changes and loses, and **Apply to the draft** only edits the unsaved draft.
-
-**Connect an API** opens in a side drawer from the Policy page, its empty canvas, the APIs page or the Getting Started guide on the Overview. Its steps set the service address, the API, its endpoints, which roles may call them, their rate limits and, optionally, a JSON Schema for each write endpoint's request body; the review lists what the draft gains, and **Add to the Draft** only edits the unsaved draft. The gateway's compiler checks the result, schemas included, when the draft is saved.
-
-The draft stays in the signed-in page's memory while you change pages and ends with the session. **Save draft change** asks the gateway to check and store the whole document; the change then continues on the Changes page. A save with no answer remains an unknown outcome; only an explicit identical resend reuses its request key.
-
-The in-force and on-trial modes are read-only. Live markers show temporary permissions, removals, rates, endpoint denial and changes on trial without rewriting the draft. Trace explains the selected document and sends no request; it does not apply temporary rules or decide actual access. **Reset layout** removes the stored box positions.
+| Group | Pages |
+|---|---|
+| Monitor | Overview, Live Traffic, APIs; request details in a side panel |
+| Policy | Policy (Designer: Canvas, Form, JSON), Roles, Changes, Temporary Rules, Blocking |
+| Admin | History, Policy as Code, Team, My Account |
 
 ## Requirements
 
-- Node.js 24 and npm 11.
-- For the browser tests: the Go toolchain, Git and an installed Google Chrome.
+- Node.js 24 and npm 11
+- Browser tests: Go, Git, Google Chrome, and the Fetch repository at `../fetch`
 
 ## Build
 
@@ -67,30 +23,32 @@ npm run check   # type checks the application and the tests
 npm run build   # writes dist/
 ```
 
-Point the gateway configuration's `gateway.admin_ui` at the absolute path of `dist/`. The gateway serves `index.html` and the flat `assets/` directory, and nothing else. The build holds each script and style sheet only as a gzip copy (`.js.gz`, `.css.gz`), which the gateway sends as it is to a browser and inflates for a client that does not accept gzip. The page is never cached; everything under `assets/` is cached for a year, so every file there must be named after its content, as the build does.
+- Serve it: set the settings' `gateway.admin_ui` to the absolute path of `dist/`, or embed it in the binary ([docs/development.md](../docs/development.md)).
 
-The gateway serves the dashboard under a strict content policy (`default-src 'none'`; scripts, styles, images, fonts and connections from its own origin only). The build therefore puts no script or style into the page and calls only relative Admin API paths. Hanken Grotesk and Geist Mono are two font files of the build, registered with the CSS Font Loading API before the page renders. Their SIL Open Font License 1.1 notices are in `src/fonts/`.
+## Develop
 
-## Development
-
-`npm run dev` serves the dashboard at `http://localhost:5173/` (strict port). `/admin` calls pass through a development proxy to a running gateway's admin listener at `127.0.0.1:9440`, rewriting Host and Origin to that listener. The proxy is not part of the production build and is not test evidence: the browser tests use the built files served by the real gateway.
+- `npm run dev` serves `http://localhost:5173/` and proxies `/admin` to a running gateway's admin listener at `127.0.0.1:9440` (rewrites `Host` and `Origin`).
+- The proxy is development only: not in the production build, not test evidence.
 
 ## Browser tests
-
-The tests in `e2e/` run the gateway, Fetch services and Fetch Accounts through the Fetch demo tool (the Fetch repository checked out beside this one, `../fetch`) with the Fetch baseline policy. They check what the dashboard shows against the Admin API, the services' own receipts and the gateway's security events, including the content policy, session cookie, CSRF, Origin and Host rules, unknown outcomes, storage and accessibility at phone, tablet and desktop widths.
-
-By default, the backend is built from an isolated export of `HEAD`; uncommitted Go changes are excluded. Set `E2E_BACKEND_SOURCE=worktree` to snapshot the current `cmd/`, `internal/`, `go.mod` and `go.sum`, including non-ignored new files. The shared helpers in the root `e2e/` directory record the selected commit, source mode, input-file hashes and diff hash, and refuse a worktree snapshot that changes during copying.
-
-`EAT_PORT_OFFSET` shifts every backend address, including the second gateway used for short-session tests and the development proxy target. `E2E_DEV_PORT` selects the development server's port (default 5173). Run one browser suite at a time; its demonstrations own the selected backend ports. For example, to verify local backend changes on isolated ports:
 
 ```powershell
 $env:EAT_PORT_OFFSET='1000'
 $env:E2E_BACKEND_SOURCE='worktree'
-$env:E2E_DEV_PORT='15173'
 npm run build
 npm run e2e
 ```
 
-Each spec file starts its own gateway and builds the state its tests read. One file or one test can be rerun alone with `npx playwright test e2e/<file>.spec.ts [-g "<test name>"]`, with `E2E_BACKEND_SOURCE` and `EAT_PORT_OFFSET` set as above.
+- One file or test: `npx playwright test e2e/<file>.spec.ts [-g "<test name>"]`.
+- Run one browser suite at a time: its demonstrations own the backend ports.
+- Each spec file starts its own gateway, Fetch services and Fetch Accounts through the Fetch demo tool, and builds the state its tests read.
 
-The tests serve `dist/`, or the existing build named by `E2E_APP_DIST`. The demo tool also needs a website build; the helper builds `../fetch/client` (the Fetch shop), unless `WEBSITE_DIST` names a built client to use instead. Optional: `E2E_EVIDENCE` names a file for JSON-lines evidence (backend source manifests, statuses, receipts and event fields, never secrets), and `E2E_SHOTS` a directory for screenshots. Pages taller than 16,000 pixels are captured as viewport images with a JSON manifest of their scroll positions, avoiding Chrome's tall-image repetition.
+| Variable | Effect |
+|---|---|
+| `E2E_BACKEND_SOURCE` | `head` (default): backend built from an isolated export of `HEAD`; `worktree`: snapshot of the current `cmd/`, `internal/`, `go.mod`, `go.sum` (refused if it changes while copying) |
+| `EAT_PORT_OFFSET` | Shifts every backend port, the short-session gateway and the development proxy target |
+| `E2E_DEV_PORT` | Development server port (default 5173) |
+| `E2E_APP_DIST` | Existing Dashboard build to serve instead of `dist/` |
+| `WEBSITE_DIST` | Built Fetch shop to use instead of building `../fetch/client` |
+| `E2E_EVIDENCE` | File for JSON-lines evidence: backend source, statuses, receipts, event fields; never secrets |
+| `E2E_SHOTS` | Folder for screenshots; pages taller than 16,000 px are saved as viewport images with a scroll manifest |

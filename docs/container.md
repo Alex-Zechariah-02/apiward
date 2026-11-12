@@ -20,7 +20,7 @@ docker build -t apiward:dev .
 
 ## Files and folders
 
-- The image runs `gateway run --config /etc/apiward/apiward.json`.
+- The image runs `apiward run --config /etc/apiward/apiward.json`.
 - Mount the settings, keys and certificates read-only at `/etc/apiward`, with every path in the settings under that folder.
 - The only writable folder is `/var/lib/apiward`, so the settings keep the database and the security log there: mount a local named volume or host folder on it, since SQLite's write-ahead log does not work over a network file system (https://www.sqlite.org/wal.html).
 - Key files must belong to UID 65532 and be readable by it alone (mode 600; for example `sudo chown -R 65532:65532 <folder>`): the gateway refuses a key that others can read.
@@ -43,7 +43,7 @@ docker run -d --name apiward --network host --read-only --cap-drop ALL \
 ```
 
 - In the Dashboard choose **First Sign-In with an Enrolment Secret**, then establish the first policy.
-- The image's health check runs `gateway health`, which asks the metrics listener's `/readyz`, so a new gateway reports unhealthy until its first policy is published.
+- The image's health check runs `apiward health`, which asks the metrics listener's `/readyz`, so a new gateway reports unhealthy until its first policy is published.
 - `docker stop` sends `SIGTERM`; give the gateway at least 30 seconds to stop (`--stop-timeout 30`, or `stop_grace_period: 30s` in Compose).
 
 ## Network

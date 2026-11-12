@@ -13,7 +13,7 @@ import (
 	"github.com/Alex-Zechariah-02/apiward/internal/store"
 )
 
-// These tests run the gateway, cmd/gateway, as its own process with its
+// These tests run the gateway, cmd/apiward, as its own process with its
 // configuration file. Every forwarding claim is checked at the receivers or
 // fixtures themselves.
 

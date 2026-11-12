@@ -25,7 +25,7 @@ export function GatewayBuild({ admin }: Pick<ViewProps, 'admin'>) {
       <div className="card-head card-head-pad">
         <h2 id="build-title">Gateway Build</h2>
         <span className="muted">
-          Shown by <code>gateway version</code> on the host
+          Shown by <code>apiward version</code> on the host
         </span>
       </div>
       <div className="card-body">

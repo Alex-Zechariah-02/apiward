@@ -33,7 +33,7 @@ func TestRouting(t *testing.T) {
 		want, notWant string
 	}{
 		{[]string{"migrate", "--config", missing}, "missing.json", "is required"},
-		{[]string{"policy", "export-openapi"}, "--policy is required\nusage: gateway policy export-openapi", ""},
+		{[]string{"policy", "export-openapi"}, "--policy is required\nusage: apiward policy export-openapi", ""},
 	}
 	for _, c := range cases {
 		code, stderr := stderrOf(t, c.args...)

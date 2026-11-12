@@ -3,7 +3,7 @@
 // every API request passes the gateway's checks before it reaches the
 // upstream the policy binds. It uses only the module's public packages.
 //
-//	embed -config gateway.json -listen 127.0.0.1:8080
+//	embed -config apiward.json -listen 127.0.0.1:8080
 package main
 
 import (

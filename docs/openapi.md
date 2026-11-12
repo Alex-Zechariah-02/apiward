@@ -4,12 +4,12 @@ Back to the [README](../README.md).
 
 ## Import an OpenAPI description
 
-- `gateway policy import-openapi` turns an OpenAPI 3.0 or 3.1 description (JSON, or YAML 1.2) into a new policy file for review.
+- `apiward policy import-openapi` turns an OpenAPI 3.0 or 3.1 description (JSON, or YAML 1.2) into a new policy file for review.
 - It runs offline: it reads only the files it is given, never fetches a `$ref`, and never activates anything.
 - Stage the result as a draft, trial it and confirm it like any other change.
 
 ```
-gateway policy import-openapi --spec <file.json|.yaml|.yml> --api <id> --upstream <id>
+apiward policy import-openapi --spec <file.json|.yaml|.yml> --api <id> --upstream <id>
   --base <policy.json> [--max-body-bytes <n>] [--with-permits] --out <new file> --report <new file>
 ```
 
@@ -75,10 +75,10 @@ At the root, `x-apiward-forward`, `x-apiward-cors`, `x-apiward-response-headers`
 
 ## Export a policy as OpenAPI
 
-`gateway policy export-openapi` writes one API of a policy as an OpenAPI 3.1 description (JSON, or YAML by the `--out` extension), for review or for tools that read OpenAPI. Importing that file onto the same policy with `--with-permits` gives the same policy back.
+`apiward policy export-openapi` writes one API of a policy as an OpenAPI 3.1 description (JSON, or YAML by the `--out` extension), for review or for tools that read OpenAPI. Importing that file onto the same policy with `--with-permits` gives the same policy back.
 
 ```
-gateway policy export-openapi --policy <policy.json> --api <id>
+apiward policy export-openapi --policy <policy.json> --api <id>
   --out <new file.json|.yaml|.yml> --report <new file> [--with-upstream]
 ```
 
@@ -95,7 +95,7 @@ Exit status: `0` the description means exactly what the policy does; `2` both fi
 ## Moving to or from another gateway
 
 - An API's routes, methods and request schemas move between gateways through standard OpenAPI.
-- Many gateways can export an API as an OpenAPI description, and `gateway policy import-openapi` turns it into a candidate policy (above).
-- In the other direction, `gateway policy export-openapi` writes a description that other gateways' OpenAPI importers can read; they ignore the `x-apiward-*` members.
+- Many gateways can export an API as an OpenAPI description, and `apiward policy import-openapi` turns it into a candidate policy (above).
+- In the other direction, `apiward policy export-openapi` writes a description that other gateways' OpenAPI importers can read; they ignore the `x-apiward-*` members.
 
 Sign-in, trusted issuers, roles, rate limits and other gateway-specific settings have no standard form, so they are not translated between products: set them again in the target gateway, and review every imported policy before staging it. Consumers and their credentials stay in the identity provider.

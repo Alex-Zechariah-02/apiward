@@ -102,7 +102,7 @@ An API's `"response_headers": {"hsts": true, "nosniff": true, "frame": "deny", "
 
 ### TLS profiles
 
-- The settings list the profiles as `"upstream": {"tls_profiles": [{"id": "fetch", "ca_file": "/etc/gateway/fetch-ca.pem", "client_certificate_file": "/etc/gateway/gateway.crt", "client_key_file": "/etc/gateway/gateway.key"}]}` (up to 32; absolute paths; the key is PKCS #8 RSA of at least 2,048 bits or ECDSA P-256 and, on Unix, must not be readable by the group or others).
+- The settings list the profiles as `"upstream": {"tls_profiles": [{"id": "fetch", "ca_file": "/etc/apiward/fetch-ca.pem", "client_certificate_file": "/etc/apiward/gateway.crt", "client_key_file": "/etc/apiward/gateway.key"}]}` (up to 32; absolute paths; the key is PKCS #8 RSA of at least 2,048 bits or ECDSA P-256 and, on Unix, must not be readable by the group or others).
 - They are read at start and again by `POST /admin/keys/reload`, which keeps the old ones if the new ones are invalid or drop a profile the active policy uses.
 - `GET /admin/tls-profiles` lists them without paths or keys.
 - A policy naming an unknown profile is refused `UNKNOWN_TLS_PROFILE`.

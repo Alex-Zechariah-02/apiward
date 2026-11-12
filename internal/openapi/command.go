@@ -17,9 +17,9 @@ import (
 
 // Synopses of the two commands.
 const (
-	importUsage = `gateway policy import-openapi --spec <file.json|.yaml|.yml> --api <id> --upstream <id>
+	importUsage = `apiward policy import-openapi --spec <file.json|.yaml|.yml> --api <id> --upstream <id>
   --base <policy.json> [--max-body-bytes <n>] [--with-permits] --out <new file> --report <new file>`
-	exportUsage = `gateway policy export-openapi --policy <policy.json> --api <id>
+	exportUsage = `apiward policy export-openapi --policy <policy.json> --api <id>
   --out <new file.json|.yaml|.yml> --report <new file> [--with-upstream]`
 )
 
@@ -53,7 +53,7 @@ func Command(args []string, stderr io.Writer) int {
 	}
 	values, err := c.parse(args[1:])
 	if err != nil {
-		fmt.Fprintln(stderr, "gateway:", err)
+		fmt.Fprintln(stderr, "apiward:", err)
 		if errors.Is(err, errUsage) {
 			fmt.Fprintln(stderr, "usage: "+c.usage)
 		}
@@ -61,7 +61,7 @@ func Command(args []string, stderr io.Writer) int {
 	}
 	code, err := c.run(values, stderr)
 	if err != nil {
-		fmt.Fprintln(stderr, "gateway:", err)
+		fmt.Fprintln(stderr, "apiward:", err)
 		return ExitFailed
 	}
 	return code
@@ -92,7 +92,7 @@ type toggle struct{ single }
 func (f *toggle) IsBoolFlag() bool { return true }
 
 func (c command) parse(args []string) (map[string]string, error) {
-	set := flag.NewFlagSet("gateway", flag.ContinueOnError)
+	set := flag.NewFlagSet("apiward", flag.ContinueOnError)
 	set.SetOutput(io.Discard)
 	values := map[string]string{}
 	for _, name := range c.required {

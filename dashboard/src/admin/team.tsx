@@ -58,7 +58,7 @@ export function TeamView({ admin, can }: ViewProps) {
         <div className="card-head card-head-pad">
           <h2 id="team-title">Administrators</h2>
           <span className="muted">
-            Added by the operator with <code>gateway enrol</code>
+            Added by the operator with <code>apiward enrol</code>
           </span>
         </div>
         <div className="card-body">

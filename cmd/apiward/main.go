@@ -1,4 +1,4 @@
-// Command gateway runs the security policy gateway on its own Go HTTP server,
+// Command apiward runs the security policy gateway on its own Go HTTP server,
 // from one strict native configuration file, and its local operator commands.
 package main
 

@@ -147,7 +147,7 @@ func TestNativeStartupRefusesConfiguration(t *testing.T) {
 	} {
 		e := gatewaytest.NewEnv(t)
 		e.Launch(gatewaytest.Binaries.Plain, args)
-		if code := e.WaitExit(); code != gatewaytest.ExitFailed || !strings.Contains(e.Output.String(), "usage: gateway run --config <file>") {
+		if code := e.WaitExit(); code != gatewaytest.ExitFailed || !strings.Contains(e.Output.String(), "usage: apiward run --config <file>") {
 			t.Errorf("%v: exit %d\n%s", args, code, e.Output)
 		}
 	}

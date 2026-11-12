@@ -131,7 +131,7 @@ func (q *request) recoverPanic() {
 	if recovered == http.ErrAbortHandler {
 		panic(recovered)
 	}
-	fmt.Fprintf(os.Stderr, "gateway: panic in request %s: %v\n%s", q.event.RequestID, recovered, debug.Stack())
+	fmt.Fprintf(os.Stderr, "apiward: panic in request %s: %v\n%s", q.event.RequestID, recovered, debug.Stack())
 	if q.event.Kind != "" && q.event.Kind != "request.admitted" {
 		panic(http.ErrAbortHandler)
 	}

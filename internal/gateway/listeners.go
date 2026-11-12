@@ -223,18 +223,18 @@ func closeListeners(listeners ...net.Listener) {
 func checkHealth(configPath string) int {
 	cfg, err := loadNativeConfig(configPath)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "gateway:", err)
+		fmt.Fprintln(os.Stderr, "apiward:", err)
 		return exitFailed
 	}
 	client := &http.Client{Timeout: 5 * time.Second}
 	reply, err := client.Get("http://" + loopbackForm(cfg.metricsListen) + "/readyz")
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "gateway: not ready:", err)
+		fmt.Fprintln(os.Stderr, "apiward: not ready:", err)
 		return exitFailed
 	}
 	reply.Body.Close()
 	if reply.StatusCode != http.StatusOK {
-		fmt.Fprintln(os.Stderr, "gateway: not ready:", reply.Status)
+		fmt.Fprintln(os.Stderr, "apiward: not ready:", reply.Status)
 		return exitFailed
 	}
 	return 0
@@ -249,7 +249,7 @@ func printJWKS(configPath string) int {
 		err = errors.New("upstream.identity_key is not set")
 	}
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "gateway:", err)
+		fmt.Fprintln(os.Stderr, "apiward:", err)
 		return exitFailed
 	}
 	fmt.Println(string(cfg.signer.JWKS()))

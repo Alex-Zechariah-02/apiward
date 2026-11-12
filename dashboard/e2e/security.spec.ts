@@ -224,7 +224,7 @@ test.describe.serial('dashboard', () => {
     // stopped, then issues a new enrolment: a restore quarantines every
     // earlier administrator.
     await demo.stop()
-    const program = join(demo.bin, process.platform === 'win32' ? 'gateway.exe' : 'gateway')
+    const program = join(demo.bin, process.platform === 'win32' ? 'apiward.exe' : 'apiward')
     const backup = join(dirname(demo.dir), 'recovery-backup.db')
     for (const args of [
       ['backup', '--config', demo.path('gateway.json'), '--output', backup],

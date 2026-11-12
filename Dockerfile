@@ -27,7 +27,7 @@ COPY module ./module
 COPY policy ./policy
 COPY --from=dashboard /src/dashboard/dist ./internal/adminui/dist
 RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
-    go build -trimpath -ldflags="-s -w" -tags embedui -o /out/gateway ./cmd/gateway
+    go build -trimpath -ldflags="-s -w" -tags embedui -o /out/apiward ./cmd/apiward
 # An empty data folder, so a new named volume mounted on it belongs to the
 # image's user.
 RUN mkdir -m 700 /out/data
@@ -51,13 +51,13 @@ LABEL org.opencontainers.image.title="APIWard" \
 COPY --from=base /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 COPY --from=base /etc/passwd /etc/group /etc/nsswitch.conf /etc/
 ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
-COPY --from=gateway /out/gateway /usr/local/bin/gateway
+COPY --from=gateway /out/apiward /usr/local/bin/apiward
 COPY --from=gateway --chown=65532:65532 /out/data /var/lib/apiward
 USER 65532:65532
 EXPOSE 9480
 STOPSIGNAL SIGTERM
-# gateway health asks the metrics listener's /readyz and waits up to 5 s.
+# apiward health asks the metrics listener's /readyz and waits up to 5 s.
 HEALTHCHECK --interval=10s --timeout=8s --start-period=30s --start-interval=2s --retries=3 \
-    CMD ["/usr/local/bin/gateway", "health", "--config", "/etc/apiward/apiward.json"]
-ENTRYPOINT ["/usr/local/bin/gateway"]
+    CMD ["/usr/local/bin/apiward", "health", "--config", "/etc/apiward/apiward.json"]
+ENTRYPOINT ["/usr/local/bin/apiward"]
 CMD ["run", "--config", "/etc/apiward/apiward.json"]

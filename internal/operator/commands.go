@@ -61,7 +61,7 @@ func (o *operatorContext) close() {
 	ctx, cancel := context.WithTimeout(context.Background(), audit.AuditDrainWait)
 	defer cancel()
 	if err := o.audit.Close(ctx); err != nil {
-		fmt.Fprintln(os.Stderr, "gateway:", err)
+		fmt.Fprintln(os.Stderr, "apiward:", err)
 	}
 }
 

@@ -56,12 +56,12 @@ func Main(m *testing.M, first, last int) {
 		panic(fmt.Sprintf("test port block %d-%d is not within 20000-29999", first, last))
 	}
 	issuedPorts.first, issuedPorts.last = first, last
-	dir, err := os.MkdirTemp("", "gateway-bin")
+	dir, err := os.MkdirTemp("", "apiward-bin")
 	if err != nil {
 		panic(err)
 	}
-	Binaries.Plain = filepath.Join(dir, "gateway.exe")
-	Binaries.Fault = filepath.Join(dir, "gateway-fault.exe")
+	Binaries.Plain = filepath.Join(dir, "apiward.exe")
+	Binaries.Fault = filepath.Join(dir, "apiward-fault.exe")
 	Binaries.Fixture = filepath.Join(dir, "fixture.exe")
 	Binaries.FixtureFault = filepath.Join(dir, "fixture-fault.exe")
 	Binaries.Demo = filepath.Join(dir, "demo.exe")
@@ -85,8 +85,8 @@ func Main(m *testing.M, first, last int) {
 		os.Exit(1)
 	}
 	builds := []struct{ out, tags, dir, pkg string }{
-		{Binaries.Plain, "", root, programs + "gateway"},
-		{Binaries.Fault, "faultinject", root, programs + "gateway"},
+		{Binaries.Plain, "", root, programs + "apiward"},
+		{Binaries.Fault, "faultinject", root, programs + "apiward"},
 		{Binaries.Fixture, "", root, programs + "testfixture"},
 		{Binaries.FixtureFault, "faultinject", root, programs + "testfixture"},
 		{Binaries.Demo, "", fetch, "./cmd/demo"},

@@ -54,7 +54,7 @@ Requires Go 1.26+ (`go.mod` selects the 1.27.4 toolchain).
 Gateway only:
 
 ```
-go build -trimpath -o gateway ./cmd/gateway
+go build -trimpath -o apiward ./cmd/apiward
 ```
 
 With the Dashboard inside the binary (also requires Node.js 24):
@@ -62,7 +62,7 @@ With the Dashboard inside the binary (also requires Node.js 24):
 ```
 cd dashboard && npm ci && npm run build && cd ..
 rm -rf internal/adminui/dist && cp -r dashboard/dist internal/adminui/dist
-go build -trimpath -tags embedui -o gateway ./cmd/gateway
+go build -trimpath -tags embedui -o apiward ./cmd/apiward
 ```
 
 Container image ([docs/container.md](docs/container.md)):
@@ -74,8 +74,8 @@ docker build -t apiward:dev .
 ## Run
 
 ```
-gateway install --config gateway.json --admin <name>
-gateway run --config gateway.json
+apiward install --config apiward.json --admin <name>
+apiward run --config apiward.json
 ```
 
 1. `install` prints a one-time enrolment secret. Keep it private.
@@ -123,7 +123,8 @@ The settings file is described in [docs/settings.md](docs/settings.md).
 | [docs/embedding.md](docs/embedding.md) | Embedding and modules |
 | [docs/container.md](docs/container.md) | Container image |
 | [docs/development.md](docs/development.md) | Code layout, builds, checks |
-| [dashboard/README.md](dashboard/README.md) | Dashboard |
+| [docs/dashboard.md](docs/dashboard.md) | Dashboard pages and behaviour |
+| [dashboard/README.md](dashboard/README.md) | Dashboard build and tests |
 
 ## Tests
 

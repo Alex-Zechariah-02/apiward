@@ -24,7 +24,7 @@ Programs:
 
 | Path | Purpose |
 |---|---|
-| `cmd/gateway` | The gateway |
+| `cmd/apiward` | The gateway program |
 | `cmd/testfixture` | Controlled APIs for the regression tests |
 | `examples/embed` | A host program that embeds the gateway |
 | `dashboard/` | The Dashboard: React, TypeScript, Vite |
@@ -53,7 +53,7 @@ Internal packages, in import order:
 ## Build
 
 ```
-go build -trimpath -o <out-dir>/gateway ./cmd/gateway
+go build -trimpath -o <out-dir>/apiward ./cmd/apiward
 go build -trimpath -o <out-dir>/testfixture ./cmd/testfixture
 ```
 
@@ -62,7 +62,7 @@ Release build, with the Dashboard inside the binary:
 ```
 cd dashboard && npm ci && npm run build && cd ..
 rm -rf internal/adminui/dist && cp -r dashboard/dist internal/adminui/dist
-go build -trimpath -tags embedui -o <out-dir>/gateway ./cmd/gateway
+go build -trimpath -tags embedui -o <out-dir>/apiward ./cmd/apiward
 ```
 
 - `internal/adminui/dist` is ignored by Git.

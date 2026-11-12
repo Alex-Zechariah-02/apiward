@@ -46,7 +46,7 @@ export class Demo extends SharedDemo {
   async enrol(name: string, permissions: string): Promise<string> {
     await this.stop()
     const result = spawnSync(
-      join(this.bin, 'gateway' + exe),
+      join(this.bin, 'apiward' + exe),
       ['enrol', '--config', join(this.dir, 'gateway.json'), '--admin', name, '--permissions', permissions],
       { encoding: 'utf8' },
     )
@@ -106,13 +106,13 @@ export class ShortSessions {
       upstream: { dial_timeout: '2s', response_header_timeout: '5s', read_idle_timeout: '5s' },
     }
     writeFileSync(this.config(), JSON.stringify(config, null, 2))
-    const result = spawnSync(join(this.bin, 'gateway' + exe), ['install', '--config', this.config(), '--admin', 'admin'], { encoding: 'utf8' })
+    const result = spawnSync(join(this.bin, 'apiward' + exe), ['install', '--config', this.config(), '--admin', 'admin'], { encoding: 'utf8' })
     if (result.status !== 0) throw new Error(`install failed: ${result.stderr}`)
     return enrolmentSecret(result.stdout)
   }
 
   async start(): Promise<void> {
-    this.child = spawn(join(this.bin, 'gateway' + exe), ['run', '--config', this.config()], { stdio: 'ignore' })
+    this.child = spawn(join(this.bin, 'apiward' + exe), ['run', '--config', this.config()], { stdio: 'ignore' })
     const deadline = Date.now() + 30_000
     for (;;) {
       try {

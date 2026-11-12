@@ -33,17 +33,17 @@ const (
 	exitIncomplete = 3 // the graceful stop did not complete
 )
 
-const nativeUsage = `usage: gateway run --config <file>
-  gateway version
-  gateway health --config <file>
-  gateway install --config <file> --admin <name>
-  gateway enrol --config <file> --admin <name> --permissions <list>
-  gateway migrate --config <file>
-  gateway jwks --config <file>
-  gateway backup --config <file> --output <file>
-  gateway restore --config <file> --backup <file>
-  gateway policy import-openapi --spec <file> --api <id> --upstream <id> --base <file> --out <file> --report <file>
-  gateway policy export-openapi --policy <file> --api <id> --out <file> --report <file>`
+const nativeUsage = `usage: apiward run --config <file>
+  apiward version
+  apiward health --config <file>
+  apiward install --config <file> --admin <name>
+  apiward enrol --config <file> --admin <name> --permissions <list>
+  apiward migrate --config <file>
+  apiward jwks --config <file>
+  apiward backup --config <file> --output <file>
+  apiward restore --config <file> --backup <file>
+  apiward policy import-openapi --spec <file> --api <id> --upstream <id> --base <file> --out <file> --report <file>
+  apiward policy export-openapi --policy <file> --api <id> --out <file> --report <file>`
 
 // Main runs the native gateway command line and returns the exit status.
 func Main(args []string) int {
@@ -108,12 +108,12 @@ func Main(args []string) int {
 		_, err = pipeline.LoadVerifier(cfg.controller.JWT)
 	}
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "gateway:", err)
+		fmt.Fprintln(os.Stderr, "apiward:", err)
 		return exitFailed
 	}
 	code, err := operator.Run(command, operatorConfig(cfg.controller), values)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "gateway:", err)
+		fmt.Fprintln(os.Stderr, "apiward:", err)
 	}
 	return code
 }
