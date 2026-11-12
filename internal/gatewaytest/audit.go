@@ -110,7 +110,7 @@ type AuditLine struct {
 	Lost      uint64 `json:"lost"`
 }
 
-// AuditLines reads every record of an audit file.
+// AuditLines reads every record of an audit file, up to its logical end.
 func AuditLines(t *testing.T, path string) []AuditLine {
 	t.Helper()
 	data, err := os.ReadFile(path)
@@ -118,7 +118,7 @@ func AuditLines(t *testing.T, path string) []AuditLine {
 		t.Fatal(err)
 	}
 	var events []AuditLine
-	for _, line := range strings.Split(strings.TrimSpace(string(data)), "\n") {
+	for _, line := range strings.Split(strings.TrimSpace(string(audit.Content(data))), "\n") {
 		if line == "" {
 			continue
 		}

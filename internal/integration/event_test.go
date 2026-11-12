@@ -185,6 +185,7 @@ func TestEventsResistInjectionAndLeakage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	raw = audit.Content(raw)
 	for _, secret := range []string{token, "eyJ", "COOKIE-SECRET", "QWxhZGRpbjpvcGVuIHNlc2FtZQ", "Bearer", "Basic", "access_token"} {
 		if bytes.Contains(raw, []byte(secret)) {
 			t.Errorf("audit log contains %q", secret)

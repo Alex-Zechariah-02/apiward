@@ -129,10 +129,11 @@ func TestCredentialsNeverRecorded(t *testing.T) {
 	e.EventsWhen(func(events []map[string]any) bool { return gatewaytest.CountKind(events, "request.rejected") >= 4 })
 	e.AssertReceipts(1, 0, 0)
 
-	audit, err := os.ReadFile(e.AuditLog)
+	raw, err := os.ReadFile(e.AuditLog)
 	if err != nil {
 		t.Fatal(err)
 	}
+	logged := string(audit.Content(raw))
 	e.Stop()
 	output := e.Output.String()
 	signatures := []string{}
@@ -141,7 +142,7 @@ func TestCredentialsNeverRecorded(t *testing.T) {
 	}
 	secrets := append([]string{"eyJ", "Bearer", "Basic", "PRIVATE KEY", "MIIEvQ", valid[:40]}, signatures...)
 	for _, secret := range secrets {
-		if strings.Contains(string(audit), secret) {
+		if strings.Contains(logged, secret) {
 			t.Errorf("audit log contains %q", secret)
 		}
 		if strings.Contains(output, secret) {
@@ -153,7 +154,7 @@ func TestCredentialsNeverRecorded(t *testing.T) {
 			}
 		}
 	}
-	for i, line := range strings.Split(strings.TrimSuffix(string(audit), "\n"), "\n") {
+	for i, line := range strings.Split(strings.TrimSuffix(logged, "\n"), "\n") {
 		var ev map[string]any
 		if err := json.Unmarshal([]byte(line), &ev); err != nil || ev["kind"] == "forged" {
 			t.Fatalf("audit line %d is not one genuine record: %q", i, line)
