@@ -1,7 +1,8 @@
 // The upstream connection pool and TLS session resumption: connections are
 // reused, a request that fails on a reused connection is never sent again,
-// a connection the upstream closed while idle is not used, and sessions are
-// resumed only within their lifetime and never across a reload.
+// a connection the upstream closed while idle is not used, one it closes as
+// a request takes it never hangs the pool, and sessions are resumed only
+// within their lifetime and never across a reload.
 
 package forward
 
@@ -208,5 +209,46 @@ func TestSessionResumption(t *testing.T) {
 			}
 			age(network, step.aged)
 		}
+	}
+}
+
+// The upstream answers each request with keep-alive and then closes the
+// connection, so the connection is pooled and closes while the next request
+// takes it. A failed reservation must not wait on the pool's own lock.
+func TestPoolSurvivesCloseRace(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { listener.Close() })
+	go func() {
+		for {
+			conn, err := listener.Accept()
+			if err != nil {
+				return
+			}
+			go func() {
+				defer conn.Close()
+				if _, err := http.ReadRequest(bufio.NewReader(conn)); err != nil {
+					return
+				}
+				conn.Write([]byte("HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n"))
+			}()
+		}
+	}()
+	_, send := forwarder(t, closed(), testPool, policy.Upstream{ID: "u", Dial: listener.Addr().String()})
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for range 3000 {
+			send()
+		}
+	}()
+	select {
+	case <-done:
+	case <-time.After(30 * time.Second):
+		// A panic, not t.Fatal: the cleanup's pool close would wait on the
+		// same hung lock.
+		panic("the pool hung when a closing connection was taken")
 	}
 }

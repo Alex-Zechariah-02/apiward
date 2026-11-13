@@ -100,25 +100,35 @@ func (p *connPool) RoundTrip(req *http.Request) (*http.Response, error) {
 }
 
 // take returns an idle connection to key, reserved for one request, or nil.
+// Reserve runs outside the lock: on a connection the upstream has just
+// closed, it calls the state hook synchronously, and the hook takes the lock.
 func (p *connPool) take(key poolKey) *pooledConn {
-	var stale []*pooledConn
-	defer func() { closeAll(stale) }()
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	list := p.idle[key]
-	for len(list) > 0 {
-		c := list[len(list)-1]
-		list = list[:len(list)-1]
-		p.idle[key] = list
-		c.idle = false
-		c.timer.Stop()
+	for {
+		c := p.pop(key)
+		if c == nil {
+			return nil
+		}
 		if c.conn.Reserve() == nil {
 			return c
 		}
-		stale = append(stale, c)
+		c.conn.Close()
 	}
-	delete(p.idle, key)
-	return nil
+}
+
+// pop removes the newest idle connection to key from the pool, or returns nil.
+func (p *connPool) pop(key poolKey) *pooledConn {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	list := p.idle[key]
+	if len(list) == 0 {
+		delete(p.idle, key)
+		return nil
+	}
+	c := list[len(list)-1]
+	p.idle[key] = list[:len(list)-1]
+	c.idle = false
+	c.timer.Stop()
+	return c
 }
 
 // changed puts c back once its exchange has ended, or drops it when it can
