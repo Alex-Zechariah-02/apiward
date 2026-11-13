@@ -95,7 +95,7 @@ func scanSecurityLogFile(path, name, first string, end int64, query Query, limit
 // lines before it are unread. A line still being written at the end of the
 // file is skipped.
 func scanLinesBackward(path string, end int64, budget *int64, visit func(line []byte, lineStart int64) bool) (stop int64, stopped bool, err error) {
-	file, err := os.Open(path)
+	file, err := openLog(path)
 	if err != nil {
 		return 0, false, err
 	}
@@ -182,7 +182,7 @@ func firstRecordID(path string) (string, error) {
 // less than span or no complete, decodable record starts there. Besides
 // audit.End's search, it reads at most two records.
 func RecentRecord(path string, span int64) (int64, time.Time, error) {
-	file, err := os.Open(path)
+	file, err := openLog(path)
 	if err != nil {
 		return 0, time.Time{}, err
 	}
@@ -230,7 +230,7 @@ type headRecord struct {
 // firstRecord decodes a file's first line, reading no further than its end
 // or MaxRecordBytes.
 func firstRecord(path string) (headRecord, error) {
-	file, err := os.Open(path)
+	file, err := openLog(path)
 	if err != nil {
 		return headRecord{}, err
 	}

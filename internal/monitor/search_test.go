@@ -146,3 +146,37 @@ func TestSecurityLogSearch(t *testing.T) {
 		}
 	}
 }
+
+// A read of the security log never stops the writer: while a scan holds a
+// file open, the writer can still rename the active file at a rotation and
+// delete the oldest rotated file at an eviction. Either failing would fail
+// the log and stop protected admission.
+func TestScanAllowsRotation(t *testing.T) {
+	dir := t.TempDir()
+	active := filepath.Join(dir, "audit.log")
+	writeAuditFile(t, active, 1, 4, "")
+	budget := int64(1 << 20)
+	var renamed error
+	if _, _, err := scanLinesBackward(active, -1, &budget, func([]byte, int64) bool {
+		renamed = os.Rename(active, active+".1")
+		return true
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if renamed != nil {
+		t.Fatalf("rotation rename during a scan: %v", renamed)
+	}
+	var removed error
+	if _, _, err := scanLinesBackward(active+".1", -1, &budget, func([]byte, int64) bool {
+		removed = os.Remove(active + ".1")
+		return true
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if removed != nil {
+		t.Fatalf("eviction delete during a scan: %v", removed)
+	}
+	if _, err := os.Stat(active + ".1"); !os.IsNotExist(err) {
+		t.Fatalf("evicted file still listed: %v", err)
+	}
+}
