@@ -83,9 +83,10 @@ type HistoryFilter struct {
 }
 
 // History lists up to limit transitions after the cursor in the filter's
-// order. Transitions are never deleted and each new one gets a larger rowid,
-// so a newest-first listing that pages from its first answer never skips or
-// repeats an entry; entries recorded later appear only in a new listing.
+// order. Each new transition gets a larger rowid and pruning deletes only
+// the oldest, so a newest-first listing that pages from its first answer
+// never skips or repeats an entry; entries recorded later appear only in a
+// new listing.
 func (s *DB) History(ctx context.Context, filter HistoryFilter, after int64, limit int) ([]HistoryEntry, error) {
 	conditions := []string{}
 	args := []any{}

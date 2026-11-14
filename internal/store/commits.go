@@ -67,7 +67,8 @@ func (s *DB) RecordRejection(ctx context.Context, t TransitionRecord, now time.T
 // CommitRevision atomically stores a new revision, makes it the active base,
 // applies the deployment mode and candidate changes that go with it, and
 // records the committed transition. This is the authoritative commit point;
-// the runtime pointer swap follows it.
+// the runtime pointer swap follows it. History that only revisions older than
+// the newest change.Keep need is deleted in the same transaction.
 func (s *DB) CommitRevision(ctx context.Context, t TransitionRecord, change RevisionChange, now time.Time) (int64, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -114,6 +115,9 @@ func (s *DB) CommitRevision(ctx context.Context, t TransitionRecord, change Revi
 	t.Revision = revision
 	t.Candidate = change.Candidate
 	if err := insertCommitted(ctx, tx, t, now); err != nil {
+		return 0, err
+	}
+	if err := prune(ctx, tx, change.Keep); err != nil {
 		return 0, err
 	}
 	return revision, tx.Commit()

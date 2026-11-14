@@ -123,6 +123,9 @@ func (f nativeFile) check() (nativeConfig, error) {
 	if cfg.controller.AuditMaxFiles, err = numberSetting("gateway.audit_max_files", g.AuditMaxFiles, audit.DefaultAuditFiles, 2, controller.MaxAuditFiles); err != nil {
 		return nativeConfig{}, err
 	}
+	if cfg.controller.HistoryKeep, err = numberSetting("gateway.history_keep", g.HistoryKeep, controller.DefaultHistory, controller.MinHistory, controller.MaxHistory); err != nil {
+		return nativeConfig{}, err
+	}
 	if cfg.limits.MaxBodyBytes, err = numberSetting("data.max_body_bytes", d.MaxBodyBytes, pipeline.DefaultMaxBody, 1, policy.MaxBodyLimit); err != nil {
 		return nativeConfig{}, err
 	}

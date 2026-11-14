@@ -74,6 +74,7 @@ func TestNativeConfigSettings(t *testing.T) {
 			AuditTimeout:         2 * time.Second,
 			AuditMaxBytes:        64 << 20,
 			AuditMaxFiles:        8,
+			HistoryKeep:          1000,
 			AuditQueue:           1024,
 			JWT:                  gatewaytest.TestTrust("issuer", "gateway", filepath.Join(dir, "issuer.pem")),
 			Network:              closed,

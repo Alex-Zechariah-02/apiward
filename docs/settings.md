@@ -97,6 +97,8 @@ The JSON settings file that `apiward run --config <file>` reads. Upstream TLS pr
 
 ## Operator commands
 
+- The database keeps the newest `gateway.history_keep` policy versions (100 to 100,000, default 1,000). Publishing a version deletes, in the same transaction, the versions older than those and the history only they need: their trials, finished temporary rules, drafts and recorded changes. A row in use is never deleted: the policy in force, a trial's undo target, the base of an active temporary rule, a change whose security-log record is not yet written.
+- A deleted version can no longer be rolled back to or restored, History no longer lists it, and a request key from a deleted change is decided as a new request. The security log files remain the full record of every change.
 - Keep the gateway stopped when running local operator commands; a deployment lock prevents two processes from sharing a database.
 - Successful operator commands exit 0; refusals and failures exit 1.
 - `install` and `enrol` print a one-time secret intentionally: keep that output private.

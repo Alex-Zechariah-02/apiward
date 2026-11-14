@@ -90,6 +90,7 @@ func (c *Controller) publish(ctx context.Context, t store.TransitionRecord, poli
 	fault.CrashPoint("before-commit")
 
 	change.Document, _ = json.Marshal(policy)
+	change.Keep = c.config.HistoryKeep
 	revision, err := c.store.CommitRevision(ctx, t, change, now)
 	if err != nil {
 		return c.storeFailure(t.ID, err)

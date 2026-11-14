@@ -114,6 +114,7 @@ type RevisionChange struct {
 	Deadline  time.Time // zero: the revision becomes the confirmed base; else provisional until then
 	Mode      string    // deployment mode after the commit
 	Candidate int64     // candidate this revision establishes, if any
+	Keep      int       // newest revisions kept; older history is pruned in the commit (0: none pruned)
 }
 
 // CandidateRecord is an immutable staged policy and its validation result.

@@ -126,7 +126,7 @@ func TestOverrideResolutionConstraints(t *testing.T) {
 	refused("revocation naming a restore", "a resolution is shared only by overrides quarantined together", end, store.OverrideRevoked, restore.ID, 4)
 	refused("revoked override changed", "exactly one final disposition", `UPDATE override SET status = 'expired' WHERE id = 1`)
 	refused("quarantined override moved to another transition", "exactly one final disposition", `UPDATE override SET resolution = 'create-3' WHERE id = 2`)
-	refused("override deleted", "history is kept", `DELETE FROM override WHERE id = 3`)
+	refused("active override deleted", "an active override is kept", `DELETE FROM override WHERE id = 4`)
 	again := store.TransitionRecord{ID: "revoke-2", Kind: "tpo.revoke", Actor: gatewaytest.HarnessAdmin, Target: "override 2", Digest: "d"}
 	if err := s.CommitOverrideEnd(ctx, again, 2, store.OverrideRevoked, now); !errors.Is(err, store.ErrNotUpdated) {
 		t.Errorf("revoking a quarantined override: %v", err)

@@ -23,7 +23,13 @@ func TestCorruptLifecycleStateAdmitsNothing(t *testing.T) {
 		reason  string
 	}{
 		{"rollback target missing", func(t *testing.T, db *sql.DB) {
-			mustExec(t, db, `PRAGMA foreign_keys = OFF`, `DELETE FROM revision WHERE id = 1`)
+			// The schema refuses to delete a revision in use, so the damage
+			// is made with its trigger set aside and put back unchanged.
+			var kept string
+			if err := db.QueryRow(`SELECT sql FROM sqlite_schema WHERE name = 'revision_kept'`).Scan(&kept); err != nil {
+				t.Fatal(err)
+			}
+			mustExec(t, db, `PRAGMA foreign_keys = OFF`, `DROP TRIGGER revision_kept`, `DELETE FROM revision WHERE id = 1`, kept)
 		}, "foreign key check failed"},
 		{"rollback target altered", func(t *testing.T, db *sql.DB) {
 			mustExec(t, db, `UPDATE revision SET document = CAST('{"schema_version":4}' AS BLOB) WHERE id = 1`)
