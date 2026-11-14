@@ -125,7 +125,8 @@ jobs:
             fetch/go.sum
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 24
+          # The same release as the image build stage.
+          node-version: 24.21.0
           cache: npm
           cache-dependency-path: |
             apiward/dashboard/package-lock.json
@@ -152,3 +153,6 @@ jobs:
         with:
           persist-credentials: false
       - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          # Development dependencies build the shipped Dashboard.
+          fail-on-scopes: runtime, development, unknown
