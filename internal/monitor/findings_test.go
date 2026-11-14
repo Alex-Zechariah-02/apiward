@@ -70,7 +70,7 @@ func TestPermitUseFromSecurityLog(t *testing.T) {
 	active := filepath.Join(dir, "audit.log")
 	writeAuditFile(t, active+".1", 1, 4, "")
 	writeAuditFile(t, active, 5, 8, "")
-	files, _, _ := LogFiles(active)
+	files, _, _ := LogFiles(active, 8)
 	use, err := (&Summaries{}).PermitUse(dir, files, ExportScan)
 	// Odd records are forwarded (allowed) read-a requests carrying READER.
 	if err != nil || !use.used[[2]string{"READER", "read-a"}] || use.used[[2]string{"WRITER", "read-a"}] {

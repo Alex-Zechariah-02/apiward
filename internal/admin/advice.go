@@ -37,7 +37,8 @@ func (s *Server) handleAdvice(w http.ResponseWriter, r *http.Request, who caller
 		adminError(w, http.StatusServiceUnavailable, "gateway_unavailable", "")
 		return
 	}
-	files, missing, err := monitor.LogFiles(s.audit.Path())
+	_, _, _, kept := s.audit.Usage()
+	files, missing, err := monitor.LogFiles(s.audit.Path(), kept)
 	if err != nil {
 		adminError(w, http.StatusServiceUnavailable, "gateway_unavailable", "")
 		return

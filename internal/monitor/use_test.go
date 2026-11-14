@@ -31,7 +31,7 @@ func TestPermitUseSummaries(t *testing.T) {
 	var cache Summaries
 	compare := func(step string) {
 		t.Helper()
-		files, _, err := LogFiles(active)
+		files, _, err := LogFiles(active, 8)
 		if err != nil {
 			t.Fatal(err)
 		}

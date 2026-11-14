@@ -174,55 +174,6 @@ func (o *Observations) Record(event audit.Event) {
 	}
 }
 
-// Recent returns, newest first, the retained requests that keep accepts,
-// stopping once it has limit of them (0: no limit). Only returned requests
-// are copied, so a reader that wants a short window or a few matches does
-// not copy the whole ring while holding the lock the request path records
-// under. keep runs under that lock and must not block.
-func (o *Observations) Recent(keep func(*Observed) bool, limit int) []Observed {
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	var result []Observed
-	for i := range len(o.ring) {
-		request := &o.ring[o.slot(i)]
-		if !keep(request) {
-			continue
-		}
-		result = append(result, *request)
-		if len(result) == limit {
-			break
-		}
-	}
-	return result
-}
-
-// RetainedSince returns the time of the oldest request still kept and
-// whether older requests have already been dropped from the ring.
-func (o *Observations) RetainedSince() (time.Time, bool) {
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	if len(o.ring) == 0 {
-		return time.Time{}, false
-	}
-	return o.ring[o.slot(len(o.ring)-1)].Time, o.next > uint64(o.window) // #nosec G115 -- the window is a validated positive size
-}
-
-// slot is the ring index of the request age places before the newest. While
-// the ring grows, request n sits at index n-1, which the modulus keeps.
-func (o *Observations) slot(age int) uint64 {
-	return (o.next - 1 - uint64(age)) % uint64(o.window) // #nosec G115 -- age is an index into the ring, never negative
-}
-
-func (o *Observations) Snapshot() []Observed {
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	result := make([]Observed, len(o.ring))
-	for i := range result {
-		result[i] = o.ring[o.slot(i)]
-	}
-	return result
-}
-
 func (o *Observations) Subscribe() *Viewer {
 	o.mu.Lock()
 	defer o.mu.Unlock()

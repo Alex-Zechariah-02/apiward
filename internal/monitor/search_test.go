@@ -56,9 +56,14 @@ func TestSecurityLogSearch(t *testing.T) {
 	// The active file ends with a record still being written and the zero
 	// tail of a zero-filled file (one 1 MiB fill step).
 	writeAuditFile(t, active, 9, 12, `{"event_id":"e-13","kind":"request.forw`+strings.Repeat("\x00", 1<<20))
-	files, missing, err := LogFiles(active)
+	files, missing, err := LogFiles(active, 8)
 	if err != nil || !slices.Equal(files, []string{"audit.log", "audit.log.3", "audit.log.2"}) || !slices.Equal(missing, []string{"audit.log.1"}) {
 		t.Fatalf("files %v, missing %v (%v)", files, missing, err)
+	}
+	// A log that keeps three files (two rotated) could no longer hold .1, so
+	// its absence is eviction, not archiving.
+	if _, missing, _ := LogFiles(active, 3); len(missing) != 0 {
+		t.Fatalf("missing beyond the file limit: %v", missing)
 	}
 
 	// Newest first across files; administrator records and the incomplete
@@ -122,14 +127,14 @@ func TestSecurityLogSearch(t *testing.T) {
 		t.Fatal(err)
 	}
 	writeAuditFile(t, active, 20, 21, "")
-	files, _, _ = LogFiles(active)
+	files, _, _ = LogFiles(active, 8)
 	rest, err := Search(dir, files, first.Next, Query{}, 100, PageScan)
 	if err != nil || !slices.Equal(refsOf(rest.Items), want[2:]) {
 		t.Errorf("after rotation: %v (%v)", refsOf(rest.Items), err)
 	}
 	// A file moved away to archive ends that cursor clearly.
 	os.Remove(active + ".4")
-	files, _, _ = LogFiles(active)
+	files, _, _ = LogFiles(active, 8)
 	if _, err := Search(dir, files, first.Next, Query{}, 100, PageScan); err != ErrCursorGone {
 		t.Errorf("archived cursor: %v", err)
 	}

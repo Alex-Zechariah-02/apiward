@@ -116,8 +116,11 @@ func (q Query) matches(view RequestView) bool {
 
 // LogFiles lists the audit files newest first: the active file, then
 // the rotated files from the highest number down. missing names the numbered
-// files below the highest that are no longer present (moved away to archive).
-func LogFiles(active string) (files, missing []string, err error) {
+// files below the highest that are no longer present (moved away to archive),
+// only among the numbers the log could still hold: limit counts the files the
+// log keeps, the active one included, so evicted files never count and the
+// list stays bounded over the log's life.
+func LogFiles(active string, limit int64) (files, missing []string, err error) {
 	entries, err := os.ReadDir(filepath.Dir(active))
 	if err != nil {
 		return nil, nil, err
@@ -137,7 +140,8 @@ func LogFiles(active string) (files, missing []string, err error) {
 	}
 	missing = []string{}
 	if len(numbers) > 0 {
-		for n := 1; n < numbers[len(numbers)-1]; n++ {
+		highest := numbers[len(numbers)-1]
+		for n := max(1, highest-int(limit)+2); n < highest; n++ {
 			if !slices.Contains(numbers, n) {
 				missing = append(missing, prefix+strconv.Itoa(n))
 			}
