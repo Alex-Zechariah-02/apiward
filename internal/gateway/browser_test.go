@@ -101,8 +101,11 @@ func TestCORS(t *testing.T) {
 		}
 	}
 	// Preflights have their own counter under the API's public rate rule:
-	// the fifth from one address is refused.
-	preflight(origin...)
+	// the fifth from one address is refused. A preflight for a method with
+	// no operation counts too.
+	if resp, _ := e.Exchange(http.MethodOptions, "/a/x", "", "", append(slices.Clone(origin), "Access-Control-Request-Method", "DELETE")...); resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("preflight for a method with no operation: %d", resp.StatusCode)
+	}
 	if resp, _ := e.Exchange(http.MethodOptions, "/a/x", "", "", append(slices.Clone(origin), "Access-Control-Request-Method", "GET")...); resp.StatusCode != http.StatusTooManyRequests {
 		t.Fatalf("fifth preflight: %d", resp.StatusCode)
 	}
@@ -134,7 +137,7 @@ func TestCORS(t *testing.T) {
 			codes[ev["decision"].(string)+"/"+ev["error"].(string)]++
 		}
 	}
-	if codes["allowed/cors_preflight"] != 2 || codes["refused/cors_refused"] != 2 {
+	if codes["allowed/cors_preflight"] != 1 || codes["refused/cors_refused"] != 3 {
 		t.Fatalf("preflight events %v", codes)
 	}
 }

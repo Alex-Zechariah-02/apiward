@@ -121,4 +121,12 @@ func (r *Rule) AddressAllowed(address string) bool {
 	return slices.ContainsFunc(r.settings.addresses, func(p netip.Prefix) bool { return p.Contains(addr) })
 }
 
-func hasCORS(r *Rule) bool { return r != nil && r.settings.cors != nil }
+// firstCORS returns the first rule of an API with browser access, or nil.
+func firstCORS(rules []*Rule) *Rule {
+	for _, r := range rules {
+		if r != nil && r.settings.cors != nil {
+			return r
+		}
+	}
+	return nil
+}

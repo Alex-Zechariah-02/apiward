@@ -100,16 +100,21 @@ func (g *Generation) Conditioned(path, method string) bool {
 }
 
 // Preflight returns the rule a CORS preflight's requested method selects on
-// the path, as Match would for the actual request, and whether the path's
-// target has an operation of an API with browser access; only then does the
-// gateway answer the preflight.
-func (g *Generation) Preflight(path, method string, in Inbound) (*Rule, bool) {
+// the path, as Match would for the actual request, and the rule whose API
+// settings (address allow list, preflight rate) apply: the selected rule, or
+// when none is selected the target's first operation of an API with browser
+// access. api is nil, and the gateway does not answer the preflight, when
+// the path's target has no such operation.
+func (g *Generation) Preflight(path, method string, in Inbound) (rule, api *Rule) {
 	t := g.lookup(path)
-	if t == nil || !t.cors {
-		return nil, false
+	if t == nil || t.cors == nil {
+		return nil, nil
 	}
-	_, rule := g.Match(path, method, in)
-	return rule, true
+	_, rule = g.Match(path, method, in)
+	if rule == nil {
+		return nil, t.cors
+	}
+	return rule, rule
 }
 
 // lookup returns the most specific target for a canonical path.

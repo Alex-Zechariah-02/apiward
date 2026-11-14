@@ -28,21 +28,22 @@ func isPreflight(r *http.Request) bool {
 // The API's address allow list and its preflight rate rule apply first.
 func (h *Handler) preflight(q *request, g *compile.Generation, path string, in compile.Inbound) bool {
 	header := in.Header
-	rule, handled := g.Preflight(path, header.Get("Access-Control-Request-Method"), in)
-	if !handled {
+	rule, api := g.Preflight(path, header.Get("Access-Control-Request-Method"), in)
+	if api == nil {
 		return false
 	}
 	if rule != nil {
-		q.event.Operation, q.event.API, q.event.Upstream = rule.Operation(), rule.API(), rule.Upstream()
-		if !rule.AddressAllowed(q.event.ClientAddress) {
-			q.reject(audit.StageRoute, http.StatusForbidden, "address_not_allowed")
+		q.event.Operation = rule.Operation()
+	}
+	q.event.API, q.event.Upstream = api.API(), api.Upstream()
+	if !api.AddressAllowed(q.event.ClientAddress) {
+		q.reject(audit.StageRoute, http.StatusForbidden, "address_not_allowed")
+		return true
+	}
+	if limit := api.PreflightRate(); limit != nil {
+		key := counterKey{operation: api.API(), keyType: keyPreflight, key: q.rateAddress}
+		if !h.admitRate(q, audit.StageRoute, key, limit) {
 			return true
-		}
-		if limit := rule.PreflightRate(); limit != nil {
-			key := counterKey{operation: rule.API(), keyType: keyPreflight, key: q.rateAddress}
-			if !h.admitRate(q, audit.StageRoute, key, limit) {
-				return true
-			}
 		}
 	}
 	var allowed http.Header

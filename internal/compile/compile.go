@@ -50,7 +50,9 @@ type target struct {
 	// first; a method's unconditioned rule, if any, is in methods.
 	variants map[string][]*Rule
 	allow    string // value for the Allow header
-	cors     bool   // an operation on the target belongs to an API with CORS
+	// cors is the first operation (by method) on the target of an API with
+	// browser access; nil when there is none.
+	cors *Rule
 }
 
 type Rule struct {
@@ -196,7 +198,9 @@ func Compile(p policy.Policy, revision int64, notAfter time.Time, limits policy.
 		}
 		sort.Strings(methods)
 		for _, m := range methods {
-			t.cors = t.cors || hasCORS(t.methods[m]) || slices.ContainsFunc(t.variants[m], hasCORS)
+			if t.cors == nil {
+				t.cors = firstCORS(append([]*Rule{t.methods[m]}, t.variants[m]...))
+			}
 		}
 		t.allow = strings.Join(methods, ", ")
 		if t.prefix == "" {
