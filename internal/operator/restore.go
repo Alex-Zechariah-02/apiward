@@ -141,8 +141,8 @@ func checkBackup(backup string) (backupManifest, error) {
 }
 
 // checkLive refuses to replace a live database that is in use, that belongs to
-// another installation, or that still has write-ahead log files beside it,
-// which would be applied to the restored file.
+// another installation, or that still has write-ahead log or rollback journal
+// files beside it, which would be applied to the restored file.
 func checkLive(live, installation string) error {
 	if _, err := os.Stat(live); err == nil {
 		st, err := store.OpenStore(live)
@@ -160,7 +160,9 @@ func checkLive(live, installation string) error {
 			return err
 		}
 	}
-	for _, companion := range []string{live + "-wal", live + "-shm"} {
+	// A leftover rollback journal is a hot journal SQLite would roll back into
+	// the promoted database on its first open.
+	for _, companion := range []string{live + "-wal", live + "-shm", live + "-journal"} {
 		if _, err := os.Lstat(companion); !errors.Is(err, fs.ErrNotExist) {
 			return fmt.Errorf("%s exists; move the live database and its companion files aside before restoring", companion)
 		}
