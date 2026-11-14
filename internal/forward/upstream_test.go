@@ -94,26 +94,26 @@ func send(t *testing.T, n *Network, u policy.Upstream, host string) (string, int
 	r := httptest.NewRequest(http.MethodGet, "/x", nil)
 	r.Host = host
 	rec := httptest.NewRecorder()
-	if err := proxy.Forward(rec, r.WithContext(Bind(context.Background(), destination(t, u)))); err != nil {
+	if err := proxy.Forward(rec, r.WithContext(Bind(context.Background(), destination(t, u, http.MethodGet)))); err != nil {
 		status, _ := ForwardFailure(err)
 		return FailureReason(err), status
 	}
 	return "", rec.Code
 }
 
-// destination is where a policy with the one public operation GET /x on u
-// sends that request.
-func destination(t *testing.T, u policy.Upstream) compile.Destination {
+// destination is where a policy with the one public operation method /x on
+// u sends that request.
+func destination(t *testing.T, u policy.Upstream, method string) compile.Destination {
 	t.Helper()
 	p := policy.Policy{SchemaVersion: policy.LatestSchemaVersion, Profile: policy.ProfileCore,
 		Upstreams:  []policy.Upstream{u},
 		APIs:       []policy.API{{ID: "api", Upstream: u.ID}},
-		Operations: []policy.Operation{{ID: "op", API: "api", Method: "GET", Target: "/x", Access: "allow", Auth: "none"}}}
+		Operations: []policy.Operation{{ID: "op", API: "api", Method: method, Target: "/x", Access: "allow", Auth: "none"}}}
 	g, err := compile.Compile(p, 1, time.Time{}, policy.Limits{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, rule := g.Match("/x", "GET", compile.Inbound{})
+	_, rule := g.Match("/x", method, compile.Inbound{})
 	d, ok := rule.Destination("/x")
 	if !ok {
 		t.Fatal("no destination")

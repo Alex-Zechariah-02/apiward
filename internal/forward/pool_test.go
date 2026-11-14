@@ -33,7 +33,7 @@ func forwarder(t *testing.T, n *Network, pool PoolSettings, u policy.Upstream) (
 		t.Fatal(err)
 	}
 	t.Cleanup(proxy.Close)
-	d := destination(t, u)
+	d := destination(t, u, http.MethodGet)
 	return proxy, func() string {
 		rec := httptest.NewRecorder()
 		r := httptest.NewRequest(http.MethodGet, "/x", nil)

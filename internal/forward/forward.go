@@ -198,6 +198,11 @@ func (p *upstreamProxy) Forward(w http.ResponseWriter, r *http.Request) error {
 		Transport:  p.roundTripper(),
 		ErrorLog:   p.errorLog,
 		BufferPool: &p.buffers,
+		// A response with a declared length is otherwise held in the server's
+		// buffer, headers included, until it ends; flushing every 100 ms
+		// (Traefik's default) passes a slow response on as it arrives. Event
+		// streams and bodies without a length are flushed at once regardless.
+		FlushInterval: 100 * time.Millisecond,
 		ModifyResponse: func(res *http.Response) error {
 			// Every protocol switch is refused at ingress, so an upstream that
 			// switches anyway is not followed into a tunnel. The proxy closes
