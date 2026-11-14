@@ -9,6 +9,8 @@ import (
 	"net"
 	"net/http"
 	"time"
+
+	"github.com/Alex-Zechariah-02/apiward/internal/connections"
 )
 
 // startAdmin serves handler, the Admin API, on its loopback listener, which is
@@ -19,6 +21,7 @@ func (c *Controller) startAdmin(handler http.Handler) error {
 	if err != nil {
 		return err
 	}
+	listener = connections.Cap(listener, connections.Auxiliary, c.observations.Refuser("admin"))
 	c.admin = &http.Server{
 		Handler:           handler,
 		ReadHeaderTimeout: 5 * time.Second,

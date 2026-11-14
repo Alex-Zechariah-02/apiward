@@ -69,22 +69,24 @@ type Observations struct {
 	done    chan struct{}
 	closed  bool
 	metrics requestMetrics
-	// redirects counts the redirect listener's answers and refused the
-	// data connections closed at the connection cap; they need no lock.
+	// redirects counts the redirect listener's 308 answers, refused the
+	// data connections closed at the connection cap, and auxiliary the
+	// connections each other listener closed at its cap (keys fixed by New);
+	// they need no lock.
 	redirects atomic.Uint64
 	refused   atomic.Uint64
+	auxiliary map[string]*atomic.Uint64
 }
-
-// Redirected counts one answer of the HTTP-to-HTTPS redirect listener.
-func (o *Observations) Redirected() { o.redirects.Add(1) }
-
-// ConnectionRefused counts one data connection closed at the cap.
-func (o *Observations) ConnectionRefused() { o.refused.Add(1) }
 
 // New keeps the last window requests; apis bounds the per-API duration
 // metrics. Both are the resolved capacity limits.
 func New(window, apis int) *Observations {
-	return &Observations{window: window, viewers: map[*Viewer]bool{}, done: make(chan struct{}), metrics: requestMetrics{apis: apis}}
+	o := &Observations{window: window, viewers: map[*Viewer]bool{}, done: make(chan struct{}), metrics: requestMetrics{apis: apis},
+		auxiliary: map[string]*atomic.Uint64{}}
+	for _, name := range Auxiliary {
+		o.auxiliary[name] = new(atomic.Uint64)
+	}
+	return o
 }
 
 func OptionalString(value string) *string {

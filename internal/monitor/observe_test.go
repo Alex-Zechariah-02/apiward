@@ -111,3 +111,16 @@ func TestRetainedSinceReportsDroppedRequests(t *testing.T) {
 		t.Fatalf("after one more: oldest %v, dropped %v", oldest, dropped)
 	}
 }
+
+// Past the series cap a new series keeps only its decision, so a module's
+// free-text failure reasons cannot grow the metrics without bound.
+func TestMetricsSeriesCap(t *testing.T) {
+	m := requestMetrics{apis: 1}
+	for i := range 4200 {
+		code := fmt.Sprintf("module m: reason %d", i)
+		m.Record(RequestView{Decision: "reject", Code: &code})
+	}
+	if len(m.counts) != 4097 {
+		t.Fatalf("%d series, want the 4,096 cap plus one collapsed series", len(m.counts))
+	}
+}

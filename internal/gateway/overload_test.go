@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Alex-Zechariah-02/apiward/internal/connections"
 	"github.com/Alex-Zechariah-02/apiward/internal/gatewaytest"
 	"github.com/Alex-Zechariah-02/apiward/internal/pipeline"
 )
@@ -73,7 +74,7 @@ func TestConnectionCapClosesExtra(t *testing.T) {
 		t.Fatal(err)
 	}
 	refused := make(chan struct{}, 4)
-	l := capConnections(inner, 1, func() { refused <- struct{}{} })
+	l := connections.Cap(inner, 1, func() { refused <- struct{}{} })
 	defer l.Close()
 	accepted := make(chan net.Conn, 4)
 	go func() {

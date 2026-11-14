@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/admin"
+	"github.com/Alex-Zechariah-02/apiward/internal/connections"
 	"github.com/Alex-Zechariah-02/apiward/internal/controller"
 	"github.com/Alex-Zechariah-02/apiward/internal/operator"
 	"github.com/Alex-Zechariah-02/apiward/internal/pipeline"
@@ -171,7 +172,7 @@ func runNative(configPath string, logger *slog.Logger) int {
 			logger.Info("stopping", "signal", sig.String())
 			running = false
 		case err := <-g.served:
-			logger.Error("a listener failed; stopping", "error", err)
+			logger.Error("the data listener failed; stopping", "error", err)
 			status, running = exitFailed, false
 		}
 	}
@@ -197,8 +198,8 @@ type nativeGateway struct {
 	// certificate is the data listener's; nil when it serves plain HTTP.
 	certificate *servingCertificate
 	upstreams   upstreams
-	// served receives the data-plane, metrics and redirect servers' Serve
-	// results; done closes when the stop begins.
+	// served receives the data-plane server's Serve result; done closes when
+	// the stop begins.
 	served chan error
 	done   chan struct{}
 	stop   func() error
@@ -235,7 +236,11 @@ func startNative(cfg nativeConfig, logger *slog.Logger) (*nativeGateway, error) 
 		closeListeners(listener, redirectListener)
 		return nil, errors.Join(err, c.Stop())
 	}
-	listener = capConnections(listener, cfg.maxConnections, c.Observations().ConnectionRefused)
+	listener = connections.Cap(listener, cfg.maxConnections, c.Observations().ConnectionRefused)
+	if redirectListener != nil {
+		// The redirect listener faces the same clients as the data listener.
+		redirectListener = connections.Cap(redirectListener, cfg.maxConnections, c.Observations().Refuser("redirect"))
+	}
 	server := cfg.server()
 	// HTTP/2 only over TLS, negotiated by ALPN: a plain listener serves
 	// HTTP/1 alone, so a client cannot start HTTP/2 by prior knowledge.
@@ -252,14 +257,14 @@ func startNative(cfg nativeConfig, logger *slog.Logger) (*nativeGateway, error) 
 		ErrorLog:                     slog.NewLogLogger(logger.Handler(), slog.LevelWarn),
 	}
 	server.Apply(data)
-	g := &nativeGateway{controller: c, data: data, metrics: d.metrics, certificate: d.certificate, upstreams: d.upstreams, served: make(chan error, 3), done: make(chan struct{}),
+	g := &nativeGateway{controller: c, data: data, metrics: d.metrics, certificate: d.certificate, upstreams: d.upstreams, served: make(chan error, 1), done: make(chan struct{}),
 		draining: &d.draining, grace: d.config.shutdownGrace, delay: d.config.shutdownDelay}
 	g.stop = sync.OnceValue(g.shutdown)
 	go func() { g.served <- g.data.Serve(listener) }()
-	go func() { g.served <- g.metrics.Serve(metricsListener) }()
+	go serveAuxiliary("metrics", g.metrics, metricsListener, logger)
 	if redirectListener != nil {
-		g.redirect = redirectServer(cfg.redirect.Origin, c.Observations())
-		go func() { g.served <- g.redirect.Serve(redirectListener) }()
+		g.redirect = redirectServer(cfg.redirect.Origin, c.Observations(), server)
+		go serveAuxiliary("redirect", g.redirect, redirectListener, logger)
 	}
 	if g.certificate != nil {
 		go g.certificate.watchExpiry(g.done)

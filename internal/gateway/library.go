@@ -17,6 +17,7 @@ import (
 
 	"github.com/Alex-Zechariah-02/apiward/internal/admin"
 	"github.com/Alex-Zechariah-02/apiward/internal/adminui"
+	"github.com/Alex-Zechariah-02/apiward/internal/connections"
 	"github.com/Alex-Zechariah-02/apiward/internal/controller"
 	"github.com/Alex-Zechariah-02/apiward/internal/forward"
 	"github.com/Alex-Zechariah-02/apiward/internal/monitor"
@@ -228,6 +229,7 @@ func (d *deployment) listen(plain bool) (net.Listener, error) {
 	if err != nil {
 		return nil, classify(ErrListen, fmt.Errorf("metrics listener: %w", err))
 	}
+	metrics = connections.Cap(metrics, connections.Auxiliary, d.controller.Observations().Refuser("metrics"))
 	var ui http.Handler // nil when no files are configured: the routes stay unregistered
 	if d.ui != nil {
 		ui = dashboard(d.ui)

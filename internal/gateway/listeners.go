@@ -1,6 +1,6 @@
 // The data plane's transport beyond plain HTTP: TLS from certificate files,
-// the HTTP-to-HTTPS redirect listener, listening on every interface, and the
-// health endpoints served beside the metrics.
+// listening on every interface, and the health endpoints served beside the
+// metrics. The redirect listener is in redirect.go.
 
 package gateway
 
@@ -21,7 +21,6 @@ import (
 
 	"github.com/Alex-Zechariah-02/apiward/internal/audit"
 	"github.com/Alex-Zechariah-02/apiward/internal/forward"
-	"github.com/Alex-Zechariah-02/apiward/internal/monitor"
 )
 
 // expiryWarning is how close to its expiry the data listener's certificate
@@ -38,12 +37,6 @@ type certificateFiles struct {
 // dataTLS is the data listener's TLS; certificate files are its only source.
 type dataTLS struct {
 	Files *certificateFiles `json:"files"`
-}
-
-// redirectSettings is the HTTP listener that sends every client to origin.
-type redirectSettings struct {
-	Listen string `json:"listen"`
-	Origin string `json:"origin"`
 }
 
 // checkTransport checks the data listener's TLS and redirect settings.
@@ -169,42 +162,6 @@ func (s *servingCertificate) config(http2 bool) *tls.Config {
 			return s.current.Load(), nil
 		},
 	}
-}
-
-// redirect answers every request with 308 to origin plus the request's path
-// and query. The target host comes only from origin; the body is never read,
-// and the connection closes after the answer.
-func redirect(origin string, observed *monitor.Observations) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		observed.Redirected()
-		w.Header().Set("Connection", "close")
-		w.Header().Set("Content-Length", "0")
-		target := r.URL.RequestURI()
-		if target == "" || target[0] != '/' {
-			w.WriteHeader(http.StatusBadRequest)
-			return
-		}
-		w.Header().Set("Location", origin+target)
-		w.WriteHeader(http.StatusPermanentRedirect)
-	})
-}
-
-// redirectServer serves the redirect with short limits: it reads only
-// request headers.
-func redirectServer(origin string, observed *monitor.Observations) *http.Server {
-	return &http.Server{Handler: redirect(origin, observed), ReadHeaderTimeout: 5 * time.Second, WriteTimeout: 5 * time.Second, MaxHeaderBytes: defaultHeaderBytes}
-}
-
-// listenRedirect binds the redirect listener; nil when there is none.
-func listenRedirect(r *redirectSettings) (net.Listener, error) {
-	if r == nil {
-		return nil, nil
-	}
-	listener, err := net.Listen("tcp", r.Listen)
-	if err != nil {
-		return nil, classify(ErrListen, fmt.Errorf("redirect listener: %w", err))
-	}
-	return listener, nil
 }
 
 // closeListeners closes the listeners bound so far; an optional one that

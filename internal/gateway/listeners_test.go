@@ -120,7 +120,7 @@ func TestDataListenerTLSFiles(t *testing.T) {
 }
 
 // The redirect answers 308 to the configured origin whatever the client
-// names as host, keeps the path and query, and counts its answers.
+// names as host, keeps the path and query, and counts its redirects only.
 func TestRedirectListener(t *testing.T) {
 	observed := monitor.New(policy.DefaultWindow, policy.DefaultAPIs)
 	h := redirect("https://api.example.com", observed)
@@ -136,6 +136,11 @@ func TestRedirectListener(t *testing.T) {
 		if w.Code != http.StatusPermanentRedirect || w.Header().Get("Location") != want || w.Header().Get("Content-Length") != "0" || w.Header().Get("Connection") != "close" {
 			t.Errorf("%s: %d %v", target, w.Code, w.Header())
 		}
+	}
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, httptest.NewRequest(http.MethodOptions, "*", nil))
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("OPTIONS *: %d", w.Code)
 	}
 	metrics := httptest.NewRecorder()
 	monitor.Metrics(observed, func() []monitor.Gauge { return nil }).ServeHTTP(metrics, httptest.NewRequest(http.MethodGet, "/metrics", nil))

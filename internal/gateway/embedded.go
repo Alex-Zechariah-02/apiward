@@ -71,11 +71,7 @@ func (e *Embedded) Start() error {
 		return errors.Join(err, e.stop(ctx))
 	}
 	e.started = true
-	go func() {
-		if err := e.deployment.metrics.Serve(metrics); !errors.Is(err, http.ErrServerClosed) {
-			e.logger.Error("metrics listener failed", "error", err)
-		}
-	}()
+	go serveAuxiliary("metrics", e.deployment.metrics, metrics, e.logger)
 	e.deployment.enforcement.Hold(false)
 	e.logger.Info("listening", "metrics", metrics.Addr().String(), "admin", e.deployment.config.controller.AdminListen,
 		"data", "served by the host program; data.listen is not bound")
