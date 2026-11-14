@@ -141,6 +141,11 @@ func (m *mapper) operation(method, path string, item map[string]any, itemPointer
 // targetOf maps a path template to a gateway target: exact, or a prefix
 // when only the last segment is templated.
 func targetOf(path string) (string, bool, *refusal) {
+	// A gateway target ending in /* is a prefix; a literal * would import
+	// as one while the report calls it exact.
+	if strings.Contains(path, "*") {
+		return "", false, refuse(CodePathTemplate, "", "A path containing * cannot be expressed.")
+	}
 	segments := strings.Split(path, "/")
 	for i, segment := range segments {
 		if !strings.Contains(segment, "{") {

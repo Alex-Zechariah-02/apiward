@@ -74,7 +74,7 @@ func (m *mapper) extensions(object map[string]any, c *candidate) *refusal {
 // compiler checks the values.
 func settingsOf(root map[string]any) (policy.API, error) {
 	var api policy.API
-	for _, member := range []struct {
+	members := []struct {
 		name   string
 		object bool
 		into   any
@@ -83,7 +83,15 @@ func settingsOf(root map[string]any) (policy.API, error) {
 		{policy.CORSExtension, true, &api.CORS},
 		{policy.ResponseHeadersExtension, true, &api.ResponseHeaders},
 		{policy.AddressesExtension, false, &api.AllowAddresses},
-	} {
+	}
+	// A misspelt member would otherwise drop its setting silently.
+	known := []string{policy.ForwardExtension, policy.CORSExtension, policy.ResponseHeadersExtension, policy.AddressesExtension}
+	for _, name := range sortedKeys(root) {
+		if strings.HasPrefix(name, "x-apiward-") && !slices.Contains(known, name) {
+			return policy.API{}, errors.New("the root member " + policy.Clip(name) + " is not known")
+		}
+	}
+	for _, member := range members {
 		value, present := root[member.name]
 		if !present {
 			continue

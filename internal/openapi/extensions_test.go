@@ -88,6 +88,25 @@ func TestImportExtensions(t *testing.T) {
 			t.Fatalf("report %+v, error %v", report, err)
 		}
 	})
+	t.Run("unknown root member", func(t *testing.T) {
+		spec := []byte(`{"openapi": "3.1.0", "x-apiward-adresses": ["10.0.0.0/8"], "paths": {}}`)
+		if _, _, err := Import(spec, JSON, permitted); err == nil {
+			t.Fatal("a misspelt root member was ignored")
+		}
+	})
+	malformed := map[string]string{
+		"star path":         `{"openapi": "3.1.0", "paths": {"/a/*": {"get": {"operationId": "a", "security": []}}}}`,
+		"required mistyped": `{"openapi": "3.1.0", "paths": {"/a": {"get": {"operationId": "a", "security": [], "parameters": [{"name": "X-Tenant", "in": "header", "required": "true"}]}}}}`,
+		"in mistyped":       `{"openapi": "3.1.0", "paths": {"/a": {"get": {"operationId": "a", "security": [], "parameters": [{"name": "X-Tenant", "in": 1}]}}}}`,
+	}
+	for name, spec := range malformed {
+		t.Run(name, func(t *testing.T) {
+			_, report, err := Import([]byte(spec), JSON, permitted)
+			if err != nil || len(report.Refused) != 1 || len(report.Mapped) != 0 {
+				t.Fatalf("report %+v, error %v", report, err)
+			}
+		})
+	}
 	t.Run("values applied", func(t *testing.T) {
 		members := `, "x-apiward-access": "deny", "x-apiward-max-bytes": 77, "x-apiward-rate": {"algorithm": "sliding-window", "count": 5, "window_seconds": 9, "key": "subject"}`
 		result, report, err := Import(described(members), JSON, permitted)

@@ -100,8 +100,14 @@ func (m *mapper) parameters(item, object map[string]any, itemPointer, pointer st
 				return refused
 			}
 			value, _ := node.(map[string]any)
-			name, _ := value["name"].(string)
-			in, _ := value["in"].(string)
+			name, nameOK := value["name"].(string)
+			in, inOK := value["in"].(string)
+			// A mistyped member would otherwise change what is enforced
+			// silently (a non-boolean required makes the header optional).
+			_, requiredOK := value["required"].(bool)
+			if _, present := value["required"]; !nameOK || !inOK || present && !requiredOK {
+				return refuse(CodeKeyword, at, "A parameter needs a string name and in, and required must be true or false.")
+			}
 			if position, seen := index[in+" "+name]; seen {
 				merged[position] = parameter{value, at}
 				continue
