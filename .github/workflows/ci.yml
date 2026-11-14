@@ -11,6 +11,7 @@ on:
 permissions:
   contents: read
 
+# One run per ref, the newest wins: an older run of the same ref tells nothing the newer one will not.
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
@@ -22,6 +23,7 @@ env:
 jobs:
   go:
     runs-on: ubuntu-24.04
+    # Every job has a time limit, so a hung test, download or deployment frees its runner.
     timeout-minutes: 75
     env:
       EAT_PORT_OFFSET: "1000"
@@ -29,6 +31,7 @@ jobs:
       run:
         working-directory: apiward
     steps:
+      # Actions are pinned by commit and tools by version: a moved tag or a new release cannot change what a green run means.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           path: apiward
@@ -53,6 +56,7 @@ jobs:
       # The race detector covers every package but integration, whose tests
       # drive separately built gateway programs it does not instrument and
       # which the run above has already made.
+      # The test binary's own limit ends a deadlock with a goroutine dump before the job limit cuts it off.
       - run: go test -race $(go list ./... | grep -v '/internal/integration$') -count=1 -timeout 30m
 
   vuln:
@@ -66,6 +70,17 @@ jobs:
         with:
           go-version-file: go.mod
       - run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
+
+  image:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # Build only, never pushed: the image must build and carry its commit.
+      - run: docker build --build-arg "REVISION=$GITHUB_SHA" --tag apiward:ci .
+      - run: test "$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' apiward:ci)" = "$GITHUB_SHA"
 
   lint:
     runs-on: ubuntu-24.04
@@ -138,6 +153,7 @@ jobs:
       - run: cp -r dist ../internal/adminui/dist
       - run: go -C .. vet -tags embedui ./...
       - run: go -C .. test -tags embedui ./internal/adminui -count=1
+      # high: a high or critical advisory fails the job; lower ones go with the routine updates.
       - run: npm audit --audit-level=high
       # The tests run in the runner image's Chrome (playwright.config.ts).
       # Failure traces hold page contents and test credentials, so they stay

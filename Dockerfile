@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1
+# syntax=docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
 
 # The gateway image: the Dashboard is built and embedded in one static gateway
 # binary, which runs as a non-root user and needs a writable filesystem only at
@@ -57,6 +57,7 @@ USER 65532:65532
 EXPOSE 9480
 STOPSIGNAL SIGTERM
 # apiward health asks the metrics listener's /readyz and waits up to 5 s.
+# Probed every 10 s (every 2 s in the first 30 s, so a failed start shows early); three failures in a row, not one slow probe, mark it unhealthy; 8 s leaves the 5 s wait room.
 HEALTHCHECK --interval=10s --timeout=8s --start-period=30s --start-interval=2s --retries=3 \
     CMD ["/usr/local/bin/apiward", "health", "--config", "/etc/apiward/apiward.json"]
 ENTRYPOINT ["/usr/local/bin/apiward"]
