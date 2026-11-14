@@ -202,8 +202,11 @@ func checkHealth(configPath string) int {
 // reads only the configuration, so it works before the gateway first runs.
 func printJWKS(configPath string) int {
 	cfg, err := loadNativeConfig(configPath)
-	if err == nil && cfg.signer == nil {
-		err = errors.New("upstream.identity_key is not set")
+	if err == nil && cfg.unsigned {
+		err = errors.New("upstream.unsigned_identity is set: no identity assertion is signed")
+	}
+	if err == nil {
+		err = cfg.requireIdentity()
 	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "apiward:", err)

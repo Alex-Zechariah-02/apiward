@@ -38,6 +38,9 @@ func CheckPaths(configPath string, cfg Config, command string, flags map[string]
 	for _, file := range cfg.KeyFiles {
 		protected = append(protected, struct{ name, path string }{"JWT public key", file})
 	}
+	if cfg.IdentityKey != "" {
+		protected = append(protected, struct{ name, path string }{"identity key", cfg.IdentityKey})
+	}
 	for i, file := range protected {
 		if err := store.RegularPath(file.path); err != nil {
 			return fmt.Errorf("%s: %w", file.name, err)

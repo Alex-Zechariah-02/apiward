@@ -80,7 +80,8 @@ func TestNativeConfigSettings(t *testing.T) {
 			Limits:               policy.Limits{PolicyBytes: 64 << 10, APIs: 64, Operations: 256, Roles: 64, Permits: 4096, RateCounters: 262144, Window: 10000},
 		},
 		listen:            "127.0.0.2:9480",
-		metricsListen:     gatewaytest.DemoTestAddress(t, "127.0.0.1:9450"),
+		metricsListen:     "127.0.0.1:9450",
+		identityKey:       filepath.Join(dir, "identity.pem"),
 		limits:            pipeline.Limits{MaxBodyBytes: 16 << 10, MaxInFlight: 256, IPv6RatePrefix: 64},
 		maxConnections:    1024,
 		http2:             true,
@@ -210,6 +211,25 @@ func TestNativeConfigRefusals(t *testing.T) {
 		{"removed website setting", string(configDocument(t, dir, set("data", "website", t.TempDir()))), `unknown field "website"`},
 		{"TLS profile file missing", string(configDocument(t, dir, set("upstream", "tls_profiles", []any{map[string]any{"id": "fetch", "ca_file": filepath.Join(dir, "none.pem")}}))), `upstream TLS profile "fetch": ca_file`},
 	}
+	cases = append(cases, []struct{ name, document, cause string }{
+		{"identity key and its opt-out", string(configDocument(t, dir, func(s map[string]any) {
+			gatewaytest.Section(s, "upstream")["identity_key"] = filepath.Join(dir, "identity.pem")
+			gatewaytest.Section(s, "upstream")["unsigned_identity"] = true
+		})), "exclude each other"},
+		{"ignored read outside the Admin API", string(configDocument(t, dir, set("gateway", "audit_ignore_reads", []any{"/healthz"}))), "gateway.audit_ignore_reads"},
+	}...)
+	// Without a key file the configuration serves only with the explicit
+	// opt-out; operator commands, which create the key, still read it.
+	t.Run("identity key missing", func(t *testing.T) {
+		missing, err := parseConfig(configDocument(t, dir, nil))
+		if err != nil || missing.requireIdentity() == nil || !strings.Contains(missing.requireIdentity().Error(), "apiward install") {
+			t.Fatalf("without a key: %v, %v", err, missing.requireIdentity())
+		}
+		unsigned, err := parseConfig(configDocument(t, dir, set("upstream", "unsigned_identity", true)))
+		if err != nil || unsigned.requireIdentity() != nil {
+			t.Fatalf("with the opt-out: %v, %v", err, unsigned.requireIdentity())
+		}
+	})
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := parseConfig([]byte(tc.document))

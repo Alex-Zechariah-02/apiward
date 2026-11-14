@@ -7,6 +7,7 @@ import (
 	"crypto/subtle"
 	"log/slog"
 	"net/http"
+	"slices"
 	"time"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/audit"
@@ -215,7 +216,8 @@ func (s *Server) route(mux *http.ServeMux, pattern string, required store.Permis
 			s.refuse(w, r, http.StatusForbidden, "forbidden", "permission", &who)
 			return
 		}
-		if !unsafeMethod(r.Method) {
+		quiet := r.Method == http.MethodGet && slices.Contains(s.config.IgnoredReads, r.URL.Path)
+		if !unsafeMethod(r.Method) && !quiet {
 			s.audit.Record(audit.Event{Kind: "admin.read", Method: r.Method, Path: r.URL.Path, Actor: who.admin.Name, Session: who.session.Reference})
 		}
 		handler(w, r, who)

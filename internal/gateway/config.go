@@ -29,6 +29,12 @@ const (
 	nativeConfigVersion = 1
 	maxConfigBytes      = 64 << 10
 	maxConfigDepth      = 6
+	// defaultMetricsListen is the metrics address when gateway.metrics_listen
+	// is absent; it never depends on the environment.
+	defaultMetricsListen = "127.0.0.1:9450"
+	// maxIgnoredReads bounds gateway.audit_ignore_reads; the Admin API has
+	// fewer read paths.
+	maxIgnoredReads = 32
 )
 
 // Bounds of the native settings. Data-plane and upstream timeouts default to
@@ -111,6 +117,7 @@ type gatewaySettings struct {
 	AuditWhenFull        string               `json:"audit_when_full"`
 	AuditSyncWindow      *string              `json:"audit_sync_window"`
 	AuditPrefill         *bool                `json:"audit_prefill"`
+	AuditIgnoreReads     *[]string            `json:"audit_ignore_reads"`
 	ShutdownGrace        *string              `json:"shutdown_grace"`
 	ShutdownDelay        *string              `json:"shutdown_delay"`
 	JWT                  pipeline.TrustConfig `json:"jwt"`
@@ -151,8 +158,12 @@ type upstreamSettings struct {
 	AllowPublicAddresses  bool                      `json:"allow_public_addresses"`
 	TLSProfiles           []forward.ProfileSettings `json:"tls_profiles"`
 	// IdentityKey is the private key file the gateway signs an identity
-	// assertion with for each forwarded request; omitted, none is sent.
+	// assertion with for each forwarded request; omitted, identity.pem
+	// beside the database, which apiward install creates.
 	IdentityKey *string `json:"identity_key"`
+	// UnsignedIdentity turns the assertion off: upstreams then receive only
+	// the unsigned identity headers.
+	UnsignedIdentity bool `json:"unsigned_identity"`
 }
 
 // nativeConfig is a checked configuration of the native gateway.
@@ -181,6 +192,11 @@ type nativeConfig struct {
 	pool          forward.PoolSettings
 	// signer signs the identity assertion for upstreams; nil sends none.
 	signer *pipeline.Signer
+	// identityKey is the signing key's file (upstream.identity_key, else
+	// identity.pem beside the database); empty when unsigned is set.
+	identityKey string
+	// unsigned is upstream.unsigned_identity: no assertion, by choice.
+	unsigned bool
 	// tls is the data listener's TLS; nil serves plain HTTP. redirect is
 	// the HTTP-to-HTTPS listener; nil when there is none.
 	tls      *dataTLS
@@ -190,15 +206,17 @@ type nativeConfig struct {
 	adminUI string
 }
 
-// operatorConfig is what the operator commands need of the controller's
-// settings.
-func operatorConfig(c controller.Config) operator.Config {
+// operatorConfig is what the operator commands need of the settings: the
+// controller's and the identity key install creates.
+func operatorConfig(cfg nativeConfig) operator.Config {
+	c := cfg.controller
 	keys := make([]string, len(c.JWT.Keys))
 	for i, key := range c.JWT.Keys {
 		keys[i] = key.PublicKeyFile
 	}
 	return operator.Config{Database: c.Database, AuditLog: c.AuditLog, AuditMaxBytes: c.AuditMaxBytes,
-		AuditMaxFiles: c.AuditMaxFiles, AuditWhenFull: c.AuditWhenFull, AuditAppend: c.AuditAppend, AuditTimeout: c.AuditTimeout, KeyFiles: keys}
+		AuditMaxFiles: c.AuditMaxFiles, AuditWhenFull: c.AuditWhenFull, AuditAppend: c.AuditAppend, AuditTimeout: c.AuditTimeout, KeyFiles: keys,
+		IdentityKey: cfg.identityKey}
 }
 
 // loadNativeConfig reads and checks the configuration file at path. The

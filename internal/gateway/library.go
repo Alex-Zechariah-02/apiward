@@ -63,7 +63,10 @@ type Settings struct{ native *nativeConfig }
 func LoadSettings(path string) (Settings, error) {
 	cfg, err := loadNativeConfig(path)
 	if err == nil {
-		err = operator.CheckPaths(path, operatorConfig(cfg.controller), "run", nil)
+		err = cfg.requireIdentity()
+	}
+	if err == nil {
+		err = operator.CheckPaths(path, operatorConfig(cfg), "run", nil)
 	}
 	if err != nil {
 		return Settings{}, classify(ErrConfig, err)
@@ -151,6 +154,9 @@ func openDeployment(cfg nativeConfig, logger *slog.Logger) (*deployment, error) 
 	certificate, err := openCertificate(cfg.tls, logger)
 	if err != nil {
 		return nil, err
+	}
+	if cfg.unsigned {
+		logger.Warn("identity assertion off (upstream.unsigned_identity): upstreams receive unsigned X-Gateway-Subject and X-Gateway-Roles and must accept requests only from the gateway")
 	}
 	if certificate != nil {
 		cfg.controller.ReloadCertificate = certificate.reload

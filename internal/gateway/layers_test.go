@@ -32,7 +32,8 @@ var layers = map[string][]string{
 	"controller":  {"fault", "policy", "compile", "forward", "store", "audit", "session", "monitor", "pipeline", "connections"},
 	"admin":       {"policy", "compile", "store", "audit", "session", "monitor", "pipeline", "controller"},
 	"operator":    {"fault", "policy", "store", "audit", "session"},
-	"gatewaytest": {"policy", "store", "audit", "session", "pipeline", "controller", "issuertest"},
+	"gatewaytest": {"policy", "store", "audit", "session", "pipeline", "controller", "issuertest", "demoports"},
+	"demoports":   nil,
 	"openapi":     {"policy", "compile"},
 	"gateway":     {"fault", "policy", "compile", "forward", "store", "audit", "session", "monitor", "pipeline", "controller", "admin", "operator", "adminui", "connections"},
 	// integration tests reach the gateway only through its processes.
@@ -50,11 +51,11 @@ var exposed = map[string][]string{
 }
 
 // unlayered packages are not part of the gateway's layering.
-var unlayered = []string{"demoports", "testfixture"}
+var unlayered = []string{"testfixture"}
 
 // support packages exist for tests: any package's tests may import them,
 // production code never.
-var support = []string{"issuertest", "storetest", "gatewaytest"}
+var support = []string{"issuertest", "storetest", "gatewaytest", "demoports"}
 
 func TestPackageLayers(t *testing.T) {
 	root := filepath.Join("..", "..")

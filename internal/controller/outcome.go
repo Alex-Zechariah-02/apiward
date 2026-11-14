@@ -135,7 +135,12 @@ func policyRejection(err error) (string, string) {
 	return "SCHEMA_INVALID", ""
 }
 
+// storeFailure ends a change the database could not complete: the change's
+// identity gets a transition.failed record and the failure is counted, so it is
+// visible beyond the log line.
 func (c *Controller) storeFailure(id string, err error) (Outcome, int) {
 	c.logger.Error("control-plane database failure", "error", err)
+	c.failures.Add(1)
+	c.audit.Record(audit.Event{Kind: "transition.failed", Transition: id, Reason: "STORE_ERROR"})
 	return Outcome{Transition: id, Outcome: "rejected", Reason: "STORE_ERROR"}, http.StatusServiceUnavailable
 }

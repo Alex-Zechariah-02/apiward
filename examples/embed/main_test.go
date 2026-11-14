@@ -5,6 +5,8 @@ package main
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
@@ -89,6 +91,16 @@ func writeDeployment(t *testing.T, dir string, p policy.Policy) string {
 	writeFile(t, keyFile, pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: public}))
 	database := filepath.Join(dir, "state.db")
 	seed(t, database, p)
+	// The identity assertion key apiward install creates beside the database.
+	identity, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	der, err := x509.MarshalPKCS8PrivateKey(identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(dir, "identity.pem"), pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der}))
 	settings := map[string]any{
 		"version": 1,
 		"gateway": map[string]any{

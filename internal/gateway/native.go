@@ -112,7 +112,7 @@ func Main(args []string) int {
 		fmt.Fprintln(os.Stderr, "apiward:", err)
 		return exitFailed
 	}
-	code, err := operator.Run(command, operatorConfig(cfg.controller), values)
+	code, err := operator.Run(command, operatorConfig(cfg), values)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "apiward:", err)
 	}

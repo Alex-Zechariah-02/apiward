@@ -66,7 +66,7 @@ func (c *Controller) finishControl(ctx context.Context, t store.TransitionRecord
 	}
 	fault.CrashPoint("before-commit")
 	if err := c.store.CommitControl(ctx, t, body, change, now); err != nil {
-		c.logger.Error("committing control change", "error", err)
+		c.storeFailure(t.ID, err)
 		return controlError("gateway_unavailable"), http.StatusServiceUnavailable
 	}
 	fault.CrashPoint("after-commit")

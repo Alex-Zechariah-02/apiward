@@ -70,6 +70,7 @@ func (c *Controller) Gauges() []monitor.Gauge {
 		{Name: "gateway_blocked_accounts", Value: blocked},
 		{Name: "gateway_audit_bytes", Value: used},
 		{Name: "gateway_audit_budget_bytes", Value: budget},
+		{Name: "gateway_control_store_failures_total", Value: c.failures.Load(), Counter: true},
 	}
 }
 

@@ -31,7 +31,7 @@ var exported = []string{
 	"Controller.Settings", "Controller.StageCandidate", "Controller.Start", "Controller.State",
 	"Controller.Stop", "Controller.StopWithin", "Controller.Unblock", "Controller.UnblockAddress",
 	"Controller.ValidateOverride", "Controller.Verifier", "Controller.WithdrawCandidate",
-	"DefaultAuditWait", "DefaultIdle", "DefaultLifetime", "MaxAuditBytes", "MaxAuditFiles",
+	"DefaultAuditWait", "DefaultIdle", "DefaultIgnoredReads", "DefaultLifetime", "MaxAuditBytes", "MaxAuditFiles",
 	"MaxSession", "MinAuditBytes", "MinSession", "Outcome", "OverrideRequest", "Prepare", "ShutdownWait",
 }
 

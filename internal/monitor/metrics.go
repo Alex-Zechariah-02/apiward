@@ -92,10 +92,12 @@ func Metrics(o *Observations, gauges func() []Gauge) http.Handler {
 	})
 }
 
-// Gauge is one gauge sample the metrics listener reports as read.
+// Gauge is one sample the metrics listener reports as read; Counter marks a
+// value that only grows, reported with the counter type.
 type Gauge struct {
-	Name  string
-	Value int64
+	Name    string
+	Value   int64
+	Counter bool
 }
 
 func serveMetrics(w http.ResponseWriter, r *http.Request, o *Observations, gauges func() []Gauge) {
@@ -134,7 +136,11 @@ func serveMetrics(w http.ResponseWriter, r *http.Request, o *Observations, gauge
 		fmt.Fprintf(&body, "gateway_request_duration_seconds_count{api=%q} %d\n", api, duration.count)
 	}
 	for _, gauge := range gauges() {
-		fmt.Fprintf(&body, "# TYPE %s gauge\n%s %d\n", gauge.Name, gauge.Name, gauge.Value)
+		kind := "gauge"
+		if gauge.Counter {
+			kind = "counter"
+		}
+		fmt.Fprintf(&body, "# TYPE %s %s\n%s %d\n", gauge.Name, kind, gauge.Name, gauge.Value)
 	}
 	fmt.Fprintf(&body, "# TYPE gateway_event_stream_dropped_total counter\ngateway_event_stream_dropped_total %d\n", dropped)
 	fmt.Fprintf(&body, "# TYPE gateway_redirects_total counter\ngateway_redirects_total %d\n", o.redirects.Load())

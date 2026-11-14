@@ -37,6 +37,9 @@ func TestStoreErrorOnResendDoesNotMeanNothingChanged(t *testing.T) {
 	if body, status := c.Block(cancelled, block, reason); status != http.StatusServiceUnavailable || string(body) != `{"error":"store_error"}` {
 		t.Fatalf("resend with an unreadable record: %d %s", status, body)
 	}
+	if failures := c.Gauges()[5]; failures.Name != "gateway_control_store_failures_total" || failures.Value != 1 {
+		t.Fatalf("failure metric %+v, want gateway_control_store_failures_total 1", failures)
+	}
 	if _, inForce := (*c.Blocked())["cust-500"]; !inForce {
 		t.Fatal("the committed block is no longer in force")
 	}

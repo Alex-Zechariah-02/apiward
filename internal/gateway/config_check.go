@@ -7,11 +7,12 @@ import (
 	"fmt"
 	"net/netip"
 	"path/filepath"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/audit"
 	"github.com/Alex-Zechariah-02/apiward/internal/controller"
-	"github.com/Alex-Zechariah-02/apiward/internal/demoports"
 	"github.com/Alex-Zechariah-02/apiward/internal/forward"
 	"github.com/Alex-Zechariah-02/apiward/internal/pipeline"
 	"github.com/Alex-Zechariah-02/apiward/internal/policy"
@@ -67,10 +68,7 @@ func (f nativeFile) check() (nativeConfig, error) {
 	if err := checkDataListen(d.Listen, g.AdminListen, d.ListenAllInterfaces); err != nil {
 		return nativeConfig{}, err
 	}
-	metrics, err := demoports.Offset("127.0.0.1:9450")
-	if err != nil {
-		return nativeConfig{}, err
-	}
+	metrics := defaultMetricsListen
 	if g.MetricsListen != nil {
 		metrics = *g.MetricsListen
 	}
@@ -134,6 +132,9 @@ func (f nativeFile) check() (nativeConfig, error) {
 	cfg.controller.AuditQueue = audit.QueueSize(cfg.limits.MaxInFlight)
 	cfg.controller.AuditWhenFull = g.AuditWhenFull
 	cfg.controller.AuditAppend = g.AuditPrefill != nil && !*g.AuditPrefill
+	if cfg.controller.IgnoredReads, err = ignoredReads(g.AuditIgnoreReads); err != nil {
+		return nativeConfig{}, err
+	}
 	if cfg.limits.IPv6RatePrefix, err = numberSetting("data.ipv6_rate_prefix", d.IPv6RatePrefix, pipeline.DefaultIPv6RatePrefix, pipeline.MinIPv6RatePrefix, 128); err != nil {
 		return nativeConfig{}, err
 	}
@@ -159,10 +160,8 @@ func (f nativeFile) check() (nativeConfig, error) {
 	if cfg.controller.Network, err = forward.LoadNetwork(u.AllowPublicAddresses, u.TLSProfiles, sessionLife); err != nil {
 		return nativeConfig{}, err
 	}
-	if u.IdentityKey != nil {
-		if cfg.signer, err = pipeline.LoadSigner(*u.IdentityKey); err != nil {
-			return nativeConfig{}, fmt.Errorf("upstream.identity_key: %w", err)
-		}
+	if err := cfg.identity(u); err != nil {
+		return nativeConfig{}, err
 	}
 
 	if g.AdminUI != nil {
@@ -242,4 +241,23 @@ func numberSetting[N int | int64](name string, value *N, def, low, high N) (N, e
 		return 0, fmt.Errorf("%s must be %d to %d", name, low, high)
 	}
 	return *value, nil
+}
+
+// ignoredReads checks gateway.audit_ignore_reads: absent takes the
+// controller's default (nil), [] records every read; each entry is a
+// distinct Admin API path.
+func ignoredReads(value *[]string) ([]string, error) {
+	if value == nil {
+		return nil, nil
+	}
+	paths := *value
+	if len(paths) > maxIgnoredReads {
+		return nil, fmt.Errorf("gateway.audit_ignore_reads lists at most %d paths", maxIgnoredReads)
+	}
+	for i, path := range paths {
+		if !strings.HasPrefix(path, "/admin/") || slices.Contains(paths[:i], path) {
+			return nil, errors.New("gateway.audit_ignore_reads must list distinct paths beginning with /admin/")
+		}
+	}
+	return append([]string{}, paths...), nil
 }

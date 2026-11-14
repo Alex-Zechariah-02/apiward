@@ -169,9 +169,7 @@ func NewEnv(t *testing.T) *Env {
 		B:         NewReceiver(t, "B"),
 		C:         NewReceiver(t, "C"),
 	}
-	if err := os.WriteFile(e.PublicKey, Issuer.PublicPEM(), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	writeKeys(t, e)
 	e.WriteConfig(ConfigOptions{})
 	t.Cleanup(e.Stop)
 	return e

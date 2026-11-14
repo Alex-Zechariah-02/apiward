@@ -65,6 +65,12 @@ func TestConcurrencyAndLockContention(t *testing.T) {
 	if code, _, body := e.Resolve(harness, "confirm", outcomes[winner].Provisional, `"r1"`, "concurrent-base-confirm"); code != http.StatusOK {
 		t.Fatalf("confirm: %d %s", code, body)
 	}
+	// The Dashboard's polled status read is on the default ignore list; it is
+	// read first, so its record, were one written, would precede the policy
+	// read's.
+	if code, _, _ := e.As(harness, "GET", "/admin/status", ""); code != http.StatusOK {
+		t.Fatalf("status read: %d", code)
+	}
 	code, body, header := e.As(harness, "GET", "/admin/policy", "")
 	revision := fromJSON[store.RevisionInfo](t, body)
 	if code != http.StatusOK || header.Get("ETag") != `"r2"` || revision.ID != 2 {
@@ -74,7 +80,10 @@ func TestConcurrencyAndLockContention(t *testing.T) {
 	// The running gateway is the audit log's only writer. An operator command
 	// refused by the lock must not touch it, even when the log ends in a
 	// record the gateway is still writing.
-	e.EventsWhen(func(events []map[string]any) bool { return gatewaytest.CountKind(events, "admin.read") >= 1 })
+	reads := e.EventsWhen(func(events []map[string]any) bool { return gatewaytest.CountKind(events, "admin.read") >= 1 })
+	if slices.ContainsFunc(reads, func(ev map[string]any) bool { return ev["kind"] == "admin.read" && ev["path"] == "/admin/status" }) {
+		t.Fatal("the ignored status read was recorded")
+	}
 	partial := `{"schema":4,"kind":"request.admitted","id":"in-progress`
 	file, err := os.OpenFile(e.AuditLog, os.O_RDWR, 0o600)
 	if err != nil {

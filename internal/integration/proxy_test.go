@@ -138,7 +138,8 @@ func TestClientCannotSelectUpstream(t *testing.T) {
 	e.AssertReceipts(len(attempts), 0, 0)
 	for _, r := range e.A.Receipts() {
 		for name := range r.Headers {
-			if strings.HasPrefix(name, "X-Gateway-") && name != "X-Gateway-Generation" {
+			// The gateway sets the generation and, signing by default, the assertion.
+			if strings.HasPrefix(name, "X-Gateway-") && name != "X-Gateway-Generation" && name != "X-Gateway-Assertion" {
 				t.Errorf("client header %s reached the upstream", name)
 			}
 		}

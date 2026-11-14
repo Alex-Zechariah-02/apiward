@@ -66,6 +66,7 @@ func startBench(b *testing.B, upstream string) *httptest.Server {
 		b.Fatal(err)
 	}
 	gatewaytest.Seed(b, database, benchPolicy(upstream), gatewaytest.SeedOptions{})
+	gatewaytest.WriteIdentityKey(b, filepath.Join(dir, gatewaytest.IdentityFile))
 	settings, err := json.Marshal(map[string]any{
 		"version": 1,
 		"gateway": map[string]any{

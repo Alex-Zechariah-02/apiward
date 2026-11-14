@@ -38,6 +38,9 @@ type Config struct {
 	AuditAppend   bool
 	AuditTimeout  time.Duration
 	KeyFiles      []string
+	// IdentityKey is the identity assertion's signing key file, which
+	// install creates when it is missing; empty when signing is off.
+	IdentityKey string
 }
 
 // operatorContext is the deployment an operator command acts on.
@@ -88,6 +91,13 @@ func runInstall(o *operatorContext, flags map[string]string) (int, error) {
 	name := flags["admin"]
 	if !store.IsAdminName(name) {
 		return 1, fmt.Errorf("administrator name %q is not valid", name)
+	}
+	// The key comes first: an install that fails here leaves no database, so
+	// it can be run again.
+	if created, err := createIdentityKey(o.config.IdentityKey); err != nil {
+		return 1, fmt.Errorf("creating the identity key: %w", err)
+	} else if created {
+		fmt.Printf("created the identity assertion key %s\n", o.config.IdentityKey)
 	}
 	o.openAudit()
 

@@ -54,6 +54,10 @@ const (
 	MaxSession       = 24 * time.Hour
 )
 
+// DefaultIgnoredReads are the reads the Dashboard repeats every second on a
+// visible page; recording each would write one record per second per page.
+var DefaultIgnoredReads = []string{"/admin/status", "/admin/traffic", "/admin/events"}
+
 // Config is the controller's configuration. Zero limits take their defaults.
 type Config struct {
 	Database             string
@@ -74,7 +78,11 @@ type Config struct {
 	// AuditAppend appends to the active audit file instead of zero-filling
 	// it ahead of the writer on Linux (gateway.audit_prefill false).
 	AuditAppend bool
-	JWT         pipeline.TrustConfig
+	// IgnoredReads lists the Admin API paths whose successful authenticated
+	// GET reads write no admin.read record (gateway.audit_ignore_reads): nil
+	// takes DefaultIgnoredReads, empty records every read.
+	IgnoredReads []string
+	JWT          pipeline.TrustConfig
 	// Limits are the capacity ceilings: policy size and counts, rate
 	// counters, recent requests kept.
 	Limits policy.Limits
@@ -112,6 +120,8 @@ type Controller struct {
 	addresses atomic.Pointer[store.BlockedAddresses]
 
 	observations *monitor.Observations
+	// failures counts changes the database could not complete (storeFailure).
+	failures atomic.Int64
 
 	// Administrator authentication state, in memory only.
 	sessions *session.Table
@@ -246,6 +256,9 @@ func (cfg *Config) applyDefaults() error {
 	}
 	if cfg.AuditWhenFull == "" {
 		cfg.AuditWhenFull = audit.FullRefuse
+	}
+	if cfg.IgnoredReads == nil {
+		cfg.IgnoredReads = DefaultIgnoredReads
 	}
 	if cfg.AdminIdleTimeout == 0 {
 		cfg.AdminIdleTimeout = DefaultIdle
