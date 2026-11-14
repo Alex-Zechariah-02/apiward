@@ -34,7 +34,7 @@ Install the first administrator once, before the first start:
 docker run --rm -v apiward-data:/var/lib/apiward -v "$PWD/apiward:/etc/apiward:ro" apiward:dev install --config /etc/apiward/apiward.json --admin <name>
 ```
 
-`install` prints a one-time enrolment secret; keep it private. Then start the gateway:
+`install` prints a one-time enrolment secret; keep it private. It also creates the identity key `identity.pem` beside the database in `/var/lib/apiward`, unless the settings name another key or set `upstream.unsigned_identity`. Then start the gateway:
 
 ```
 docker run -d --name apiward --network host --read-only --cap-drop ALL \

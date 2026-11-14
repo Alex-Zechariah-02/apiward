@@ -46,8 +46,13 @@ The JSON settings file that `apiward run --config <file>` reads. Upstream TLS pr
 
 ### What is signed
 
-- Upstreams can verify that a request passed the gateway.
-- With `"upstream": {"identity_key": "/etc/apiward/identity.pem"}` (an ECDSA P-256 private key as one PKCS #8 `PRIVATE KEY` PEM block, readable only by its owner; for example `openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256`), every forwarded request also carries `X-Gateway-Assertion`: a JWT signed with ES256, with `iss` `apiward`, `aud` the API's ID, `sub` and `roles` as in `X-Gateway-Subject` and `X-Gateway-Roles` (both absent on a public operation), `method` and `path` the request's method and its path as the upstream receives it (after the API's forward rule, decoded, without the query), `jti` the request ID, `iat`, and `exp` 30 seconds later.
+- Upstreams can verify that a request passed the gateway; the gateway signs by default.
+- The key is `upstream.identity_key`, or `identity.pem` beside `gateway.database` when that setting is absent: an ECDSA P-256 private key as one PKCS #8 `PRIVATE KEY` PEM block, readable only by its owner.
+- `apiward install` creates the key when the file is missing and keeps a key already there; `openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256` makes one by hand.
+- Without the key file the gateway refuses to start, naming the file.
+- `"upstream": {"unsigned_identity": true}` turns signing off: upstreams then receive only the plain headers, and the start log says so. It cannot be combined with `identity_key`.
+- Signed or not, an upstream must accept requests only from the gateway (client certificates or a firewall), as NIST SP 800-207 requires of a policy enforcement point.
+- Every forwarded request carries `X-Gateway-Assertion`: a JWT signed with ES256, with `iss` `apiward`, `aud` the API's ID, `sub` and `roles` as in `X-Gateway-Subject` and `X-Gateway-Roles` (both absent on a public operation), `method` and `path` the request's method and its path as the upstream receives it (after the API's forward rule, decoded, without the query), `jti` the request ID, `iat`, and `exp` 30 seconds later.
 - Its `kid` is the key's RFC 7638 thumbprint.
 
 ### Public key
@@ -63,7 +68,6 @@ The JSON settings file that `apiward run --config <file>` reads. Upstream TLS pr
 ### Replacing the key
 
 - To replace the key, give the upstreams a key set holding the old and new keys, restart the gateway with the new key, then remove the old one from the set.
-- Without the setting nothing is signed.
 
 ## Dashboard files
 
@@ -82,6 +86,9 @@ The JSON settings file that `apiward run --config <file>` reads. Upstream TLS pr
 - The same warning in Prometheus: `predict_linear(gateway_audit_bytes[15m], 3600) >= gateway_audit_budget_bytes` fires when the last 15 minutes' growth would fill the log within an hour.
 - `gateway.audit_when_full` decides what happens when every file is in use: `"refuse"` (default) deletes nothing: it answers every request it would forward `503 gateway_unavailable` and prints one line to standard error until rotated files are moved away, and records that need no acknowledgement (refusals, forwarding outcomes) are only counted meanwhile, the count written as an `audit.loss` event once there is room; `"evict_oldest"` deletes the oldest rotated file and records an `audit.evicted` event with its name, size, SHA-256 and the times of its first and last records.
 - `gateway_audit_bytes` and `gateway_audit_budget_bytes` on the metrics listener show how full the log is, so an alert can fire before it fills; while it is full `/readyz` answers `503`.
+- A change the database could not complete is recorded as `transition.failed` (reason `STORE_ERROR`) and counted in `gateway_control_store_failures_total`.
+- Every authenticated Admin API read writes an `admin.read` record, except successful `GET` reads of the paths in `gateway.audit_ignore_reads` (default `["/admin/status", "/admin/traffic", "/admin/events"]`, the reads the Dashboard repeats every second; at most 32 paths, each beginning with `/admin/`; `[]` records every read). Refused reads and every change are always recorded.
+- A search lists as missing only the rotated file numbers the log could still hold (`audit_max_files`); older numbers were evicted or archived long ago.
 - `gateway.audit_sync_window` (0 to 10 ms, default 0) lets the writer gather more records for one sync when more than one is waiting; every acknowledgement still waits for the sync that covers its record.
 - On Linux the gateway fills the active file with zero bytes 1 MiB ahead of its records and writes the records in place, so each sync (`fdatasync`) flushes only data; on ext4 this cut the time to make one record durable by more than half (median 2.3 ms to 0.95 ms).
 - `gateway.audit_prefill` (default `true`) turns the fill off: set `false` on copy-on-write or memory file systems (btrfs, ZFS, tmpfs), where it saves nothing and writes every byte twice; the log then appends and syncs with `fsync`. Other systems always append.

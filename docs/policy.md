@@ -54,6 +54,7 @@ The policy document and how it changes. Back to the [README](../README.md).
 
 - The gateway answers a preflight (`OPTIONS` with `Origin` and `Access-Control-Request-Method`) on such an API itself and never forwards it: `204` with the CORS headers when the origin, the method and every requested header are allowed, `204` without them otherwise.
 - Preflights are recorded as `request.preflight` events (decision `allowed` or `refused`, code `cors_preflight` or `cors_refused`) and, when one of the API's public operations has a rate rule, limited per client address by the first such rule on a counter of their own.
+- The API's address allow list and preflight rate rule apply to every preflight on its paths, also one whose requested method has no operation.
 
 ### Responses
 

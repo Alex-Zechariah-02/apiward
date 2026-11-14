@@ -23,7 +23,7 @@ It checks every request against one policy before forwarding it. One binary: HTT
 - **Safe policy changes**: a new policy runs on trial and rolls back unless confirmed
 - **Dashboard and Admin API**, on a loopback-only listener
 - **Per-API options**: path rewrite, host and header conditions, CORS, response headers, address allow lists, TLS to upstreams
-- **Signed identity**: upstreams can verify that a request passed the gateway
+- **Signed identity**: upstreams can verify that a request passed the gateway (on by default)
 - **OpenAPI** import and export
 - **Embeddable** in a Go program; custom checks as compile-time modules
 - **No external services**: one SQLite file; Prometheus metrics, `/livez`, `/readyz`
@@ -87,7 +87,7 @@ The settings file is described in [docs/settings.md](docs/settings.md).
 | Command | Purpose |
 |---|---|
 | `run` | Run the gateway |
-| `install` | Create the first administrator |
+| `install` | Create the first administrator and the identity key |
 | `enrol` | Add or reset an administrator |
 | `backup`, `restore` | Back up or restore the database |
 | `migrate` | Upgrade a database from an earlier version |
