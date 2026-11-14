@@ -18,11 +18,19 @@ func stderrOf(t *testing.T, args ...string) (int, string) {
 		t.Fatal(err)
 	}
 	saved := os.Stderr
+	t.Cleanup(func() {
+		os.Stderr = saved
+		writer.Close()
+		reader.Close()
+	})
 	os.Stderr = writer
 	code := run(args)
 	os.Stderr = saved
 	writer.Close()
-	output, _ := io.ReadAll(reader)
+	output, err := io.ReadAll(reader)
+	if err != nil {
+		t.Fatal(err)
+	}
 	return code, string(output)
 }
 
