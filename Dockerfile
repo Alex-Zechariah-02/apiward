@@ -6,7 +6,7 @@
 # Settings, keys and certificates are mounted read-only at /etc/apiward.
 # Base images are pinned by digest; the tags show which release each is.
 
-FROM node:24.21.0-trixie-slim@sha256:173f125896c3b47ddf056734c7ea789d04595a6a08769a8f78e0df642781fb66 AS dashboard
+FROM node:26.13.0-trixie-slim@sha256:5adad64f9a1fca2d51972caa65983634c8a774eb300d72b20f7f2a0f60368072 AS dashboard
 WORKDIR /src/dashboard
 COPY dashboard/package.json dashboard/package-lock.json ./
 RUN --mount=type=cache,target=/root/.npm npm ci --no-audit --no-fund
