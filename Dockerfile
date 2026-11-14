@@ -29,7 +29,7 @@ COPY --from=dashboard /src/dashboard/dist ./internal/adminui/dist
 RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
     go build -trimpath -ldflags="-s -w" -tags embedui -o /out/apiward ./cmd/apiward
 # An empty data folder, so a new named volume mounted on it belongs to the
-# image's user.
+# image's user. Mode 700: only that user reads the database and audit log.
 RUN mkdir -m 700 /out/data
 
 # The source of the few system files the gateway reads; its nonroot user is
