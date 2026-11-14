@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test, type Request } from '@playwright/test'
 import { adminURL, raw, ShortSessions } from './env'
 import { createOverride, enrol, go, record, revokeOverride, shot, signIn } from './pages'
 import { admin, adminCall, adminContext, demo, finish, handedOut, listAll, newContext, open, password, ready, sessionCookie } from './setup'
@@ -20,21 +20,27 @@ test.describe.serial('dashboard', () => {
     const laterSubject = 'cust-008'
     const unresolved = admin.getByRole('region', { name: /^(A change has an unknown outcome|Outcome found)$/ })
     // hold lets the gateway act on a block, then keeps its answer back until
-    // released, and then loses it or delivers it.
+    // released, and then loses it or delivers it. answered releases it and
+    // returns once the page has received the outcome and run what follows
+    // from it: those continuations are done two frames later.
     async function hold(subject: string, answer: 'lost' | 'definite') {
       let release!: () => void
       const gate = new Promise<void>((resolve) => (release = resolve))
-      let finished!: () => void
-      const done = new Promise<void>((resolve) => (finished = resolve))
       await admin.route(`**/admin/blocked-accounts/${subject}`, async (route) => {
         if (route.request().method() !== 'PUT') return route.continue()
         const response = await route.fetch()
         await gate
         if (answer === 'lost') await route.abort('connectionreset')
         else await route.fulfill({ response })
-        finished()
       })
-      return { release, done }
+      async function answered() {
+        const mine = (r: Request) => r.method() === 'PUT' && r.url().endsWith(`/admin/blocked-accounts/${subject}`)
+        const outcome = answer === 'lost' ? admin.waitForEvent('requestfailed', mine) : admin.waitForEvent('requestfinished', mine)
+        release()
+        await outcome
+        await admin.evaluate(() => new Promise<void>((done) => requestAnimationFrame(() => requestAnimationFrame(() => done()))))
+      }
+      return { release, answered }
     }
     async function block(subject: string) {
       await go(admin, 'Blocking')
@@ -47,8 +53,6 @@ test.describe.serial('dashboard', () => {
       await admin.getByRole('button', { name: 'Sign Out' }).click()
       await expect(admin.getByRole('heading', { name: 'Sign in' })).toBeVisible()
     }
-    // Late continuations run within moments of the answer; this gives them time.
-    const settleTime = 1_000
 
     const lost = await hold(lostSubject, 'lost')
     const late = await hold(lateSubject, 'definite')
@@ -56,9 +60,7 @@ test.describe.serial('dashboard', () => {
       await block(lostSubject)
       await expect(admin.getByText("Sent; waiting for the gateway's answer…")).toBeVisible()
       await signOutHere()
-      lost.release()
-      await lost.done
-      await admin.waitForTimeout(settleTime)
+      await lost.answered()
       await signIn(admin, 'admin', password)
       await go(admin, 'Blocking')
       await expect(unresolved).toHaveCount(0)
@@ -81,9 +83,7 @@ test.describe.serial('dashboard', () => {
       await block(laterSubject)
       await expect(unresolved).toContainText(`Block ${laterSubject}`)
       await expect(unresolved).toContainText('It could not be looked up')
-      late.release()
-      await late.done
-      await admin.waitForTimeout(settleTime)
+      await late.answered()
       await expect(unresolved).toContainText(`Block ${laterSubject}`)
       await expect(unresolved).toContainText('It could not be looked up')
       await expect(unresolved).not.toContainText(lateSubject)
@@ -116,11 +116,17 @@ test.describe.serial('dashboard', () => {
       await expect(page.getByRole('heading', { level: 1, name: 'Overview', exact: true })).toBeVisible()
       const reads: string[] = []
       page.on('request', (r) => reads.push(new URL(r.url()).pathname))
+      // Requests are reported in the order the page makes them, so once a
+      // marker request made after the clock ran is reported, every read
+      // made while it ran has been too.
+      let markers = 0
       const readsDuring = async (ms: number) => {
         const from = reads.length
         await page.clock.runFor(ms)
-        await page.waitForTimeout(300)
-        return reads.slice(from)
+        const marker = `/marker-${++markers}`
+        await page.evaluate((path) => void fetch(path).catch(() => undefined), marker)
+        await expect.poll(() => reads.includes(marker)).toBe(true)
+        return reads.slice(from).filter((path) => path !== marker)
       }
       const notice = page.getByText(/^Auto-refresh paused after 10 minutes of inactivity/)
       expect((await readsDuring(30_000)).length).toBeGreaterThan(0)
@@ -154,7 +160,7 @@ test.describe.serial('dashboard', () => {
     handedOut.push(secret)
     await sessions.start()
     try {
-      const context = await newContext(browser)
+      await using context = await newContext(browser)
       const page = await context.newPage()
       await page.goto(ShortSessions.url + '/')
       await enrol(page, 'admin', secret, password)
@@ -162,6 +168,8 @@ test.describe.serial('dashboard', () => {
       await expect(page.getByText('New installation: every request is refused until an administrator establishes the first policy (Changes).')).toBeVisible()
 
       // Idle: no request for longer than the idle timeout ends the session.
+      // The wait is the condition under test, elapsed time without a
+      // request: any probe of the session would renew it.
       const idleStart = Date.now()
       await page.waitForTimeout(sessions.idleSeconds * 1000 + 1500)
       const ended = page.getByText('Your session has ended. Sign in again.')
@@ -186,7 +194,6 @@ test.describe.serial('dashboard', () => {
       // The page rereads the status each second, so it finds the ended
       // session by itself.
       await expect(page.getByText('Your session has ended. Sign in again.')).toBeVisible({ timeout: 5_000 })
-      await context.close()
       record('session-expiry', { idleSeconds: sessions.idleSeconds, idleEndedMs: idleEnded, lifetimeSeconds: sessions.lifetimeSeconds, lifetimeEndedMs: lifetimeEnded })
     } finally {
       await sessions.stop()

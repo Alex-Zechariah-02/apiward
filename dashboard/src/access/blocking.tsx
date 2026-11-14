@@ -33,10 +33,12 @@ export function BlockingView(props: ViewProps) {
   const { admin, can } = props
   const id = useId()
   const [view, setView] = useState<'accounts' | 'addresses'>('accounts')
-  const [handedAddress, setHandedAddress] = useState<{ address: string } | null>(null)
+  const [handedAddress, setHandedAddress] = useState<string | null>(null)
   const list = useResource<{ items: BlockedAccount[] }>((signal) => admin.get('/admin/blocked-accounts', signal), [])
   const [query, setQuery] = useState('')
   const [show, setShow] = useState<'all' | 'blocked' | 'seen'>('all')
+  // The latest 100 requests show who is active now without reading the
+  // whole security log.
   const recent = useResource<Page<RequestEvent>>((signal) => admin.get('/admin/events?limit=100', signal), [])
   const refresh = () => {
     list.refresh()
@@ -59,7 +61,7 @@ export function BlockingView(props: ViewProps) {
   useHandoff(blockHandoff, (account) => manage && openBlock(account))
   useHandoff(addressHandoff, (address) => {
     setView('addresses')
-    setHandedAddress({ address })
+    setHandedAddress(address)
   })
   const submit = () => {
     if (!subject.trim() || !reason.trim()) return
@@ -101,7 +103,7 @@ export function BlockingView(props: ViewProps) {
         ) : null}
       </PageHeader>
       <BlockedSwitch view={view} onView={setView} />
-      {view === 'addresses' ? <AddressesPanel {...props} handed={handedAddress} /> : null}
+      {view === 'addresses' ? <AddressesPanel {...props} handed={handedAddress} onTaken={() => setHandedAddress(null)} /> : null}
       {view === 'accounts' && list.reply && list.reply.kind !== 'ok' ? <Problem reply={list.reply} /> : null}
       {view === 'accounts' && recent.reply && recent.reply.kind !== 'ok' ? <Problem reply={recent.reply} /> : null}
       <MutationResult
@@ -248,6 +250,8 @@ export function BlockingView(props: ViewProps) {
           onConfirm={submit}
         >
           <p>Every request from this account is refused at once, at every endpoint, until it is unblocked.</p>
+          {/* The gateway's limits: an account ID of 128 characters, and a
+              reason of 800 bytes, which 200 characters never pass. */}
           <Field id={`${id}-subject`} label="Account ID" hint="As shown in requests, for example cust-002.">
             <input
               id={`${id}-subject`}

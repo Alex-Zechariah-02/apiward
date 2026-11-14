@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useState, type FormEvent } from 'react'
+import { useId, useMemo, useState, type FormEvent } from 'react'
 import type { Admin } from '../shared/http'
 import type { SessionInfo } from '../shared/api'
 import { useMutation } from '../shared/hooks'
@@ -18,6 +18,8 @@ export function Account(props: { admin: Admin; session: SessionInfo; signedOut: 
   const [repeat, setRepeat] = useState('')
   const mutation = useMutation<unknown>(props.admin, () => undefined)
   const lastReply = mutation.phase.state === 'replied' ? mutation.phase.reply : undefined
+  // 15 to 256 bytes is the gateway's password rule; checking it here saves
+  // a request the gateway would refuse.
   const bytes = new TextEncoder().encode(next).length
   const lengthError = next !== '' && (bytes < 15 || bytes > 256) ? 'Use 15 to 256 bytes.' : fieldError(lastReply, 'new_password')
   const repeatError = repeat !== '' && repeat !== next ? 'The two passwords differ.' : undefined
@@ -28,19 +30,17 @@ export function Account(props: { admin: Admin; session: SessionInfo; signedOut: 
   async function submit(event: FormEvent) {
     event.preventDefault()
     if (lengthError || repeatError) return
-    await mutation.run({ method: 'PUT', path: '/admin/password', body: { current_password: current, new_password: next } })
+    const reply = await mutation.run({ method: 'PUT', path: '/admin/password', body: { current_password: current, new_password: next } })
+    // A refused or unanswered change keeps what was typed, to correct or
+    // resend. The change ended this session too, so a background read may
+    // already have closed this page as "session ended": the reply is acted
+    // on here, not in an effect, so its notice is shown either way.
+    if (reply?.kind !== 'ok') return
     setCurrent('')
     setNext('')
     setRepeat('')
+    props.signedOut('Password changed. Every session of this administrator has ended; sign in with the new password.')
   }
-
-  const { phase } = mutation
-  const { signedOut } = props
-  useEffect(() => {
-    if (phase.state === 'replied' && phase.reply.kind === 'ok') {
-      signedOut('Password changed. Every session of this administrator has ended; sign in with the new password.')
-    }
-  }, [phase, signedOut])
 
   return (
     <>

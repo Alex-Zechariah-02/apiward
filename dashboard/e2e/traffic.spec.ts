@@ -149,6 +149,8 @@ test.describe.serial('dashboard', () => {
     const verdict = admin.getByRole('region', { name: /^Refused/ })
     await expect(verdict).toContainText('None of these roles has permission for the endpoint.')
     await admin.getByLabel('Role', { exact: true }).selectOption('OPERATIONS')
+    // A verdict answers the form as it was asked: a changed form drops it.
+    await expect(verdict).toHaveCount(0)
     await admin.getByRole('button', { name: 'Check Access' }).click()
     const allowed = admin.getByRole('region', { name: /^Allowed/ })
     await expect(allowed).toContainText('These were not checked.')

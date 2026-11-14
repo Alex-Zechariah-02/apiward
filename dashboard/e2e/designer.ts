@@ -19,14 +19,19 @@ export let policyViolations: string[] = []
 export let browserMessages: string[] = []
 export let requests: string[] = []
 
+// pagePolicy is the content policy the Dashboard page was served with.
+let pagePolicy = ''
+
+// api calls the Admin API with the session's cookie; a change also carries its
+// CSRF token, and a failed session read fails the step rather than send none.
 export async function api(method: string, path: string, data?: unknown, headers: Record<string, string> = {}, session = context) {
-  const sessionAnswer = await session.request.get(adminURL + '/admin/session')
-  const csrf = sessionAnswer.ok() ? String((await sessionAnswer.json()).csrf_token) : ''
-  const reply = await session.request.fetch(adminURL + path, {
-    method,
-    headers: method === 'GET' ? headers : { Origin: adminURL, 'X-CSRF-Token': csrf, ...headers },
-    data,
-  })
+  let guard: Record<string, string> = {}
+  if (method !== 'GET') {
+    const sessionAnswer = await session.request.get(adminURL + '/admin/session')
+    if (!sessionAnswer.ok()) throw new Error(`session read failed with ${sessionAnswer.status()}`)
+    guard = { Origin: adminURL, 'X-CSRF-Token': String((await sessionAnswer.json()).csrf_token) }
+  }
+  const reply = await session.request.fetch(adminURL + path, { method, headers: { ...guard, ...headers }, data })
   const text = await reply.text()
   return { status: reply.status(), etag: reply.headers()['etag'], body: text ? JSON.parse(text) : undefined }
 }
@@ -38,6 +43,7 @@ export async function currentPolicy(): Promise<Revision & { document: Policy }> 
 }
 
 export async function candidates(session = context): Promise<Candidate[]> {
+  // One page of 100 holds every draft a Designer file creates, without reading the whole list.
   const reply = await api('GET', '/admin/candidates?limit=100', undefined, {}, session)
   expect(reply.status).toBe(200)
   return reply.body.items
@@ -45,6 +51,7 @@ export async function candidates(session = context): Promise<Candidate[]> {
 
 export async function capture(name: string, target = page) {
   const original = target.viewportSize()!
+  // A desktop, a tablet and a phone width: the page must not scroll sideways at any of them.
   for (const width of [1440, 768, 375]) {
     await target.setViewportSize({ width, height: 900 })
     await shot(target, `${name}-${width}`)
@@ -142,7 +149,7 @@ export async function open(browser: Browser) {
   context.on('console', (entry) => browserMessages.push(entry.text()))
   context.on('request', (request) => requests.push(`${request.method()} ${request.url()}`))
   page = await context.newPage()
-  await page.goto(adminURL + '/')
+  pagePolicy = (await page.goto(adminURL + '/'))?.headers()['content-security-policy'] ?? ''
   await enrol(page, 'admin', enrolment, password)
   await signIn(page, 'admin', password)
 }
@@ -153,9 +160,11 @@ export async function ready() {
   await designer()
 }
 
-// expectPolicyKept checks that no content policy violation was reported and
-// that only the layout preference reached browser storage.
+// expectPolicyKept checks that the page was served with its content policy,
+// that no violation was reported and that only the layout preference reached
+// browser storage.
 export async function expectPolicyKept() {
+  expect(pagePolicy).toMatch(/default-src 'none'.*script-src 'self'/)
   expect(policyViolations).toEqual([])
   expect(
     browserMessages.filter((line) => /Content Security Policy|Refused to (load|execute|apply|connect)|violates.*directive/i.test(line)),

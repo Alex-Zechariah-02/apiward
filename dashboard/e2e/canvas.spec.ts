@@ -141,8 +141,24 @@ test.describe.serial('Policy Designer on the native Gateway', () => {
     await orders.click()
     await expect(orders).toHaveAttribute('aria-expanded', 'true')
     await expect(page.locator('.designer-row[data-box^="operation:orders."]').first()).toBeVisible()
-    // Past the time a camera move used to take after the cards settled.
-    await page.waitForTimeout(600)
+    // Once the view and the card have stood still for 20 frames, neither has moved.
+    await page.evaluate(
+      () =>
+        new Promise<void>((settled) => {
+          let last = ''
+          let still = 0
+          const sample = () => {
+            const viewport = document.querySelector('.react-flow__viewport')
+            const box = document.querySelector('.designer-node-api')?.getBoundingClientRect()
+            const now = `${viewport ? getComputedStyle(viewport).transform : ''} ${box?.x} ${box?.y}`
+            still = now === last ? still + 1 : 0
+            last = now
+            if (still >= 20) settled()
+            else requestAnimationFrame(sample)
+          }
+          requestAnimationFrame(sample)
+        }),
+    )
     expect({ view: await view(), card: await card.boundingBox() }).toEqual(before)
     await capture('designer-group-open')
     await orders.click()

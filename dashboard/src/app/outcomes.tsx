@@ -24,23 +24,27 @@ function settlement(reply: Reply<unknown>): Unresolved['settled'] {
   return { tone: 'refused', text: `Not applied: the gateway refused it. ${explain(code)} (${code})` }
 }
 
-// useOutcomeRegister keeps the changes whose answer was lost for the signed-in
+// useOutcomeRegister keeps the changes whose answer was lost, and the
+// refusals that arrived after their view was left, for the signed-in
 // administrator, in this page's memory only. A new sign-in by the same
 // administrator, after the session ended, still sees them; signing out
 // clears them. Clearing also starts a new lifetime: a request sent before
 // it, whose answer arrives later, can neither list itself again nor settle
 // anything, even when the same administrator has signed in again since.
+// The list has no maximum: each entry is a change the administrator made by
+// hand, and dropping one would hide a change that may have been applied.
 export function useOutcomeRegister(admin: string | null): OutcomeRegister & { clear: () => void } {
   const [items, setItems] = useState<Unresolved[]>([])
   const lifetime = useRef(0)
   const current = useCallback(() => lifetime.current, [])
   const add = useCallback(
-    (request: MutationRequest, since: number) => {
+    (request: MutationRequest, since: number, refusal?: Reply<unknown>) => {
       if (!admin || since !== lifetime.current) return
       const id = transitionOf(admin, request)
+      const answer = refusal ? { answered: true, settled: settlement(refusal) } : {}
       setItems((list) => [
         ...list.filter((item) => item.id !== id),
-        { id, admin, label: describe(request), request, sentAt: new Date() },
+        { id, admin, label: describe(request), request, sentAt: new Date(), ...answer },
       ])
     },
     [admin],
@@ -148,18 +152,28 @@ export function UnresolvedChanges(props: { admin: Admin; name: string; register:
 
   if (items.length === 0) return null
   const open = items.filter((item) => !item.settled).length
+  const late = items.every((item) => item.answered)
+  const title =
+    open > 0
+      ? `${open === 1 ? 'A change has' : `${open} changes have`} an unknown outcome`
+      : late
+        ? items.length === 1
+          ? 'A change was refused after you left its page'
+          : `${items.length} changes were refused after you left their pages`
+        : 'Outcome found'
   return (
     <section className="banner tone-unknown unresolved" aria-labelledby="unresolved-title">
       <h2 id="unresolved-title" className="unresolved-title">
         <Glyph name="unknown" />
-        {open > 0 ? `${open === 1 ? 'A change has' : `${open} changes have`} an unknown outcome` : 'Outcome found'}
+        {title}
       </h2>
       <ul className="unresolved-list">
         {items.map((item) => (
           <li key={item.id} className="unresolved-item">
             <p>
               <strong>{item.label}</strong> <span className="muted">
-                sent <Time value={item.sentAt.toISOString()} />, no answer arrived
+                sent <Time value={item.sentAt.toISOString()} />
+                {item.answered ? '' : ', no answer arrived'}
               </span>
             </p>
             {item.settled ? (

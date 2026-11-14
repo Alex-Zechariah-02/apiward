@@ -73,17 +73,21 @@ test.describe.serial('motion', () => {
 
   test.afterAll(finish)
 
-  test('controls ease colour, opacity and transform in under 300 ms, never every property, and the focus ring is never delayed', async () => {
+  test('controls ease colour and transform in under 300 ms, never every property, and the focus ring is never delayed', async () => {
     await go(admin, 'Live Traffic')
     const found = controls(admin)
+    const eased: Record<string, string[]> = {}
     for (const [name, control] of Object.entries(found)) {
       const style = await motion(control)
       expect(style.property, name).not.toContain('all')
       expect(style.property, name).not.toContain('outline-color')
       expect(Math.max(...style.duration), name).toBeLessThan(0.3)
       expect(Math.max(...style.duration), name).toBeGreaterThan(0)
+      eased[name] = style.property.filter((_, index) => style.duration[index % style.duration.length] > 0)
     }
-    expect((await motion(found.segmented)).property).toContain('transform')
+    expect(eased.segmented).toContain('transform')
+    // Colour is eased where a state changes it: buttons and links.
+    for (const name of ['segmented', 'button', 'link']) expect(eased[name].some((property) => property.endsWith('color')), name).toBe(true)
     // The sidebar changes width at once: animating its grid would lay the
     // whole page out again on every frame.
     expect((await motion(admin.locator('.shell'))).property).not.toContain('grid-template-columns')
@@ -125,14 +129,18 @@ test.describe.serial('motion', () => {
     // The confirmation the accessibility scan reads, opened with the pointer.
     expect((await adminCall('PUT', '/admin/blocked-accounts/cust-002', { reason: 'Motion check' }, { 'Idempotency-Key': crypto.randomUUID() })).status).toBe(200)
     await go(admin, 'Blocking')
+    // Sampled every frame from the frame the dialog opens in until nothing
+    // in it animates any more, so the sample covers the whole entrance
+    // however late the click lands.
     const sampled = admin.evaluate(async () => {
       const seen = { dialog: new Set<string>(), buttons: new Set<string>() }
-      const start = performance.now()
-      while (performance.now() - start < 600) {
-        const dialog = document.querySelector('dialog[open]')
-        for (const animation of dialog?.getAnimations() ?? []) seen.dialog.add((animation as CSSAnimation).animationName)
-        for (const button of dialog?.querySelectorAll('.btn') ?? []) for (const animation of button.getAnimations()) seen.buttons.add(`${button.textContent}: ${(animation as CSSTransition).transitionProperty}`)
-        await new Promise((done) => requestAnimationFrame(done))
+      const frame = () => new Promise((done) => requestAnimationFrame(done))
+      let dialog: Element | null = null
+      while (!(dialog = document.querySelector('dialog[open]'))) await frame()
+      while (dialog.getAnimations({ subtree: true }).length > 0) {
+        for (const animation of dialog.getAnimations()) seen.dialog.add((animation as CSSAnimation).animationName)
+        for (const button of dialog.querySelectorAll('.btn')) for (const animation of button.getAnimations()) seen.buttons.add(`${button.textContent}: ${(animation as CSSTransition).transitionProperty}`)
+        await frame()
       }
       return { dialog: [...seen.dialog], buttons: [...seen.buttons] }
     })

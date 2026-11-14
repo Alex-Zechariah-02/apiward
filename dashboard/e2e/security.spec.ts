@@ -1,8 +1,8 @@
 import { spawnSync } from 'node:child_process'
-import { createServer } from 'node:http'
 import { dirname, join } from 'node:path'
 import { expect, test } from '@playwright/test'
 import { adminURL, raw, siteURL } from './env'
+import { fromOtherSite } from './othersite'
 import { advanced, dialogButton, enrol, go, moreDetail, record, shot, signIn, stage } from './pages'
 import { admin, adminCall, adminContext, adminRequests, admitted, auditEvents, call, demo, expectNoSecrets, finish, handedOut, open, password, ready, scriptDialogs, sessionCookie, status, strip, token } from './setup'
 
@@ -49,41 +49,37 @@ test.describe.serial('dashboard', () => {
     // file's order separates them, where a clock comparison could not.
     await expect.poll(() => auditEvents().some((e) => e.path === '/admin/status' && e.kind === 'admin.rejected')).toBe(true)
     const attackStarted = auditEvents().length
-    const otherSite = createServer((_, response) => {
-      response.writeHead(200, { 'Content-Type': 'text/html' })
-      response.end('<!doctype html><title>Another site</title>')
+    const read = await fromOtherSite(adminContext, async (attacker) => {
+      const read = await attacker.evaluate(
+        (url) =>
+          fetch(url + '/admin/status', { credentials: 'include' }).then(
+            (r) => `read ${r.status}`,
+            (e: unknown) => `blocked: ${String(e)}`,
+          ),
+        adminURL,
+      )
+      await attacker.evaluate(
+        (url) =>
+          fetch(url + '/admin/provisional/rollback', {
+            method: 'POST',
+            mode: 'no-cors',
+            credentials: 'include',
+            headers: { 'Content-Type': 'text/plain' },
+            body: '{"revision":1}',
+          }).catch(() => undefined),
+        adminURL,
+      )
+      return read
     })
-    await new Promise<void>((done) => otherSite.listen(9999, '127.0.0.3', done))
-    const attacker = await adminContext.newPage()
-    await attacker.goto('http://127.0.0.3:9999/')
-    const read = await attacker.evaluate(
-      (url) =>
-        fetch(url + '/admin/status', { credentials: 'include' }).then(
-          (r) => `read ${r.status}`,
-          (e: unknown) => `blocked: ${String(e)}`,
-        ),
-      adminURL,
-    )
     expect(read).toMatch(/^blocked/)
-    await attacker.evaluate(
-      (url) =>
-        fetch(url + '/admin/provisional/rollback', {
-          method: 'POST',
-          mode: 'no-cors',
-          credentials: 'include',
-          headers: { 'Content-Type': 'text/plain' },
-          body: '{"revision":1}',
-        }).catch(() => undefined),
-      adminURL,
-    )
-    await attacker.close()
-    await new Promise((done) => otherSite.close(done))
 
     expect(await status()).toEqual(before)
     expect((await adminCall('GET', '/admin/blocked-accounts')).body.items).toEqual([])
-    const refused = auditEvents().filter((e) => (e.kind === 'admin.rejected' || e.kind === 'admin.denied') && typeof e.path === 'string')
-    const reasons = (path: string) => refused.filter((e) => e.path === path).map((e) => e.reason)
-    expect(reasons('/admin/blocked-accounts/cust-002')).toEqual(expect.arrayContaining(['bad_origin', 'csrf', 'bad_host', 'no_session']))
+    const reasons = (path: string) =>
+      auditEvents()
+        .filter((e) => (e.kind === 'admin.rejected' || e.kind === 'admin.denied') && e.path === path)
+        .map((e) => e.reason)
+    await expect.poll(() => reasons('/admin/blocked-accounts/cust-002')).toEqual(expect.arrayContaining(['bad_origin', 'csrf', 'bad_host', 'no_session']))
     // The session cookie is SameSite=Strict, so the other site's requests
     // arrived without it. Refusals are written to the audit file shortly after
     // the answer.

@@ -24,6 +24,10 @@ export function App() {
   // lastStatus is the gateway's status as the shell last read it, so the
   // sign-in page can say that a trial goes on when a session ends.
   const lastStatus = useRef<Status | undefined>(undefined)
+  // live is the session this page is signed in with. A read that learns late
+  // that its session ended must not replace the notice of a sign-out that
+  // already happened (a password change), nor end a newer session.
+  const live = useRef<SessionInfo | null>(null)
 
   const signedOut = useCallback(
     (message: string, explicit = false) => {
@@ -34,6 +38,7 @@ export function App() {
           : ''
       if (explicit) clearOutcomes()
       lastStatus.current = undefined
+      live.current = null
       setSession(null)
       setNotice(message + trial)
       setEpoch((e) => e + 1)
@@ -44,12 +49,18 @@ export function App() {
 
   const signedIn = useCallback((info: SessionInfo) => {
     setNotice('')
+    live.current = info
     setSession(info)
     setEpoch((e) => e + 1)
   }, [])
 
   const admin = useMemo(
-    () => (session ? adminClient(session.csrf_token, () => signedOut('Your session has ended. Sign in again.')) : null),
+    () =>
+      session
+        ? adminClient(session.csrf_token, () => {
+            if (live.current === session) signedOut('Your session has ended. Sign in again.')
+          })
+        : null,
     [session, signedOut],
   )
 

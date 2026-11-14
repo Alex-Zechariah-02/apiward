@@ -190,7 +190,12 @@ test.describe.serial('dashboard', () => {
         }
       }).observe(document.body, { subtree: true, childList: true, characterData: true })
     })
-    await admin.waitForTimeout(7_000)
+    // Six distinct countdown values: five ticks, each with the page's reread.
+    const countdown = trial(admin).locator('.tile-countdown')
+    const shown = new Set<string>()
+    await expect
+      .poll(async () => shown.add(await countdown.innerText()).size, { timeout: 15_000 })
+      .toBeGreaterThanOrEqual(6)
     await expect(confirmButton).toBeFocused()
     const announced = await admin.evaluate(() => (window as unknown as { announced: string[] }).announced)
     expect(announced).toEqual([])

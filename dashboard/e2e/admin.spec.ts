@@ -45,10 +45,23 @@ test.describe.serial('dashboard', () => {
 
     // The gateway applies the filters, so a count covers the whole history,
     // not just the entries read so far.
+    // Until the filtered page arrives, the unfiltered rows are not shown as
+    // its matches.
+    let answer!: () => void
+    const held = new Promise<void>((resolve) => (answer = resolve))
+    const filteredRead = (url: URL) => url.pathname === '/admin/history' && url.searchParams.has('kind')
+    await admin.route(filteredRead, async (route) => {
+      await held
+      await route.continue()
+    })
     await admin.getByLabel('Area').selectOption('overrides')
+    await expect(admin.getByText('Reading the history…')).toBeVisible()
+    await expect(rows).toHaveCount(0)
+    answer()
     const overrides = entries.filter((e) => ['tpo.create', 'tpo.revoke', 'tpo.expire'].includes(e.kind))
     expect(overrides.length).toBeGreaterThan(0)
     await expect(rows).toHaveCount(overrides.length)
+    await admin.unroute(filteredRead)
     await expect(admin.getByText(`Showing ${overrides.length} matching entries: every match in the history.`)).toBeVisible()
     await expect(rows.first().locator('td').first()).toHaveText(String(overrides[overrides.length - 1].seq))
     await admin.getByLabel('Area').selectOption('all')
@@ -97,9 +110,10 @@ test.describe.serial('dashboard', () => {
     await shot(admin, '29-password-refused')
     expect((await raw('GET', adminURL + '/admin/session', { Cookie: await sessionCookie() })).status).toBe(200)
 
+    // A refused change keeps what was typed: only the wrong field is corrected.
+    await expect(admin.getByLabel('New Password', { exact: true })).toHaveValue(changed)
+    await expect(admin.getByLabel('Repeat the New Password')).toHaveValue(changed)
     await admin.getByLabel('Current Password').fill(password)
-    await admin.getByLabel('New Password', { exact: true }).fill(changed)
-    await admin.getByLabel('Repeat the New Password').fill(changed)
     await admin.getByRole('button', { name: 'Change Password' }).click()
     await expect(admin.getByText('Password changed. Every session of this administrator has ended; sign in with the new password.')).toBeVisible()
     await expect(admin.getByRole('heading', { name: 'Sign in' })).toBeVisible()
@@ -123,11 +137,13 @@ test.describe.serial('dashboard', () => {
     await admin.getByRole('button', { name: 'Change Password' }).click()
     await expect(admin.getByRole('heading', { name: 'Sign in' })).toBeVisible()
     await signIn(admin, 'admin', password)
-    const kinds = auditEvents()
-      .filter((e) => e.path === '/admin/password')
-      .map((e) => `${e.kind} ${e.reason ?? ''}`.trim())
-    expect(kinds).toContain('admin.denied bad_credentials')
-    record('password-change', { passwordEvents: kinds })
+    // The gateway queues audit records after its answer, so the file is read until the refusal arrives.
+    const kinds = () =>
+      auditEvents()
+        .filter((e) => e.path === '/admin/password')
+        .map((e) => `${e.kind} ${e.reason ?? ''}`.trim())
+    await expect.poll(kinds).toContain('admin.denied bad_credentials')
+    record('password-change', { passwordEvents: kinds() })
   })
 
   test('signing out ends the session in every tab and back navigation shows no privileged view', async () => {

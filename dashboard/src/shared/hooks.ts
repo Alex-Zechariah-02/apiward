@@ -49,10 +49,14 @@ export function useRereadWhen(key: unknown, refresh: () => void) {
   }, [key])
 }
 
-// usePaged keeps a growing list read with the server's cursor.
+// usePaged keeps a growing list read with the server's cursor. A change of
+// path (another filter or order) empties the list until its first page
+// arrives: rows read for one question are never shown as the answer to
+// another. current says the rows belong to path.
 export function usePaged<T>(admin: Admin, path: string, deps: unknown[]) {
   const [items, setItems] = useState<T[]>([])
   const [next, setNext] = useState<string | undefined>(undefined)
+  const [current, setCurrent] = useState(false)
   const [paging, setPaging] = useState(false)
   // pageProblem is the answer of a later page that could not be read.
   const [pageProblem, setPageProblem] = useState<Reply<unknown> | null>(null)
@@ -66,11 +70,21 @@ export function usePaged<T>(admin: Admin, path: string, deps: unknown[]) {
     if (resource.reply?.kind === 'ok') {
       setItems(resource.reply.body.items)
       setNext(resource.reply.body.next)
+      setCurrent(true)
     }
   }, [resource.reply])
+  // Declared after the effect above, so when an answer for the old path and
+  // the new path arrive in one render, the list still ends empty.
+  useEffect(() => {
+    first.current++
+    setItems([])
+    setNext(undefined)
+    setCurrent(false)
+  }, [path])
 
   // read appends up to pages further pages, stopping at the end of the list,
-  // at a failed read or when a refresh starts a new list.
+  // at a failed read or when a refresh starts a new list. The caller bounds
+  // pages; the reads run one after another, never side by side.
   async function read(pages: number) {
     let cursor = next
     const list = first.current
@@ -91,7 +105,7 @@ export function usePaged<T>(admin: Admin, path: string, deps: unknown[]) {
     setPaging(false)
   }
 
-  return { ...resource, items, next, paging, pageProblem, more: () => read(1), rest: (pages: number) => read(pages) }
+  return { ...resource, items, next, current, paging, pageProblem, more: () => read(1), rest: (pages: number) => read(pages) }
 }
 
 // Every read renews the administrator's session, so a page left open would
@@ -144,19 +158,30 @@ type Phase<T> =
   | { state: 'pending'; request: MutationRequest }
   | { state: 'replied'; request: MutationRequest; reply: Reply<T> }
 
-// useMutation sends one state-changing request at a time. The result is the
+// useMutation sends one state-changing request at a time, so a double click
+// cannot send two changes whose answers race. The result is the
 // server's reply only; after any definite reply the view rereads its data.
 // An unanswered request stays "outcome unknown" until the administrator
 // refreshes or deliberately resends the identical request, and one that
 // carries a request key is also listed on every page until its outcome is
-// known (Outcomes).
+// known (Outcomes). A refusal that arrives after its view was left is listed
+// there too, because the view that would have shown it is gone. run resolves
+// with the reply (nothing when another request was already in flight), also
+// after the view was left.
 export function useMutation<T = Outcome>(admin: Admin, onSettled: () => void) {
   const [phase, setPhase] = useState<Phase<T>>({ state: 'idle' })
   const busy = useRef(false)
+  const shown = useRef(true)
   const outcomes = useContext(Outcomes)
+  useEffect(() => {
+    shown.current = true
+    return () => {
+      shown.current = false
+    }
+  }, [])
 
-  async function run(request: MutationRequest) {
-    if (busy.current) return
+  async function run(request: MutationRequest): Promise<Reply<T> | undefined> {
+    if (busy.current) return undefined
     busy.current = true
     setPhase({ state: 'pending', request })
     // The register's lifetime is taken when the request is sent: if the
@@ -165,13 +190,15 @@ export function useMutation<T = Outcome>(admin: Admin, onSettled: () => void) {
     const since = outcomes?.lifetime()
     const reply = await admin.send<T>(request)
     busy.current = false
-    if (outcomes && since !== outcomes.lifetime()) return
+    if (outcomes && since !== outcomes.lifetime()) return reply
     setPhase({ state: 'replied', request, reply })
     if (outcomes && since !== undefined && request.key !== undefined) {
       if (reply.kind === 'unknown') outcomes.add(request, since)
-      if (reply.kind === 'ok' || reply.kind === 'refused') outcomes.settle(request, since)
+      else if (reply.kind === 'refused' && !shown.current) outcomes.add(request, since, reply)
+      else if (reply.kind === 'ok' || reply.kind === 'refused') outcomes.settle(request, since)
     }
     if (reply.kind !== 'unknown') onSettled()
+    return reply
   }
 
   return {
@@ -184,8 +211,9 @@ export function useMutation<T = Outcome>(admin: Admin, onSettled: () => void) {
 
 export type Mutation<T> = ReturnType<typeof useMutation<T>>
 
-// Unresolved is a change that was sent but got no answer. It is kept in this
-// page's memory only, never in browser storage.
+// Unresolved is a change that was sent but got no answer, or whose refusal
+// arrived after its view was left. It is kept in this page's memory only,
+// never in browser storage.
 export interface Unresolved {
   // id is the transition the gateway records it under.
   id: string
@@ -193,6 +221,8 @@ export interface Unresolved {
   label: string
   request: MutationRequest
   sentAt: Date
+  // answered says the gateway did answer, after the view was left.
+  answered?: boolean
   // checked is the latest look-up that could not settle it.
   checked?: { at: Date; text: string }
   settled?: { tone: 'ok' | 'pending' | 'refused'; text: ReactNode }
@@ -204,7 +234,8 @@ export interface OutcomeRegister {
   // request records it when sent and passes it back with its answer, so an
   // answer from before the clear is ignored.
   lifetime(): number
-  add(request: MutationRequest, since: number): void
+  // add lists a change with no answer, or with the refusal its view missed.
+  add(request: MutationRequest, since: number, refusal?: Reply<unknown>): void
   // settle drops a change whose view received a definite answer.
   settle(request: MutationRequest, since: number): void
   update(id: string, change: Partial<Unresolved>): void

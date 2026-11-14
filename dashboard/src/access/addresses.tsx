@@ -22,6 +22,8 @@ interface BlockedAddress {
   expires_at: string | null
 }
 
+// Shortcut expiries give a block an end without typing a date; Custom takes
+// any time the gateway accepts, 1 minute to 30 days ahead.
 const expiries: [string, string, number | null][] = [
   ['never', 'Never', null],
   ['1h', '1 Hour', 60 * 60_000],
@@ -69,7 +71,10 @@ export function BlockedSwitch({ view, onView }: { view: 'accounts' | 'addresses'
   )
 }
 
-export function AddressesPanel({ admin, can, handed }: ViewProps & { handed: { address: string } | null }) {
+// AddressesPanel lists the blocked addresses. handed is an address another
+// page asked to block: its dialog opens once, then onTaken forgets it, so
+// coming back to this panel does not open the dialog again.
+export function AddressesPanel({ admin, can, handed, onTaken }: ViewProps & { handed: string | null; onTaken: () => void }) {
   const id = useId()
   const list = useResource<{ items: BlockedAddress[] }>((signal) => admin.get('/admin/blocked-addresses', signal), [])
   const block = useMutation<BlockedAddress>(admin, list.refresh)
@@ -89,7 +94,9 @@ export function AddressesPanel({ admin, can, handed }: ViewProps & { handed: { a
     setBlocking(true)
   }
   useEffect(() => {
-    if (manage && handed) openBlock(handed.address)
+    if (handed === null) return
+    if (manage) openBlock(handed)
+    onTaken()
   }, [handed])
   const submit = () => {
     if (!address.trim() || !reason.trim()) return
@@ -192,6 +199,9 @@ export function AddressesPanel({ admin, can, handed }: ViewProps & { handed: { a
           onConfirm={submit}
         >
           <p>Every request from this address or range is refused at once, at every endpoint, until it is unblocked or expires.</p>
+          {/* 43 characters hold the longest range, an IPv6 address with /128
+              (39 + 4). 200 characters never pass the gateway's 800-byte
+              reason limit. */}
           <Field id={`${id}-address`} label="Address or Range" hint="For example 203.0.113.7 or 203.0.113.0/24.">
             <input id={`${id}-address`} className="input mono" value={address} onChange={(e) => setAddress(e.target.value)} maxLength={43}
               spellCheck={false} autoComplete="off" aria-describedby={`${id}-address-hint`} />

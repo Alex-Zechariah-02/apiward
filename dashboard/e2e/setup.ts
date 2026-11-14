@@ -13,6 +13,7 @@ import { expectLayoutOnlyStorage } from './storage'
 // gateway's security events.
 
 export const password = 'correct horse battery staple 42'
+// The content policy the gateway must send with the Dashboard: nothing inline, nothing external, no framing, no form post.
 export const uiPolicy =
   "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
 
@@ -91,6 +92,7 @@ export async function listAll<T>(path: string): Promise<T[]> {
   const items: T[] = []
   let after: string | undefined
   do {
+    // Pages of 100 keep each read small; the loop still collects the whole list.
     const reply = await adminCall('GET', `${path}?limit=100${after ? `&after=${encodeURIComponent(after)}` : ''}`)
     expect(reply.status, path).toBe(200)
     items.push(...(reply.body.items as T[]))
@@ -245,8 +247,10 @@ export async function ready() {
 
 // expectNoSecrets checks that no secret reached browser storage, URLs,
 // console output, built files, logs or evidence, that no content policy
-// violation occurred and that no script dialog opened.
+// violation occurred and that no script dialog opened. It stops the
+// deployment first, so every queued audit record is in the files it scans.
 export async function expectNoSecrets() {
+  await demo.stop()
   const privateKey = demo.file('issuer-key.pem').split('\n')[1]
   const secrets = [password, ...handedOut, demo.file('service.secret').trim(), privateKey]
   const leaks: string[] = []
@@ -263,6 +267,7 @@ export async function expectNoSecrets() {
     readdirSync(dir).flatMap((name) => (statSync(join(dir, name)).isDirectory() ? walk(join(dir, name)) : [join(dir, name)]))
   const built = [...walk(applicationDist), ...walk(join(demo.web, 'admin'))]
   for (const file of built) check(file, readFileSync(file, 'utf8'))
+  // Every file the deployment writes: the audit log, each program's log and the gateway's configuration.
   for (const name of ['audit.log', 'gateway.log', 'orders.log', 'inventory.log', 'reports.log', 'support.log', 'accounts.log', 'gateway.json'])
     check(name, demo.file(name))
   if (process.env.E2E_EVIDENCE) check('evidence file', readFileSync(process.env.E2E_EVIDENCE, 'utf8'))

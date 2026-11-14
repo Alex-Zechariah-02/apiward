@@ -152,6 +152,10 @@ export const messages: Record<string, Message> = {
     title: "An API's forward rule is not valid",
     action: 'Use prefixes such as /api without a trailing slash, and remove only a prefix that every endpoint path of the API starts with.',
   },
+  MODULE_FAILED: {
+    title: "A module refused an endpoint's settings",
+    action: 'Correct the module settings of the endpoint named under More details. The Team page lists the modules this gateway runs.',
+  },
   CORS_WILDCARD_NOT_ALLOWED: {
     title: 'Any origin is allowed only on public APIs',
     action: 'List the allowed origins, or make every endpoint of the API public and turn off credentials.',

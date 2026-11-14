@@ -72,7 +72,9 @@ const areas: { id: Area | 'all'; label: string }[] = [
   { id: 'operator', label: 'Operator' },
 ]
 
-// The most pages "Load all" reads at once: 2000 entries at 100 a page.
+// The most pages "Load all" reads at once: 2000 entries at 100 a page, so
+// one click cannot read an unbounded history into the browser. A page of 100
+// keeps each read, and each wait for it, small.
 const allPages = 20
 
 // historyPath asks the gateway for one page of the history in the chosen
@@ -131,8 +133,10 @@ export function History({ admin }: ViewProps) {
       </PageHeader>
       <section className="section">
         {history.reply && history.reply.kind !== 'ok' ? <Problem reply={history.reply} /> : null}
-        {history.reply?.kind === 'ok' && history.items.length === 0 && !filtered ? <Empty title="No transition has been recorded yet." /> : null}
-        {history.items.length > 0 || filtered ? (
+        {history.current && history.items.length === 0 && !filtered ? <Empty title="No transition has been recorded yet." /> : null}
+        {/* The filters stay while another filter's or order's first page is
+            read (not current), so the control just used keeps the focus. */}
+        {history.items.length > 0 || filtered || (!history.current && history.reply?.kind === 'ok') ? (
           <>
             <div className="filters" role="group" aria-label="Filter the history">
               <div className="field">
@@ -170,16 +174,19 @@ export function History({ admin }: ViewProps) {
               </label>
             </div>
             <p className="hint list-count" role="status">
-              {`Showing ${shown.length} ${filtered ? 'matching ' : ''}${shown.length === 1 ? 'entry' : 'entries'}`}
-              {history.next
-                ? `, ${newestFirst ? 'newest' : 'oldest'} first. More ${filtered ? 'matches' : 'entries'} exist.`
-                : filtered
-                  ? ': every match in the history.'
-                  : ', the whole history.'}
+              {!history.current
+                ? 'Reading the history…'
+                : `Showing ${shown.length} ${filtered ? 'matching ' : ''}${shown.length === 1 ? 'entry' : 'entries'}${
+                    history.next
+                      ? `, ${newestFirst ? 'newest' : 'oldest'} first. More ${filtered ? 'matches' : 'entries'} exist.`
+                      : filtered
+                        ? ': every match in the history.'
+                        : ', the whole history.'
+                  }`}
             </p>
           </>
         ) : null}
-        {history.reply?.kind === 'ok' && shown.length === 0 && filtered ? <Empty title="No recorded transition matches these filters." /> : null}
+        {history.current && shown.length === 0 && filtered ? <Empty title="No recorded transition matches these filters." /> : null}
         {shown.length > 0 ? (
           <TableScroll label="Administrative History">
             <table>

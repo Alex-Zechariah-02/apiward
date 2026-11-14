@@ -1,78 +1,35 @@
+import { readdirSync, readFileSync } from 'node:fs'
+import { join, resolve } from 'node:path'
 import { expect, test } from '@playwright/test'
 import { committedMessage, explain, message } from '../src/shared/api'
 
-// Every error and refusal code the Admin API can send, as the gateway's
-// source produced them on 28 October 2026: the protected Admin API's own
-// codes, the controller's refusal reasons, and those reasons in lower case as
-// blocked-account and key changes send them.
-const adminCodes = [
-  'bad_request',
-  'busy',
-  'candidate_invalid',
-  'forbidden',
-  'gateway_unavailable',
-  'no_confirmed_policy',
-  'no_provisional',
-  'not_found',
-  'payload_too_large',
-  'precondition_required',
-  'session_limit',
-  'stream_limit',
-  'too_many_attempts',
-  'unauthenticated',
-  'unavailable',
-  'unsupported_media_type',
-]
-
+// Every error and refusal code the Admin API can send, read from the
+// gateway's source so a new code without a plain title fails here: the
+// protected Admin API's own codes, the controller's refusal reasons and the
+// policy compiler's reasons (sent in upper case, and in lower case by
+// blocked-account and key changes).
+const gateway = resolve('..', 'internal')
+const source = (...dirs: string[]) =>
+  dirs
+    .flatMap((dir) => readdirSync(join(gateway, dir)).filter((name) => name.endsWith('.go') && !name.endsWith('_test.go')).map((name) => join(gateway, dir, name)))
+    .map((file) => readFileSync(file, 'utf8'))
+    .join('\n')
+const found = (text: string, pattern: RegExp) => [...new Set([...text.matchAll(pattern)].map((match) => match[1]))]
+const adminCodes = found(source('admin'), /(?:adminError\(w|refuse\(w, r), [^,]+, "([a-z_]+)"/g)
 const controllerReasons = [
-  'ALREADY_RESOLVED',
-  'AUDIT_UNAVAILABLE',
-  'CANDIDATE_INTEGRITY',
-  'CANDIDATE_STALE',
-  'CANDIDATE_UNAVAILABLE',
-  'CREDENTIAL_CHANGED',
-  'DEADLINE_PASSED',
-  'DUPLICATE_ID',
-  'DUPLICATE_MEMBER',
-  'DUPLICATE_OPERATION',
-  'ENROLMENT_CONSUMED',
-  'INVALID_DEADLINE',
-  'INVALID_EXPIRY',
-  'INVALID_METHOD',
-  'INVALID_STATE',
-  'INVALID_TARGET',
-  'INVALID_UPSTREAM',
-  'INVALID_VALUE',
-  'KEYS_INVALID',
-  'LIMIT_EXCEEDED',
-  'NO_PROVISIONAL',
-  'NOT_DENY_ALL',
-  'NOT_FOUND',
-  'OUTCOME_AUDIT_PENDING',
-  'OVERRIDE_CONFLICT',
-  'OVERRIDE_LIMIT',
-  'PRECONDITION_FAILED',
-  'PROVISIONAL_ACTIVE',
-  'PROVISIONAL_MISMATCH',
-  'PUBLICATION_FAILED',
-  'SCHEMA_INVALID',
-  'SCHEMA_VERSION_UNSUPPORTED',
-  'STALE',
-  'STORE_ERROR',
-  'TARGET_INVALID',
-  'TRANSITION_ID_REUSED',
-  'UNAVAILABLE',
-  'UNKNOWN_FIELD',
-  'UNKNOWN_REFERENCE',
-  'UNSUPPORTED_ACTION',
-  'UNSUPPORTED_CONTROL',
-  'UNSUPPORTED_FEATURE',
+  ...new Set([
+    ...found(source('controller'), /"([A-Z][A-Z_]{3,})"/g),
+    ...found(source('compile', 'policy', 'controller'), /Invalid\("([A-Z_]+)"/g),
+  ]),
 ]
 
 const fallback = message('a_code_no_gateway_sends')
 
 test('every code the Admin API can send has its own plain title and next step, and an unknown code still gets one', () => {
   expect(fallback.action).toContain('no description')
+  // The source reading still finds the codes the gateway has long sent.
+  expect(adminCodes).toEqual(expect.arrayContaining(['bad_request', 'forbidden', 'unauthenticated', 'too_many_attempts', 'stream_limit']))
+  expect(controllerReasons).toEqual(expect.arrayContaining(['STALE', 'ALREADY_RESOLVED', 'DUPLICATE_ID', 'UNSUPPORTED_FEATURE']))
   const codes = [...adminCodes, ...controllerReasons, ...controllerReasons.map((code) => code.toLowerCase())]
   const missing = codes.filter((code) => {
     const words = message(code)

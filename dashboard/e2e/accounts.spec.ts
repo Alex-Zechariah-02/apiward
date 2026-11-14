@@ -247,6 +247,39 @@ test.describe.serial('dashboard', () => {
     await listed.getByRole('button', { name: `Unblock ${range}` }).click()
     await dialogButton(admin, 'Unblock').click()
     await expect(admin.getByText(`${range} is unblocked; its requests are checked as usual again`)).toBeVisible()
+
+    // The handed-over address opened its dialog once: coming back to
+    // Addresses does not open it again.
+    const views = admin.getByRole('group', { name: 'Show Blocked' })
+    await views.getByRole('button', { name: 'Accounts' }).click()
+    await views.getByRole('button', { name: 'Addresses' }).click()
+    await expect(admin.getByRole('heading', { name: 'Blocked Addresses' })).toBeVisible()
+    await expect(dialog).toHaveCount(0)
+
+    // A refusal that arrives after Addresses was left is still shown, in the
+    // list at the top of every page.
+    let answer!: () => void
+    const held = new Promise<void>((resolve) => (answer = resolve))
+    const blocks = (url: URL) => url.pathname.startsWith('/admin/blocked-addresses/')
+    await admin.route(blocks, async (route) => {
+      if (route.request().method() === 'PUT') await held
+      await route.continue()
+    })
+    try {
+      await admin.getByRole('button', { name: 'Block an Address' }).click()
+      await dialog.getByLabel('Address or Range').fill('not-an-address')
+      await dialog.getByLabel('Reason').fill('Refused after leaving')
+      await dialog.getByRole('button', { name: 'Block Now' }).click()
+      await views.getByRole('button', { name: 'Accounts' }).click()
+      answer()
+      const missed = admin.getByRole('region', { name: 'A change was refused after you left its page' })
+      await expect(missed).toContainText('Not applied: the gateway refused it.')
+      await missed.getByRole('button', { name: /^Dismiss/ }).click()
+      await expect(missed).toHaveCount(0)
+    } finally {
+      answer()
+      await admin.unroute(blocks)
+    }
     expect((await adjust('ops-01', -2)).status).toBe(200)
 
     // An endpoint with conditions, once in force, shows them on the APIs page.

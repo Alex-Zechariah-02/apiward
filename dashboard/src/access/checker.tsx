@@ -1,4 +1,4 @@
-import { useId, useState, type FormEvent } from 'react'
+import { useId, useRef, useState, type FormEvent } from 'react'
 import type { Candidate, Operation, Page, Reply, Revision } from '../shared/api'
 import { useResource } from '../shared/hooks'
 import { Badge, Field } from '../shared/ui'
@@ -49,7 +49,17 @@ const uncheckedWords: Record<string, string> = {
 export function AccessCheckView({ admin }: ViewProps) {
   const id = useId()
   const drafts = useResource<Page<Candidate>>((signal) => admin.get('/admin/candidates', signal), [])
-  const [form, setForm] = useState({ role: '', subject: '', endpoint: '', candidate: '' })
+  const [form, setFields] = useState({ role: '', subject: '', endpoint: '', candidate: '' })
+  // asked counts the questions put: an answer is shown only while it answers
+  // the form as it stands, so a changed form drops the verdict on screen and
+  // any answer still on its way.
+  const asked = useRef(0)
+  const setForm = (next: typeof form) => {
+    asked.current++
+    setFields(next)
+    setReply(null)
+    setPending(false)
+  }
   // The endpoints and roles offered are those of the policy being checked.
   const policy = useResource<Revision | Candidate>(
     (signal) => admin.get(form.candidate ? `/admin/candidates/${form.candidate}` : '/admin/policy', signal),
@@ -67,6 +77,7 @@ export function AccessCheckView({ admin }: ViewProps) {
     const operation = operations.find((op) => op.id === form.endpoint)
     if (!operation) return
     const conditions = conditionsOf(operation)
+    const question = ++asked.current
     setPending(true)
     const answer = await admin.send<AccessAnswer>({
       method: 'POST',
@@ -81,6 +92,7 @@ export function AccessCheckView({ admin }: ViewProps) {
         ...conditions,
       },
     })
+    if (question !== asked.current) return
     setPending(false)
     setSent(conditions)
     setReply(answer)

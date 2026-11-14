@@ -178,7 +178,9 @@ test.describe.serial('Policy Designer on the native Gateway', () => {
     await capture('designer-staging-pending')
     releaseAnswer()
     await expect(page.getByText('No answer from the gateway: the draft may or may not have been saved.')).toBeVisible()
-    await page.waitForTimeout(500)
+    // An automatic resend would follow the lost answer or the next reread
+    // of the gateway's status; two rereads later none was made.
+    for (let reread = 0; reread < 2; reread++) await page.waitForResponse((r) => new URL(r.url()).pathname === '/admin/status')
     expect(posts).toHaveLength(1)
     expect((await candidates()).length).toBe(before + 1)
     await capture('designer-staging-answer-lost')

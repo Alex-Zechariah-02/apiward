@@ -61,7 +61,7 @@ test.describe.serial('Policy Designer on the native Gateway', () => {
     const mine = structuredClone(baseline)
     mine.operations.find((operation) => operation.id === 'reports.summary')!.rate!.count = 2
     await applyJson(mine)
-    const second = await browser.newContext()
+    await using second = await browser.newContext()
     const secondPage = await second.newPage()
     await secondPage.goto(adminURL + '/')
     await signIn(secondPage, 'admin', password)
@@ -81,7 +81,6 @@ test.describe.serial('Policy Designer on the native Gateway', () => {
     await page.getByRole('button', { name: `Keep my draft and base it on r${newRevision}`, exact: true }).click()
     const candidate = await stagedDraft()
     expect((await api('GET', `/admin/candidates/${candidate}`)).body.document).toEqual(mine)
-    await second.close()
     await restoreBaseline()
     record('designer-stale-revision', { status: 412, newRevision, candidate, draftKept: true })
   })
@@ -261,7 +260,7 @@ test.describe.serial('Policy Designer on the native Gateway', () => {
 
   test('a read-only administrator has no editing controls and a crafted staging request is refused', async ({ browser }) => {
     const secret = await demo.enrol('reader', 'read')
-    const reader = await browser.newContext({ viewport: { width: 1440, height: 900 } })
+    await using reader = await browser.newContext({ viewport: { width: 1440, height: 900 } })
     const readerPage = await reader.newPage()
     await readerPage.goto(adminURL + '/')
     await enrol(readerPage, 'reader', secret, password)
@@ -290,7 +289,6 @@ test.describe.serial('Policy Designer on the native Gateway', () => {
     expect(refused.body.error).toBe('forbidden')
     expect(await candidates(reader)).toHaveLength(candidateCount)
     await capture('designer-read-only-json', readerPage)
-    await reader.close()
     record('designer-read-only', { status: refused.status, editingControls: 0 })
   })
 })

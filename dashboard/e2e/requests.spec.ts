@@ -101,7 +101,8 @@ test.describe.serial('request drawer', () => {
     const focused = () => admin.evaluate(() => !!document.activeElement?.closest('dialog'))
     expect(await focused()).toBe(true)
     const later = await send('/reports/sales', 'ops-01')
-    await admin.waitForTimeout(1500)
+    // The new row arrives behind the open drawer and leaves focus where it was.
+    await expect(stream.getByRole('row').filter({ hasText: later.request_id.slice(0, 8) })).toBeAttached()
     expect(await focused()).toBe(true)
     await admin.keyboard.press('Escape')
     await expect(stream.getByRole('row').filter({ hasText: later.request_id.slice(0, 8) })).toBeVisible()
