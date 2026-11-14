@@ -10,7 +10,10 @@ The JSON settings file that `apiward run --config <file>` reads. Upstream TLS pr
 
 ### Overload limits
 
-- Overload is bounded on the data listener: at most `data.max_connections` open connections (default 1,024; one more is accepted and closed at once, counted in `gateway_connections_refused_total`) and `data.max_in_flight` requests inside enforcement (default 256; one more is answered `503 overloaded` with `Retry-After: 1` before any token check or body read, and recorded at `INGRESS`).
+- Overload is bounded on the data listener: at most `data.max_connections` open connections (default 1,024; one more is accepted and closed at once, counted in `gateway_connections_refused_total`) and `data.max_in_flight` requests inside enforcement (default 256; one more is answered `503 overloaded` with `Retry-After: 1` before any token check, and recorded at `INGRESS`).
+- A request body is read completely before the request takes an in-flight place, so a slow upload holds only its own connection: at most `data.max_body_bytes` (default 16 KiB, up to 1 MiB; a larger body is answered `413` at `INGRESS`) within `data.read_timeout`.
+- Worst-case memory for request bodies is therefore `data.max_connections` × `data.max_body_bytes`: 16 MiB at the defaults, 1 GiB with 1,024 connections and the 1 MiB maximum; lower `data.max_connections` on a small host before raising the body ceiling.
+- A response passes to the client as it arrives: the gateway flushes it at least every 100 ms (headers included), and event streams and responses without a length at once.
 
 ### Protocols
 
@@ -25,12 +28,15 @@ The JSON settings file that `apiward run --config <file>` reads. Upstream TLS pr
 
 ### HTTP redirect
 
-- `"redirect_http": {"listen": "0.0.0.0:80", "origin": "https://api.example.com"}` under `data` adds a plain HTTP listener that answers every request with `308` to that origin plus the request's path and query; it never forwards, reads no body and counts its answers in `gateway_redirects_total`.
+- `"redirect_http": {"listen": "0.0.0.0:80", "origin": "https://api.example.com"}` under `data` adds a plain HTTP listener that answers every request with `308` to that origin plus the request's path and query; it never forwards, reads no body and counts its redirects in `gateway_redirects_total`.
+- It uses the data listener's `read_header_timeout`, `write_timeout` and header limit, answers `400` to a target that is not a path (such as `OPTIONS *`), and keeps at most `data.max_connections` open connections.
 
 ### Listen addresses
 
 - A listen address of `0.0.0.0` or `[::]` (every interface) is refused unless `"listen_all_interfaces": true` is set under `data`; the metrics listener leaves loopback only with `"metrics_listen_any": true` under `gateway`.
 - The admin listener always stays on loopback: reach it through an SSH tunnel.
+- The admin and metrics listeners each keep at most 64 open connections, and the redirect listener `data.max_connections`; one more is closed at once and counted in `gateway_listener_connections_refused_total{listener="admin"|"metrics"|"redirect"}`.
+- If the metrics or redirect listener fails, only that listener stops (logged as `listener stopped`); the data plane keeps serving, and health checks against a stopped metrics listener fail. A data listener failure stops the gateway.
 
 ### Health endpoints
 
