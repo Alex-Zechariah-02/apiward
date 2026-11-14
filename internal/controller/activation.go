@@ -85,7 +85,7 @@ func (c *Controller) Activate(ctx context.Context, t store.TransitionRecord, can
 		return result, status
 	}
 	// Overrides that have expired by now must not block the candidate.
-	if c.state == store.ModeNormal && !c.settle(ctx, now, false) {
+	if c.mode() == store.ModeNormal && !c.settle(ctx, now, false) {
 		return unavailableOutcome(t.ID)
 	}
 
@@ -155,7 +155,7 @@ func (c *Controller) Resolve(ctx context.Context, t store.TransitionRecord, prov
 		return result, status
 	}
 	// The base that follows is compiled with the overrides still active now.
-	if c.state == store.ModeNormal && !c.settle(ctx, now, false) {
+	if c.mode() == store.ModeNormal && !c.settle(ctx, now, false) {
 		return unavailableOutcome(t.ID)
 	}
 

@@ -67,7 +67,7 @@ func (c *Controller) BeginStop() {
 	}
 	c.stopping = true
 	c.observations.Close()
-	c.state = stateStopping
+	c.state.Store(stateStopping)
 	c.current.Store(nil)
 	if c.timer != nil {
 		c.timer.Stop()
@@ -85,7 +85,7 @@ func (c *Controller) shutdown(ctx context.Context) error {
 
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.state = stateStopped
+	c.state.Store(stateStopped)
 	// Every producer of audit events has stopped by now: the admission and
 	// admin requests of the stopped listeners, mutations (the lock is held)
 	// and the deadline timer (no generation is published). What they queued is
@@ -114,9 +114,7 @@ func (c *Controller) shutdown(ctx context.Context) error {
 // still refuse every request its policy denies, and the next request may
 // still fail; this is an observation, not a promise.
 func (c *Controller) Admission() string {
-	c.mu.Lock()
-	state := c.state
-	c.mu.Unlock()
+	state := c.mode()
 	switch state {
 	case store.ModeNormal:
 	case store.ModeBootstrap, store.ModeRecovery, stateStopping, stateStopped:
@@ -138,7 +136,7 @@ func (c *Controller) Admission() string {
 
 func (c *Controller) unavailable(reason string) {
 	c.current.Store(nil)
-	c.state = reason
+	c.state.Store(reason)
 	c.logger.Error("protected admission unavailable", "reason", reason)
 	c.audit.Record(audit.Event{Kind: "controller.unavailable", Reason: reason})
 }
@@ -146,12 +144,17 @@ func (c *Controller) unavailable(reason string) {
 // ready reports whether mutations can be processed: the database is open and
 // its authority was read, whatever the deployment mode.
 func (c *Controller) ready() bool {
-	return c.store != nil && (c.state == store.ModeNormal || c.state == store.ModeBootstrap || c.state == store.ModeRecovery)
+	state := c.mode()
+	return c.store != nil && (state == store.ModeNormal || state == store.ModeBootstrap || state == store.ModeRecovery)
 }
 
 // State returns the deployment mode, or the reason no authority is served.
-func (c *Controller) State() string {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.state
+// It does not wait for c.mu, so a health check or an Admin API read is not
+// held behind a slow mutation.
+func (c *Controller) State() string { return c.mode() }
+
+// mode reads the deployment mode; "" before the first is set.
+func (c *Controller) mode() string {
+	state, _ := c.state.Load().(string)
+	return state
 }

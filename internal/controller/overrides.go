@@ -63,7 +63,7 @@ func (c *Controller) ValidateOverride(ctx context.Context, actor string, expecte
 	if !c.ready() {
 		return unavailableOutcome("")
 	}
-	if c.state == store.ModeNormal && !c.settle(ctx, now, false) {
+	if c.mode() == store.ModeNormal && !c.settle(ctx, now, false) {
 		return unavailableOutcome("")
 	}
 	a, err := c.store.Load(ctx)
@@ -98,7 +98,7 @@ func (c *Controller) CreateOverride(ctx context.Context, t store.TransitionRecor
 		return result, status
 	}
 	// Overrides that have expired by now no longer hold their targets.
-	if c.state == store.ModeNormal && !c.settle(ctx, now, false) {
+	if c.mode() == store.ModeNormal && !c.settle(ctx, now, false) {
 		return unavailableOutcome(t.ID)
 	}
 
@@ -136,7 +136,7 @@ func (c *Controller) RevokeOverride(ctx context.Context, t store.TransitionRecor
 	}
 	// An override whose expiry time has passed expires first, so a late
 	// revocation cannot replace its expiry.
-	if c.state == store.ModeNormal && !c.settle(ctx, now, false) {
+	if c.mode() == store.ModeNormal && !c.settle(ctx, now, false) {
 		return unavailableOutcome(t.ID)
 	}
 
@@ -214,7 +214,7 @@ func (c *Controller) publishOverrides(ctx context.Context, t store.TransitionRec
 	fault.CrashPoint(stage + "-after-commit")
 
 	c.current.Store(g)
-	c.state = store.ModeNormal
+	c.state.Store(store.ModeNormal)
 	c.scheduleDeadline(g)
 	fault.CrashPoint(stage + "-after-swap")
 	if err := c.store.MarkPublished(ctx, t.ID, "publisher", now); err != nil {

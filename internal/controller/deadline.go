@@ -178,7 +178,7 @@ func (c *Controller) endProvisional(ctx context.Context, t store.TransitionRecor
 	fault.CrashPoint(stage + "-after-commit")
 
 	c.current.Store(g)
-	c.state = store.ModeNormal
+	c.state.Store(store.ModeNormal)
 	c.scheduleDeadline(g)
 	fault.CrashPoint(stage + "-after-swap")
 	if err := c.store.MarkPublished(ctx, t.ID, "publisher", now); err != nil {

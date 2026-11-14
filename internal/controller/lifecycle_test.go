@@ -95,3 +95,23 @@ func TestExpiredGenerationWithoutDeadlineIsWithdrawn(t *testing.T) {
 		t.Fatalf("reason %q", reason)
 	}
 }
+
+// State answers while a mutation holds the controller's mutex, so /readyz
+// does not fail on a gateway that still serves.
+func TestStateWithoutMutex(t *testing.T) {
+	e := newEnv(t)
+	storetest.Seed(t, e.database, storetest.Policy(false), storetest.Options{})
+	c := e.own(e.controllerConfig())
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	read := make(chan string, 1)
+	go func() { read <- c.State() }()
+	select {
+	case state := <-read:
+		if state != "normal" {
+			t.Fatalf("state %q", state)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("State waited for the controller's mutex")
+	}
+}

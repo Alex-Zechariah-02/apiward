@@ -29,7 +29,7 @@ func (c *Controller) publishAuthority(a store.Authority) bool {
 		return false
 	}
 	c.current.Store(g)
-	c.state = store.ModeNormal
+	c.state.Store(store.ModeNormal)
 	c.scheduleDeadline(g)
 	return true
 }
@@ -98,7 +98,7 @@ func (c *Controller) publish(ctx context.Context, t store.TransitionRecord, poli
 
 	g := unlabelled.Relabel(effective, revision)
 	c.current.Store(g)
-	c.state = store.ModeNormal
+	c.state.Store(store.ModeNormal)
 	c.scheduleDeadline(g)
 	fault.CrashPoint("after-swap")
 
@@ -161,7 +161,7 @@ func (c *Controller) Publish(ctx context.Context, actor string, change Change) (
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	now := compile.TrustedNow()
-	if c.store == nil || c.state != store.ModeNormal {
+	if c.store == nil || c.mode() != store.ModeNormal {
 		return unavailableOutcome(change.ID)
 	}
 	t := store.TransitionRecord{

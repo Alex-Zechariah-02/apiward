@@ -118,9 +118,11 @@ type Controller struct {
 
 	// mu serialises every mutation, including timer-driven ones, and the
 	// lifecycle changes of Start and Stop.
-	mu        sync.Mutex
-	state     string // a deployment mode, or the reason no authority is served
-	stopping  bool   // set when the stop begins; see BeginStop
+	mu sync.Mutex
+	// state holds a string: a deployment mode, or the reason no authority
+	// is served. Written under mu, read without it (see State).
+	state     atomic.Value
+	stopping  bool // set when the stop begins; see BeginStop
 	ownership *os.File
 	store     *store.DB
 	audit     *audit.AuditLog
