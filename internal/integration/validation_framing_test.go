@@ -73,7 +73,7 @@ func TestBodyCeilingAtFixtures(t *testing.T) {
 					continue
 				}
 
-				stage, _ := gatewaytest.SizeRefusal(framing, size, c.global)
+				stage, _ := gatewaytest.SizeRefusal(size, c.global)
 				want := gatewaytest.ExpectedStages(authenticated, "BODY", audit.StageReject)
 				_, id := gatewaytest.RequestID(&http.Response{StatusCode: status}, reply)
 				if stage == "INGRESS" {
@@ -167,6 +167,7 @@ func TestRequestTrailersAndExpectContinue(t *testing.T) {
 func TestInterruptedBodiesAreNeverForwarded(t *testing.T) {
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.Policy(e.A, false), gatewaytest.SeedOptions{})
+	e.Interruptible = true
 	e.Start(gatewaytest.Binaries.Plain)
 
 	head := "POST /a/item HTTP/1.1\r\nHost: gw\r\nContent-Type: application/json\r\nContent-Length: 200\r\n\r\n"
@@ -193,20 +194,14 @@ func TestInterruptedBodiesAreNeverForwarded(t *testing.T) {
 	}
 
 	// The stalled request ends at the server's 10 s read timeout.
-	failed := 0
-	for deadline := time.Now().Add(20 * time.Second); time.Now().Before(deadline); time.Sleep(100 * time.Millisecond) {
-		failed = 0
-		for _, ev := range e.AuditEvents() {
-			if ev["kind"] == "request.rejected" && ev["stage"] == "BODY" && ev["reason"] == "read_failed" {
-				failed++
-			}
-		}
-		if failed >= 3 {
-			break
-		}
+	stalled.SetReadDeadline(time.Now().Add(20 * time.Second))
+	if resp, err := http.ReadResponse(bufio.NewReader(stalled), nil); err != nil || resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("stalled body: %v %v, want 400 at the read timeout", resp, err)
 	}
-	if failed != 3 {
-		t.Errorf("%d body read failures recorded, want 3 (disconnect, stalled, chunked)", failed)
+	e.AssertReceipts(0, 0, 0)
+	// Each failed read is counted at ingress: disconnect, stalled, chunked.
+	if got := e.IngressSummary(); got["read_failed"] != 3 {
+		t.Errorf("ingress summary %v, want 3 read_failed", got)
 	}
 	e.AssertReceipts(0, 0, 0)
 }

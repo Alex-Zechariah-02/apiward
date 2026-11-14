@@ -19,47 +19,44 @@ import (
 	"github.com/Alex-Zechariah-02/apiward/internal/policy"
 )
 
-// publishOnRead is a request body that publishes a new generation when the
-// handler first reads it, between the capture and the later stages.
-type publishOnRead struct {
-	data    *strings.Reader
+// publishOnCapture is the controller as the handler's authority, publishing
+// a new generation once, right after the first request captured the current
+// one, so every later stage runs while another generation is current.
+type publishOnCapture struct {
+	*controller.Controller
 	publish func()
 	once    sync.Once
 }
 
-func (b *publishOnRead) Read(p []byte) (int, error) {
-	b.once.Do(b.publish)
-	return b.data.Read(p)
+func (a *publishOnCapture) Current() *compile.Generation {
+	g := a.Controller.Current()
+	a.once.Do(a.publish)
+	return g
 }
-
-func (b *publishOnRead) Close() error { return nil }
 
 // A request is decided by the one generation it captured, even when another
 // is published while it is in progress: the body schema, the binding and the
 // metadata all come from it. The next request uses the new generation.
 func TestEnforcementUsesCapturedGeneration(t *testing.T) {
 	e := gatewaytest.NewEnv(t)
-	c, h, f := serveEnforcement(e, e.Policy(e.A, false), pipeline.Limits{})
+	gatewaytest.Seed(t, e.Database, e.Policy(e.A, false), gatewaytest.SeedOptions{})
+	c, _ := own(e, controllerConfig(e))
 	captured := c.Current()
 
 	// The next generation sends API a to B and requires the member "x".
 	next := e.Policy(e.B, false)
 	next.Operations[1].Body = gatewaytest.JSONBody(1024, `{"type":"object","additionalProperties":true,"required":["x"],"properties":{"x":{"type":"integer"}}}`)
 	var published controller.Outcome
-	body := &publishOnRead{data: strings.NewReader(`{"n":1}`), publish: func() {
+	f := serveAuthority(e, c, &publishOnCapture{Controller: c, publish: func() {
 		var status int
 		published, status = c.Publish(context.Background(), "test", controller.Change{ID: "during-request", Expected: 1, Policy: gatewaytest.MustJSON(next)})
 		if status != http.StatusOK {
 			t.Errorf("publication during the request: %d %+v", status, published)
 		}
-	}}
-	req := httptest.NewRequest(http.MethodPost, "/a/item", body)
-	req.ContentLength = int64(body.data.Len())
-	req.Header.Set("Content-Type", "application/json")
-	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK || published.Revision != 2 || c.Current().ID != published.Generation {
-		t.Fatalf("request during publication: %d %s; published %+v", rec.Code, rec.Body, published)
+	}})
+	resp, body := e.Exchange(http.MethodPost, "/a/item", "application/json", `{"n":1}`)
+	if resp.StatusCode != http.StatusOK || published.Revision != 2 || c.Current().ID != published.Generation {
+		t.Fatalf("request during publication: %d %s; published %+v", resp.StatusCode, body, published)
 	}
 	got := f.handed()
 	if len(got) != 1 || got[0].dial != e.A.Addr || got[0].header.Get("X-Gateway-Generation") != captured.ID {

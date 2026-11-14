@@ -200,7 +200,7 @@ func TestEnforcementBodyCeiling(t *testing.T) {
 					}
 					continue
 				}
-				stage, reason := gatewaytest.SizeRefusal(framing, size, global)
+				stage, reason := gatewaytest.SizeRefusal(size, global)
 				_, id := gatewaytest.RequestID(&http.Response{StatusCode: status}, reply)
 				if stage == "INGRESS" {
 					summarised[reason]++
@@ -281,14 +281,16 @@ func TestUnparsedContentLength(t *testing.T) {
 	}
 }
 
-// A refused HTTP/1 request with an unread body closes its connection; an
-// HTTP/2 one does not, since that would end every stream on the connection.
+// An HTTP/1 request refused before its body is read (here at ingress, for an
+// upgrade) closes its connection; an HTTP/2 one does not, since that would end
+// every stream on the connection.
 func TestRefusalCloseOnlyHTTP1(t *testing.T) {
 	e := gatewaytest.NewEnv(t)
 	_, h, _ := serveEnforcement(e, e.Policy(e.A, false), pipeline.Limits{})
 	for major, want := range map[int]string{1: "close", 2: ""} {
 		req := httptest.NewRequest(http.MethodGet, "/a/x", strings.NewReader("unexpected"))
 		req.ProtoMajor = major
+		req.Header.Set("Upgrade", "websocket")
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, req)
 		if rec.Code != http.StatusBadRequest || rec.Header().Get("Connection") != want {

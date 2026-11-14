@@ -21,29 +21,15 @@ type rejection struct {
 	reason string
 }
 
-// readBody enforces the operation's body declaration: no body for a bodyless
-// operation; otherwise the size ceiling, a JSON media type, a complete read
-// and a bounded, unambiguous JSON document. The request body is replaced with
-// the bytes read, so nothing unchecked can stream upstream. It returns the
-// decoded document.
-//
-// The size ceiling is the smaller of the operation's and the global one, and
-// it bounds the bytes read as well as the declared length: a chunked body, or
-// an HTTP/2 body without a content-length field, declares no length, so a
-// check of the declared length alone would let it pass the global ceiling.
-func readBody(r *http.Request, rule *compile.BodyRule, globalMaxBytes int64) (any, *rejection) {
-	if rule == nil {
-		if r.ContentLength != 0 || len(r.TransferEncoding) > 0 {
-			return nil, &rejection{http.StatusBadRequest, "bad_request", "unexpected_body"}
-		}
+// bufferBody reads a declared request body completely, within the global
+// ceiling, and replaces r.Body with the bytes read. It returns nil when the
+// request declares no body, and a non-nil slice (possibly empty) when it
+// does. The ceiling bounds the bytes read as well as the declared length: a
+// chunked body, or an HTTP/2 body without a content-length field, declares
+// no length, so a check of the declared length alone would let it pass.
+func bufferBody(r *http.Request, maxBytes int64) ([]byte, *rejection) {
+	if r.ContentLength == 0 && len(r.TransferEncoding) == 0 {
 		return nil, nil
-	}
-	maxBytes := min(rule.MaxBytes(), globalMaxBytes)
-	if r.ContentLength > maxBytes {
-		return nil, &rejection{http.StatusRequestEntityTooLarge, "payload_too_large", "too_large"}
-	}
-	if !IsJSONMediaType(r.Header.Values("Content-Type")) {
-		return nil, &rejection{http.StatusUnsupportedMediaType, "unsupported_media_type", "media_type"}
 	}
 	body, err := readLimited(r.Body, r.ContentLength, maxBytes)
 	if err != nil {
@@ -51,6 +37,32 @@ func readBody(r *http.Request, rule *compile.BodyRule, globalMaxBytes int64) (an
 	}
 	if int64(len(body)) > maxBytes {
 		return nil, &rejection{http.StatusRequestEntityTooLarge, "payload_too_large", "too_large"}
+	}
+	if body == nil {
+		body = []byte{}
+	}
+	r.Body = io.NopCloser(bytes.NewReader(body))
+	return body, nil
+}
+
+// readBody enforces the operation's body declaration on the body bufferBody
+// read (nil when none was declared): no body for a bodyless operation;
+// otherwise the operation's size ceiling, a JSON media type and a bounded,
+// unambiguous JSON document. The request body is replaced with the bytes
+// read, so nothing unchecked can stream upstream. It returns the decoded
+// document.
+func readBody(r *http.Request, body []byte, rule *compile.BodyRule, globalMaxBytes int64) (any, *rejection) {
+	if rule == nil {
+		if body != nil {
+			return nil, &rejection{http.StatusBadRequest, "bad_request", "unexpected_body"}
+		}
+		return nil, nil
+	}
+	if int64(len(body)) > min(rule.MaxBytes(), globalMaxBytes) {
+		return nil, &rejection{http.StatusRequestEntityTooLarge, "payload_too_large", "too_large"}
+	}
+	if !IsJSONMediaType(r.Header.Values("Content-Type")) {
+		return nil, &rejection{http.StatusUnsupportedMediaType, "unsupported_media_type", "media_type"}
 	}
 	document, reason := policy.DecodeJSON(body)
 	if reason != "" {

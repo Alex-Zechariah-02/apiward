@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net"
 	"net/http"
 	"slices"
@@ -43,6 +44,7 @@ func TestBodyCeilingAppliesToActualBytes(t *testing.T) {
 	e.Start(gatewaytest.Binaries.Plain)
 	const global = 16384
 	var ingressIDs []string
+	ingress := map[string]int{}
 	routed := []string{"INGRESS", "CAPTURE", "CANONICAL", "ROUTE", "ACCESS"}
 
 	operations := []struct {
@@ -74,10 +76,11 @@ func TestBodyCeilingAppliesToActualBytes(t *testing.T) {
 					continue
 				}
 
-				stage, reason := gatewaytest.SizeRefusal(framing, size, global)
+				stage, reason := gatewaytest.SizeRefusal(size, global)
 				want := gatewaytest.Public(gatewaytest.ExpectedStages(routed, "BODY", audit.StageReject))
 				_, id := gatewaytest.RequestID(&http.Response{StatusCode: status}, reply)
 				if stage == "INGRESS" {
+					ingress[reason]++
 					ingressIDs = append(ingressIDs, id)
 					if status != http.StatusRequestEntityTooLarge {
 						t.Errorf("%s: status %d (%s), want 413 at INGRESS", name, status, reply)
@@ -113,6 +116,7 @@ func TestBodyCeilingAppliesToActualBytes(t *testing.T) {
 		t.Fatalf("stalled chunked body: %v", err)
 	}
 	resp.Body.Close()
+	ingress["too_large"]++
 	if elapsed := time.Since(started); resp.StatusCode != http.StatusRequestEntityTooLarge || !resp.Close || elapsed > 5*time.Second {
 		t.Errorf("stalled chunked body: %d after %v, connection closed %v; want 413 at once with the connection closed", resp.StatusCode, elapsed, resp.Close)
 	}
@@ -130,19 +134,27 @@ func TestBodyCeilingAppliesToActualBytes(t *testing.T) {
 	framingCases := []struct {
 		name, request string
 		status        int
-		reason        string
+		stage, reason string
 	}{
-		{"invalid chunk size", head + "Transfer-Encoding: chunked\r\n\r\nzz\r\n{}\r\n0\r\n\r\n", 400, "read_failed"},
+		{"invalid chunk size", head + "Transfer-Encoding: chunked\r\n\r\nzz\r\n{}\r\n0\r\n\r\n", 400, "INGRESS", "read_failed"},
 		{"declared length with a chunked body above the ceiling",
-			head + "Content-Length: 10\r\nTransfer-Encoding: chunked\r\n\r\n" + gatewaytest.ChunkedBody(gatewaytest.SizedBody("", global+1), 4096), 413, "too_large"},
+			head + "Content-Length: 10\r\nTransfer-Encoding: chunked\r\n\r\n" + gatewaytest.ChunkedBody(gatewaytest.SizedBody("", global+1), 4096), 413, "INGRESS", "too_large"},
 		{"HTTP/1.0 chunked body above the ceiling", strings.Replace(head, "HTTP/1.1", "HTTP/1.0", 1) +
-			"Transfer-Encoding: chunked\r\n\r\n" + gatewaytest.ChunkedBody(gatewaytest.SizedBody("", global+1), 4096), 400, "malformed_json"},
+			"Transfer-Encoding: chunked\r\n\r\n" + gatewaytest.ChunkedBody(gatewaytest.SizedBody("", global+1), 4096), 400, "BODY", "malformed_json"},
 	}
 	for _, tc := range framingCases {
 		status, reply := e.RawExchange(tc.request, false)
 		_, id := gatewaytest.RequestID(&http.Response{StatusCode: status}, reply)
+		if tc.stage == "INGRESS" {
+			ingress[tc.reason]++
+			ingressIDs = append(ingressIDs, id)
+			if status != tc.status {
+				t.Errorf("%s: status %d (%s), want %d at INGRESS", tc.name, status, reply, tc.status)
+			}
+			continue
+		}
 		events := e.RequestEvents(id, 1)
-		if status != tc.status || len(events) != 1 || events[0]["stage"] != "BODY" || events[0]["reason"] != tc.reason {
+		if status != tc.status || len(events) != 1 || events[0]["stage"] != tc.stage || events[0]["reason"] != tc.reason {
 			t.Errorf("%s: status %d (%s), events %v, want %d with reason %s", tc.name, status, reply, events, tc.status, tc.reason)
 		}
 	}
@@ -170,11 +182,13 @@ func TestBodyCeilingAppliesToActualBytes(t *testing.T) {
 				if status != want {
 					t.Errorf("concurrent chunked %d bytes: status %d (%s), want %d", size, status, reply, want)
 				}
+				mu.Lock()
 				if status == http.StatusOK {
-					mu.Lock()
 					accepted = append(accepted, body)
-					mu.Unlock()
+				} else {
+					ingress["too_large"]++
 				}
+				mu.Unlock()
 			}
 		})
 	}
@@ -189,9 +203,10 @@ func TestBodyCeilingAppliesToActualBytes(t *testing.T) {
 		t.Fatalf("concurrent: %d accepted, %d received, equal %v", len(accepted), len(received), slices.Equal(received, accepted))
 	}
 	e.AssertReceipts(32, 0, 0)
-	// Declared lengths above the global ceiling are counted at ingress.
-	if got := e.IngressSummary(); got["too_large"] != len(ingressIDs) || len(got) != 1 || len(ingressIDs) != 2 {
-		t.Errorf("ingress summary %v for %d declared refusals, want 2 too_large", got, len(ingressIDs))
+	// Bodies above the global ceiling, declared or read, and the failed read
+	// are counted at ingress.
+	if got := e.IngressSummary(); !maps.Equal(got, ingress) {
+		t.Errorf("ingress summary %v, want %v", got, ingress)
 	}
 	if ev := gatewaytest.RecordOf(e.AuditEvents(), ingressIDs); ev != nil {
 		t.Errorf("ingress refusal recorded on its own: %v", ev)

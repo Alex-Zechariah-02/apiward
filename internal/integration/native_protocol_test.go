@@ -110,14 +110,14 @@ func TestNativeDataPlaneProtocol(t *testing.T) {
 	}
 
 	// A declared body that stops arriving ends once read_timeout has passed
-	// since the request began: refused at BODY with its event, not handed on.
+	// since the request began: refused at INGRESS (counted below, without a
+	// record of its own), not handed on.
 	started := time.Now()
 	resp, body = e.RawResponse("POST /a/item HTTP/1.1\r\nHost: gw\r\nContent-Type: application/json\r\nContent-Length: 100\r\n\r\n{\"p\":\"")
 	elapsed := time.Since(started)
-	_, id := gatewaytest.RequestID(resp, body)
-	if events := e.RequestEvents(id, 1); resp.StatusCode != http.StatusBadRequest || elapsed < 1500*time.Millisecond || elapsed > 5*time.Second ||
-		len(events) != 1 || events[0]["stage"] != "BODY" || events[0]["reason"] != "read_failed" {
-		t.Errorf("stalled body: %d %s after %s, events %v", resp.StatusCode, body, elapsed, events)
+	_, stalledID := gatewaytest.RequestID(resp, body)
+	if resp.StatusCode != http.StatusBadRequest || elapsed < 1500*time.Millisecond || elapsed > 5*time.Second {
+		t.Errorf("stalled body: %d %s after %s", resp.StatusCode, body, elapsed)
 	}
 
 	// A request header that does not arrive within read_header_timeout ends
@@ -152,11 +152,15 @@ func TestNativeDataPlaneProtocol(t *testing.T) {
 	}
 	e.AssertReceipts(5, 0, 0)
 	// Targets: the asterisk and absolute forms above and the HTTP/2 preface
-	// ("PRI *") of the prior-knowledge client; the declared 513-byte body is
-	// the one ingress refusal by size.
-	want := map[string]int{"upgrade": 2, "target": 3, "connect": 1, "too_large": 1}
+	// ("PRI *") of the prior-knowledge client; the declared and the chunked
+	// 513-byte bodies are the ingress refusals by size, and the stalled body
+	// the one failed read.
+	want := map[string]int{"upgrade": 2, "target": 3, "connect": 1, "too_large": 2, "read_failed": 1}
 	if got := e.IngressSummary(); !maps.Equal(got, want) {
 		t.Errorf("ingress summary %v, want %v", got, want)
+	}
+	if ev := gatewaytest.RecordOf(e.AuditEvents(), []string{stalledID}); ev != nil {
+		t.Errorf("stalled body recorded on its own: %v", ev)
 	}
 	if ev := gatewaytest.RecordOf(e.AuditEvents(), ingressIDs); ev != nil {
 		t.Errorf("ingress refusal recorded on its own: %v", ev)

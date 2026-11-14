@@ -110,3 +110,23 @@ func TestConnectionCapClosesExtra(t *testing.T) {
 		t.Fatal("a connection after one closed was not accepted")
 	}
 }
+
+// A request whose body is still arriving holds its connection, not an
+// in-flight place: with one place, other requests are still served.
+func TestSlowBodyTakesNoPlace(t *testing.T) {
+	e := gatewaytest.NewEnv(t)
+	serveEnforcement(e, e.Policy(e.A, true), pipeline.Limits{MaxInFlight: 1})
+	conn, err := net.Dial("tcp", e.DataAddr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	io.WriteString(conn, "POST /a/item HTTP/1.1\r\nHost: gw\r\nContent-Type: application/json\r\nContent-Length: 10\r\n\r\n{")
+	for range 10 {
+		time.Sleep(50 * time.Millisecond)
+		resp, body := e.Exchange(http.MethodGet, "/a/x", "", "")
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("request beside a slow upload: %d %s", resp.StatusCode, body)
+		}
+	}
+}

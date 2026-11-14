@@ -5,7 +5,6 @@ package integration
 import (
 	"bufio"
 	"fmt"
-	"io"
 	"net"
 	"net/http"
 	"os"
@@ -81,9 +80,10 @@ func TestPublicationAddsOperationWithoutReload(t *testing.T) {
 	}
 }
 
-// holdRequest sends the headers and half of a body for POST /a/item, then
-// waits until the gateway signals that the request captured its generation.
-// A non-empty token is sent as the bearer credential.
+// holdRequest sends POST /a/item with its whole body, then waits until the
+// gateway signals that the request captured its generation; the gateway's
+// GATEWAY_HOLD_RELEASE file keeps it there until the test releases it. A
+// non-empty token is sent as the bearer credential.
 func holdRequest(t *testing.T, e *gatewaytest.Env, holdFile, token string) (net.Conn, string) {
 	t.Helper()
 	conn, err := net.Dial("tcp", e.DataAddr)
@@ -94,7 +94,7 @@ func holdRequest(t *testing.T, e *gatewaytest.Env, holdFile, token string) (net.
 	if token != "" {
 		credential = "Authorization: Bearer " + token + "\r\n"
 	}
-	fmt.Fprintf(conn, "POST /a/item HTTP/1.1\r\nHost: gw\r\n%sContent-Type: application/json\r\nContent-Length: 13\r\nConnection: close\r\n\r\n{\"half\":", credential)
+	fmt.Fprintf(conn, "POST /a/item HTTP/1.1\r\nHost: gw\r\n%sContent-Type: application/json\r\nContent-Length: 13\r\nConnection: close\r\n\r\n{\"held\":true}", credential)
 	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
 		if data, err := os.ReadFile(holdFile); err == nil && len(data) > 0 {
@@ -109,8 +109,8 @@ func holdRequest(t *testing.T, e *gatewaytest.Env, holdFile, token string) (net.
 func TestInFlightRequestKeepsCapturedGeneration(t *testing.T) {
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.Policy(e.A, false), gatewaytest.SeedOptions{})
-	holdFile := filepath.Join(e.Dir, "hold")
-	e.Start(gatewaytest.Binaries.Fault, "GATEWAY_HOLD_PATH=/a/item", "GATEWAY_HOLD_FILE="+holdFile)
+	holdFile, release := filepath.Join(e.Dir, "hold"), filepath.Join(e.Dir, "release")
+	e.Start(gatewaytest.Binaries.Fault, "GATEWAY_HOLD_PATH=/a/item", "GATEWAY_HOLD_FILE="+holdFile, "GATEWAY_HOLD_RELEASE="+release)
 	first := e.Status().Generation
 
 	conn, captured := holdRequest(t, e, holdFile, "")
@@ -123,7 +123,9 @@ func TestInFlightRequestKeepsCapturedGeneration(t *testing.T) {
 		t.Fatalf("publish: %d %+v", code, outcome)
 	}
 
-	io.WriteString(conn, "true}")
+	if err := os.WriteFile(release, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
 	resp, err := http.ReadResponse(bufio.NewReader(conn), nil)
 	if err != nil || resp.StatusCode != http.StatusOK {
 		t.Fatalf("in-flight request: %v %v", resp, err)

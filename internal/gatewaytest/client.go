@@ -172,11 +172,11 @@ func (e *Env) SendBody(framing, path, body string, header ...string) (int, strin
 }
 
 // SizeRefusal returns the stage and reason expected when a body one byte over
-// the effective ceiling is refused: a declared length above the global
-// ceiling is refused at ingress, before any policy work; every other excess
-// when the body is read.
-func SizeRefusal(framing string, size, global int) (string, string) {
-	if framing == "declared" && size > global {
+// the effective ceiling is refused: a body above the global ceiling, declared
+// or counted as it is read, is refused at ingress, before any policy work;
+// one above only the operation's ceiling when the operation's body is checked.
+func SizeRefusal(size, global int) (string, string) {
+	if size > global {
 		return "INGRESS", "too_large"
 	}
 	return "BODY", "too_large"

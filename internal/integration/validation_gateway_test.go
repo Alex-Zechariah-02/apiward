@@ -52,7 +52,7 @@ func TestValidationThroughGateway(t *testing.T) {
 	}{
 		{"malformed JSON", create(jsonType, `{"cu`), false, 400, "BODY", "malformed_json"},
 		{"empty body", create(jsonType, ``), false, 400, "BODY", "malformed_json"},
-		{"truncated body", strings.Replace(create(jsonType, `{"customer":"cust-001"`), "Content-Length: 22", "Content-Length: 60", 1), true, 400, "BODY", "read_failed"},
+		{"truncated body", strings.Replace(create(jsonType, `{"customer":"cust-001"`), "Content-Length: 22", "Content-Length: 60", 1), true, 400, "INGRESS", "read_failed"},
 		{"second JSON value", order(`"quantity":1}{"quantity":40`), false, 400, "BODY", "trailing_data"},
 		{"trailing text", create(jsonType, `{"customer":"cust-001","item":"ITM-001","quantity":1} x`), false, 400, "BODY", "trailing_data"},
 		{"invalid UTF-8", create(jsonType, "{\"customer\":\"cust-001\xff\",\"item\":\"ITM-001\",\"quantity\":1}"), false, 400, "BODY", "invalid_encoding"},
@@ -97,9 +97,12 @@ func TestValidationThroughGateway(t *testing.T) {
 			t.Errorf("%s: status %d, want %d (%s)", tc.name, status, tc.status, body)
 			continue
 		}
-		events := e.RequestEvents(reply.RequestID, 1)
-		if len(events) != 1 || events[0]["kind"] != "request.rejected" || events[0]["stage"] != tc.stage || events[0]["reason"] != tc.reason {
-			t.Errorf("%s: events %v, want a %s rejection with reason %s", tc.name, events, tc.stage, tc.reason)
+		// A failed read is counted at ingress without a record of its own
+		// (TestInterruptedBodiesAreNeverForwarded checks the count).
+		if tc.stage != "INGRESS" {
+			if events := e.RequestEvents(reply.RequestID, 1); len(events) != 1 || events[0]["kind"] != "request.rejected" || events[0]["stage"] != tc.stage || events[0]["reason"] != tc.reason {
+				t.Errorf("%s: events %v, want a %s rejection with reason %s", tc.name, events, tc.stage, tc.reason)
+			}
 		}
 		// The client sees only the code, never the input or the validator's
 		// message.

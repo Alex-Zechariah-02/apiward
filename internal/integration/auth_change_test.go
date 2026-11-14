@@ -49,7 +49,6 @@ func TestRoleChangeAppliesToNewRequestsOnly(t *testing.T) {
 	if err := os.WriteFile(release, nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	io.WriteString(conn, "true}")
 	resp, err := http.ReadResponse(bufio.NewReader(conn), nil)
 	if err != nil || resp.StatusCode != http.StatusOK {
 		t.Fatalf("in-flight request: %v %v", resp, err)

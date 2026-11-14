@@ -44,16 +44,6 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	q.event.SetIdentityKnown(len(credentials) == 0)
 	StripUntrusted(r.Header)
 
-	// Overload: past maxInFlight requests, refuse before any token check or
-	// body read, so excess load costs as little as possible.
-	if h.inFlight.Add(1) > h.maxInFlight {
-		h.inFlight.Add(-1)
-		w.Header().Set("Retry-After", "1")
-		q.summarise("overloaded", http.StatusServiceUnavailable, "overloaded")
-		return
-	}
-	defer h.inFlight.Add(-1)
-
 	if reason := h.ingressRefusal(r); reason == "too_large" {
 		q.summarise(reason, http.StatusRequestEntityTooLarge, "payload_too_large")
 		return
@@ -61,6 +51,25 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		q.summarise(reason, http.StatusBadRequest, "bad_request")
 		return
 	}
+	// The body is read, within the global ceiling, before an in-flight slot
+	// is taken: a slow upload holds only its own connection (bounded by
+	// data.max_connections and read_timeout), never a slot other clients need.
+	body, refused := bufferBody(r, h.maxBodyBytes)
+	if refused != nil {
+		q.summarise(refused.reason, refused.status, refused.code)
+		return
+	}
+	q.bodyPending = false
+
+	// Overload: past maxInFlight requests, refuse before any token check, so
+	// excess load costs as little as possible.
+	if h.inFlight.Add(1) > h.maxInFlight {
+		h.inFlight.Add(-1)
+		w.Header().Set("Retry-After", "1")
+		q.summarise("overloaded", http.StatusServiceUnavailable, "overloaded")
+		return
+	}
+	defer h.inFlight.Add(-1)
 	if !h.admitAddress(q) {
 		return
 	}
@@ -182,13 +191,12 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	document, refused := readBody(r, rule.Body(), h.maxBodyBytes)
+	document, refused := readBody(r, body, rule.Body(), h.maxBodyBytes)
 	if refused != nil {
 		q.event.Reason = refused.reason
 		q.reject(audit.StageBody, refused.status, refused.code)
 		return
 	}
-	q.bodyPending = false
 	q.pass(audit.StageBody)
 
 	if rule.Body() == nil && rule.Headers() == nil {

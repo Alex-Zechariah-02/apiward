@@ -38,7 +38,6 @@ func TestMembershipRemovalDuringRequest(t *testing.T) {
 	if err := os.WriteFile(release, nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	io.WriteString(conn, "true}")
 	response, err := http.ReadResponse(bufio.NewReader(conn), nil)
 	if err != nil {
 		t.Fatal(err)
