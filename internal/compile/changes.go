@@ -34,7 +34,7 @@ func PolicyChanges(before, after policy.Policy) []ControlChange {
 			d["upstream"][u.ID] = encode(u)
 		}
 		for _, a := range p.APIs {
-			d["api"][a.ID] = a.Upstream
+			d["api"][a.ID] = encode(a)
 		}
 		for _, op := range p.Operations {
 			if op.Rate != nil {
