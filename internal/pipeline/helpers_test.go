@@ -24,7 +24,8 @@ func quota(count, window int64) *compile.RateRule {
 }
 
 // testTrust trusts one issuer and audience with the single key "test-a" read
-// from file.
+// from file, with exact validity times (no clock skew).
 func testTrust(issuer, audience, file string) TrustConfig {
-	return TrustConfig{Issuer: issuer, Audience: audience, Keys: []VerificationKey{{Kid: "test-a", PublicKeyFile: file}}}
+	exact := "0s"
+	return TrustConfig{Issuer: issuer, Audience: audience, Keys: []VerificationKey{{Kid: "test-a", PublicKeyFile: file}}, ClockSkew: &exact}
 }

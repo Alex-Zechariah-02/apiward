@@ -3,16 +3,13 @@
 package pipeline
 
 import (
-	"context"
 	"net/http"
 	"net/netip"
-	"strings"
 	"time"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/audit"
 	"github.com/Alex-Zechariah-02/apiward/internal/compile"
 	"github.com/Alex-Zechariah-02/apiward/internal/fault"
-	"github.com/Alex-Zechariah-02/apiward/internal/forward"
 	"github.com/Alex-Zechariah-02/apiward/module"
 )
 
@@ -34,7 +31,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if peer, err := netip.ParseAddrPort(r.RemoteAddr); err == nil {
-		addr := peer.Addr().Unmap()
+		addr := h.clientAddress(peer.Addr().Unmap(), r.Header)
 		q.event.ClientAddress = addr.String()
 		q.rateAddress = h.rateAddress(addr, q.event.ClientAddress)
 	}
@@ -43,6 +40,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	credentials := r.Header.Values("Authorization")
 	q.event.SetIdentityKnown(len(credentials) == 0)
 	StripUntrusted(r.Header)
+	// RFC 9110 section 7.8: a server ignores Upgrade in an HTTP/1.0 request.
+	if !r.ProtoAtLeast(1, 1) {
+		r.Header.Del("Upgrade")
+	}
 
 	if reason := h.ingressRefusal(r); reason == "too_large" {
 		q.summarise(reason, http.StatusRequestEntityTooLarge, "payload_too_large")
@@ -110,6 +111,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	t, rule := g.Match(path, r.Method, inbound)
 	if t == nil {
 		q.reject(audit.StageRoute, http.StatusNotFound, "not_found")
+		return
+	}
+	if r.Method == http.MethodOptions && maxForwards(q, r, t.Allow()) {
 		return
 	}
 	if rule == nil {
@@ -230,56 +234,5 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Admission requires a durable audit record before anything is forwarded.
-	q.event.Kind, q.event.Stage, q.event.Decision = "request.admitted", audit.StageNames[audit.StageAudit], "admit"
-	ctx, cancel := context.WithTimeout(r.Context(), h.auditTimeout)
-	err := q.audit.Commit(ctx, q.event)
-	cancel()
-	if err != nil {
-		q.reject(audit.StageAudit, http.StatusServiceUnavailable, "gateway_unavailable")
-		return
-	}
-	q.pass(audit.StageAudit)
-
-	r.Header.Set("X-Request-Id", q.event.RequestID)
-	r.Header.Set("X-Gateway-Generation", g.ID)
-	if !rule.Public() {
-		// The upstream can rely on these for its own object-level rules: client
-		// copies were removed at ingress.
-		r.Header.Set("X-Gateway-Subject", q.event.Subject)
-		r.Header.Set("X-Gateway-Roles", strings.Join(roles, ","))
-	}
-	if assertion != "" {
-		r.Header.Set(AssertionHeader, assertion)
-	}
-	r = r.WithContext(forward.Bind(r.Context(), destination))
-	q.pass(audit.StageBind)
-
-	recorder := &statusRecorder{ResponseWriter: w}
-	finished := false
-	defer func() {
-		if !finished {
-			// The forwarder aborts a response it cannot complete, such as a
-			// truncated upstream body, by panicking with http.ErrAbortHandler
-			// after the status was sent. The outcome is recorded here; the
-			// panic is not recovered, so the server still closes the
-			// connection and the client sees the response is incomplete.
-			q.forwarded(recorder.status, "upstream_failure", "upstream_incomplete")
-		}
-	}()
-	forwardErr := h.forward(recorder, r)
-	finished = true
-	if forwardErr != nil {
-		status, code := forward.ForwardFailure(forwardErr)
-		if !recorder.wrote {
-			writeError(w, status, code, q.event.RequestID)
-		}
-		q.event.Reason = forward.FailureReason(forwardErr)
-		if d, bound := forward.Bound(r.Context()); bound && d.Endpoint() != nil {
-			q.event.UpstreamAddress = d.Endpoint().Address()
-		}
-		q.forwarded(status, "upstream_failure", code)
-		return
-	}
-	q.forwarded(recorder.status, "forwarded", "")
+	h.send(q, r, g, rule, roles, destination, assertion)
 }

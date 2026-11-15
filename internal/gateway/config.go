@@ -134,6 +134,7 @@ type dataSettings struct {
 	MaxInFlight         *int64            `json:"max_in_flight"`
 	HTTP2               *bool             `json:"http2"`
 	IPv6RatePrefix      *int              `json:"ipv6_rate_prefix"`
+	TrustedProxies      []string          `json:"trusted_proxies"`
 	ReadHeaderTimeout   *string           `json:"read_header_timeout"`
 	ReadTimeout         *string           `json:"read_timeout"`
 	WriteTimeout        *string           `json:"write_timeout"`

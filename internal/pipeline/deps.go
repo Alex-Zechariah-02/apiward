@@ -5,6 +5,7 @@ package pipeline
 import (
 	"errors"
 	"net/http"
+	"net/netip"
 	"sync/atomic"
 	"time"
 
@@ -15,7 +16,10 @@ import (
 	"github.com/Alex-Zechariah-02/apiward/module"
 )
 
-// DefaultMaxBody is the global request body ceiling when none is set.
+// DefaultMaxBody is the global request body ceiling when none is set: four
+// times the largest Fetch request body, and small enough that the in-flight
+// cap bounds buffered bodies to a few MiB. nginx defaults to 1 MiB; Kong and
+// Traefik set no ceiling. policy.MaxBodyLimit (1 MiB) bounds the setting.
 const DefaultMaxBody = 16 << 10
 
 // DefaultMaxInFlight bounds the requests inside enforcement at once. On one
@@ -36,6 +40,9 @@ type Limits struct {
 	MaxBodyBytes   int64
 	MaxInFlight    int64
 	IPv6RatePrefix int
+	// TrustedProxies are the peers that may name the client through
+	// X-Forwarded-For (ParseProxies); none trusts no peer.
+	TrustedProxies []netip.Prefix
 }
 
 // Handler enforces the published policy on every request and, only when every
@@ -59,7 +66,9 @@ type Handler struct {
 	inFlight    atomic.Int64
 	// ipv6Prefix masks an IPv6 client address for its rate key.
 	ipv6Prefix int
-	forward    Forward
+	// proxies are the trusted proxies (Limits.TrustedProxies).
+	proxies []netip.Prefix
+	forward Forward
 	// signer signs the identity assertion of each forwarded request; nil
 	// sends none.
 	signer *Signer
@@ -116,6 +125,10 @@ func New(d Deps) (*Handler, error) {
 	if d.Authority == nil || d.Audit == nil || d.Observations == nil || d.Limiter == nil || d.Forward == nil {
 		return nil, errors.New("the enforcement handler needs a controller and a forwarder")
 	}
+	// A zero wait would refuse every admission at the audit stage.
+	if d.AuditTimeout <= 0 {
+		return nil, errors.New("the enforcement handler needs a positive audit timeout")
+	}
 	limits := d.Limits
 	if limits.MaxBodyBytes <= 0 {
 		limits.MaxBodyBytes = DefaultMaxBody
@@ -137,7 +150,7 @@ func New(d Deps) (*Handler, error) {
 	h := &Handler{
 		authority: d.Authority, audit: d.Audit, observations: d.Observations,
 		limiter: d.Limiter, clock: d.Clock, auditTimeout: d.AuditTimeout,
-		maxBodyBytes: limits.MaxBodyBytes, maxInFlight: limits.MaxInFlight, ipv6Prefix: limits.IPv6RatePrefix,
+		maxBodyBytes: limits.MaxBodyBytes, maxInFlight: limits.MaxInFlight, ipv6Prefix: limits.IPv6RatePrefix, proxies: limits.TrustedProxies,
 		forward: d.Forward, signer: d.Signer, ingress: ingress,
 	}
 	for _, c := range extensions {

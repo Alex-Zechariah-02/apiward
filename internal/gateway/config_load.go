@@ -100,13 +100,22 @@ func readSettings(path string) ([]byte, error) {
 // loadFiles reads the files the settings name beyond the configuration file:
 // the upstream TLS profiles and the identity signing key.
 func (cfg *nativeConfig) loadFiles() error {
+	if err := cfg.loadNetwork(); err != nil {
+		return err
+	}
+	return cfg.identity(cfg.file.Upstream)
+}
+
+// loadNetwork reads the upstream TLS profiles, the files a keys reload
+// applies besides the verification keys.
+func (cfg *nativeConfig) loadNetwork() error {
 	u := cfg.file.Upstream
 	network, err := forward.LoadNetwork(u.AllowPublicAddresses, u.TLSProfiles, cfg.sessionLife)
 	if err != nil {
 		return err
 	}
 	cfg.controller.Network = network
-	return cfg.identity(u)
+	return nil
 }
 
 // decodeNativeFile parses the configuration document. It refuses what

@@ -151,6 +151,10 @@ func (a *AuditLog) stamp(e Event) Event {
 	e.Time = time.Now().UTC()
 	e.Seq = a.seq.Add(1)
 	e.ID = fmt.Sprintf("%s-%d", a.boot, e.Seq)
+	// The method is cut silently: Truncated (path_truncated) is the path's.
+	if len(e.Method) > MaxLoggedMethod {
+		e.Method = e.Method[:MaxLoggedMethod]
+	}
 	if len(e.Path) > MaxLoggedPath {
 		e.Path = e.Path[:MaxLoggedPath]
 		e.Truncated = true
@@ -160,7 +164,7 @@ func (a *AuditLog) stamp(e Event) Event {
 		e.Truncated = true
 	}
 	// A substring can retain the complete request target's backing storage.
-	e.Path, e.ForwardedPath = strings.Clone(e.Path), strings.Clone(e.ForwardedPath)
+	e.Method, e.Path, e.ForwardedPath = strings.Clone(e.Method), strings.Clone(e.Path), strings.Clone(e.ForwardedPath)
 	return e
 }
 

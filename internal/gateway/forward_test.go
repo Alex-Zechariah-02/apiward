@@ -134,10 +134,12 @@ func TestNativeForwardingBinding(t *testing.T) {
 	if code, body := e.Raw("GET /b/x HTTP/1.1\r\nHost: " + e.A.Addr + "\r\nConnection: close\r\n\r\n"); code != http.StatusOK || body != "B ok" {
 		t.Errorf("/b/x with a Host naming A: %d %q", code, body)
 	}
-	if code, _ := e.Raw("GET http://" + e.C.Addr + "/a/x HTTP/1.1\r\nHost: " + e.C.Addr + "\r\nConnection: close\r\n\r\n"); code != http.StatusBadRequest {
-		t.Errorf("absolute-form target naming C: %d", code)
+	// An absolute-form target naming C is accepted, but only as the host:
+	// the policy still binds the request to A.
+	if code, body := e.Raw("GET http://" + e.C.Addr + "/a/x HTTP/1.1\r\nHost: " + e.C.Addr + "\r\nConnection: close\r\n\r\n"); code != http.StatusOK || body != "A ok" {
+		t.Errorf("absolute-form target naming C: %d %q", code, body)
 	}
-	e.AssertReceipts(3, 1, 0)
+	e.AssertReceipts(4, 1, 0)
 	for _, r := range e.A.Receipts() {
 		if r.Host != e.C.Addr || r.Headers.Get("X-Gateway-Upstream") != "" || r.Headers.Get("X-Gateway-Dial") != "" ||
 			r.Headers.Get("Forwarded") != "" || r.Headers.Get("X-Forwarded-Host") != e.C.Addr {

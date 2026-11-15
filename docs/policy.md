@@ -23,7 +23,7 @@ Every request goes through these checks in this order; the first that refuses an
 | Access | `operations[].access`: `allow` or `deny` | `403 forbidden` |
 | Token | `operations[].auth`: `required` or `none` (public: no token, no role check) | `401 unauthenticated` |
 | Roles | `roles[].id`, `permits[].role` and `.operation`; blocked accounts (Admin API) | `403 account_blocked`, `403 forbidden` |
-| Rate | `operations[].rate`: `sliding-window`, key `subject` or `client_address`, `count` 1 to 1,000,000 per `window_seconds` 1 to 86,400 | `429 rate_limited` |
+| Rate | `operations[].rate`: `sliding-window`, key `subject` or `client_address`, `count` 1 to 1,000,000 per `window_seconds` 1 to 86,400 | `429 rate_limited` with `Retry-After` (whole seconds until the next request would be accepted) |
 | Body | `operations[].body.max_bytes` (1 to 1 MiB), one `Content-Type: application/json` | `400 bad_request`, `413`, `415` |
 | Validation | `operations[].headers` and `operations[].body.schema` | `400 bad_request` |
 | Record | none: the request record must be written first | `503 gateway_unavailable` |

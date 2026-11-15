@@ -6,7 +6,7 @@ Every key, certificate and secret the gateway uses: what it protects, its algori
 
 | Material | Protects | Algorithm | Comes from | Replaced by |
 |---|---|---|---|---|
-| Token verification keys | Access tokens of protected requests | RS256; RSA 2,048 to 8,192 bits; 1 to 64 keys, chosen by `kid` | `gateway.jwt.keys[].public_key_file`: one PEM `PUBLIC KEY` each | `POST /admin/keys/reload`, live |
+| Token verification keys | Access tokens of protected requests | RS256; RSA 2,048 to 8,192 bits (`gateway.jwt.min_rsa_bits` raises the minimum to 3,072 or 4,096); 1 to 64 keys, chosen by `kid` | `gateway.jwt.keys[].public_key_file`: one PEM `PUBLIC KEY` each | `POST /admin/keys/reload`, live |
 | Identity assertion key | `X-Gateway-Assertion` to upstreams | ES256 (ECDSA P-256); `kid` is the RFC 7638 thumbprint; assertions expire after 30 s | `upstream.identity_key`, or `identity.pem` beside the database; made by `apiward install` | Restart |
 | Data listener certificate and key | HTTPS on the data listener | TLS 1.2 or later, Go's default cipher suites; key RSA of at least 2,048 bits or ECDSA P-256, PKCS #8 | `data.tls.files.certificate_file`, `data.tls.files.key_file` | `SIGHUP` or `POST /admin/keys/reload`, live |
 | Upstream TLS profiles | Upstream certificates (pinned CA) and client certificates | TLS 1.2 or later; CA file of 1 to 16 certificates; client key as for the listener | `upstream.tls_profiles[]`: `ca_file`, `client_certificate_file`, `client_key_file` | `POST /admin/keys/reload`, live |
@@ -27,9 +27,12 @@ Every key, certificate and secret the gateway uses: what it protects, its algori
 ## Replacing keys
 
 - **Token verification keys**: add the new key with a new `kid` to `gateway.jwt.keys`, reload, let the token issuer sign with it, then remove the old key and reload again.
-- A reload that fails keeps the current keys in force and records a refused change with reason `KEYS_INVALID`.
+- A reload that fails keeps the current keys in force, records a refused change with reason `KEYS_INVALID` and counts it in `gateway_key_reload_failures_total`.
+- `GET /admin/keys` and the Team page show each key's size in bits.
+- A token is accepted until `gateway.jwt.clock_skew` after its `exp` and from that long before its `nbf` (default `60s`, as Envoy; up to `5m`; `0s` for exact times), so a gateway clock slightly behind the issuer does not refuse new tokens.
+- A key reused under the same `kid` with new material starts its use count at zero.
 - Changing `gateway.jwt.issuer` or `gateway.jwt.audience` needs a restart; a reload that changes them is refused.
-- **Identity assertion key**: give the upstreams a key set holding the old and new keys, restart with the new key, then remove the old one from the set ([settings.md](settings.md#replacing-the-key)).
+- **Identity assertion key**: a reload does not read it; give the upstreams a key set holding the old and new keys, restart with the new key, then remove the old one from the set ([settings.md](settings.md#replacing-the-key)).
 - **Listener certificate**: replace the files, then send `SIGHUP` (not on Windows) or call `POST /admin/keys/reload`; new file paths need a restart.
 - **Upstream TLS profiles**: replace the files, then call `POST /admin/keys/reload`; a reload that would remove a profile the policy uses is refused.
 - **Administrator password**: change it on the My Account page; a forgotten password is reset with `apiward enrol` while the gateway is stopped.

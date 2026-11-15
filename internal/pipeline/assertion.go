@@ -18,9 +18,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
-	"os"
 	"time"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/audit"
@@ -39,6 +37,10 @@ const (
 	AssertionIssuer = "apiward"
 	// AssertionLife bounds how long a captured assertion could be replayed.
 	AssertionLife = 30 * time.Second
+	// MaxAssertionBytes bounds a signed assertion: an upstream may refuse a
+	// longer header (Fetch does), so a request whose assertion would exceed
+	// it, through a long path or many roles, is refused instead.
+	MaxAssertionBytes = 4096
 	// coordinateBytes is the length of a P-256 coordinate and of each half
 	// of an ES256 signature (RFC 7518, section 3.4).
 	coordinateBytes = 32
@@ -85,20 +87,12 @@ type jwk struct {
 // LoadSigner reads the signing key at path: one PEM "PRIVATE KEY" block
 // (PKCS #8) holding an ECDSA P-256 key, in a file only its owner can read.
 func LoadSigner(path string) (*Signer, error) {
-	if err := forward.CheckKeyFile(path); err != nil {
-		return nil, err
-	}
-	file, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	defer file.Close()
-	data, err := io.ReadAll(io.LimitReader(file, maxKeyFileBytes+1))
+	data, err := forward.ReadPEM(path, forward.CheckKeyMode)
 	if err != nil {
 		return nil, err
 	}
 	block, rest := pem.Decode(data)
-	if len(data) > maxKeyFileBytes || block == nil || block.Type != "PRIVATE KEY" || len(bytes.TrimSpace(rest)) != 0 {
+	if block == nil || block.Type != "PRIVATE KEY" || len(bytes.TrimSpace(rest)) != 0 {
 		return nil, errors.New("the file must hold exactly one PEM PRIVATE KEY block (PKCS #8)")
 	}
 	parsed, err := x509.ParsePKCS8PrivateKey(block.Bytes)
@@ -190,6 +184,11 @@ func (h *Handler) assert(q *request, rule *compile.Rule, roles []string, method,
 	assertion, err := h.signer.sign(c, time.Now())
 	if err != nil {
 		q.reject(audit.StageBind, http.StatusServiceUnavailable, "gateway_unavailable")
+		return "", false
+	}
+	if len(assertion) > MaxAssertionBytes {
+		q.event.Reason = "assertion_too_large"
+		q.reject(audit.StageBind, http.StatusBadRequest, "bad_request")
 		return "", false
 	}
 	return assertion, true

@@ -144,6 +144,9 @@ func (f nativeFile) check() (nativeConfig, error) {
 	if cfg.limits.IPv6RatePrefix, err = numberSetting("data.ipv6_rate_prefix", d.IPv6RatePrefix, pipeline.DefaultIPv6RatePrefix, pipeline.MinIPv6RatePrefix, 128); err != nil {
 		return nativeConfig{}, err
 	}
+	if cfg.limits.TrustedProxies, err = pipeline.ParseProxies(d.TrustedProxies); err != nil {
+		return nativeConfig{}, fmt.Errorf("data.trusted_proxies: %w", err)
+	}
 	if cfg.maxConnections, err = numberSetting("data.max_connections", d.MaxConnections, defaultMaxConnections, 16, maxConnectionsLimit); err != nil {
 		return nativeConfig{}, err
 	}

@@ -5,6 +5,7 @@ package pipeline
 import (
 	"container/heap"
 	"net/http"
+	"strconv"
 	"sync"
 	"time"
 
@@ -89,6 +90,26 @@ func (c *counter) usage(now int64) int64 {
 	return c.current*c.window + c.previous*(c.window-elapsed)
 }
 
+// wait returns how many milliseconds after now the next request on this
+// counter would be admitted under a limit of count requests per window, with
+// nothing else counted meanwhile. Admission needs usage <= (count-1)*window.
+// While the current bucket is within that, only the previous bucket's
+// weight must fade; otherwise the current bucket must first become the
+// previous one and then fade enough.
+func (c *counter) wait(now, count int64) int64 {
+	allowed := (count - 1) * c.window
+	start := c.bucket * c.window
+	if c.current*c.window <= allowed {
+		if c.previous == 0 {
+			return 0
+		}
+		offset := c.window - (allowed-c.current*c.window)/c.previous
+		return max(start+offset-now, 0)
+	}
+	offset := c.window - allowed/c.current
+	return start + c.window + offset - now
+}
+
 type rateDecision int
 
 const (
@@ -159,6 +180,18 @@ func (l *Limiter) admit(key counterKey, rule *compile.RateRule, now int64) rateD
 	return rateAdmitted
 }
 
+// retryAfter returns the whole seconds, at least one, until key would next
+// admit a request under rule (RFC 9110 section 10.2.3).
+func (l *Limiter) retryAfter(key counterKey, rule *compile.RateRule, now int64) int64 {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	c := l.counters[key]
+	if c == nil {
+		return 1
+	}
+	return max((c.wait(now, rule.Count())+999)/1000, 1)
+}
+
 // sweep removes up to budget counters whose current and previous buckets have
 // both ended. Their estimate is zero, so removing them never changes a
 // decision. It visits only the counters it removes, so a full table of live
@@ -215,8 +248,10 @@ func (h *Handler) admitRate(q *request, stage int, key counterKey, rule *compile
 		q.reject(stage, http.StatusBadRequest, "bad_request")
 		return false
 	}
-	switch h.limiter.admit(key, rule, h.clock.now()) {
+	now := h.clock.now()
+	switch h.limiter.admit(key, rule, now) {
 	case rateExceeded:
+		q.w.Header().Set("Retry-After", strconv.FormatInt(h.limiter.retryAfter(key, rule, now), 10))
 		q.event.Reason = "quota_exceeded"
 		q.reject(stage, http.StatusTooManyRequests, "rate_limited")
 		return false

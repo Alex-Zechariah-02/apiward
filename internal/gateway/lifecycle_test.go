@@ -217,7 +217,7 @@ func TestControllerRefusesInvalidConfiguration(t *testing.T) {
 		{"no trust configuration", func(e *gatewaytest.Env, cfg *controller.Config, ui *string) { cfg.JWT = pipeline.TrustConfig{} }, "jwt: issuer and audience"},
 		{"missing key file", func(e *gatewaytest.Env, cfg *controller.Config, ui *string) {
 			cfg.JWT.Keys[0].PublicKeyFile = filepath.Join(e.Dir, "absent.pem")
-		}, "jwt: opening public key"},
+		}, "jwt: reading public key"},
 		{"private key given as the key", func(e *gatewaytest.Env, cfg *controller.Config, ui *string) {
 			cfg.JWT.Keys[0].PublicKeyFile = privateKey
 		}, "exactly one PEM PUBLIC KEY block"},

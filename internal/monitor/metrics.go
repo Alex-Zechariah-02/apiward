@@ -111,6 +111,9 @@ func (f AdminFailure) String() string { return adminFailureNames[f] }
 // AdminFailed counts one Admin API failure.
 func (o *Observations) AdminFailed(f AdminFailure) { o.admin[f].Add(1) }
 
+// KeyReloadFailed counts one refused key reload.
+func (o *Observations) KeyReloadFailed() { o.keyReloads.Add(1) }
+
 // Metrics serves the metrics listener from the observations and the
 // published gauges, which published reads from the controller.
 func Metrics(o *Observations, gauges func() []Gauge) http.Handler {
@@ -181,5 +184,7 @@ func serveMetrics(w http.ResponseWriter, r *http.Request, o *Observations, gauge
 	for f := range adminFailures {
 		fmt.Fprintf(&body, "gateway_admin_failures_total{reason=%q} %d\n", f, o.admin[f].Load())
 	}
+	fmt.Fprintln(&body, "# TYPE gateway_key_reload_failures_total counter")
+	fmt.Fprintf(&body, "gateway_key_reload_failures_total %d\n", o.keyReloads.Load())
 	fmt.Fprint(w, body.String())
 }

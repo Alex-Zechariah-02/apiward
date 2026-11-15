@@ -39,7 +39,7 @@ func TestTrustMaterialAtStartup(t *testing.T) {
 		{"no trust configuration", func(e *gatewaytest.Env) any { return map[string]any{} }, "gateway.jwt.issuer is required"},
 		{"missing key file", func(e *gatewaytest.Env) any {
 			return trust(e, map[string]any{"keys": []pipeline.VerificationKey{{Kid: "test-a", PublicKeyFile: filepath.Join(e.Dir, "absent.pem")}}})
-		}, "jwt: opening public key"},
+		}, "jwt: reading public key"},
 		{"private key given as the key", func(e *gatewaytest.Env) any {
 			return trust(e, map[string]any{"keys": []pipeline.VerificationKey{{Kid: "test-a", PublicKeyFile: privateKey}}})
 		}, "exactly one PEM PUBLIC KEY block"},

@@ -102,7 +102,7 @@ func TestNativeStartupRefusesConfiguration(t *testing.T) {
 			s := e.NativeSettings()
 			gatewaytest.Section(s, "gateway")["jwt"] = gatewaytest.TestTrust(issuertest.Name, issuertest.Audience, filepath.Join(e.Dir, "absent.pem"))
 			e.WriteNative(s)
-		}, "jwt: opening public key"},
+		}, "jwt: reading public key"},
 		{"dashboard directory without index.html", func(e *gatewaytest.Env) {
 			s := e.NativeSettings()
 			gatewaytest.Section(s, "gateway")["admin_ui"] = t.TempDir()

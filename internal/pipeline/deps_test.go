@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/netip"
 	"testing"
+	"time"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/audit"
 	"github.com/Alex-Zechariah-02/apiward/internal/compile"
@@ -26,9 +27,20 @@ func (noAuthority) Addresses() *store.BlockedAddresses { return nil }
 func TestNewSelectsDefaultCeiling(t *testing.T) {
 	forward := func(http.ResponseWriter, *http.Request) error { return nil }
 	for _, ceiling := range []int64{0, -1} {
-		h, err := New(Deps{Authority: noAuthority{}, Audit: &audit.AuditLog{}, Observations: monitor.New(policy.DefaultWindow, policy.DefaultAPIs), Limiter: NewLimiter(policy.DefaultRateCounters), Clock: NewClock(), Limits: Limits{MaxBodyBytes: ceiling}, Forward: forward})
+		h, err := New(Deps{Authority: noAuthority{}, Audit: &audit.AuditLog{}, Observations: monitor.New(policy.DefaultWindow, policy.DefaultAPIs), Limiter: NewLimiter(policy.DefaultRateCounters), Clock: NewClock(), AuditTimeout: time.Second, Limits: Limits{MaxBodyBytes: ceiling}, Forward: forward})
 		if err != nil || h.maxBodyBytes != DefaultMaxBody {
 			t.Fatalf("ceiling %d: %v, %v", ceiling, h, err)
+		}
+	}
+}
+
+// A handler without a positive audit timeout is refused: it would refuse
+// every admission.
+func TestNewNeedsAuditTimeout(t *testing.T) {
+	forward := func(http.ResponseWriter, *http.Request) error { return nil }
+	for _, wait := range []time.Duration{0, -time.Second} {
+		if _, err := New(Deps{Authority: noAuthority{}, Audit: &audit.AuditLog{}, Observations: monitor.New(policy.DefaultWindow, policy.DefaultAPIs), Limiter: NewLimiter(policy.DefaultRateCounters), Clock: NewClock(), AuditTimeout: wait, Forward: forward}); err == nil {
+			t.Fatalf("audit timeout %v accepted", wait)
 		}
 	}
 }
@@ -37,7 +49,7 @@ func TestNewSelectsDefaultCeiling(t *testing.T) {
 // IPv4 addresses, keep their own. A prefix outside 48 to 128 is refused.
 func TestIPv6RateKey(t *testing.T) {
 	forward := func(http.ResponseWriter, *http.Request) error { return nil }
-	deps := Deps{Authority: noAuthority{}, Audit: &audit.AuditLog{}, Observations: monitor.New(policy.DefaultWindow, policy.DefaultAPIs), Limiter: NewLimiter(policy.DefaultRateCounters), Clock: NewClock(), Forward: forward}
+	deps := Deps{Authority: noAuthority{}, Audit: &audit.AuditLog{}, Observations: monitor.New(policy.DefaultWindow, policy.DefaultAPIs), Limiter: NewLimiter(policy.DefaultRateCounters), Clock: NewClock(), AuditTimeout: time.Second, Forward: forward}
 	h, err := New(deps)
 	if err != nil {
 		t.Fatal(err)

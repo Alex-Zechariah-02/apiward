@@ -5,6 +5,7 @@ package integration
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -83,6 +84,15 @@ func TestFetchKeyReload(t *testing.T) {
 	}
 	if code, body := post("keys-reload-invalid-01"); code != http.StatusUnprocessableEntity || !strings.Contains(body, `"keys_invalid"`) {
 		t.Fatalf("invalid reload: %d %s", code, body)
+	}
+	scrape, err := http.Get("http://" + e.Metrics + "/metrics")
+	if err != nil {
+		t.Fatal(err)
+	}
+	metrics, err := io.ReadAll(scrape.Body)
+	scrape.Body.Close()
+	if err != nil || !strings.Contains(string(metrics), "gateway_key_reload_failures_total 1\n") {
+		t.Fatalf("a refused reload is not counted: %v", err)
 	}
 	if code, body := e.Get("/a/x", "Authorization", "Bearer "+newToken); code != 200 {
 		t.Fatalf("failed reload lost the old set: %d %s", code, body)

@@ -88,6 +88,9 @@ type Observations struct {
 	auxiliary map[string]*atomic.Uint64
 	// admin counts the Admin API's own failures by AdminFailure.
 	admin [adminFailures]atomic.Uint64
+	// keyReloads counts key reloads refused because the keys or the
+	// settings beside them were invalid.
+	keyReloads atomic.Uint64
 }
 
 // New keeps the last window requests; apis bounds the per-API duration

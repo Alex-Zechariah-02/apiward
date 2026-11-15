@@ -56,7 +56,9 @@ func TestBodyDecoding(t *testing.T) {
 		if reason != tc.reason {
 			t.Errorf("%s: reason %q, want %q", tc.name, reason, tc.reason)
 		}
-		if elapsed := time.Since(started); elapsed > 100*time.Millisecond {
+		// A wide margin: a linear decoder takes microseconds here, while a
+		// quadratic one on the bounded inputs takes seconds.
+		if elapsed := time.Since(started); elapsed > 2*time.Second {
 			t.Errorf("%s: took %v", tc.name, elapsed)
 		}
 	}

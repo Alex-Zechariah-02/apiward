@@ -14,25 +14,35 @@ import (
 )
 
 // A full table of live counters refuses a new key without scanning every
-// counter under the lock.
+// counter under the lock: a refusal costs about the same with 256 times more
+// counters. Comparing two tables, rather than a fixed time, holds on a slow
+// or busy machine.
 func TestFullTableRefusalIsBounded(t *testing.T) {
-	l := NewLimiter(policy.DefaultRateCounters)
-	rule := quota(10, 60_000)
-	now := int64(1_000_000)
-	for i := range policy.DefaultRateCounters {
-		if l.admit(counterKey{"search", compile.RateKeyAddress, "2001:db8::" + strconv.Itoa(i)}, rule, now) != rateAdmitted {
-			t.Fatalf("filling the table: counter %d refused", i)
+	refusal := func(capacity int) time.Duration {
+		l := NewLimiter(capacity)
+		rule := quota(10, 60_000)
+		now := int64(1_000_000)
+		for i := range capacity {
+			if l.admit(counterKey{"search", compile.RateKeyAddress, "2001:db8::" + strconv.Itoa(i)}, rule, now) != rateAdmitted {
+				t.Fatalf("filling the table: counter %d refused", i)
+			}
 		}
-	}
-	const refusals = 100
-	start := time.Now()
-	for i := range refusals {
-		if got := l.admit(counterKey{"search", compile.RateKeyAddress, "2001:db8:1::" + strconv.Itoa(i)}, rule, now); got != rateNoCapacity {
-			t.Fatalf("new key with a full table: %v, want no capacity", got)
+		const refusals = 2_000
+		fastest := time.Duration(1<<63 - 1)
+		for range 3 {
+			start := time.Now()
+			for i := range refusals {
+				if got := l.admit(counterKey{"search", compile.RateKeyAddress, "2001:db8:1::" + strconv.Itoa(i)}, rule, now); got != rateNoCapacity {
+					t.Fatalf("new key with a full table: %v, want no capacity", got)
+				}
+			}
+			fastest = min(fastest, time.Since(start))
 		}
+		return fastest
 	}
-	if mean := time.Since(start) / refusals; mean > time.Millisecond {
-		t.Fatalf("a refusal with a full table took %v on average, want under 1 ms", mean)
+	small, large := refusal(policy.DefaultRateCounters/256), refusal(policy.DefaultRateCounters)
+	if large > 8*small+time.Millisecond {
+		t.Fatalf("refusals took %v with %d counters and %v with %d", large, policy.DefaultRateCounters, small, policy.DefaultRateCounters/256)
 	}
 }
 

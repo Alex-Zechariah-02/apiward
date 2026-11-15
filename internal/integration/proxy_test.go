@@ -148,11 +148,12 @@ func TestClientCannotSelectUpstream(t *testing.T) {
 		}
 	}
 
-	// An absolute-form target naming the decoy is refused before routing.
-	if code, _ := e.Raw("GET http://" + decoy + "/a/x HTTP/1.1\r\nHost: " + decoy + "\r\nConnection: close\r\n\r\n"); code != http.StatusBadRequest {
+	// An absolute-form target naming the decoy names only the host: the
+	// request still reaches only its bound upstream.
+	if code, _ := e.Raw("GET http://" + decoy + "/a/x HTTP/1.1\r\nHost: " + decoy + "\r\nConnection: close\r\n\r\n"); code != http.StatusOK {
 		t.Errorf("absolute-form target: %d", code)
 	}
-	e.AssertReceipts(len(attempts), 0, 0)
+	e.AssertReceipts(len(attempts)+1, 0, 0)
 }
 
 // Upstream failures produce bounded, safe errors and never another

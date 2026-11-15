@@ -44,7 +44,7 @@ func TestRejectedRequestsNeverReachFixtures(t *testing.T) {
 		{"encoded slash", "GET /orders/ORD-1001%2F..%2F HTTP/1.1\r\nHost: gw\r\n", "", 400},
 		{"dot segment", "GET /inventory/items/../health HTTP/1.1\r\nHost: gw\r\n", "", 400},
 		{"double encoding", "GET /orders/%252e%252e HTTP/1.1\r\nHost: gw\r\n", "", 400},
-		{"absolute form naming a fixture", "GET http://" + fixtures["reports"].Addr + "/reports/sales HTTP/1.1\r\nHost: gw\r\n", "", 400},
+		{"absolute form with credentials naming a fixture", "GET http://user@" + fixtures["reports"].Addr + "/reports/sales HTTP/1.1\r\nHost: gw\r\n", "", 400},
 		{"body on bodyless operation", "GET /orders HTTP/1.1\r\nHost: gw\r\nContent-Length: 2\r\n\r\n{}", "staff-01", 400},
 		{"write without JSON media type", "PATCH /inventory/items/ITM-001 HTTP/1.1\r\nHost: gw\r\nContent-Type: text/plain\r\nContent-Length: 11\r\n\r\n{\"delta\":1}", "staff-01", 415},
 		{"malformed JSON write", "POST /orders HTTP/1.1\r\nHost: gw\r\nContent-Type: application/json\r\nContent-Length: 4\r\n\r\n{\"cu", "cust-001", 400},

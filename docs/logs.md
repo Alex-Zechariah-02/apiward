@@ -17,9 +17,12 @@ What the gateway records, when a record is waited for, and how to read the log. 
 | `request.admitted` | A request passed every check, before it is forwarded | Waited for |
 | `request.forwarded` | The upstream exchange ended | Queued |
 | `request.rejected` | A check refused the request, or enforcement failed | Queued |
-| `request.preflight` | A browser preflight was answered | Queued |
+| `request.preflight` | The gateway answered an `OPTIONS` request itself: a browser preflight, or one with `Max-Forwards: 0` (code `max_forwards`) | Queued |
 
 - A request record holds the request ID, method, path, client address, policy version, operation, API, account, roles, the result of each check, status, error code and duration.
+- A recorded method is cut at 32 bytes and a path at 256 (`path_truncated` marks the path).
+- A request whose identity assertion would exceed 4,096 bytes (a very long path or many roles) is refused `400` at `BIND` with reason `assertion_too_large`, since upstreams may refuse a longer header.
+- A failure inside the gateway while forwarding is recorded as `request.forwarded` with decision `failed` and code `internal_error`, answered `500` when nothing was sent yet.
 - Refusals before any policy applies (overload, oversized or malformed requests, tunnels, upgrades) write no request record; they are counted per reason and address in `audit.ingress_summary` once a minute.
 
 ## Administrator records
@@ -82,5 +85,6 @@ What the gateway records, when a record is waited for, and how to read the log. 
 - `GET /admin/advice` reads the files for unused permissions; `GET /admin/alerts` reads the active file's last 1 MiB for its write rate.
 - The Dashboard's Security Log page uses these endpoints; its live views read the gateway's memory, not the files.
 - `gateway_audit_bytes` and `gateway_audit_budget_bytes` on the metrics listener show how full the log is.
+- `gateway_key_reload_failures_total` counts key reloads refused because the keys or the settings beside them were invalid.
 - `gateway_admin_failures_total{reason}` counts Admin API requests the gateway could not answer itself: `store`, `audit`, `busy`, `log`, `streams` (every live-view slot in use).
 - `/readyz` answers `503` while the log has failed or is full.

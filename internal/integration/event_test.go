@@ -194,7 +194,9 @@ func TestEventsResistInjectionAndLeakage(t *testing.T) {
 		e.Raw(r + "Connection: close\r\n\r\n")
 	}
 	events := e.EventsWhen(func(events []map[string]any) bool {
-		return gatewaytest.CountKind(events, "request.rejected") >= 3 && gatewaytest.CountKind(events, "request.forwarded") == 2
+		// The long path is refused at BIND: its signed assertion would exceed
+		// the bound upstreams accept.
+		return gatewaytest.CountKind(events, "request.rejected") >= 4 && gatewaytest.CountKind(events, "request.forwarded") == 1
 	})
 
 	raw, err := os.ReadFile(e.AuditLog)
@@ -235,5 +237,5 @@ func TestEventsResistInjectionAndLeakage(t *testing.T) {
 	}
 	// The request with the token and the long path were admitted, so the
 	// checks above cover forwarded requests too.
-	e.AssertReceipts(2, 0, 0)
+	e.AssertReceipts(1, 0, 0)
 }

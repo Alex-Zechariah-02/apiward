@@ -56,7 +56,7 @@ func TestTrustMaterialValidation(t *testing.T) {
 		{"text before the key", testTrust(issuertest.Name, issuertest.Audience, write("leading.pem", append([]byte("comment\n"), public...)))},
 		{"text after the key", testTrust(issuertest.Name, issuertest.Audience, write("trailing.pem", append(append([]byte{}, public...), "comment\n"...)))},
 		{"PEM headers", testTrust(issuertest.Name, issuertest.Audience, write("headers.pem", pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Headers: map[string]string{"Proc-Type": "4,ENCRYPTED"}, Bytes: publicDER(t)})))},
-		{"oversize file", testTrust(issuertest.Name, issuertest.Audience, write("big.pem", append(append([]byte{}, public...), make([]byte, maxKeyFileBytes)...)))},
+		{"oversize file", testTrust(issuertest.Name, issuertest.Audience, write("big.pem", append(append([]byte{}, public...), make([]byte, 64<<10)...)))},
 		{"no key file configured", testTrust(issuertest.Name, issuertest.Audience, "")},
 		{"no issuer", testTrust("", issuertest.Audience, valid)},
 		{"no audience", testTrust(issuertest.Name, "", valid)},

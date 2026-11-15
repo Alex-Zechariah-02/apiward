@@ -25,10 +25,23 @@ The JSON settings file that `apiward run --config <file>` reads. Upstream TLS pr
 
 - Overload is bounded on the data listener: at most `data.max_connections` open connections (default 1,024; one more is accepted and closed at once, counted in `gateway_connections_refused_total`) and `data.max_in_flight` requests inside enforcement (default 256; one more is answered `503 overloaded` with `Retry-After: 1` before any token check, and recorded at `INGRESS`).
 - A request body is read completely before the request takes an in-flight place, so a slow upload holds only its own connection: at most `data.max_body_bytes` (default 16 KiB, up to 1 MiB; a larger body is answered `413` at `INGRESS`) within `data.read_timeout`.
+- The 16 KiB default is four times the largest Fetch request body; nginx defaults to 1 MiB, Kong and Traefik set no ceiling. Raise it only for APIs whose bodies need it.
 - Worst-case memory for request bodies is therefore `data.max_connections` × `data.max_body_bytes`: 16 MiB at the defaults, 1 GiB with 1,024 connections and the 1 MiB maximum; lower `data.max_connections` on a small host before raising the body ceiling.
 - A response passes to the client as it arrives: the gateway flushes it at least every 100 ms (headers included), and event streams and responses without a length at once.
 
+### Client addresses behind a proxy
+
+- `data.trusted_proxies` lists the load balancers or proxies in front of the gateway, as IP addresses or CIDR prefixes (up to 64; empty by default).
+- Only a request whose connection comes from one of them may name its client in `X-Forwarded-For`: the gateway reads the field from the right, skips every trusted proxy, and takes the first other address.
+- When every entry is a trusted proxy, the leftmost entry is the client; an entry that is not an IP address stops the reading, and the address read before it is used.
+- That client address is used for blocked addresses, `allow_addresses`, address rate keys and the security log; upstreams still receive the direct peer in `X-Forwarded-For`.
+- Without the setting, a client's `X-Forwarded-For` is never trusted.
+
 ### Protocols
+
+- A request target may be in absolute form (`GET http://shop.example.com/orders`): the host comes from the target and `Host` is ignored (RFC 9112 section 3.2.2). A target with credentials or a scheme other than `http` or `https` is refused `400`.
+- `Upgrade` is ignored, and not forwarded, in an HTTP/1.0 request; in HTTP/1.1 it is refused `400`.
+- `OPTIONS` with `Max-Forwards: 0` is answered by the gateway itself (`204`, `Allow` naming the target's methods); a larger value is lowered by one before forwarding, and a value that is not one number is refused `400` (RFC 9110 section 7.6.2).
 
 - HTTP/2 protocol errors (malformed frames, flow-control or stream errors) are counted in `gateway_http2_errors_total`.
 - It speaks TLS 1.2 or later with HTTP/2 and HTTP/1.1 chosen by ALPN (`"http2": false` under `data` keeps HTTP/1.1 only; at most 100 concurrent streams and 64 KiB of buffered request body per connection), and upstreams then receive `X-Forwarded-Proto: https` and `Via: 2 gateway` for HTTP/2 requests; upstream connections stay HTTP/1.1.

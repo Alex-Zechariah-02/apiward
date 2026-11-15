@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/forward"
+	"github.com/Alex-Zechariah-02/apiward/internal/operator"
 	"github.com/Alex-Zechariah-02/apiward/internal/pipeline"
 )
 
@@ -18,12 +19,19 @@ import (
 // the files named at start.
 var reloadable = []string{"gateway.jwt", "upstream.allow_public_addresses", "upstream.tls_profiles", "upstream.tls_session_lifetime"}
 
-// reloadKeys reads the configuration file again, as LoadSettings does, and
-// returns its trust and upstream network settings. It refuses, naming them,
+// reloadKeys reads the configuration file again, with the checks of a start,
+// and returns its trust and upstream network settings. The identity signing
+// key is not read: it takes effect only at a restart (docs/keys.md). It refuses, naming them,
 // any other setting the file now holds differently, since a reload would not
 // apply it.
 func (cfg nativeConfig) reloadKeys() (pipeline.TrustConfig, *forward.Network, error) {
-	reloaded, err := loadChecked(cfg.source.path)
+	reloaded, err := readNativeConfig(cfg.source.path)
+	if err == nil {
+		err = reloaded.loadNetwork()
+	}
+	if err == nil {
+		err = operator.CheckPaths(reloaded.source.path, operatorConfig(reloaded), "run", nil)
+	}
 	if err != nil {
 		return pipeline.TrustConfig{}, nil, err
 	}

@@ -22,6 +22,9 @@ const (
 	// policy names in practice, short enough that a client cannot inflate
 	// every record with a long request target.
 	MaxLoggedPath = 256
+	// MaxLoggedMethod bounds a recorded method: net/http accepts any token
+	// as a method, and the longest registered one has 17 characters.
+	MaxLoggedMethod = 32
 	// MaxRecordBytes bounds one record, so an incomplete last record is
 	// always found within this many bytes of the end of the file.
 	MaxRecordBytes = 64 << 10

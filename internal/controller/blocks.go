@@ -8,6 +8,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"maps"
 	"net/http"
 	"slices"
@@ -17,6 +18,7 @@ import (
 	"github.com/Alex-Zechariah-02/apiward/internal/audit"
 	"github.com/Alex-Zechariah-02/apiward/internal/compile"
 	"github.com/Alex-Zechariah-02/apiward/internal/fault"
+	"github.com/Alex-Zechariah-02/apiward/internal/forward"
 	"github.com/Alex-Zechariah-02/apiward/internal/pipeline"
 	"github.com/Alex-Zechariah-02/apiward/internal/store"
 )
@@ -95,25 +97,10 @@ func (c *Controller) reloadKeys(ctx context.Context, t store.TransitionRecord) (
 	if c.config.ReloadCertificate != nil {
 		c.config.ReloadCertificate()
 	}
-	if c.config.ReloadKeys == nil {
-		return c.rejectControl(ctx, t, "KEYS_INVALID", now)
-	}
-	trust, network, err := c.config.ReloadKeys()
+	loaded, network, err := c.readKeys()
 	if err != nil {
 		c.logger.Warn("keys not reloaded", "error", err)
-		return c.rejectControl(ctx, t, "KEYS_INVALID", now)
-	}
-	// The served generation's upstreams must stay reachable: a reload may
-	// not remove a TLS profile it uses or the public addresses it needs.
-	if g := c.current.Load(); g != nil && g.CheckNetwork(network) != nil {
-		return c.rejectControl(ctx, t, "KEYS_INVALID", now)
-	}
-	current := c.verifier.Load()
-	if trust.Issuer != current.Issuer() || trust.Audience != current.Audience() {
-		return c.rejectControl(ctx, t, "KEYS_INVALID", now)
-	}
-	loaded, err := pipeline.LoadVerifier(trust)
-	if err != nil {
+		c.observations.KeyReloadFailed()
 		return c.rejectControl(ctx, t, "KEYS_INVALID", now)
 	}
 	return c.finishControl(ctx, t, struct {
@@ -123,6 +110,30 @@ func (c *Controller) reloadKeys(ctx context.Context, t store.TransitionRecord) (
 		c.verifier.Store(loaded)
 		c.network.Store(network)
 	}, now)
+}
+
+// readKeys reads the trust and upstream network settings again and checks
+// that they may replace the running ones: the issuer and audience unchanged,
+// and every upstream the served generation uses still reachable.
+func (c *Controller) readKeys() (*pipeline.Verifier, *forward.Network, error) {
+	if c.config.ReloadKeys == nil {
+		return nil, nil, errors.New("this gateway has no settings file to reload")
+	}
+	trust, network, err := c.config.ReloadKeys()
+	if err != nil {
+		return nil, nil, err
+	}
+	if g := c.current.Load(); g != nil {
+		if err := g.CheckNetwork(network); err != nil {
+			return nil, nil, err
+		}
+	}
+	current := c.verifier.Load()
+	if trust.Issuer != current.Issuer() || trust.Audience != current.Audience() {
+		return nil, nil, errors.New("the issuer and audience take effect only at a restart")
+	}
+	loaded, err := pipeline.LoadVerifier(trust)
+	return loaded, network, err
 }
 
 func (c *Controller) changeBlock(ctx context.Context, t store.TransitionRecord, reason string) (json.RawMessage, int) {

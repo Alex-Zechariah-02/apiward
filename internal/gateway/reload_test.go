@@ -3,6 +3,11 @@
 package gateway
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/x509"
+	"encoding/pem"
 	"os"
 	"path/filepath"
 	"strings"
@@ -62,5 +67,39 @@ func TestKeysReloadScope(t *testing.T) {
 	}
 	if _, _, err := reload(); err == nil || !strings.Contains(err.Error(), "must be a regular file") {
 		t.Fatalf("settings file replaced by a link: %v", err)
+	}
+}
+
+// A reload never reads the identity signing key, which takes effect only at
+// a restart: a key file damaged after the start does not refuse a reload.
+func TestKeysReloadSkipsIdentityKey(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	der, err := x509.MarshalPKCS8PrivateKey(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	identity := filepath.Join(dir, "identity.pem")
+	if err := os.WriteFile(identity, pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der}), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "settings.json")
+	document := configDocument(t, dir, func(s map[string]any) { gatewaytest.Section(s, "upstream")["identity_key"] = identity })
+	if err := os.WriteFile(path, document, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	settings, err := LoadSettings(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(identity, []byte("not a key"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := settings.native.controller.ReloadKeys(); err != nil {
+		t.Fatalf("reload with a damaged identity key file: %v", err)
 	}
 }

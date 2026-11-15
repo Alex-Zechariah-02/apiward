@@ -22,6 +22,7 @@ interface Administrator {
 interface SigningKey {
   kid: string
   fingerprint: string
+  bits: number
   loaded_at: string
   verified: number
   last_verified_at: string | null
@@ -126,6 +127,7 @@ export function TeamView({ admin, can }: ViewProps) {
                     <tr>
                       <th scope="col">Key ID</th>
                       <th scope="col">Fingerprint</th>
+                      <th scope="col">Key Size</th>
                       <th scope="col">Loaded</th>
                       <th scope="col">Use Since the Gateway Started</th>
                     </tr>
@@ -138,6 +140,9 @@ export function TeamView({ admin, can }: ViewProps) {
                         </td>
                         <td>
                           <code className="soft">{x.fingerprint}</code>
+                        </td>
+                        <td className="nowrap">
+                          <span className="num">{x.bits.toLocaleString()}</span>-bit RSA
                         </td>
                         <td className="nowrap">
                           <Time value={x.loaded_at} />

@@ -3,6 +3,7 @@
 package pipeline
 
 import (
+	"math/rand/v2"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -147,6 +148,27 @@ func TestConcurrentAdmissionsRespectQuota(t *testing.T) {
 	for i := range perKey {
 		if perKey[i].Load() != 30 {
 			t.Fatalf("subject %d: %d admitted of 80, want 30", i, perKey[i].Load())
+		}
+	}
+}
+
+// The wait a refusal reports is exact: the next request is refused one
+// millisecond earlier and admitted then, for random counter states.
+func TestWaitIsExact(t *testing.T) {
+	random := rand.New(rand.NewPCG(7, 11))
+	for range 20_000 {
+		window := int64(1000 * (1 + random.IntN(60)))
+		count := int64(1 + random.IntN(5))
+		c := counter{window: window, bucket: int64(random.IntN(100)), current: int64(random.IntN(int(count) + 2)), previous: int64(random.IntN(int(count) + 2))}
+		now := c.bucket*window + int64(random.IntN(int(window)))
+		admits := func(at int64) bool {
+			probe := c
+			probe.roll(at)
+			return probe.usage(at)+probe.window <= count*probe.window
+		}
+		wait := c.wait(now, count)
+		if !admits(now+wait) || (wait > 0 && admits(now+wait-1)) {
+			t.Fatalf("counter %+v at %d, limit %d: wait %d is not the first admitting time", c, now, count, wait)
 		}
 	}
 }

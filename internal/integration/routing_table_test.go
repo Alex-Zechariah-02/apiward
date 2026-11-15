@@ -61,7 +61,7 @@ func TestCanonicalRoutingTable(t *testing.T) {
 		{"DELETE /orders/archive", 403, nil, "", ""},
 		{"GET /orders/archive", 405, nil, "", ""},
 		{"GET /orders/a%5Cb", 400, nil, "", ""},
-		{"GET http://x/orders/42", 400, nil, "", ""},
+		{"GET http://user@x/orders/42", 400, nil, "", ""},
 		{"PATCH /unknown", 404, nil, "", ""},
 		{"GET /reports", 200, e.B, "/reports", "/reports"},
 	}

@@ -127,11 +127,20 @@ func loadProfile(s ProfileSettings) (*profile, error) {
 	return p, nil
 }
 
-// readPEMFile reads a bounded regular file at an absolute path, after check,
-// when given, accepted the opened file's information.
-func readPEMFile(path string, check func(os.FileInfo) error) ([]byte, error) {
+// ReadPEM reads a bounded regular file at an absolute path, after check,
+// when given, accepted the opened file's information. The path is checked
+// before it is opened, since opening a pipe or device can block a start or a
+// reload, and again once open, so a file swapped in between is refused.
+func ReadPEM(path string, check func(os.FileInfo) error) ([]byte, error) {
 	if !filepath.IsAbs(path) {
 		return nil, errors.New("the path must be absolute")
+	}
+	named, err := os.Stat(path)
+	if err != nil {
+		return nil, err
+	}
+	if !named.Mode().IsRegular() {
+		return nil, errors.New("the path must name a regular file")
 	}
 	file, err := os.Open(path)
 	if err != nil {
@@ -142,8 +151,8 @@ func readPEMFile(path string, check func(os.FileInfo) error) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	if !info.Mode().IsRegular() {
-		return nil, errors.New("the path must name a regular file")
+	if !os.SameFile(named, info) {
+		return nil, errors.New("the file was replaced while it was opened")
 	}
 	if check != nil {
 		if err := check(info); err != nil {
@@ -161,7 +170,7 @@ func readPEMFile(path string, check func(os.FileInfo) error) ([]byte, error) {
 }
 
 func loadRoots(path string) (*x509.CertPool, error) {
-	data, err := readPEMFile(path, checkTrusted)
+	data, err := ReadPEM(path, checkTrusted)
 	if err != nil {
 		return nil, err
 	}
@@ -188,14 +197,11 @@ func loadRoots(path string) (*x509.CertPool, error) {
 // an ECDSA P-256 key, in a file the group and others cannot read on Unix.
 // The returned certificate's Leaf is parsed.
 func LoadCertificate(certificateFile, keyFile string) (*tls.Certificate, error) {
-	chain, err := readPEMFile(certificateFile, nil)
+	chain, err := ReadPEM(certificateFile, nil)
 	if err != nil {
 		return nil, fmt.Errorf("certificate file: %w", err)
 	}
-	if err := CheckKeyFile(keyFile); err != nil {
-		return nil, fmt.Errorf("key file: %w", err)
-	}
-	key, err := readPEMFile(keyFile, nil)
+	key, err := ReadPEM(keyFile, CheckKeyMode)
 	if err != nil {
 		return nil, fmt.Errorf("key file: %w", err)
 	}
@@ -221,13 +227,9 @@ func LoadCertificate(certificateFile, keyFile string) (*tls.Certificate, error) 
 	return &certificate, nil
 }
 
-// CheckKeyFile refuses a key file whose mode lets the group or others read
+// CheckKeyMode refuses a key file whose mode lets the group or others read
 // it, on systems where the mode means that.
-func CheckKeyFile(path string) error {
-	info, err := os.Stat(path)
-	if err != nil {
-		return err
-	}
+func CheckKeyMode(info os.FileInfo) error {
 	if runtime.GOOS != "windows" && info.Mode().Perm()&0o077 != 0 {
 		return errors.New("the key file must not be accessible to the group or others (chmod 600)")
 	}

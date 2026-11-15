@@ -61,7 +61,7 @@ func TestEnforcementRefusals(t *testing.T) {
 		reason  string
 		allowed string // expected Allow header
 	}{
-		{name: "absolute-form target", raw: raw("GET http://" + e.A.Addr + "/a/x HTTP/1.1\r\n"), status: 400, code: "bad_request", stage: "INGRESS", reason: "target"},
+		{name: "absolute-form target with credentials", raw: raw("GET http://user@" + e.A.Addr + "/a/x HTTP/1.1\r\n"), status: 400, code: "bad_request", stage: "INGRESS", reason: "target"},
 		{name: "tunnel", raw: raw("CONNECT " + e.A.Addr + " HTTP/1.1\r\n"), status: 400, code: "bad_request", stage: "INGRESS", reason: "connect"},
 		{name: "protocol upgrade", raw: raw("GET /a/x HTTP/1.1\r\nUpgrade: websocket\r\n"), status: 400, code: "bad_request", stage: "INGRESS", reason: "upgrade"},
 		{name: "Connection naming a gateway header", raw: raw("GET /a/x HTTP/1.1\r\nConnection: X-Gateway-Subject\r\n"), status: 400, code: "bad_request", stage: "INGRESS", reason: "connection_header"},

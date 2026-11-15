@@ -105,11 +105,19 @@ func (q *request) forwarded(status int, decision, code string) {
 // answerPreflight records and answers a CORS preflight: 204, with whatever
 // CORS headers the caller set. It is never forwarded.
 func (q *request) answerPreflight(allowed bool) {
-	q.event.Kind, q.event.Stage, q.event.Status = "request.preflight", audit.StageNames[audit.StageRoute], http.StatusNoContent
-	q.event.Decision, q.event.Error, q.event.Stages[audit.StageRoute] = "allowed", "cors_preflight", audit.StagePass
 	if !allowed {
-		q.event.Decision, q.event.Error, q.event.Stages[audit.StageRoute] = "refused", "cors_refused", audit.StageReject
+		q.answered("refused", "cors_refused", audit.StageReject)
+		return
 	}
+	q.answered("allowed", "cors_preflight", audit.StagePass)
+}
+
+// answered records and answers 204 an OPTIONS request the gateway answers
+// itself at ROUTE, with whatever headers the caller set: a CORS preflight or
+// one whose Max-Forwards is 0. It is never forwarded.
+func (q *request) answered(decision, code, result string) {
+	q.event.Kind, q.event.Stage, q.event.Status = "request.preflight", audit.StageNames[audit.StageRoute], http.StatusNoContent
+	q.event.Decision, q.event.Error, q.event.Stages[audit.StageRoute] = decision, code, result
 	q.event.DurationMS = float64(time.Since(q.started)) / float64(time.Millisecond)
 	q.audit.Record(q.event)
 	q.observations.Record(q.event)

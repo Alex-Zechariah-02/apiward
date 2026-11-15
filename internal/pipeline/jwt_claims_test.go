@@ -3,6 +3,7 @@
 package pipeline
 
 import (
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -79,6 +80,11 @@ func TestClaimProfile(t *testing.T) {
 		if reason == "" && subject.subject != tc.claims["sub"] {
 			t.Errorf("%s: subject %q, want %v", tc.name, subject, tc.claims["sub"])
 		}
+	}
+	// Only "roles" is asserted; "role" and "scope" grant nothing.
+	asserted, _ := v.verify(issuer.Token(t, claimsAt(map[string]any{"roles": []string{"ADMIN", "ADMIN", "AUDITOR"}, "role": "MANAGER", "scope": "admin"})), fixedNow)
+	if !slices.Equal(asserted.roles, []string{"ADMIN", "AUDITOR"}) {
+		t.Errorf("asserted roles %v, want [ADMIN AUDITOR]", asserted.roles)
 	}
 }
 

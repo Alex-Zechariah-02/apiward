@@ -149,7 +149,7 @@ func TestNativeForwardingRoutingTable(t *testing.T) {
 		{"get /orders/42 HTTP/1.1", 405, nil, "", ""},
 		{"HEAD /orders/42 HTTP/1.1", 405, nil, "", ""},
 		{"DELETE /orders/archive HTTP/1.1", 403, nil, "", ""},
-		{"GET http://" + e.B.Addr + "/reports HTTP/1.1", 400, nil, "", ""},
+		{"GET http://user@" + e.B.Addr + "/reports HTTP/1.1", 400, nil, "", ""},
 		{"CONNECT " + e.B.Addr + " HTTP/1.1", 400, nil, "", ""},
 		{"OPTIONS * HTTP/1.1", 400, nil, "", ""},
 	}

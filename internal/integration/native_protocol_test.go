@@ -66,7 +66,7 @@ func TestNativeDataPlaneProtocol(t *testing.T) {
 	for _, request := range []string{
 		"GET /a/x HTTP/1.1\r\nHost: gw\r\nConnection: Upgrade, HTTP2-Settings\r\nUpgrade: h2c\r\nHTTP2-Settings: AAMAAABkAAQAAP__\r\n\r\n",
 		"OPTIONS * HTTP/1.1\r\nHost: gw\r\nConnection: close\r\n\r\n",
-		"GET http://" + e.A.Addr + "/a/x HTTP/1.1\r\nHost: gw\r\nConnection: close\r\n\r\n",
+		"GET http://user@" + e.A.Addr + "/a/x HTTP/1.1\r\nHost: gw\r\nConnection: close\r\n\r\n",
 		"CONNECT " + e.A.Addr + " HTTP/1.1\r\nHost: " + e.A.Addr + "\r\nConnection: close\r\n\r\n",
 		"GET /a/x HTTP/1.1\r\nHost: gw\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n",
 	} {

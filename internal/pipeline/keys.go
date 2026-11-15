@@ -11,23 +11,33 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
-	"io"
-	"os"
 	"slices"
 	"strings"
 	"sync/atomic"
 	"time"
 
+	"github.com/Alex-Zechariah-02/apiward/internal/forward"
 	"github.com/Alex-Zechariah-02/apiward/internal/policy"
 )
 
 const (
-	MaxTokenBytes   = 4096
-	maxKeyFileBytes = 64 << 10
-	maxTrustValue   = 256
-	minRSABits      = 2048
-	maxRSABits      = 8192
-	MaxKeys         = 64
+	// MaxTokenBytes bounds a bearer token before it is decoded: 4 KiB is
+	// the cookie size RFC 6265 requires browsers to hold, which issuers keep
+	// tokens within; a Fetch token is under 1 KiB.
+	MaxTokenBytes = 4096
+	// maxTrustValue bounds the issuer and audience: both are short names or
+	// URLs, and RFC 7519 sets no bound of its own.
+	maxTrustValue = 256
+	// maxRSABits is the largest key common tools generate; verification
+	// cost grows with the key, so larger keys would slow every request.
+	maxRSABits = 8192
+	// MaxKeys bounds the key set: a rotation keeps two or three keys, and
+	// every key is read again on each reload.
+	MaxKeys = 64
+	// DefaultClockSkew is the leeway on "exp" and "nbf" when none is set,
+	// Envoy's default; MaxClockSkew bounds the setting.
+	DefaultClockSkew = 60 * time.Second
+	MaxClockSkew     = 300 * time.Second
 	// maxNumericDate is 9999-12-31T23:59:59Z, so every accepted time claim
 	// converts to a time.Time without overflow.
 	maxNumericDate = 253402300799
@@ -39,6 +49,11 @@ type TrustConfig struct {
 	Issuer   string            `json:"issuer"`
 	Audience string            `json:"audience"`
 	Keys     []VerificationKey `json:"keys"`
+	// ClockSkew is the leeway on "exp" and "nbf" (a duration, "0s" for
+	// exact times); omitted, DefaultClockSkew.
+	ClockSkew *string `json:"clock_skew,omitempty"`
+	// MinRSABits is the smallest key accepted: 2048 (omitted), 3072 or 4096.
+	MinRSABits *int `json:"min_rsa_bits,omitempty"`
 }
 
 type VerificationKey struct {
@@ -49,6 +64,7 @@ type VerificationKey struct {
 type KeyInfo struct {
 	Kid         string    `json:"kid"`
 	Fingerprint string    `json:"fingerprint"`
+	Bits        int       `json:"bits"`
 	LoadedAt    time.Time `json:"loaded_at"`
 }
 
@@ -60,6 +76,8 @@ type Verifier struct {
 	keys        map[string]*rsa.PublicKey
 	info        []KeyInfo
 	fingerprint string // SHA-256 of the complete named key set
+	// skew is the leeway on the token's validity times.
+	skew time.Duration
 	// uses counts verified tokens per key since the gateway started. The map
 	// is fixed when the verifier is built; a reload carries a kept key's
 	// counter over (adoptUses), so only the counters' atomics change.
@@ -74,12 +92,17 @@ type KeyUse struct {
 	lastNano atomic.Int64
 }
 
-// adoptUses gives v the counters of the keys it shares with previous, before
-// v is published, so a reload keeps their counts.
+// AdoptUses gives v the counters of the keys it shares with previous, before
+// v is published, so a reload keeps their counts. A key is shared when both
+// its ID and its material match: an ID reused for a new key starts at zero.
 func (v *Verifier) AdoptUses(previous *Verifier) {
-	for kid := range v.uses {
-		if use := previous.uses[kid]; use != nil {
-			v.uses[kid] = use
+	kept := map[KeyInfo]bool{}
+	for _, info := range previous.info {
+		kept[KeyInfo{Kid: info.Kid, Fingerprint: info.Fingerprint}] = true
+	}
+	for _, info := range v.info {
+		if kept[KeyInfo{Kid: info.Kid, Fingerprint: info.Fingerprint}] {
+			v.uses[info.Kid] = previous.uses[info.Kid]
 		}
 	}
 }
@@ -94,19 +117,23 @@ func LoadVerifier(c TrustConfig) (*Verifier, error) {
 	if len(c.Keys) == 0 || len(c.Keys) > MaxKeys {
 		return nil, fmt.Errorf("keys must contain 1 to %d named public keys", MaxKeys)
 	}
-	v := &Verifier{issuer: c.Issuer, audience: c.Audience, keys: map[string]*rsa.PublicKey{}, info: []KeyInfo{}, uses: map[string]*KeyUse{}}
+	skew, minBits, err := c.bounds()
+	if err != nil {
+		return nil, err
+	}
+	v := &Verifier{issuer: c.Issuer, audience: c.Audience, skew: skew, keys: map[string]*rsa.PublicKey{}, info: []KeyInfo{}, uses: map[string]*KeyUse{}}
 	loaded := time.Now().UTC()
 	for _, entry := range c.Keys {
 		if policy.CheckID(entry.Kid, "kid") != nil || v.keys[entry.Kid] != nil {
 			return nil, errors.New("key IDs must be valid and distinct")
 		}
-		key, fingerprint, err := readVerificationKey(entry.PublicKeyFile)
+		key, fingerprint, err := readVerificationKey(entry.PublicKeyFile, minBits)
 		if err != nil {
 			return nil, err
 		}
 		v.keys[entry.Kid] = key
 		v.uses[entry.Kid] = &KeyUse{}
-		v.info = append(v.info, KeyInfo{Kid: entry.Kid, Fingerprint: "sha256:" + fingerprint, LoadedAt: loaded})
+		v.info = append(v.info, KeyInfo{Kid: entry.Kid, Fingerprint: "sha256:" + fingerprint, Bits: key.N.BitLen(), LoadedAt: loaded})
 	}
 	slices.SortFunc(v.info, func(a, b KeyInfo) int { return strings.Compare(a.Kid, b.Kid) })
 	hash := sha256.New()
@@ -117,18 +144,29 @@ func LoadVerifier(c TrustConfig) (*Verifier, error) {
 	return v, nil
 }
 
-func readVerificationKey(path string) (*rsa.PublicKey, string, error) {
-	file, err := os.Open(path)
-	if err != nil {
-		return nil, "", fmt.Errorf("opening public key: %w", err)
+// bounds resolves the clock skew and the smallest RSA key size.
+func (c TrustConfig) bounds() (time.Duration, int, error) {
+	skew, minBits := DefaultClockSkew, 2048
+	if c.ClockSkew != nil {
+		parsed, err := time.ParseDuration(*c.ClockSkew)
+		if err != nil || parsed < 0 || parsed > MaxClockSkew {
+			return 0, 0, fmt.Errorf("clock_skew must be a duration from 0s to %s", MaxClockSkew)
+		}
+		skew = parsed
 	}
-	defer file.Close()
-	data, err := io.ReadAll(io.LimitReader(file, maxKeyFileBytes+1))
+	if c.MinRSABits != nil {
+		if !slices.Contains([]int{2048, 3072, 4096}, *c.MinRSABits) {
+			return 0, 0, errors.New("min_rsa_bits must be 2048, 3072 or 4096")
+		}
+		minBits = *c.MinRSABits
+	}
+	return skew, minBits, nil
+}
+
+func readVerificationKey(path string, minBits int) (*rsa.PublicKey, string, error) {
+	data, err := forward.ReadPEM(path, nil)
 	if err != nil {
 		return nil, "", fmt.Errorf("reading public key: %w", err)
-	}
-	if len(data) > maxKeyFileBytes {
-		return nil, "", errors.New("public key file is too large")
 	}
 
 	// pem.Decode skips text before the first block, so leading data is
@@ -149,8 +187,8 @@ func readVerificationKey(path string) (*rsa.PublicKey, string, error) {
 	if !ok {
 		return nil, "", errors.New("public key is not an RSA key")
 	}
-	if bits := key.N.BitLen(); bits < minRSABits || bits > maxRSABits {
-		return nil, "", fmt.Errorf("RSA key has %d bits, want %d to %d", bits, minRSABits, maxRSABits)
+	if bits := key.N.BitLen(); bits < minBits || bits > maxRSABits {
+		return nil, "", fmt.Errorf("RSA key has %d bits, want %d to %d", bits, minBits, maxRSABits)
 	}
 
 	sum := sha256.Sum256(block.Bytes)

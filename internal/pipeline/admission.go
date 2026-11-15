@@ -50,7 +50,7 @@ func (h *Handler) ingressRefusal(r *http.Request) string {
 	switch {
 	case r.Method == http.MethodConnect:
 		return "connect"
-	case !strings.HasPrefix(r.RequestURI, "/"):
+	case !strings.HasPrefix(r.RequestURI, "/") && !absoluteForm(r):
 		return "target"
 	case r.Header.Get("Upgrade") != "":
 		return "upgrade"
@@ -62,6 +62,15 @@ func (h *Handler) ingressRefusal(r *http.Request) string {
 		return "too_large"
 	}
 	return ""
+}
+
+// absoluteForm accepts an absolute-form target (RFC 9112 section 3.2.2),
+// such as "http://shop.test/orders": net/http then takes the host from the
+// target and ignores Host, as the RFC requires. Credentials in the target
+// (RFC 9110 section 4.2.4) and other schemes are refused.
+func absoluteForm(r *http.Request) bool {
+	u := r.URL
+	return (u.Scheme == "http" || u.Scheme == "https") && u.Host != "" && u.User == nil && u.Opaque == ""
 }
 
 // rateAddress is the rate key of a client address: an IPv4 address itself,

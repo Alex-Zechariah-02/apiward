@@ -185,11 +185,12 @@ func (v *Verifier) checkClaims(payload []byte, now time.Time) (verifiedToken, st
 		roles = slices.Compact(roles)
 	}
 
-	// RFC 7519: the token is valid before "exp" and from "nbf" onwards.
-	if !now.Before(expires) {
+	// RFC 7519 section 4.1.4: the token is valid before "exp" and from "nbf"
+	// onwards, each widened by the configured leeway for clock difference.
+	if !now.Before(expires.Add(v.skew)) {
 		return verifiedToken{}, "expired"
 	}
-	if now.Before(notBefore) {
+	if now.Add(v.skew).Before(notBefore) {
 		return verifiedToken{}, "not_yet_valid"
 	}
 	return verifiedToken{subject: subject, roles: roles}, ""

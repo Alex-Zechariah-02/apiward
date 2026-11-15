@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/audit"
 	"github.com/Alex-Zechariah-02/apiward/internal/compile"
@@ -26,15 +27,18 @@ func (panicAuthority) Current() *compile.Generation { panic("broken authority") 
 func TestPanicLeavesFailedRecord(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "audit.log")
 	log := audit.OpenAudit(path, audit.Settings{MaxBytes: 1 << 20, MaxFiles: 2})
+	t.Cleanup(func() { log.Close(context.Background()) })
 	forward := func(http.ResponseWriter, *http.Request) error { return nil }
-	h, err := New(Deps{Authority: panicAuthority{}, Audit: log, Observations: monitor.New(policy.DefaultWindow, policy.DefaultAPIs), Limiter: NewLimiter(policy.DefaultRateCounters), Clock: NewClock(), Forward: forward})
+	h, err := New(Deps{Authority: panicAuthority{}, Audit: log, Observations: monitor.New(policy.DefaultWindow, policy.DefaultAPIs), Limiter: NewLimiter(policy.DefaultRateCounters), Clock: NewClock(), AuditTimeout: time.Second, Forward: forward})
 	if err != nil {
 		t.Fatal(err)
 	}
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/items", nil))
-	if rec.Code != http.StatusInternalServerError || !strings.Contains(rec.Body.String(), "internal_error") {
-		t.Fatalf("response %d %s, want 500 internal_error", rec.Code, rec.Body)
+	// Exactly the error and the request ID: no panic value or stack.
+	want := `{"error":"internal_error","request_id":"` + rec.Header().Get("X-Request-Id") + "\"}\n"
+	if rec.Code != http.StatusInternalServerError || rec.Body.String() != want {
+		t.Fatalf("response %d %q, want 500 %q", rec.Code, rec.Body, want)
 	}
 	if err := log.Close(context.Background()); err != nil {
 		t.Fatal(err)
