@@ -103,9 +103,9 @@ export function Shell(props: {
   // Each change of view rereads the status.
   useRereadWhen(view, status.refresh)
 
-  // While a trial or temporary rule is active the status is reread every
-  // 3 s, so a change made elsewhere or a deadline the gateway enforces shows
-  // within seconds; otherwise only the Overview rereads it, every 10 s.
+  // The status is reread every second while the page is visible, so a change
+  // made elsewhere or a deadline the gateway enforces shows at once; while a
+  // trial or temporary rule is active it goes on after the inactivity pause.
   const facts = status.last?.body
   const critical = facts !== undefined && (facts.provisional !== undefined || (facts.overrides?.length ?? 0) > 0)
   usePoll(status.refresh, liveMs, critical)

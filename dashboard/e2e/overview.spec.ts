@@ -222,8 +222,11 @@ test.describe.serial('dashboard', () => {
         document.dispatchEvent(new Event('visibilitychange'))
       }, state)
     try {
-      const start = adminRequests.length
       await setVisibility('hidden')
+      // A read the 1 s status poll began before the tab was hidden can be
+      // reported a moment later; count only once it has been.
+      await admin.waitForTimeout(500)
+      const start = adminRequests.length
       await admin.waitForTimeout(2000)
       expect(adminRequests.slice(start)).toEqual([])
       const shownAt = Date.now()
