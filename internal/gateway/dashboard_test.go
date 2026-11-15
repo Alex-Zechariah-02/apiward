@@ -82,6 +82,11 @@ func TestDashboardFiles(t *testing.T) {
 		{"/assets/font.woff2", "identity", "font/woff2", "wOF2", "", assetCaching},
 		{"/assets/packed.js", "br, gzip", "text/javascript; charset=utf-8", packed, "gzip", assetCaching},
 		{"/assets/packed.js", "gzip;q=0, identity", "text/javascript; charset=utf-8", "console.log('packed')", "", assetCaching},
+		// The weight counts wherever it stands; a malformed one refuses.
+		{"/assets/packed.js", "gzip;level=1;q=0", "text/javascript; charset=utf-8", "console.log('packed')", "", assetCaching},
+		{"/assets/packed.js", "gzip;q=0x1p-1", "text/javascript; charset=utf-8", "console.log('packed')", "", assetCaching},
+		{"/assets/packed.js", "*;q=1.5", "text/javascript; charset=utf-8", "console.log('packed')", "", assetCaching},
+		{"/assets/packed.js", "gzip;Q=0.5", "text/javascript; charset=utf-8", packed, "gzip", assetCaching},
 	}
 	for _, f := range served {
 		code, body, header := e.AdminSend(http.MethodGet, f.path, "", "Accept-Encoding", f.accept)
@@ -149,8 +154,8 @@ func TestEmbeddedUI(t *testing.T) {
 	if err != nil || source != uiDirectory {
 		t.Fatalf("directory and embedded: %q %v", source, err)
 	}
-	if page, _ := fs.ReadFile(files, "index.html"); string(page) == "embedded page" {
-		t.Error("the embedded build overrode the operator's directory")
+	if page, err := fs.ReadFile(files, "index.html"); err != nil || string(page) == "embedded page" {
+		t.Errorf("the operator's directory was not served: %q %v", page, err)
 	}
 	files, source, err = dashboardFiles("", embedded)
 	if err != nil || source != uiEmbedded {
@@ -158,7 +163,7 @@ func TestEmbeddedUI(t *testing.T) {
 	}
 	w := httptest.NewRecorder()
 	dashboard(files).ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/", nil))
-	if w.Code != http.StatusOK || w.Body.String() != "embedded page" || w.Header().Get("Content-Security-Policy") != uiPolicy {
+	if w.Code != http.StatusOK || w.Body.String() != "embedded page" || w.Header().Get("Content-Security-Policy") != uiPolicy || w.Header().Get("Cache-Control") != pageCaching {
 		t.Errorf("embedded page: %d %q %v", w.Code, w.Body, w.Header())
 	}
 	if files, source, err = dashboardFiles("", nil); files != nil || source != uiNone || err != nil {
@@ -166,5 +171,29 @@ func TestEmbeddedUI(t *testing.T) {
 	}
 	if _, _, err = dashboardFiles("", fstest.MapFS{"assets/app.js": {}}); err == nil {
 		t.Error("an embedded build without index.html was accepted")
+	}
+	escapingLink(t, dir)
+}
+
+// escapingLink: a link in the admin_ui directory to a file outside it serves
+// nothing.
+func escapingLink(t *testing.T, dir string) {
+	outside := filepath.Join(t.TempDir(), "outside.js")
+	if err := os.WriteFile(outside, []byte("outside"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(dir, "assets", "link.js")); err != nil {
+		t.Skipf("this host cannot create links: %v", err)
+	}
+	files, _, err := dashboardFiles(dir, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/assets/link.js", nil)
+	r.SetPathValue("file", "link.js")
+	dashboard(files).ServeHTTP(w, r)
+	if w.Code != http.StatusNotFound || strings.Contains(w.Body.String(), "outside") {
+		t.Errorf("link out of the directory: %d %q", w.Code, w.Body)
 	}
 }
