@@ -113,6 +113,12 @@ test.describe.serial('dashboard', () => {
     // A refused change keeps what was typed: only the wrong field is corrected.
     await expect(admin.getByLabel('New Password', { exact: true })).toHaveValue(changed)
     await expect(admin.getByLabel('Repeat the New Password')).toHaveValue(changed)
+    // A common password passes the length check but the gateway refuses it.
+    await admin.getByLabel('Current Password').fill(password)
+    for (const label of ['New Password', 'Repeat the New Password']) await admin.getByLabel(label, { exact: true }).fill('qwerty123456789')
+    await admin.getByRole('button', { name: 'Change Password' }).click()
+    await expect(admin.getByText('This password is too common. Choose another.')).toBeVisible()
+    for (const label of ['New Password', 'Repeat the New Password']) await admin.getByLabel(label, { exact: true }).fill(changed)
     await admin.getByLabel('Current Password').fill(password)
     await admin.getByRole('button', { name: 'Change Password' }).click()
     await expect(admin.getByText('Password changed. Every session of this administrator has ended; sign in with the new password.')).toBeVisible()

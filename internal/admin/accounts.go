@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Alex-Zechariah-02/apiward/internal/monitor"
 	"github.com/Alex-Zechariah-02/apiward/internal/pipeline"
 	"github.com/Alex-Zechariah-02/apiward/internal/policy"
 	"github.com/Alex-Zechariah-02/apiward/internal/store"
@@ -46,6 +47,8 @@ func (s *Server) handleKeys(w http.ResponseWriter, r *http.Request, who caller) 
 	pipeline.WriteJSON(w, http.StatusOK, list{Items: items})
 }
 
+// noRequestBody refuses a body on a route that takes no input, so nothing a
+// client sends is silently ignored.
 func noRequestBody(w http.ResponseWriter, r *http.Request) bool {
 	if r.ContentLength != 0 || len(r.TransferEncoding) != 0 {
 		adminError(w, http.StatusBadRequest, "bad_request", "")
@@ -82,6 +85,8 @@ func (s *Server) handleBlockedAccounts(w http.ResponseWriter, r *http.Request, w
 		adminError(w, http.StatusServiceUnavailable, "gateway_unavailable", "")
 		return
 	}
+	// The list is answered whole: it is the published set the gateway holds
+	// in memory and checks on every request.
 	items := slices.Collect(maps.Values(*current))
 	if items == nil {
 		items = []store.BlockedAccount{}
@@ -136,7 +141,7 @@ func (s *Server) handleUnblockAccount(w http.ResponseWriter, r *http.Request, wh
 func (s *Server) handleAdministrators(w http.ResponseWriter, r *http.Request, who caller) {
 	entries, err := s.store.Administrators(r.Context())
 	if err != nil {
-		adminError(w, http.StatusServiceUnavailable, "gateway_unavailable", "")
+		s.fail(w, r, &who, "gateway_unavailable", monitor.FailStore, err)
 		return
 	}
 	type view struct {

@@ -17,6 +17,8 @@ import (
 // alerts. They advise only: nothing here blocks, changes or activates
 // anything, and nothing runs on the request path. Each answer names the
 // rule set version so findings can be traced to the rules that made them.
+// The values below are the published rule set AdviceRules; changing one is a
+// new rule set version, never a setting.
 const (
 	AdviceRules = "checks-0.6"
 
@@ -150,6 +152,14 @@ func UnusedPermissions(g *compile.Generation, use LogUse, missing []string, now 
 	}
 	SortFindings(report.Items)
 	return report
+}
+
+// UnreadLog is the unused-permission report when the security log files
+// could not be read: nothing is listed, and withheld says why.
+func UnreadLog() UnusedReport {
+	reason := "The security log files could not be read."
+	return UnusedReport{FilesSearched: []string{}, FilesMissing: []string{}, Withheld: &reason, Items: []Finding{},
+		MinMinute: int(unusedMinSpan / time.Minute), MinCount: unusedMinRequests}
 }
 
 // RefusalSpike applies the spike rule to the retained observations.

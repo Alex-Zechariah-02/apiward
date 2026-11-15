@@ -5,6 +5,7 @@ package monitor
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -25,7 +26,9 @@ var ErrCursorGone = errors.New("the file the search stopped in is no longer pres
 // scan bytes, until limit records match. Only the final record of each
 // request (request.rejected or request.forwarded) is read, as the live views
 // do. A line still being written at the end of the active file is skipped.
-func Search(dir string, files []string, start *Cursor, query Query, limit int, scan int64) (Result, error) {
+// The search stops with ctx's error when ctx ends, such as when the client
+// that asked has gone.
+func Search(ctx context.Context, dir string, files []string, start *Cursor, query Query, limit int, scan int64) (Result, error) {
 	result := Result{Items: []RequestView{}, Searched: []string{}}
 	index, offset := 0, int64(-1) // -1 reads a file from its end
 	if start != nil {
@@ -61,7 +64,7 @@ func Search(dir string, files []string, start *Cursor, query Query, limit int, s
 			return result, nil
 		}
 		result.Searched = append(result.Searched, name)
-		done, err := scanSecurityLogFile(filepath.Join(dir, name), name, first, offset, query, limit, &budget, &result)
+		done, err := scanSecurityLogFile(ctx, filepath.Join(dir, name), name, first, offset, query, limit, &budget, &result)
 		if err != nil || done {
 			return result, err
 		}
@@ -72,8 +75,8 @@ func Search(dir string, files []string, start *Cursor, query Query, limit int, s
 // scanSecurityLogFile searches one file backwards from end (-1: its logical
 // size). It reports done when the search stops inside the file, with
 // result.next set where it stopped.
-func scanSecurityLogFile(path, name, first string, end int64, query Query, limit int, budget *int64, result *Result) (bool, error) {
-	stop, stopped, err := scanLinesBackward(path, end, budget, func(line []byte, _ int64) bool {
+func scanSecurityLogFile(ctx context.Context, path, name, first string, end int64, query Query, limit int, budget *int64, result *Result) (bool, error) {
+	stop, stopped, err := scanLinesBackward(ctx, path, end, budget, func(line []byte, _ int64) bool {
 		if view, ok := securityLogRecord(line, query, result); ok {
 			result.Items = append(result.Items, view)
 			return len(result.Items) >= limit
@@ -93,8 +96,8 @@ func scanSecurityLogFile(path, name, first string, end int64, query Query, limit
 // first, from end (-1: its logical end, audit.End), reading at most *budget bytes in
 // windows. visit returns true to stop. stop is where reading can resume:
 // lines before it are unread. A line still being written at the end of the
-// file is skipped.
-func scanLinesBackward(path string, end int64, budget *int64, visit func(line []byte, lineStart int64) bool) (stop int64, stopped bool, err error) {
+// file is skipped. It returns ctx's error once ctx ends.
+func scanLinesBackward(ctx context.Context, path string, end int64, budget *int64, visit func(line []byte, lineStart int64) bool) (stop int64, stopped bool, err error) {
 	file, err := openLog(path)
 	if err != nil {
 		return 0, false, err
@@ -106,6 +109,9 @@ func scanLinesBackward(path string, end int64, budget *int64, visit func(line []
 		}
 	}
 	for end > 0 {
+		if err := ctx.Err(); err != nil {
+			return 0, false, err
+		}
 		if *budget <= 0 {
 			return end, true, nil
 		}
@@ -195,6 +201,7 @@ func RecentRecord(path string, span int64) (int64, time.Time, error) {
 	// one that starts exactly at the span's first byte counts.
 	start := max(end-span-1, 0)
 	section := io.NewSectionReader(file, start, end-start)
+	// Room for the partial record skipped first and one whole record after.
 	reader := bufio.NewReader(io.LimitReader(section, 2*(audit.MaxRecordBytes+1)))
 	if end > span {
 		skipped, err := reader.ReadBytes('\n')
@@ -254,6 +261,8 @@ func EncodeCursor(c Cursor) string {
 func DecodeCursor(text string) *Cursor {
 	data, err := base64.RawURLEncoding.DecodeString(text)
 	var c Cursor
+	// A cursor (file name, record ID, offset) is under 200 bytes; a larger
+	// one is refused before it is decoded.
 	if err != nil || len(data) > 512 || policy.DecodeStrict(data, &c) != nil {
 		return nil
 	}

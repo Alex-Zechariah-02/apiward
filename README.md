@@ -119,6 +119,8 @@ The settings file is described in [docs/settings.md](docs/settings.md).
 |---|---|
 | [docs/policy.md](docs/policy.md) | Policy document and policy changes |
 | [docs/settings.md](docs/settings.md) | Settings file |
+| [docs/keys.md](docs/keys.md) | Keys, certificates, passwords and sign-in rules |
+| [docs/logs.md](docs/logs.md) | Security log records and how to read them |
 | [docs/openapi.md](docs/openapi.md) | OpenAPI import and export |
 | [docs/embedding.md](docs/embedding.md) | Embedding and modules |
 | [docs/container.md](docs/container.md) | Container image |

@@ -174,21 +174,27 @@ export function AdviceView({ admin }: ViewProps) {
             <section className="section card" aria-labelledby="unused-title">
               <div className="card-head card-head-pad">
                 <h2 id="unused-title">Unused Permissions</h2>
-                <span className="muted">
-                  Based on {body.unused_permits.requests.toLocaleString()} requests in the security log
-                  {body.unused_permits.since ? (
-                    <>
-                      {' '}
-                      since <Time value={body.unused_permits.since} />
-                    </>
-                  ) : (
-                    ''
-                  )}
-                  .
-                </span>
+                {/* The active file is always searched when the log can be read, so
+                    an empty list means the log could not be read at all. */}
+                {body.unused_permits.files_searched.length === 0 ? (
+                  <span className="muted">The security log was not read.</span>
+                ) : (
+                  <span className="muted">
+                    Based on {body.unused_permits.requests.toLocaleString()} requests in the security log
+                    {body.unused_permits.since ? (
+                      <>
+                        {' '}
+                        since <Time value={body.unused_permits.since} />
+                      </>
+                    ) : (
+                      ''
+                    )}
+                    .
+                  </span>
+                )}
               </div>
               <div className="card-body">
-                {body.unused_permits.files_missing.length || !body.unused_permits.complete ? (
+                {body.unused_permits.files_searched.length > 0 && (body.unused_permits.files_missing.length || !body.unused_permits.complete) ? (
                   <p className="hint card-pad-x">
                     {body.unused_permits.files_missing.length ? `Not read, moved away from the gateway: ${body.unused_permits.files_missing.join(', ')}. ` : ''}
                     {body.unused_permits.complete ? '' : 'Only the newest part of the log was read; older requests may have used these permissions.'}
@@ -196,8 +202,10 @@ export function AdviceView({ admin }: ViewProps) {
                 ) : null}
                 {body.unused_permits.withheld ? (
                   <p className="hint card-empty">
-                    {body.unused_permits.withheld} Shown once the security log covers {body.unused_permits.min_minutes} minutes and at least{' '}
-                    {body.unused_permits.min_requests.toLocaleString()} requests.
+                    {body.unused_permits.withheld}{' '}
+                    {body.unused_permits.files_searched.length === 0
+                      ? 'The gateway logged the cause; check its log, then refresh.'
+                      : `Shown once the security log covers ${body.unused_permits.min_minutes} minutes and at least ${body.unused_permits.min_requests.toLocaleString()} requests.`}
                   </p>
                 ) : body.unused_permits.items.length ? (
                   <FindingRows items={body.unused_permits.items} label="Unused Permissions" />

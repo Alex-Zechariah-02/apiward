@@ -109,8 +109,7 @@ func TestLifecycleAuditFailure(t *testing.T) {
 	}
 
 	// No intent record: refused, nothing committed.
-	e.Start(gatewaytest.Binaries.Fault, "GATEWAY_FAULT=audit-full")
-	harness = e.MustLogin(gatewaytest.HarnessAdmin, gatewaytest.HarnessPassword)
+	harness = e.StartFailingAudit("audit-full")
 	if code, outcome, body := e.Activate(harness, candidate, 60, `"r1"`, "audit-full-activation"); code != http.StatusServiceUnavailable ||
 		outcome.Reason != "AUDIT_UNAVAILABLE" {
 		t.Fatalf("activation without audit: %d %s", code, body)
@@ -130,6 +129,7 @@ func TestLifecycleAuditFailure(t *testing.T) {
 		{"confirm", "cpa.confirmed", "audit-outcome-confirmation", 2},
 	} {
 		e.Start(gatewaytest.Binaries.Fault, "GATEWAY_FAULT=audit-fail-published")
+		e.Status() // signs the harness in while the log still works
 		harness = e.MustLogin(gatewaytest.HarnessAdmin, gatewaytest.HarnessPassword)
 		var outcome controller.Outcome
 		if step.action == "activate" {

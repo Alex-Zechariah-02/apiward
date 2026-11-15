@@ -17,7 +17,7 @@ const (
 	AdminCookie  = "__Host-gateway-admin"
 	AdminCSRF    = "X-CSRF-Token"
 	NameLimit    = 5  // failed sign-ins per name before it is throttled
-	WindowLimit  = 50 // failed sign-ins per window before all are throttled
+	WindowLimit  = 50 // failed sign-ins from one address per window before it is throttled
 	HistoryKinds = 16 // kinds one history filter may name
 	// PasswordPrefix starts every stored password: argon2id, 19 MiB, 2 passes,
 	// 1 thread.

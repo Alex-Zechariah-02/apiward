@@ -27,6 +27,7 @@ func TestAuditRotationAndRetention(t *testing.T) {
 	e.WriteConfig(gatewaytest.ConfigOptions{Audit: map[string]any{"audit_max_bytes": 8192, "audit_max_files": 3}})
 	gatewaytest.Seed(t, e.Database, e.Policy(e.A, false), gatewaytest.SeedOptions{})
 	e.Start(gatewaytest.Binaries.Plain)
+	e.Status() // signs the harness in while the log has room
 
 	// Concurrent clients until admission stops.
 	var mu sync.Mutex

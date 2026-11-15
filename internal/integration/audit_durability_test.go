@@ -105,6 +105,7 @@ func TestIncompleteRecordIsRecovered(t *testing.T) {
 	complete = audit.Content(complete)
 
 	e.Start(gatewaytest.Binaries.Fault, "GATEWAY_FAULT=audit-partial")
+	e.Status() // signs the harness in while the log still works
 	if code, _ := e.Get("/a/x"); code != http.StatusServiceUnavailable {
 		t.Fatalf("admission with a partial write: %d", code)
 	}
@@ -210,6 +211,7 @@ func TestOutcomeFailureStopsLaterAdmissions(t *testing.T) {
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, gatewaytest.FixturePolicy(fixtures), gatewaytest.SeedOptions{})
 	e.Start(gatewaytest.Binaries.Fault, "GATEWAY_FAULT=audit-fail-outcome")
+	e.Status() // signs the harness in while the log still works
 	orders := fixtures["orders"]
 	seedState := orders.State().SHA256
 
@@ -255,7 +257,7 @@ func TestAuditFailureBlocksFixtureForwarding(t *testing.T) {
 	fixtures := gatewaytest.StartFixtures(t)
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, gatewaytest.FixturePolicy(fixtures), gatewaytest.SeedOptions{})
-	e.Start(gatewaytest.Binaries.Fault, "GATEWAY_FAULT=audit-sync")
+	e.StartFailingAudit("audit-sync")
 
 	c := gatewaytest.LoadCatalogue(t)
 	for _, sc := range c.Scenarios {

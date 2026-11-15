@@ -20,6 +20,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -50,6 +51,13 @@ func TestEmbedServes(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() { done <- run(ctx, config, listener, slog.New(slog.DiscardHandler)) }()
+	// The gateway stops also when an assertion ends the test early, before the
+	// temporary directory holding its files is removed.
+	stop := sync.OnceValue(func() error {
+		cancel()
+		return <-done
+	})
+	t.Cleanup(func() { stop() })
 	base := "http://" + listener.Addr().String()
 
 	expect := func(method, path string, status int, body string) {
@@ -68,8 +76,7 @@ func TestEmbedServes(t *testing.T) {
 	expect("GET", "/", http.StatusOK, "Host page. The API is served under /api/.\n")
 	expect("GET", "/api/items", http.StatusOK, "items from /items")
 	expect("DELETE", "/api/items", http.StatusForbidden, "")
-	cancel()
-	if err := <-done; err != nil {
+	if err := stop(); err != nil {
 		t.Fatalf("run: %v", err)
 	}
 }

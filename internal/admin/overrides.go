@@ -9,6 +9,7 @@ import (
 	"strconv"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/controller"
+	"github.com/Alex-Zechariah-02/apiward/internal/monitor"
 	"github.com/Alex-Zechariah-02/apiward/internal/pipeline"
 	"github.com/Alex-Zechariah-02/apiward/internal/store"
 )
@@ -20,8 +21,7 @@ import (
 func (s *Server) handleOverrides(w http.ResponseWriter, r *http.Request, who caller) {
 	a, err := s.store.Load(r.Context())
 	if err != nil {
-		s.logger.Error("reading authority", "error", err)
-		adminError(w, http.StatusServiceUnavailable, "unavailable", "")
+		s.fail(w, r, &who, "unavailable", monitor.FailStore, err)
 		return
 	}
 	view := map[string]any{
@@ -48,7 +48,7 @@ func (s *Server) handleOverride(w http.ResponseWriter, r *http.Request, who call
 	o, found, err := s.store.Override(r.Context(), id)
 	switch {
 	case err != nil:
-		adminError(w, http.StatusServiceUnavailable, "unavailable", "")
+		s.fail(w, r, &who, "unavailable", monitor.FailStore, err)
 	case !found:
 		adminError(w, http.StatusNotFound, "not_found", "")
 	default:
@@ -68,7 +68,7 @@ func (s *Server) handleOverrideHistory(w http.ResponseWriter, r *http.Request, w
 	}
 	items, err := s.store.Overrides(r.Context(), `WHERE id > ? ORDER BY id LIMIT ?`, cursor, limit)
 	if err != nil {
-		adminError(w, http.StatusServiceUnavailable, "unavailable", "")
+		s.fail(w, r, &who, "unavailable", monitor.FailStore, err)
 		return
 	}
 	result := list{Items: items}

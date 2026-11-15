@@ -182,8 +182,9 @@ test.describe.serial('dashboard', () => {
     record('audit-pending-shown-applied', { subject, status: blocked.status })
   })
 
-  test('a draft saved while the gateway cannot read it back is shown as applied with a problem, never as refused', async () => {
-    // The gateway stores the draft but cannot read its record for the answer.
+  test('a draft saved while the gateway cannot read it back is shown as saved with its ID, never as refused', async () => {
+    // The gateway stores the draft but cannot read its record for the answer;
+    // it still answers with the draft's ID from the receipt.
     await demo.stop()
     await demo.start({ fault: 'candidate-read-unavailable' })
     await admin.reload()
@@ -195,13 +196,11 @@ test.describe.serial('dashboard', () => {
     await advanced(admin)
     await admin.getByLabel('Complete Policy Document (JSON)').fill(JSON.stringify(policy))
     await admin.getByRole('button', { name: 'Save Draft and Check' }).click()
-    const notice = admin.getByRole('alert').filter({ hasText: 'Applied, but the answer reports a problem' })
-    await expect(notice).toHaveClass(/tone-pending/)
-    await expect(moreDetail(notice, 'HTTP status')).toHaveText('503')
-    await expect(moreDetail(notice, 'Error code')).toHaveText('STORE_ERROR')
+    await expect(admin.getByText(/The gateway checked it: saved as draft change \d+\./)).toBeVisible()
     await expect(admin.locator('.notice.tone-refused')).toHaveCount(0)
     const saved = (await drafts()).filter((id) => !before.includes(id))
     expect(saved).toHaveLength(1)
+    await expect(admin.getByText(`The gateway checked it: saved as draft change ${saved[0]}.`)).toBeVisible()
 
     // A normal restart; the draft is withdrawn again for the tests that follow.
     await demo.stop()
@@ -209,7 +208,7 @@ test.describe.serial('dashboard', () => {
     await admin.reload()
     await signIn(admin, 'admin', password)
     expect((await adminCall('DELETE', `/admin/candidates/${saved[0]}`, undefined, { 'Idempotency-Key': crypto.randomUUID() })).status).toBe(200)
-    record('draft-read-failure-shown-applied', { candidate: saved[0] })
+    record('draft-read-failure-shown-saved', { candidate: saved[0] })
   })
 
   test('a restore from a backup is shown as recovery required, and a deny-all recovery base established in the dashboard makes the gateway ready again', async () => {

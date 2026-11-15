@@ -235,6 +235,23 @@ func EnrolmentSecret(t *testing.T, output string) string {
 	return ""
 }
 
+// StartFailingAudit starts the fault-injection build with the security log
+// fault named, signs the harness administrator in while the log still works
+// (a sign-in needs its record written), then arms the fault. It returns a
+// session of the harness administrator.
+func (e *Env) StartFailingAudit(fault string) AdminSession {
+	e.T.Helper()
+	armed := filepath.Join(e.Dir, "fault-armed")
+	os.Remove(armed)
+	e.Start(Binaries.Fault, "GATEWAY_FAULT="+fault, "GATEWAY_FAULT_ARMED="+armed)
+	e.Status()
+	session := e.MustLogin(HarnessAdmin, HarnessPassword)
+	if err := os.WriteFile(armed, nil, 0o600); err != nil {
+		e.T.Fatal(err)
+	}
+	return session
+}
+
 // MustLogin is Login that fails the test unless a session is created.
 func (e *Env) MustLogin(name, password string) AdminSession {
 	e.T.Helper()

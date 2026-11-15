@@ -40,8 +40,11 @@ func outcomeKind(t store.TransitionRecord) string {
 	return "transition.committed"
 }
 
+// commitAudit waits for e to be durable within the audit wait. The wait does
+// not end with the request's own deadline: a record of a change already made
+// must not be lost because the request ran long.
 func (c *Controller) commitAudit(ctx context.Context, e audit.Event) error {
-	ctx, cancel := context.WithTimeout(ctx, c.config.AuditTimeout)
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), c.config.AuditTimeout)
 	defer cancel()
 	return c.audit.Commit(ctx, e)
 }

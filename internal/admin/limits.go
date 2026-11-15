@@ -22,8 +22,7 @@ func (s *Server) handleLimits(w http.ResponseWriter, r *http.Request, who caller
 	auditBytes, auditBytesLimit, auditFiles, auditFilesLimit := s.audit.Usage()
 	document, err := s.confirmedBytes(r.Context())
 	if err != nil {
-		s.logger.Error("reading the confirmed policy's size", "error", err)
-		adminError(w, http.StatusServiceUnavailable, "unavailable", "")
+		s.fail(w, r, &who, "unavailable", monitor.FailStore, err)
 		return
 	}
 	limit := func(used, max int64) map[string]int64 { return map[string]int64{"used": used, "max": max} }

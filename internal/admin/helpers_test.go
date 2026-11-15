@@ -23,13 +23,23 @@ var issuer = issuertest.New(2048)
 // never served.
 func openController(t *testing.T) *controller.Controller {
 	t.Helper()
+	return openSeeded(t, storetest.Options{}, nil)
+}
+
+// openSeeded is openController over a seed with opts; adjust, when set,
+// changes the database before the controller opens it.
+func openSeeded(t *testing.T, opts storetest.Options, adjust func(database string)) *controller.Controller {
+	t.Helper()
 	dir := t.TempDir()
 	key := filepath.Join(dir, "issuer.pem")
 	if err := os.WriteFile(key, issuer.PublicPEM(), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	database := filepath.Join(dir, "gateway.db")
-	storetest.Seed(t, database, storetest.Protected(), storetest.Options{})
+	storetest.Seed(t, database, storetest.Protected(), opts)
+	if adjust != nil {
+		adjust(database)
+	}
 	c, err := controller.Prepare(controller.Config{
 		Database: database, AuditLog: filepath.Join(dir, "audit.log"), AdminListen: "127.0.0.1:1",
 		JWT: pipeline.TrustConfig{Issuer: issuertest.Name, Audience: issuertest.Audience,

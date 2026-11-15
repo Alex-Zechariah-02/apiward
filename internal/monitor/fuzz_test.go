@@ -58,7 +58,7 @@ func FuzzSearch(f *testing.F) {
 		if offset >= -1 {
 			start = &Cursor{File: "audit.log", First: first, Offset: offset}
 		}
-		result, err := Search(dir, []string{"audit.log"}, start, query, 3, 1<<20)
+		result, err := Search(t.Context(), dir, []string{"audit.log"}, start, query, 3, 1<<20)
 		if err != nil {
 			return
 		}

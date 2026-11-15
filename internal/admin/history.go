@@ -9,6 +9,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/Alex-Zechariah-02/apiward/internal/monitor"
 	"github.com/Alex-Zechariah-02/apiward/internal/pipeline"
 	"github.com/Alex-Zechariah-02/apiward/internal/policy"
 	"github.com/Alex-Zechariah-02/apiward/internal/store"
@@ -34,7 +35,7 @@ func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request, who calle
 	}
 	items, err := s.store.History(r.Context(), filter, cursor, limit)
 	if err != nil {
-		adminError(w, http.StatusServiceUnavailable, "unavailable", "")
+		s.fail(w, r, &who, "unavailable", monitor.FailStore, err)
 		return
 	}
 	result := list{Items: items}
@@ -102,7 +103,7 @@ func (s *Server) handleHistoryEntry(w http.ResponseWriter, r *http.Request, who 
 	entry, found, err := s.store.HistoryEntry(r.Context(), r.PathValue("id"))
 	switch {
 	case err != nil:
-		adminError(w, http.StatusServiceUnavailable, "unavailable", "")
+		s.fail(w, r, &who, "unavailable", monitor.FailStore, err)
 	case !found:
 		adminError(w, http.StatusNotFound, "not_found", "")
 	default:

@@ -106,7 +106,14 @@ function EnrolForm(props: { enrolled: () => void }) {
   const [reply, setReply] = useState<Reply<unknown> | null>(null)
   const passwordBytes = new TextEncoder().encode(password).length
   const mismatch = repeat !== '' && repeat !== password ? 'The two passwords differ.' : undefined
+  // 15 to 256 bytes is the gateway's password rule; checking it here saves a
+  // request the gateway would refuse.
   const length = password !== '' && (passwordBytes < 15 || passwordBytes > 256) ? 'Use 15 to 256 bytes.' : undefined
+  // With the length checked here, the gateway refuses the password only when
+  // it is on its list of common passwords; the note lasts until a new one is typed.
+  const commonReply = reply?.kind === 'refused' && reply.field === 'password'
+  const common = commonReply && password === '' ? 'This password is too common. Choose another.' : undefined
+  const passwordError = length ?? common
 
   async function submit(event: FormEvent) {
     event.preventDefault()
@@ -133,15 +140,15 @@ function EnrolForm(props: { enrolled: () => void }) {
         <Field id={`${id}-secret`} label="Enrolment Secret">
           <input id={`${id}-secret`} className="input" type="password" autoComplete="off" required value={secret} onChange={(e) => setSecret(e.target.value)} />
         </Field>
-        <Field id={`${id}-password`} label="New Password" hint="15 to 256 bytes." error={length}>
+        <Field id={`${id}-password`} label="New Password" hint="15 to 256 bytes; not a commonly used password." error={passwordError}>
           <input
             id={`${id}-password`}
             className="input"
             type="password"
             autoComplete="new-password"
             required
-            aria-invalid={length ? true : undefined}
-            aria-describedby={describedBy(`${id}-password`, 'hint', length)}
+            aria-invalid={passwordError ? true : undefined}
+            aria-describedby={describedBy(`${id}-password`, 'hint', passwordError)}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
           />
@@ -173,7 +180,7 @@ function EnrolForm(props: { enrolled: () => void }) {
               Go to Sign-In
             </button>
           </div>
-        ) : reply ? (
+        ) : reply && !commonReply ? (
           <Problem reply={reply} />
         ) : null}
       </div>

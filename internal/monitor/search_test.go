@@ -3,7 +3,9 @@
 package monitor
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -68,7 +70,7 @@ func TestSecurityLogSearch(t *testing.T) {
 
 	// Newest first across files; administrator records and the incomplete
 	// line are not request results.
-	all, err := Search(dir, files, nil, Query{}, 100, PageScan)
+	all, err := Search(t.Context(), dir, files, nil, Query{}, 100, PageScan)
 	want := []string{"c", "b", "a", "9", "8", "7", "6", "5", "4", "3", "2", "1"}
 	if err != nil || !slices.Equal(refsOf(all.Items), want) || all.Next != nil || all.Unreadable != 0 {
 		t.Fatalf("all: %v next %v unreadable %d (%v)", refsOf(all.Items), all.Next, all.Unreadable, err)
@@ -85,7 +87,7 @@ func TestSecurityLogSearch(t *testing.T) {
 		got := []string{}
 		var cursor *Cursor
 		for page := 0; page < 50; page++ {
-			result, err := Search(dir, files, cursor, Query{}, tc.limit, tc.scan)
+			result, err := Search(t.Context(), dir, files, cursor, Query{}, tc.limit, tc.scan)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -111,7 +113,7 @@ func TestSecurityLogSearch(t *testing.T) {
 		{Query{from: time.Date(2026, 11, 2, 9, 0, 5, 0, time.UTC), to: time.Date(2026, 11, 2, 9, 0, 8, 0, time.UTC)}, []string{"7", "6", "5"}},
 		{Query{operation: "other"}, []string{}},
 	} {
-		result, err := Search(dir, files, nil, tc.query, 100, PageScan)
+		result, err := Search(t.Context(), dir, files, nil, tc.query, 100, PageScan)
 		if err != nil || !slices.Equal(refsOf(result.Items), tc.want) {
 			t.Errorf("%+v: %v (%v)", tc.query, refsOf(result.Items), err)
 		}
@@ -119,7 +121,7 @@ func TestSecurityLogSearch(t *testing.T) {
 
 	// A page that stopped in the active file resumes after a rotation renamed
 	// it: the cursor finds the file by its first record.
-	first, err := Search(dir, files, nil, Query{}, 2, PageScan)
+	first, err := Search(t.Context(), dir, files, nil, Query{}, 2, PageScan)
 	if err != nil || first.Next == nil || first.Next.File != "audit.log" {
 		t.Fatalf("first page: %+v (%v)", first.Next, err)
 	}
@@ -128,20 +130,20 @@ func TestSecurityLogSearch(t *testing.T) {
 	}
 	writeAuditFile(t, active, 20, 21, "")
 	files, _, _ = LogFiles(active, 8)
-	rest, err := Search(dir, files, first.Next, Query{}, 100, PageScan)
+	rest, err := Search(t.Context(), dir, files, first.Next, Query{}, 100, PageScan)
 	if err != nil || !slices.Equal(refsOf(rest.Items), want[2:]) {
 		t.Errorf("after rotation: %v (%v)", refsOf(rest.Items), err)
 	}
 	// A file moved away to archive ends that cursor clearly.
 	os.Remove(active + ".4")
 	files, _, _ = LogFiles(active, 8)
-	if _, err := Search(dir, files, first.Next, Query{}, 100, PageScan); err != ErrCursorGone {
+	if _, err := Search(t.Context(), dir, files, first.Next, Query{}, 100, PageScan); err != ErrCursorGone {
 		t.Errorf("archived cursor: %v", err)
 	}
 
 	// A damaged request record is counted, not hidden.
 	os.WriteFile(active, []byte(`{"event_id":"x","kind":"request.rejected","time":"not a time"}`+"\n"), 0o600)
-	if result, _ := Search(dir, []string{"audit.log"}, nil, Query{}, 100, PageScan); result.Unreadable != 1 || len(result.Items) != 0 {
+	if result, _ := Search(t.Context(), dir, []string{"audit.log"}, nil, Query{}, 100, PageScan); result.Unreadable != 1 || len(result.Items) != 0 {
 		t.Errorf("damaged record: %+v", result)
 	}
 
@@ -162,7 +164,7 @@ func TestScanAllowsRotation(t *testing.T) {
 	writeAuditFile(t, active, 1, 4, "")
 	budget := int64(1 << 20)
 	var renamed error
-	if _, _, err := scanLinesBackward(active, -1, &budget, func([]byte, int64) bool {
+	if _, _, err := scanLinesBackward(t.Context(), active, -1, &budget, func([]byte, int64) bool {
 		renamed = os.Rename(active, active+".1")
 		return true
 	}); err != nil {
@@ -172,7 +174,7 @@ func TestScanAllowsRotation(t *testing.T) {
 		t.Fatalf("rotation rename during a scan: %v", renamed)
 	}
 	var removed error
-	if _, _, err := scanLinesBackward(active+".1", -1, &budget, func([]byte, int64) bool {
+	if _, _, err := scanLinesBackward(t.Context(), active+".1", -1, &budget, func([]byte, int64) bool {
 		removed = os.Remove(active + ".1")
 		return true
 	}); err != nil {
@@ -183,5 +185,19 @@ func TestScanAllowsRotation(t *testing.T) {
 	}
 	if _, err := os.Stat(active + ".1"); !os.IsNotExist(err) {
 		t.Fatalf("evicted file still listed: %v", err)
+	}
+}
+
+// A search or permission scan whose client has gone stops reading.
+func TestSearchStopsWhenCancelled(t *testing.T) {
+	dir := t.TempDir()
+	writeAuditFile(t, filepath.Join(dir, "audit.log"), 1, 4, "")
+	gone, cancel := context.WithCancel(t.Context())
+	cancel()
+	if _, err := Search(gone, dir, []string{"audit.log"}, nil, Query{}, 100, PageScan); !errors.Is(err, context.Canceled) {
+		t.Fatalf("search: %v", err)
+	}
+	if _, err := (&Summaries{}).PermitUse(gone, dir, []string{"audit.log"}, ExportScan); !errors.Is(err, context.Canceled) {
+		t.Fatalf("permission scan: %v", err)
 	}
 }

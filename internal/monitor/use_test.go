@@ -36,12 +36,12 @@ func TestPermitUseSummaries(t *testing.T) {
 			t.Fatal(err)
 		}
 		for _, budget := range budgets {
-			plain, err := (&Summaries{}).PermitUse(dir, files, budget)
+			plain, err := (&Summaries{}).PermitUse(t.Context(), dir, files, budget)
 			if err != nil {
 				t.Fatal(err)
 			}
 			for _, call := range []string{"first", "second"} {
-				cached, err := cache.PermitUse(dir, files, budget)
+				cached, err := cache.PermitUse(t.Context(), dir, files, budget)
 				if err != nil || !reflect.DeepEqual(cached, plain) {
 					t.Errorf("%s, budget %d, %s call: %+v, uncached %+v (%v)", step, budget, call, cached, plain, err)
 				}

@@ -22,7 +22,7 @@ import (
 func (s *Server) candidateGeneration(w http.ResponseWriter, r *http.Request, id int64) (current, candidate *compile.Generation, ok bool) {
 	stored, found, err := s.store.Candidate(r.Context(), id)
 	if err != nil {
-		adminError(w, http.StatusServiceUnavailable, "gateway_unavailable", "")
+		s.fail(w, r, nil, "gateway_unavailable", monitor.FailStore, err)
 		return nil, nil, false
 	}
 	if !found {

@@ -14,8 +14,10 @@ import (
 	"github.com/Alex-Zechariah-02/apiward/internal/session"
 )
 
-// Repeated failures lock one administrator name, a burst of
-// failures stops every attempt, and concurrent logins stay isolated.
+// Repeated failures lock one administrator name, a burst of failures
+// stops every attempt from that address, and concurrent logins stay isolated.
+// Attempts still being checked count against the name, so a burst beyond its
+// limit is answered 429 until they settle.
 func TestLoginThrottling(t *testing.T) {
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.Policy(e.A, false), gatewaytest.SeedOptions{})
@@ -38,9 +40,13 @@ func TestLoginThrottling(t *testing.T) {
 	close(sessions)
 	close(statuses)
 	for code := range statuses {
-		if code != http.StatusCreated && code != http.StatusServiceUnavailable {
+		if code != http.StatusCreated && code != http.StatusServiceUnavailable && code != http.StatusTooManyRequests {
 			t.Fatalf("concurrent login: %d", code)
 		}
+	}
+	// Successes and shed attempts leave no failure behind.
+	if _, code := e.Login("second", secondPassword); code != http.StatusCreated {
+		t.Fatalf("login after the concurrent burst: %d", code)
 	}
 	seen := map[string]bool{}
 	for s := range sessions {

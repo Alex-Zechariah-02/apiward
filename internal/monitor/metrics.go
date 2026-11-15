@@ -12,6 +12,8 @@ import (
 	"strings"
 )
 
+// durationBuckets are the Prometheus client libraries' default buckets plus
+// 1 ms, as most gateway decisions take a few milliseconds.
 var durationBuckets = [...]float64{.001, .005, .01, .025, .05, .1, .25, .5, 1, 2.5, 5, 10}
 
 type metricLabels struct{ api, operation, decision, code string }
@@ -84,6 +86,26 @@ func (o *Observations) Refuser(listener string) func() {
 	return func() { count.Add(1) }
 }
 
+// AdminFailure is why the Admin API could not answer a request itself: a part
+// of the gateway failed, not the request.
+type AdminFailure int
+
+const (
+	FailStore AdminFailure = iota // the database could not be read
+	FailAudit                     // the security log did not confirm a record
+	FailBusy                      // every password-hashing slot was in use
+	FailLog                       // the security log files could not be read
+	adminFailures
+)
+
+var adminFailureNames = [adminFailures]string{"store", "audit", "busy", "log"}
+
+// String is the failure's label value and refusal reason.
+func (f AdminFailure) String() string { return adminFailureNames[f] }
+
+// AdminFailed counts one Admin API failure.
+func (o *Observations) AdminFailed(f AdminFailure) { o.admin[f].Add(1) }
+
 // Metrics serves the metrics listener from the observations and the
 // published gauges, which published reads from the controller.
 func Metrics(o *Observations, gauges func() []Gauge) http.Handler {
@@ -148,6 +170,10 @@ func serveMetrics(w http.ResponseWriter, r *http.Request, o *Observations, gauge
 	fmt.Fprintln(&body, "# TYPE gateway_listener_connections_refused_total counter")
 	for _, name := range Auxiliary {
 		fmt.Fprintf(&body, "gateway_listener_connections_refused_total{listener=%q} %d\n", name, o.auxiliary[name].Load())
+	}
+	fmt.Fprintln(&body, "# TYPE gateway_admin_failures_total counter")
+	for f := range adminFailures {
+		fmt.Fprintf(&body, "gateway_admin_failures_total{reason=%q} %d\n", f, o.admin[f].Load())
 	}
 	fmt.Fprint(w, body.String())
 }

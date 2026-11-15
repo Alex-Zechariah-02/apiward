@@ -16,12 +16,17 @@ export function Account(props: { admin: Admin; session: SessionInfo; signedOut: 
   const [current, setCurrent] = useState('')
   const [next, setNext] = useState('')
   const [repeat, setRepeat] = useState('')
+  const [submitted, setSubmitted] = useState('')
   const mutation = useMutation<unknown>(props.admin, () => undefined)
   const lastReply = mutation.phase.state === 'replied' ? mutation.phase.reply : undefined
   // 15 to 256 bytes is the gateway's password rule; checking it here saves
   // a request the gateway would refuse.
   const bytes = new TextEncoder().encode(next).length
-  const lengthError = next !== '' && (bytes < 15 || bytes > 256) ? 'Use 15 to 256 bytes.' : fieldError(lastReply, 'new_password')
+  const lengthBad = next !== '' && (bytes < 15 || bytes > 256)
+  // With the length checked here, the gateway refuses a new password only
+  // when it is on its list of common passwords; the note lasts until it is changed.
+  const common = next === submitted && fieldError(lastReply, 'new_password') ? 'This password is too common. Choose another.' : undefined
+  const lengthError = lengthBad ? 'Use 15 to 256 bytes.' : common
   const repeatError = repeat !== '' && repeat !== next ? 'The two passwords differ.' : undefined
   // The client has already confirmed the session is live, so a 401 here can
   // only mean the current password was wrong.
@@ -29,7 +34,8 @@ export function Account(props: { admin: Admin; session: SessionInfo; signedOut: 
 
   async function submit(event: FormEvent) {
     event.preventDefault()
-    if (lengthError || repeatError) return
+    if (lengthBad || repeatError) return
+    setSubmitted(next)
     const reply = await mutation.run({ method: 'PUT', path: '/admin/password', body: { current_password: current, new_password: next } })
     // A refused or unanswered change keeps what was typed, to correct or
     // resend. The change ended this session too, so a background read may
@@ -102,7 +108,7 @@ export function Account(props: { admin: Admin; session: SessionInfo; signedOut: 
               onChange={(e) => setCurrent(e.target.value)}
             />
           </Field>
-          <Field id={`${id}-next`} label="New Password" hint="15 to 256 bytes." error={lengthError}>
+          <Field id={`${id}-next`} label="New Password" hint="15 to 256 bytes; not a commonly used password." error={lengthError}>
             <input
               id={`${id}-next`}
               className="input"

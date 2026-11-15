@@ -59,8 +59,7 @@ func TestDamagedOverrideStateAndAuditFailures(t *testing.T) {
 		e.Start(gatewaytest.Binaries.Plain)
 		e.MustLogin(gatewaytest.HarnessAdmin, gatewaytest.HarnessPassword)
 		e.Stop()
-		e.Start(gatewaytest.Binaries.Fault, "GATEWAY_FAULT=audit-full")
-		harness := e.MustLogin(gatewaytest.HarnessAdmin, gatewaytest.HarnessPassword)
+		harness := e.StartFailingAudit("audit-full")
 		code, outcome, body := e.CreateOverride(harness, permitOverride(store.OverrideException, "READER", "write-a", 600), `"r1"`, "audit-full-create-01")
 		if code != http.StatusServiceUnavailable || outcome.Reason != "AUDIT_UNAVAILABLE" {
 			t.Fatalf("creation without audit: %d %s", code, body)
@@ -136,8 +135,7 @@ func TestDamagedOverrideStateAndAuditFailures(t *testing.T) {
 		harness := e.MustLogin(gatewaytest.HarnessAdmin, gatewaytest.HarnessPassword)
 		o := e.MustOverride(harness, permitOverride(store.OverrideException, "READER", "write-a", 600), `"r1"`, "audit-revoke-create")
 		e.Stop()
-		e.Start(gatewaytest.Binaries.Fault, "GATEWAY_FAULT=audit-full")
-		harness = e.MustLogin(gatewaytest.HarnessAdmin, gatewaytest.HarnessPassword)
+		harness = e.StartFailingAudit("audit-full")
 		code, outcome, body := revokeOverride(e, harness, o.Override, "audit-full-revoke-01")
 		if code != http.StatusServiceUnavailable || outcome.Reason != "AUDIT_UNAVAILABLE" {
 			t.Fatalf("revocation without audit: %d %s", code, body)

@@ -11,6 +11,7 @@ import (
 	"strconv"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/compile"
+	"github.com/Alex-Zechariah-02/apiward/internal/monitor"
 	"github.com/Alex-Zechariah-02/apiward/internal/pipeline"
 	"github.com/Alex-Zechariah-02/apiward/internal/policy"
 	"github.com/Alex-Zechariah-02/apiward/internal/store"
@@ -35,7 +36,7 @@ func (s *Server) handleCandidates(w http.ResponseWriter, r *http.Request, who ca
 	}
 	records, err := s.store.Candidates(r.Context(), cursor, limit)
 	if err != nil {
-		adminError(w, http.StatusServiceUnavailable, "unavailable", "")
+		s.fail(w, r, &who, "unavailable", monitor.FailStore, err)
 		return
 	}
 	items := make([]candidateView, 0, len(records))
@@ -57,7 +58,7 @@ func (s *Server) handleCandidate(w http.ResponseWriter, r *http.Request, who cal
 	record, found, err := s.store.Candidate(r.Context(), id)
 	switch {
 	case err != nil:
-		adminError(w, http.StatusServiceUnavailable, "unavailable", "")
+		s.fail(w, r, &who, "unavailable", monitor.FailStore, err)
 	case !found:
 		adminError(w, http.StatusNotFound, "not_found", "")
 	default:
@@ -93,12 +94,13 @@ func (s *Server) handlePostCandidate(w http.ResponseWriter, r *http.Request, who
 		pipeline.WriteJSON(w, status, outcome)
 		return
 	}
+	// The candidate is committed: a failed re-read still answers 201, with
+	// the ID from the receipt, so the client never retries a saved change.
 	record, _, err := s.store.Candidate(r.Context(), outcome.Candidate)
 	if err != nil {
 		s.logger.Error("reading committed candidate", "error", err)
-		outcome.Reason = "STORE_ERROR"
-		pipeline.WriteJSON(w, http.StatusServiceUnavailable, outcome)
-		return
+		s.observations.AdminFailed(monitor.FailStore)
+		record = store.CandidateRecord{ID: outcome.Candidate}
 	}
 	pipeline.WriteJSON(w, http.StatusCreated, map[string]any{"receipt": outcome, "candidate": candidateView{CandidateRecord: record}})
 }
@@ -191,8 +193,7 @@ func (s *Server) handleProvisional(w http.ResponseWriter, r *http.Request, who c
 	ctx := r.Context()
 	a, err := s.store.Load(ctx)
 	if err != nil {
-		s.logger.Error("reading authority", "error", err)
-		adminError(w, http.StatusServiceUnavailable, "unavailable", "")
+		s.fail(w, r, &who, "unavailable", monitor.FailStore, err)
 		return
 	}
 	w.Header().Set("ETag", policyETag(a.Confirmed))
@@ -212,8 +213,7 @@ func (s *Server) handleProvisional(w http.ResponseWriter, r *http.Request, who c
 		after, err = s.store.Policy(ctx, a.Provisional, s.config.Limits)
 	}
 	if err != nil {
-		s.logger.Error("reading the provisional base", "error", err)
-		adminError(w, http.StatusServiceUnavailable, "unavailable", "")
+		s.fail(w, r, &who, "unavailable", monitor.FailStore, err)
 		return
 	}
 	view := map[string]any{"activation": record, "changes": compile.PolicyChanges(before, after)}
@@ -235,7 +235,7 @@ func (s *Server) handleActivations(w http.ResponseWriter, r *http.Request, who c
 	}
 	items, err := s.store.Activations(r.Context(), cursor, limit)
 	if err != nil {
-		adminError(w, http.StatusServiceUnavailable, "unavailable", "")
+		s.fail(w, r, &who, "unavailable", monitor.FailStore, err)
 		return
 	}
 	result := list{Items: items}

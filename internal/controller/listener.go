@@ -13,6 +13,10 @@ import (
 	"github.com/Alex-Zechariah-02/apiward/internal/connections"
 )
 
+// AdminWriteTimeout is how long the Admin API may take to answer: an answer
+// written later is cut off, so a state-changing request ends by then too.
+const AdminWriteTimeout = 30 * time.Second
+
 // startAdmin serves handler, the Admin API, on its loopback listener, which is
 // separate from the data plane, so client traffic can never reach it. The
 // caller holds c.mu.
@@ -22,11 +26,13 @@ func (c *Controller) startAdmin(handler http.Handler) error {
 		return err
 	}
 	listener = connections.Cap(listener, connections.Auxiliary, c.observations.Refuser("admin"))
+	// A loopback client sends a request in milliseconds; the read bounds
+	// only stop a stalled client from holding one of the few connections.
 	c.admin = &http.Server{
 		Handler:           handler,
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
-		WriteTimeout:      30 * time.Second,
+		WriteTimeout:      AdminWriteTimeout,
 	}
 	go func(admin *http.Server) {
 		if err := admin.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {

@@ -3,8 +3,10 @@
 package admin
 
 import (
+	"context"
 	"errors"
 	"net/http"
+	"net/url"
 	"path/filepath"
 	"strconv"
 
@@ -12,11 +14,33 @@ import (
 	"github.com/Alex-Zechariah-02/apiward/internal/pipeline"
 )
 
+// maxLogScans is how many security log scans run at once. Each reads up to
+// monitor.ExportScan bytes from the disk the log's writer syncs to; parallel
+// scans measured beside traffic doubled request p99, so they queue.
+const maxLogScans = 1
+
+// scanLog waits for a security log scan slot; false when ctx ended first.
+func (s *Server) scanLog(ctx context.Context) bool {
+	select {
+	case s.scans <- struct{}{}:
+		return true
+	case <-ctx.Done():
+		return false
+	}
+}
+
+func (s *Server) scanDone() { <-s.scans }
+
 // handleSecurityLog searches the request records in the active and rotated
 // audit files, newest first, with the same secret-free fields as the live
 // views. format=csv or format=json exports up to securityLogExportRows rows.
 func (s *Server) handleSecurityLog(w http.ResponseWriter, r *http.Request, who caller) {
-	values := r.URL.Query()
+	// URL.Query would drop a malformed pair and answer unfiltered rows.
+	values, err := url.ParseQuery(r.URL.RawQuery)
+	if err != nil {
+		adminError(w, http.StatusBadRequest, "bad_request", "query")
+		return
+	}
 	query, field := monitor.ParseQuery(values)
 	if field != "" {
 		adminError(w, http.StatusBadRequest, "bad_request", field)
@@ -29,10 +53,10 @@ func (s *Server) handleSecurityLog(w http.ResponseWriter, r *http.Request, who c
 	}
 	limit, scan := monitor.ExportRows, int64(monitor.ExportScan)
 	if format == "" {
-		limit, scan = 50, monitor.PageScan
+		limit, scan = defaultPageSize, monitor.PageScan
 		if text := values.Get("limit"); text != "" {
 			n, err := strconv.Atoi(text)
-			if err != nil || n < 1 || n > 100 {
+			if err != nil || n < 1 || n > maxPageSize {
 				adminError(w, http.StatusBadRequest, "bad_request", "limit")
 				return
 			}
@@ -47,19 +71,25 @@ func (s *Server) handleSecurityLog(w http.ResponseWriter, r *http.Request, who c
 			return
 		}
 	}
+	if !s.scanLog(r.Context()) {
+		return
+	}
+	defer s.scanDone()
 	_, _, _, kept := s.audit.Usage()
 	files, missing, err := monitor.LogFiles(s.audit.Path(), kept)
 	if err != nil {
-		adminError(w, http.StatusServiceUnavailable, "gateway_unavailable", "")
+		s.fail(w, r, &who, "gateway_unavailable", monitor.FailLog, err)
 		return
 	}
-	result, err := monitor.Search(filepath.Dir(s.audit.Path()), files, start, query, limit, scan)
-	if errors.Is(err, monitor.ErrCursorGone) {
+	result, err := monitor.Search(r.Context(), filepath.Dir(s.audit.Path()), files, start, query, limit, scan)
+	switch {
+	case r.Context().Err() != nil:
+		return // the client has gone
+	case errors.Is(err, monitor.ErrCursorGone):
 		adminError(w, http.StatusGone, "cursor_gone", "after")
 		return
-	}
-	if err != nil {
-		adminError(w, http.StatusServiceUnavailable, "gateway_unavailable", "")
+	case err != nil:
+		s.fail(w, r, &who, "gateway_unavailable", monitor.FailLog, err)
 		return
 	}
 	var next *string

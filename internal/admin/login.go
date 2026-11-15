@@ -3,10 +3,12 @@
 package admin
 
 import (
+	"context"
 	"net/http"
 	"time"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/audit"
+	"github.com/Alex-Zechariah-02/apiward/internal/monitor"
 	"github.com/Alex-Zechariah-02/apiward/internal/pipeline"
 	"github.com/Alex-Zechariah-02/apiward/internal/session"
 	"github.com/Alex-Zechariah-02/apiward/internal/store"
@@ -37,8 +39,12 @@ func (s *Server) handleEnrol(w http.ResponseWriter, r *http.Request) {
 	if !decodeBody(w, r, maxAdminBody, &body) {
 		return
 	}
-	if !store.IsAdminName(body.Name) || !validPassword(body.Password) {
-		adminError(w, http.StatusBadRequest, "bad_request", "")
+	if !store.IsAdminName(body.Name) {
+		adminError(w, http.StatusBadRequest, "bad_request", "name")
+		return
+	}
+	if !validPassword(body.Password) {
+		adminError(w, http.StatusBadRequest, "bad_request", "password")
 		return
 	}
 	if s.store == nil {
@@ -46,23 +52,25 @@ func (s *Server) handleEnrol(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	now := time.Now()
-	if reason := s.throttle.check(body.Name, now); reason != "" {
+	try, reason := s.throttle.begin(body.Name, r, now)
+	if reason != "" {
 		s.refuse(w, r, http.StatusTooManyRequests, "too_many_attempts", reason, nil)
 		return
 	}
 	e, found, err := s.store.Enrolment(r.Context(), session.Hash(body.Secret))
 	if err != nil {
-		s.logger.Error("reading enrolment", "error", err)
-		adminError(w, http.StatusServiceUnavailable, "unavailable", "")
+		try.abandoned()
+		s.fail(w, r, nil, "unavailable", monitor.FailStore, err)
 		return
 	}
 	if !found || e.Name != body.Name || !now.Before(e.ExpiresAt) {
-		s.throttle.failed(body.Name, false, now)
+		try.failed(now)
 		s.refuse(w, r, http.StatusUnauthorized, "unauthenticated", "enrolment_invalid", nil)
 		return
 	}
 	if !s.acquireHashing() {
-		adminError(w, http.StatusServiceUnavailable, "busy", "")
+		try.abandoned()
+		s.fail(w, r, nil, "busy", monitor.FailBusy, nil)
 		return
 	}
 	passwordHash := hashPassword(body.Password)
@@ -70,9 +78,11 @@ func (s *Server) handleEnrol(w http.ResponseWriter, r *http.Request) {
 
 	outcome, status := s.control.Enrol(r.Context(), e, passwordHash)
 	if status != http.StatusOK {
+		try.abandoned()
 		pipeline.WriteJSON(w, status, outcome)
 		return
 	}
+	try.succeeded()
 	pipeline.WriteJSON(w, http.StatusCreated, map[string]any{"name": e.Name, "permissions": e.Permissions.Names()})
 }
 
@@ -93,14 +103,15 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	now := time.Now()
-	if reason := s.throttle.check(body.Name, now); reason != "" {
+	try, reason := s.throttle.begin(body.Name, r, now)
+	if reason != "" {
 		s.refuse(w, r, http.StatusTooManyRequests, "too_many_attempts", reason, nil)
 		return
 	}
 	admin, found, err := s.store.Administrator(r.Context(), body.Name)
 	if err != nil {
-		s.logger.Error("reading administrator", "error", err)
-		adminError(w, http.StatusServiceUnavailable, "unavailable", "")
+		try.abandoned()
+		s.fail(w, r, nil, "unavailable", monitor.FailStore, err)
 		return
 	}
 
@@ -112,23 +123,33 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		encoded = admin.Password
 	}
 	if !s.acquireHashing() {
-		adminError(w, http.StatusServiceUnavailable, "busy", "")
+		try.abandoned()
+		s.fail(w, r, nil, "busy", monitor.FailBusy, nil)
 		return
 	}
 	verified := verifyPassword(encoded, body.Password) && active
 	s.releaseHashing()
 	if !verified {
-		s.throttle.failed(body.Name, found, now)
+		try.failed(now)
 		s.refuse(w, r, http.StatusUnauthorized, "unauthenticated", "bad_credentials", nil)
 		return
 	}
-	s.throttle.succeeded(body.Name)
+	try.succeeded()
 
 	token, created, err := s.sessions.Create(admin.Name, admin.Credential, now)
 	if err != nil {
 		adminError(w, http.StatusServiceUnavailable, "session_limit", "")
 		return
 	}
+	// The sign-in record is durable before the client holds the session.
+	signedIn := audit.Event{Kind: "admin.authenticated", Method: r.Method, Path: r.URL.Path, Actor: admin.Name, Session: created.Reference}
+	if err := s.commitAudit(r.Context(), signedIn); err != nil {
+		s.sessions.Revoke(token)
+		s.fail(w, r, nil, "unavailable", monitor.FailAudit, err)
+		return
+	}
+	// Host-only, HTTPS-only for browsers, hidden from scripts, never sent
+	// cross-site; no Max-Age, as the session table decides the lifetime.
 	http.SetCookie(w, &http.Cookie{
 		Name:     sessionCookie,
 		Value:    token,
@@ -137,8 +158,15 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		HttpOnly: true,
 		SameSite: http.SameSiteStrictMode,
 	})
-	s.audit.Record(audit.Event{Kind: "admin.authenticated", Method: r.Method, Path: r.URL.Path, Actor: admin.Name, Session: created.Reference})
 	pipeline.WriteJSON(w, http.StatusCreated, sessionView(admin, created))
+}
+
+// commitAudit records e and waits for it to be durable, within the
+// configured audit wait.
+func (s *Server) commitAudit(ctx context.Context, e audit.Event) error {
+	ctx, cancel := context.WithTimeout(ctx, s.config.AuditTimeout)
+	defer cancel()
+	return s.audit.Commit(ctx, e)
 }
 
 func sessionView(admin store.Administrator, s session.Session) map[string]any {
@@ -180,12 +208,14 @@ func (s *Server) handlePassword(w http.ResponseWriter, r *http.Request, who call
 		return
 	}
 	now := time.Now()
-	if reason := s.throttle.check(who.admin.Name, now); reason != "" {
+	try, reason := s.throttle.begin(who.admin.Name, r, now)
+	if reason != "" {
 		s.refuse(w, r, http.StatusTooManyRequests, "too_many_attempts", reason, &who)
 		return
 	}
 	if !s.acquireHashing() {
-		adminError(w, http.StatusServiceUnavailable, "busy", "")
+		try.abandoned()
+		s.fail(w, r, &who, "busy", monitor.FailBusy, nil)
 		return
 	}
 	verified := verifyPassword(who.admin.Password, body.Current)
@@ -195,16 +225,18 @@ func (s *Server) handlePassword(w http.ResponseWriter, r *http.Request, who call
 	}
 	s.releaseHashing()
 	if !verified {
-		s.throttle.failed(who.admin.Name, true, now)
+		try.failed(now)
 		s.refuse(w, r, http.StatusUnauthorized, "unauthenticated", "bad_credentials", &who)
 		return
 	}
 
 	outcome, status := s.control.ChangePassword(r.Context(), who.admin, passwordHash)
 	if status != http.StatusOK {
+		try.abandoned()
 		pipeline.WriteJSON(w, status, outcome)
 		return
 	}
+	try.succeeded()
 	clearSessionCookie(w)
 	w.WriteHeader(http.StatusNoContent)
 }

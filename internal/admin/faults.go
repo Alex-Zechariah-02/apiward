@@ -20,7 +20,7 @@ import (
 func registerTestRoutes(s *Server, mux *http.ServeMux) {
 	s.route(mux, "POST /test/publish", store.PermManagePolicy, func(w http.ResponseWriter, r *http.Request, who caller) {
 		var change controller.Change
-		if !decodeBody(w, r, int64(s.config.Limits.PolicyBytes), &change) {
+		if !decodeBody(w, r, s.policyBody(), &change) {
 			return
 		}
 		outcome, status := s.control.Publish(r.Context(), who.admin.Name, change)

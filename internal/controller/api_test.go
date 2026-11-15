@@ -21,7 +21,7 @@ import (
 // transition path; nothing here publishes a generation or commits a
 // transition on its own, except Publish (see TestPublishOnlyInTests).
 var exported = []string{
-	"CandidateGeneration", "Change", "Config", "Config.Check", "Controller",
+	"AdminWriteTimeout", "CandidateGeneration", "Change", "Config", "Config.Check", "Controller",
 	"Controller.Activate", "Controller.Addresses", "Controller.Admission", "Controller.Audit",
 	"Controller.BeginStop", "Controller.Block", "Controller.BlockAddress", "Controller.Blocked",
 	"Controller.Capture", "Controller.ChangePassword", "Controller.CreateOverride", "Controller.Current",

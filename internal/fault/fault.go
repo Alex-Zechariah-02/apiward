@@ -20,7 +20,20 @@ import (
 
 const faultExitCode = 86
 
-func faultEnabled(name string) bool { return os.Getenv("GATEWAY_FAULT") == name }
+// faultEnabled reports whether GATEWAY_FAULT names this point. When
+// GATEWAY_FAULT_ARMED names a file, the point applies only once that file
+// exists, so a test can sign in before the security log starts failing.
+func faultEnabled(name string) bool {
+	if os.Getenv("GATEWAY_FAULT") != name {
+		return false
+	}
+	armed := os.Getenv("GATEWAY_FAULT_ARMED")
+	if armed == "" {
+		return true
+	}
+	_, err := os.Stat(armed)
+	return err == nil
+}
 
 func CandidateReadFault() error {
 	if faultEnabled("candidate-read-unavailable") {

@@ -4,6 +4,7 @@
 package admin
 
 import (
+	"context"
 	"fmt"
 	"math"
 	"net/http"
@@ -37,24 +38,42 @@ func (s *Server) handleAdvice(w http.ResponseWriter, r *http.Request, who caller
 		adminError(w, http.StatusServiceUnavailable, "gateway_unavailable", "")
 		return
 	}
-	_, _, _, kept := s.audit.Usage()
-	files, missing, err := monitor.LogFiles(s.audit.Path(), kept)
-	if err != nil {
-		adminError(w, http.StatusServiceUnavailable, "gateway_unavailable", "")
+	if !s.scanLog(r.Context()) {
 		return
 	}
-	use, err := s.summaries.PermitUse(filepath.Dir(s.audit.Path()), files, monitor.ExportScan)
+	defer s.scanDone()
+	// The warnings need no log file, so an unreadable log withholds only the
+	// unused permissions.
+	unused, err := s.unusedPermits(r.Context(), g)
+	if r.Context().Err() != nil {
+		return // the client has gone
+	}
 	if err != nil {
-		adminError(w, http.StatusServiceUnavailable, "gateway_unavailable", "")
-		return
+		s.logger.Error("reading the security log for advice", "error", err)
+		s.observations.AdminFailed(monitor.FailLog)
+		unused = monitor.UnreadLog()
 	}
 	pipeline.WriteJSON(w, http.StatusOK, map[string]any{
 		"rules":          monitor.AdviceRules,
 		"generation":     g.ID,
 		"candidate":      candidate,
 		"warnings":       monitor.ConfigurationWarnings(g, s.plain),
-		"unused_permits": monitor.UnusedPermissions(g, use, missing, time.Now()),
+		"unused_permits": unused,
 	})
+}
+
+// unusedPermits reads the security log files for the unused-permission advice.
+func (s *Server) unusedPermits(ctx context.Context, g *compile.Generation) (monitor.UnusedReport, error) {
+	_, _, _, kept := s.audit.Usage()
+	files, missing, err := monitor.LogFiles(s.audit.Path(), kept)
+	if err != nil {
+		return monitor.UnusedReport{}, err
+	}
+	use, err := s.summaries.PermitUse(ctx, filepath.Dir(s.audit.Path()), files, monitor.ExportScan)
+	if err != nil {
+		return monitor.UnusedReport{}, err
+	}
+	return monitor.UnusedPermissions(g, use, missing, time.Now()), nil
 }
 
 // handleAlerts evaluates the alert rules when read; nothing is evaluated per
@@ -69,7 +88,15 @@ func (s *Server) handleAlerts(w http.ResponseWriter, r *http.Request, who caller
 		items = append(items, monitor.Finding{ID: "A2", Severity: "critical", Object: "security_log", Message: "The security log cannot be written, so the gateway refuses requests it cannot record."})
 	}
 	used, budget := s.audit.Budget()
-	if alert := logFilling(used, budget, s.writeRate(now), s.audit.Evicts()); alert != nil {
+	rate, err := s.writeRate(now)
+	if err != nil {
+		s.logger.Error("reading the security log's write rate", "error", err)
+		s.observations.AdminFailed(monitor.FailLog)
+	}
+	if alert := logFilling(used, budget, rate, s.audit.Evicts()); alert != nil {
+		if err != nil {
+			alert.Message += " The current write rate could not be read."
+		}
 		items = append(items, *alert)
 	}
 	if float64(s.limiter.Size()) >= monitor.NearlyFull*float64(s.limiter.Capacity()) {
@@ -80,18 +107,19 @@ func (s *Server) handleAlerts(w http.ResponseWriter, r *http.Request, who caller
 }
 
 // writeRate is the active audit file's recent write rate in bytes per second,
-// read over its last RateMinBytes; 0 when unknown. A log that evicts never
-// fills, so its file is not read.
-func (s *Server) writeRate(now time.Time) float64 {
+// read over its last RateMinBytes; 0 when unknown, with the error when the
+// file could not be read. A log that evicts never fills, so its file is not
+// read.
+func (s *Server) writeRate(now time.Time) (float64, error) {
 	active, _, _, _ := s.audit.Usage()
 	if s.audit.Evicts() || active < monitor.RateMinBytes {
-		return 0
+		return 0, nil
 	}
 	recent, first, err := monitor.RecentRecord(s.audit.Path(), monitor.RateMinBytes)
 	if err != nil {
-		return 0
+		return 0, err
 	}
-	return pace(active, recent, first, now)
+	return pace(active, recent, first, now), nil
 }
 
 // pace is the bytes written since first, per second; 0 while the active file

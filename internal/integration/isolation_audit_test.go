@@ -127,14 +127,14 @@ func TestAuditGateAndSecretSafety(t *testing.T) {
 		name  string
 		fault string
 	}{
-		{"audit sync fails", "GATEWAY_FAULT=audit-sync"},
-		{"no space left", "GATEWAY_FAULT=audit-full"},
+		{"audit sync fails", "audit-sync"},
+		{"no space left", "audit-full"},
 	}
 	for _, f := range failures {
 		t.Run(f.name, func(t *testing.T) {
 			e := gatewaytest.NewEnv(t)
 			gatewaytest.Seed(t, e.Database, e.Policy(e.A, false), gatewaytest.SeedOptions{})
-			e.Start(gatewaytest.Binaries.Fault, f.fault)
+			e.StartFailingAudit(f.fault)
 			before := e.Status()
 			for range 3 {
 				if code, _ := e.Get("/a/x"); code != http.StatusServiceUnavailable {

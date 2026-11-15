@@ -19,16 +19,22 @@ import (
 )
 
 const (
+	// maxAdminBody holds every request body except a whole policy: they are
+	// a few named fields, the largest a temporary rule with its reason.
 	maxAdminBody = 4 << 10
 	// policyMargin is the room a request body has beyond the policy it
 	// carries, for its envelope and the policy's indentation.
-	policyMargin    = 16 << 10
+	policyMargin = 16 << 10
+	// A default page fills one Dashboard table; a client may ask for twice
+	// that. Pages keep each read and answer small however long a list grows.
 	defaultPageSize = 50
 	maxPageSize     = 100
 	sessionCookie   = "__Host-gateway-admin"
 	csrfHeader      = "X-CSRF-Token"
-	minKeyLength    = 16
-	maxKeyLength    = 64
+	// An Idempotency-Key of 16 characters from its 64-letter alphabet holds
+	// 96 random bits; 64 bounds the transition ID it becomes part of.
+	minKeyLength = 16
+	maxKeyLength = 64
 )
 
 // caller is the authenticated administrator of one admin request.
@@ -55,6 +61,7 @@ type Server struct {
 	sessions     *session.Table
 	throttle     *throttle
 	hashing      chan struct{} // bounds concurrent password hashing
+	scans        chan struct{} // bounds concurrent security log scans
 	ui           http.Handler  // the dashboard files; nil when none are configured
 	plain        bool          // the gateway serves the data plane itself over plain HTTP
 	jwks         []byte        // the identity assertion's public key set; nil when none is signed
@@ -81,7 +88,7 @@ func New(d Deps) *Server {
 	return &Server{
 		control: c, config: c.Settings(), store: c.Reads(), audit: c.Audit(),
 		observations: c.Observations(), limiter: d.Limiter, sessions: c.Sessions(),
-		throttle: newThrottle(), hashing: make(chan struct{}, maxHashing), ui: d.UI, plain: d.Plain, jwks: d.JWKS, logger: d.Logger,
+		throttle: newThrottle(), hashing: make(chan struct{}, maxHashing), scans: make(chan struct{}, maxLogScans), ui: d.UI, plain: d.Plain, jwks: d.JWKS, logger: d.Logger,
 	}
 }
 
@@ -168,12 +175,16 @@ func (s *Server) checkHost(next http.Handler) http.Handler {
 
 // detachWrites keeps a state-changing request running when its client
 // disconnects: a change is committed in steps, and stopping between them
-// would leave its outcome unrecorded and fail the audit log. Reads keep
-// their cancellation, so a closed event stream ends.
+// would leave its outcome unrecorded. It still ends at the admin listener's
+// write limit, which no answer can outlast, so a stalled database call cannot
+// hold the controller for good; the controller's audit records keep their
+// own wait. Reads keep their cancellation, so a closed event stream ends.
 func detachWrites(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if unsafeMethod(r.Method) {
-			r = r.WithContext(context.WithoutCancel(r.Context()))
+			ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), controller.AdminWriteTimeout)
+			defer cancel()
+			r = r.WithContext(ctx)
 		}
 		next.ServeHTTP(w, r)
 	})
@@ -190,6 +201,10 @@ func (s *Server) sameOrigin(r *http.Request) bool {
 func unsafeMethod(method string) bool {
 	return method != http.MethodGet && method != http.MethodHead
 }
+
+// readOnlyPosts change nothing: they are POST only because their question is
+// a request body, so they are recorded as reads like any GET.
+var readOnlyPosts = []string{"POST /admin/access-check", "POST /admin/candidates/{id}/impact", "POST /admin/overrides/validate"}
 
 // route registers a handler that runs only for an authenticated administrator
 // holding the required permission (0: any administrator, for their own
@@ -217,7 +232,7 @@ func (s *Server) route(mux *http.ServeMux, pattern string, required store.Permis
 			return
 		}
 		quiet := r.Method == http.MethodGet && slices.Contains(s.config.IgnoredReads, r.URL.Path)
-		if !unsafeMethod(r.Method) && !quiet {
+		if (!unsafeMethod(r.Method) || slices.Contains(readOnlyPosts, pattern)) && !quiet {
 			s.audit.Record(audit.Event{Kind: "admin.read", Method: r.Method, Path: r.URL.Path, Actor: who.admin.Name, Session: who.session.Reference})
 		}
 		handler(w, r, who)
@@ -237,8 +252,7 @@ func (s *Server) authenticate(w http.ResponseWriter, r *http.Request) (caller, b
 	if reason == "" {
 		admin, found, err := s.store.Administrator(r.Context(), who.session.Admin)
 		if err != nil {
-			s.logger.Error("reading administrator", "error", err)
-			adminError(w, http.StatusServiceUnavailable, "unavailable", "")
+			s.fail(w, r, nil, "unavailable", monitor.FailStore, err)
 			return caller{}, false
 		}
 		who.admin = admin
@@ -252,27 +266,6 @@ func (s *Server) authenticate(w http.ResponseWriter, r *http.Request) (caller, b
 		return caller{}, false
 	}
 	return who, true
-}
-
-// refuse answers a refused admin request and records why. Only the error code
-// reaches the client.
-func (s *Server) refuse(w http.ResponseWriter, r *http.Request, status int, code, reason string, who *caller) {
-	event := audit.Event{Kind: "admin.rejected", Method: r.Method, Path: r.URL.Path, Status: status, Reason: reason}
-	if who != nil {
-		event.Kind, event.Actor, event.Session = "admin.denied", who.admin.Name, who.session.Reference
-	}
-	s.audit.Record(event)
-	adminError(w, status, code, "")
-}
-
-// adminError answers with an error code and, where it helps the client, the
-// name of the offending field. Nothing else about the failure is disclosed.
-func adminError(w http.ResponseWriter, status int, code, field string) {
-	body := map[string]string{"error": code}
-	if field != "" {
-		body["field"] = field
-	}
-	pipeline.WriteJSON(w, status, body)
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {

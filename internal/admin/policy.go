@@ -8,6 +8,7 @@ import (
 	"strconv"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/controller"
+	"github.com/Alex-Zechariah-02/apiward/internal/monitor"
 	"github.com/Alex-Zechariah-02/apiward/internal/pipeline"
 	"github.com/Alex-Zechariah-02/apiward/internal/policy"
 	"github.com/Alex-Zechariah-02/apiward/internal/store"
@@ -54,8 +55,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request, who caller
 func (s *Server) confirmedPolicy(w http.ResponseWriter, r *http.Request) (store.RevisionInfo, policy.Policy, bool) {
 	a, err := s.store.Load(r.Context())
 	if err != nil {
-		s.logger.Error("reading authority", "error", err)
-		adminError(w, http.StatusServiceUnavailable, "unavailable", "")
+		s.fail(w, r, nil, "unavailable", monitor.FailStore, err)
 		return store.RevisionInfo{}, policy.Policy{}, false
 	}
 	if a.Mode != store.ModeNormal {
@@ -71,8 +71,7 @@ func (s *Server) confirmedPolicy(w http.ResponseWriter, r *http.Request) (store.
 		p, err = policy.DecodePolicy(revision.Document, s.config.Limits)
 	}
 	if err != nil {
-		s.logger.Error("reading confirmed policy", "error", err)
-		adminError(w, http.StatusServiceUnavailable, "unavailable", "")
+		s.fail(w, r, nil, "unavailable", monitor.FailStore, err)
 		return store.RevisionInfo{}, policy.Policy{}, false
 	}
 	return revision, p, true
@@ -98,7 +97,7 @@ func (s *Server) handleRevisions(w http.ResponseWriter, r *http.Request, who cal
 	}
 	items, err := s.store.Revisions(r.Context(), cursor, limit)
 	if err != nil {
-		adminError(w, http.StatusServiceUnavailable, "unavailable", "")
+		s.fail(w, r, &who, "unavailable", monitor.FailStore, err)
 		return
 	}
 	result := list{Items: items}
@@ -116,7 +115,7 @@ func (s *Server) handleRevision(w http.ResponseWriter, r *http.Request, who call
 	revision, found, err := s.store.Revision(r.Context(), id)
 	switch {
 	case err != nil:
-		adminError(w, http.StatusServiceUnavailable, "unavailable", "")
+		s.fail(w, r, &who, "unavailable", monitor.FailStore, err)
 	case !found:
 		adminError(w, http.StatusNotFound, "not_found", "")
 	default:

@@ -16,8 +16,8 @@ import (
 	"github.com/Alex-Zechariah-02/apiward/internal/store"
 )
 
-// Failure to read metadata after a committed stage must retain its receipt.
-// An identical retry never creates another candidate, even while reads fail.
+// A committed stage whose metadata cannot be read is answered as saved, with
+// its receipt. An identical retry never creates another candidate.
 func TestCandidateReceiptSurvivesMetadataReadFailure(t *testing.T) {
 	e := gatewaytest.NewEnv(t)
 	policy := e.ProtectedPolicy()
@@ -25,14 +25,12 @@ func TestCandidateReceiptSurvivesMetadataReadFailure(t *testing.T) {
 	e.Start(gatewaytest.Binaries.Fault, "GATEWAY_FAULT=candidate-read-unavailable")
 	admin := e.MustLogin(gatewaytest.HarnessAdmin, gatewaytest.HarnessPassword)
 	before := e.Status()
-	body := string(gatewaytest.MustJSON(map[string]any{"policy": policy}))
 	var receipt controller.Outcome
 	for range 2 {
-		code, answer, _ := e.As(admin, http.MethodPost, "/admin/candidates", body,
-			"If-Match", `"r1"`, "Idempotency-Key", "candidate-metadata-failure")
-		receipt = fromJSON[controller.Outcome](t, answer)
-		if code != http.StatusServiceUnavailable || receipt.Outcome != "committed" || receipt.Reason != "STORE_ERROR" ||
-			receipt.Candidate != 1 || receipt.Transition != "admin:"+gatewaytest.HarnessAdmin+":candidate-metadata-failure" {
+		code, saved, answer := e.Stage(admin, policy, `"r1"`, "candidate-metadata-failure")
+		receipt = saved.Receipt
+		if code != http.StatusCreated || receipt.Outcome != "committed" || receipt.Candidate != 1 || saved.Candidate.ID != 1 ||
+			receipt.Transition != "admin:"+gatewaytest.HarnessAdmin+":candidate-metadata-failure" {
 			t.Fatalf("committed stage with unreadable metadata: %d %s", code, answer)
 		}
 	}

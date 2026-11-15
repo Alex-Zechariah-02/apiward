@@ -6,6 +6,7 @@ package monitor
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"os"
@@ -54,8 +55,9 @@ type summary struct {
 // PermitUse reads the request records of the security log files, listed as
 // LogFiles lists them (the active file first), newest first, at most scan
 // bytes. A rotated file with a summary is not read but takes the budget its
-// full read took, so the answer is the same as a full read's.
-func (c *Summaries) PermitUse(dir string, files []string, scan int64) (LogUse, error) {
+// full read took, so the answer is the same as a full read's. It stops with
+// ctx's error once ctx ends.
+func (c *Summaries) PermitUse(ctx context.Context, dir string, files []string, scan int64) (LogUse, error) {
 	use := LogUse{used: map[[2]string]bool{}, Searched: []string{}, complete: true}
 	budget := scan
 	defer c.prune(files)
@@ -64,7 +66,7 @@ func (c *Summaries) PermitUse(dir string, files []string, scan int64) (LogUse, e
 			use.complete = false
 			break
 		}
-		part, stopped, err := c.read(filepath.Join(dir, name), i > 0, &budget)
+		part, stopped, err := c.read(ctx, filepath.Join(dir, name), i > 0, &budget)
 		if errors.Is(err, os.ErrNotExist) {
 			continue // archived since it was listed
 		}
@@ -84,7 +86,7 @@ func (c *Summaries) PermitUse(dir string, files []string, scan int64) (LogUse, e
 // read gives one file's use, from its summary when the file is rotated,
 // unchanged and within the budget, else by scanning it; a rotated file read
 // in full gets a summary.
-func (c *Summaries) read(path string, rotated bool, budget *int64) (fileUse, bool, error) {
+func (c *Summaries) read(ctx context.Context, path string, rotated bool, budget *int64) (fileUse, bool, error) {
 	var info os.FileInfo
 	if rotated {
 		var err error
@@ -98,7 +100,7 @@ func (c *Summaries) read(path string, rotated bool, budget *int64) (fileUse, boo
 	}
 	part := fileUse{used: map[[2]string]bool{}}
 	before := *budget
-	_, stopped, err := scanLinesBackward(path, -1, budget, part.visit)
+	_, stopped, err := scanLinesBackward(ctx, path, -1, budget, part.visit)
 	if err == nil && rotated && !stopped {
 		c.store(summary{size: info.Size(), mod: info.ModTime(), cost: before - *budget, use: part}, info.Name())
 	}

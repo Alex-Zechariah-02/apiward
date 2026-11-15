@@ -87,7 +87,7 @@ func TestInvalidCandidateLeavesStateUnchanged(t *testing.T) {
 		t.Errorf("repeated member: %d %s", code, body)
 	}
 
-	oversize := controller.Change{ID: "oversize", Expected: 1, Policy: json.RawMessage(`{"upstreams":[],"operations":[],"pad":"` + strings.Repeat("x", 70000) + `"}`)}
+	oversize := controller.Change{ID: "oversize", Expected: 1, Policy: json.RawMessage(`{"upstreams":[],"operations":[],"pad":"` + strings.Repeat("x", 90000) + `"}`)}
 	if _, code := e.Publish(oversize); code != http.StatusRequestEntityTooLarge {
 		t.Errorf("oversize change: %d", code)
 	}

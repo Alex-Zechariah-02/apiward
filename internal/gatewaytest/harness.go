@@ -205,7 +205,7 @@ func (e *Env) Launch(binary string, args []string, extraEnv ...string) {
 	e.Stop()
 	cmd := exec.Command(binary, args...)
 	cmd.Env = append(os.Environ(),
-		"GATEWAY_FAULT=", "GATEWAY_HOLD_PATH=", "GATEWAY_HOLD_FILE=", "GATEWAY_HOLD_RELEASE=", "GATEWAY_RATE_CLOCK=", "GATEWAY_WALL_OFFSET=", "GATEWAY_AUDIT_HOLD=",
+		"GATEWAY_FAULT=", "GATEWAY_FAULT_ARMED=", "GATEWAY_HOLD_PATH=", "GATEWAY_HOLD_FILE=", "GATEWAY_HOLD_RELEASE=", "GATEWAY_RATE_CLOCK=", "GATEWAY_WALL_OFFSET=", "GATEWAY_AUDIT_HOLD=",
 	)
 	if Binaries.race {
 		// Stop at the first race so it cannot be lost when the test later
