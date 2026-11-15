@@ -3,8 +3,8 @@
 
 //go:build !unix
 
-package forward
+package filecheck
 
 import "os"
 
-func checkOwner(os.FileInfo) error { return nil }
+func owner(os.FileInfo) error { return nil }

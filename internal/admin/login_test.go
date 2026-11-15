@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/controller"
 	"github.com/Alex-Zechariah-02/apiward/internal/monitor"
@@ -73,8 +74,8 @@ func TestSignIn(t *testing.T) {
 		}
 		c.Audit().Fail(errors.New("test: the security log failed"))
 		w := post(s.handleLogin, "/admin/session", login)
-		if w.Code != http.StatusServiceUnavailable || len(w.Result().Cookies()) != 0 || c.Sessions().Count() != 1 {
-			t.Fatalf("sign-in with a failed log: %d %v, %d sessions", w.Code, w.Result().Cookies(), c.Sessions().Count())
+		if w.Code != http.StatusServiceUnavailable || len(w.Result().Cookies()) != 0 || c.Sessions().Count(time.Now()) != 1 {
+			t.Fatalf("sign-in with a failed log: %d %v, %d sessions", w.Code, w.Result().Cookies(), c.Sessions().Count(time.Now()))
 		}
 		if got := failures(t, c, "audit"); got != "1" {
 			t.Fatalf("audit failures counted: %s", got)

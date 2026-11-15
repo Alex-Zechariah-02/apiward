@@ -3,6 +3,7 @@ package admin
 import (
 	"context"
 	"net/http"
+	"time"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/monitor"
 	"github.com/Alex-Zechariah-02/apiward/internal/pipeline"
@@ -30,7 +31,7 @@ func (s *Server) handleLimits(w http.ResponseWriter, r *http.Request, who caller
 		"policy_bytes":           limit(document, int64(s.config.Limits.PolicyBytes)),
 		"temporary_rules":        limit(int64(active), store.MaxActiveOverrides),
 		"live_views":             limit(int64(s.observations.Viewers()), monitor.MaxStreams),
-		"administrator_sessions": limit(int64(s.sessions.Count()), session.Max),
+		"administrator_sessions": limit(int64(s.sessions.Count(time.Now())), session.Max),
 		"audit_files":            limit(auditFiles, auditFilesLimit),
 		"audit_active_bytes":     limit(auditBytes, auditBytesLimit),
 		"rate_counters":          limit(int64(s.limiter.Size()), int64(s.limiter.Capacity())),

@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/Alex-Zechariah-02/apiward/internal/monitor"
 	"github.com/Alex-Zechariah-02/apiward/internal/pipeline"
 	"github.com/Alex-Zechariah-02/apiward/internal/policy"
 	"github.com/Alex-Zechariah-02/apiward/internal/store"
@@ -72,17 +73,23 @@ func idempotencyKey(w http.ResponseWriter, r *http.Request) (string, bool) {
 	return values[0], true
 }
 
-// adminTransition names a mutation by its administrator and idempotency key,
-// so two administrators can never collide and a retry finds its own record.
-func adminTransition(who caller, key, kind, target string, expected sql.NullInt64, payload any) store.TransitionRecord {
+// transition names a mutation by its administrator and idempotency key, so
+// two administrators can never collide and a retry finds its own record. A
+// payload that cannot be digested is answered 503 and reported false.
+func (s *Server) transition(w http.ResponseWriter, r *http.Request, who caller, key, kind, target string, expected sql.NullInt64, payload any) (store.TransitionRecord, bool) {
+	digest, err := store.Digest(kind, target, expected, payload)
+	if err != nil {
+		s.fail(w, r, &who, "unavailable", monitor.FailStore, err)
+		return store.TransitionRecord{}, false
+	}
 	return store.TransitionRecord{
 		ID:       "admin:" + who.admin.Name + ":" + key,
 		Kind:     kind,
 		Actor:    who.admin.Name,
 		Target:   target,
 		Expected: expected,
-		Digest:   store.Digest(kind, target, expected, payload),
-	}
+		Digest:   digest,
+	}, true
 }
 
 // page reads the list parameters: limit (1 to 100) and an optional cursor.

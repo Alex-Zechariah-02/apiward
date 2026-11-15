@@ -50,9 +50,12 @@ type Config struct {
 	AdminListen          string
 	AdminIdleTimeout     time.Duration
 	AdminSessionLifetime time.Duration
-	AuditTimeout         time.Duration
-	AuditMaxBytes        int64
-	AuditMaxFiles        int
+	// AdminSessions is how many sessions one administrator may hold; zero
+	// takes session.DefaultPerAdmin.
+	AdminSessions int
+	AuditTimeout  time.Duration
+	AuditMaxBytes int64
+	AuditMaxFiles int
 	// HistoryKeep is how many of the newest revisions the database keeps;
 	// older history is pruned when a revision is committed. Zero takes
 	// DefaultHistory.
@@ -167,7 +170,7 @@ func Prepare(cfg Config, logger *slog.Logger) (*Controller, error) {
 	c := &Controller{
 		config:       cfg,
 		observations: monitor.New(cfg.Limits.Window, cfg.Limits.APIs),
-		sessions:     session.New(cfg.AdminIdleTimeout, cfg.AdminSessionLifetime),
+		sessions:     session.New(cfg.AdminIdleTimeout, cfg.AdminSessionLifetime, cfg.AdminSessions),
 		logger:       logger,
 	}
 	c.verifier.Store(verifier)

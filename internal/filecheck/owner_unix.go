@@ -3,7 +3,7 @@
 
 //go:build unix
 
-package forward
+package filecheck
 
 import (
 	"errors"
@@ -11,7 +11,7 @@ import (
 	"syscall"
 )
 
-func checkOwner(info os.FileInfo) error {
+func owner(info os.FileInfo) error {
 	stat, ok := info.Sys().(*syscall.Stat_t)
 	if !ok {
 		return errors.New("the file's owner cannot be read")

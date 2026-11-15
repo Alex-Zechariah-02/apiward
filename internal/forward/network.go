@@ -16,12 +16,12 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"runtime"
 	"slices"
 	"strings"
 	"time"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/compile"
+	"github.com/Alex-Zechariah-02/apiward/internal/filecheck"
 	"github.com/Alex-Zechariah-02/apiward/internal/policy"
 )
 
@@ -170,7 +170,7 @@ func ReadPEM(path string, check func(os.FileInfo) error) ([]byte, error) {
 }
 
 func loadRoots(path string) (*x509.CertPool, error) {
-	data, err := ReadPEM(path, CheckTrusted)
+	data, err := ReadPEM(path, filecheck.Trusted)
 	if err != nil {
 		return nil, err
 	}
@@ -201,7 +201,7 @@ func LoadCertificate(certificateFile, keyFile string) (*tls.Certificate, error) 
 	if err != nil {
 		return nil, fmt.Errorf("certificate file: %w", err)
 	}
-	key, err := ReadPEM(keyFile, CheckKeyMode)
+	key, err := ReadPEM(keyFile, filecheck.Secret)
 	if err != nil {
 		return nil, fmt.Errorf("key file: %w", err)
 	}
@@ -225,30 +225,6 @@ func LoadCertificate(certificateFile, keyFile string) (*tls.Certificate, error) 
 		return nil, errors.New("the key must be RSA or ECDSA P-256")
 	}
 	return &certificate, nil
-}
-
-// CheckKeyMode refuses a key file whose mode lets the group or others read
-// it, on systems where the mode means that.
-func CheckKeyMode(info os.FileInfo) error {
-	if runtime.GOOS != "windows" && info.Mode().Perm()&0o077 != 0 {
-		return errors.New("the key file must not be accessible to the group or others (chmod 600)")
-	}
-	return nil
-}
-
-// CheckTrusted refuses a trust anchor (a CA pin or a token verification key)
-// another local account could rewrite to make the gateway trust what it
-// signs: on Unix it must not be writable by the group or others and must
-// belong to the gateway's user or root. Windows grants access by ACL, which
-// the operator sets (docs/keys.md).
-func CheckTrusted(info os.FileInfo) error {
-	if runtime.GOOS == "windows" {
-		return nil
-	}
-	if info.Mode().Perm()&0o022 != 0 {
-		return errors.New("the file must not be writable by the group or others (chmod go-w)")
-	}
-	return checkOwner(info)
 }
 
 // Public reports whether upstreams may use public addresses.

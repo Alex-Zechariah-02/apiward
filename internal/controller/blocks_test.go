@@ -25,8 +25,11 @@ func TestStoreErrorOnResendDoesNotMeanNothingChanged(t *testing.T) {
 	request := struct {
 		Reason string `json:"reason"`
 	}{reason}
-	block := store.TransitionRecord{ID: "admin:root:store-error-resend-01", Kind: "account.block", Actor: "root", Target: "cust-500",
-		Digest: store.Digest("account.block", "cust-500", sql.NullInt64{}, request)}
+	digest, err := store.Digest("account.block", "cust-500", sql.NullInt64{}, request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	block := store.TransitionRecord{ID: "admin:root:store-error-resend-01", Kind: "account.block", Actor: "root", Target: "cust-500", Digest: digest}
 	receipt, status := c.Block(t.Context(), block, reason)
 	if status != http.StatusOK {
 		t.Fatalf("block: %d %s", status, receipt)

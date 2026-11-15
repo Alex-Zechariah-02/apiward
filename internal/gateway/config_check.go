@@ -15,6 +15,7 @@ import (
 	"github.com/Alex-Zechariah-02/apiward/internal/controller"
 	"github.com/Alex-Zechariah-02/apiward/internal/pipeline"
 	"github.com/Alex-Zechariah-02/apiward/internal/policy"
+	"github.com/Alex-Zechariah-02/apiward/internal/session"
 )
 
 // check resolves defaults and checks every setting the controller does not
@@ -126,6 +127,9 @@ func (f nativeFile) check() (nativeConfig, error) {
 	if cfg.controller.AuditMaxFiles, err = numberSetting("gateway.audit_max_files", g.AuditMaxFiles, audit.DefaultAuditFiles, 2, controller.MaxAuditFiles); err != nil {
 		return nativeConfig{}, err
 	}
+	if cfg.controller.AdminSessions, err = numberSetting("gateway.admin_sessions", g.AdminSessions, session.DefaultPerAdmin, 1, session.MaxPerAdmin); err != nil {
+		return nativeConfig{}, err
+	}
 	if cfg.controller.HistoryKeep, err = numberSetting("gateway.history_keep", g.HistoryKeep, controller.DefaultHistory, controller.MinHistory, controller.MaxHistory); err != nil {
 		return nativeConfig{}, err
 	}
@@ -201,54 +205,6 @@ func (s limitSettings) check() (policy.Limits, error) {
 		*setting.into = *setting.value
 	}
 	return l.Resolve()
-}
-
-// checkDataListen requires the data-plane address to be a literal IP address
-// and port that names one interface, or every interface when all is set. An
-// IPv4-mapped IPv6 address is checked as the IPv4 address it binds:
-// "[::ffff:0.0.0.0]" listens on every interface.
-func checkDataListen(listen string, all bool) error {
-	addr, err := netip.ParseAddrPort(listen)
-	ip := addr.Addr().Unmap()
-	if err != nil || addr.Port() == 0 || (ip.IsUnspecified() && !all) || ip.IsMulticast() {
-		return fmt.Errorf("data.listen %q must be a literal IP address of one interface with a port (all interfaces only with data.listen_all_interfaces)", listen)
-	}
-	return nil
-}
-
-// checkDistinct refuses two listeners that would bind the same port on a
-// shared address, so the conflict is named here rather than met at the bind.
-func checkDistinct(d dataSettings, admin, metrics string) error {
-	listeners := []struct{ name, address string }{{"data.listen", d.Listen}, {"gateway.admin_listen", admin}, {"gateway.metrics_listen", metrics}}
-	if d.RedirectHTTP != nil {
-		listeners = append(listeners, struct{ name, address string }{"data.redirect_http.listen", d.RedirectHTTP.Listen})
-	}
-	for i, a := range listeners {
-		for _, b := range listeners[:i] {
-			if overlap(a.address, b.address) {
-				return fmt.Errorf("%s and %s must not share an address and port", b.name, a.name)
-			}
-		}
-	}
-	return nil
-}
-
-// overlap reports whether two listen addresses take the same port on a
-// shared address: the same address, or a wildcard of the other's family. An
-// IPv6 wildcard ("[::]") also takes IPv4, as Go listens dual-stack there. An
-// address that is not a literal IP and port is compared as written.
-func overlap(a, b string) bool {
-	x, errX := netip.ParseAddrPort(a)
-	y, errY := netip.ParseAddrPort(b)
-	if errX != nil || errY != nil {
-		return a == b
-	}
-	p, q := x.Addr().Unmap(), y.Addr().Unmap()
-	if x.Port() != y.Port() {
-		return false
-	}
-	covers := func(wild, other netip.Addr) bool { return wild.IsUnspecified() && (wild.Is6() || other.Is4()) }
-	return p == q || covers(p, q) || covers(q, p)
 }
 
 // durationSetting resolves an optional duration: def when omitted, otherwise

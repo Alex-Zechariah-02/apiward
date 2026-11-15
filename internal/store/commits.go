@@ -16,9 +16,9 @@ import (
 // activation record to describe the same revision, deadline and rollback
 // target, and fills in the candidate. Any disagreement means the lifecycle
 // state cannot be trusted, so nothing is served.
-func (s *DB) checkActivation(ctx context.Context, a *Authority) error {
+func checkActivation(ctx context.Context, q querier, a *Authority) error {
 	var revision, candidate, target, deadline int64
-	err := s.db.QueryRowContext(ctx, `
+	err := q.QueryRowContext(ctx, `
 		SELECT revision, candidate, rollback_target, deadline FROM activation WHERE disposition IS NULL`).
 		Scan(&revision, &candidate, &target, &deadline)
 	found := err == nil
@@ -156,13 +156,17 @@ func (s *DB) CommitResolution(ctx context.Context, t TransitionRecord, a Authori
 	return tx.Commit()
 }
 
-// CommitCandidate stores a validated candidate with its committed transition.
+// CommitCandidate stores a validated candidate with its committed
+// transition, first deleting the oldest unused candidates past MaxUnused.
 func (s *DB) CommitCandidate(ctx context.Context, t TransitionRecord, c CandidateRecord, now time.Time) (int64, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return 0, err
 	}
 	defer tx.Rollback()
+	if err := trimCandidates(ctx, tx); err != nil {
+		return 0, err
+	}
 
 	result, err := tx.ExecContext(ctx, `
 		INSERT INTO candidate (parent, document, checksum, deny_all, status, actor, created_at)

@@ -23,6 +23,7 @@ import (
 
 	"github.com/Alex-Zechariah-02/apiward/internal/audit"
 	"github.com/Alex-Zechariah-02/apiward/internal/compile"
+	"github.com/Alex-Zechariah-02/apiward/internal/filecheck"
 	"github.com/Alex-Zechariah-02/apiward/internal/forward"
 )
 
@@ -87,7 +88,7 @@ type jwk struct {
 // LoadSigner reads the signing key at path: one PEM "PRIVATE KEY" block
 // (PKCS #8) holding an ECDSA P-256 key, in a file only its owner can read.
 func LoadSigner(path string) (*Signer, error) {
-	data, err := forward.ReadPEM(path, forward.CheckKeyMode)
+	data, err := forward.ReadPEM(path, filecheck.Secret)
 	if err != nil {
 		return nil, err
 	}

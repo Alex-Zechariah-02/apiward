@@ -25,8 +25,15 @@ func Hash(token string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// Max is the most sessions held at once.
-const Max = 64
+// Session bounds. Gateways cap session lifetime and, per account, the
+// sessions held at once; a global count alone lets one administrator lock
+// every other out. Max is a safety bound on memory far above any team's
+// administrators times DefaultPerAdmin.
+const (
+	DefaultPerAdmin = 8
+	MaxPerAdmin     = 64
+	Max             = 1024
+)
 
 // ErrFull is returned by Create when Max sessions are live.
 var ErrFull = errors.New("session limit reached")
@@ -51,21 +58,34 @@ type Table struct {
 	byHash   map[string]*Session
 	idle     time.Duration
 	lifetime time.Duration
+	perAdmin int
 }
 
-func New(idle, lifetime time.Duration) *Table {
-	return &Table{byHash: map[string]*Session{}, idle: idle, lifetime: lifetime}
+// New returns an empty table whose sessions end after idle without use or
+// lifetime after sign-in; one administrator holds at most perAdmin of them.
+func New(idle, lifetime time.Duration, perAdmin int) *Table {
+	return &Table{byHash: map[string]*Session{}, idle: idle, lifetime: lifetime, perAdmin: perAdmin}
 }
 
-// Create starts a session and returns its token. Expired sessions are swept
-// first; if the limit is still reached, no session is created.
+// Create starts a session and returns its token. Ended sessions are swept
+// first. When admin already holds perAdmin sessions, the oldest of them
+// ends; if Max sessions are still live, no session is created.
 func (s *Table) Create(admin string, credential int64, now time.Time) (string, Session, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.sweep(now)
+	held, oldest := 0, ""
 	for hash, existing := range s.byHash {
-		if !s.alive(existing, now) {
-			s.end(hash)
+		if existing.Admin != admin {
+			continue
 		}
+		held++
+		if oldest == "" || existing.Expires.Before(s.byHash[oldest].Expires) {
+			oldest = hash
+		}
+	}
+	if held >= s.perAdmin {
+		s.end(oldest)
 	}
 	if len(s.byHash) >= Max {
 		return "", Session{}, ErrFull
@@ -140,11 +160,25 @@ func (s *Table) RevokeAdmin(name string) {
 	}
 }
 
-// Count returns the number of sessions held, live or not yet swept.
-func (s *Table) Count() int {
+// Count returns the number of live sessions at now, ending those that are
+// not, so each is closed for its readers.
+func (s *Table) Count(now time.Time) int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.sweep(now)
 	return len(s.byHash)
+}
+
+// sweep ends every session that is no longer alive at now; s.mu is held.
+// Sign-in and the limits report sweep, and every lookup ends its own ended
+// session, so no background sweep is needed: the table never holds more
+// than Max entries.
+func (s *Table) sweep(now time.Time) {
+	for hash, existing := range s.byHash {
+		if !s.alive(existing, now) {
+			s.end(hash)
+		}
+	}
 }
 
 // Closed returns a channel that closes when the session is revoked or swept.

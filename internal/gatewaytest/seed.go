@@ -53,6 +53,11 @@ func Seed(t testing.TB, path string, policy policy.Policy, opts SeedOptions) {
 	if opts.Mode == store.ModeRecovery {
 		episode = randomID(16)
 	}
+	// As the gateway does, so the file and the log SQLite creates beside it
+	// are private (store.CheckPrivate).
+	if err := store.CreatePrivate(path); err != nil {
+		t.Fatal(err)
+	}
 	db, err := sql.Open("sqlite", store.DatabaseURI(path)+"?_pragma=journal_mode(WAL)&_pragma=foreign_keys(ON)")
 	if err != nil {
 		t.Fatal(err)

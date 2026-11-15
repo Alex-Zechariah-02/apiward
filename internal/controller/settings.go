@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/audit"
+	"github.com/Alex-Zechariah-02/apiward/internal/session"
 )
 
 // Defaults and bounds of the controller's settings, which the configuration
@@ -72,6 +73,9 @@ func (cfg *Config) applyDefaults() error {
 	if cfg.AdminSessionLifetime == 0 {
 		cfg.AdminSessionLifetime = DefaultLifetime
 	}
+	if cfg.AdminSessions == 0 {
+		cfg.AdminSessions = session.DefaultPerAdmin
+	}
 	var err error
 	if cfg.Limits, err = cfg.Limits.Resolve(); err != nil {
 		return err
@@ -87,6 +91,9 @@ func (cfg *Config) applyDefaults() error {
 	}
 	if cfg.AuditWhenFull != audit.FullRefuse && cfg.AuditWhenFull != audit.FullEvict {
 		return fmt.Errorf("audit_when_full must be %q or %q", audit.FullRefuse, audit.FullEvict)
+	}
+	if cfg.AdminSessions < 1 || cfg.AdminSessions > session.MaxPerAdmin {
+		return fmt.Errorf("admin_sessions must be 1 to %d", session.MaxPerAdmin)
 	}
 	for _, setting := range []time.Duration{cfg.AdminIdleTimeout, cfg.AdminSessionLifetime} {
 		if setting < MinSession || setting > MaxSession {

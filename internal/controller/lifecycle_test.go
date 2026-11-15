@@ -5,6 +5,7 @@ package controller
 
 import (
 	"bytes"
+	"context"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -67,7 +68,7 @@ func TestStopReleasesDeployment(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if c.store.Ping() == nil {
+	if _, err := c.store.Load(context.Background()); err == nil {
 		t.Fatal("the database is still open")
 	}
 	if !c.audit.Closed() {

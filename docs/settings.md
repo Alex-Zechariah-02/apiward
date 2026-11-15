@@ -110,7 +110,8 @@ The JSON settings file that `apiward run --config <file>` reads. Upstream TLS pr
 - When `admin_ui` is set it is used instead of the embedded build; the start log line `dashboard files` names the source (`directory`, `embedded` or `none`).
 - Either way the Dashboard is served only on the Admin API listener.
 - An administrator session ends after `gateway.admin_idle_timeout` without a request (default `15m`) and at the latest `gateway.admin_session_lifetime` after sign-in (default `8h`); each accepts `1s` to `24h`.
-- At most 64 sessions are live at once; one more sign-in is answered `503 session_limit`. Sessions are kept in memory, so a restart ends them all.
+- One administrator holds at most `gateway.admin_sessions` sessions (default `8`, `1` to `64`); a further sign-in ends that administrator's oldest session.
+- At most 1,024 sessions are live at once across all administrators, a memory bound; one more sign-in is answered `503 session_limit`. Sessions are kept in memory, so a restart ends them all.
 - A directory is read so that no name or link in it leads to a file outside it.
 - The page is never stored (`Cache-Control: no-store`); the files under `assets/` are cached by the browser for a year (their names change with their content) and the build's gzip copies of the scripts and style sheets are sent as they are, or inflated while they are sent for a client that does not accept gzip. A weight that is not a valid `q` value refuses its encoding.
 
@@ -136,6 +137,7 @@ The JSON settings file that `apiward run --config <file>` reads. Upstream TLS pr
 ## Operator commands
 
 - The database keeps the newest `gateway.history_keep` policy versions (100 to 100,000, default 1,000). Publishing a version deletes, in the same transaction, the versions older than those and the history only they need: their trials, finished temporary rules, drafts and recorded changes. A row in use is never deleted: the policy in force, a trial's undo target, the base of an active temporary rule, a change whose security-log record is not yet written.
+- At most 100 unused drafts (staged or withdrawn, never tried) are kept: staging another deletes the oldest unused one and its recorded changes, once their security-log records are written.
 - A deleted version can no longer be rolled back to or restored, History no longer lists it, and a request key from a deleted change is decided as a new request. The security log files remain the full record of every change.
 - Keep the gateway stopped when running local operator commands; a deployment lock prevents two processes from sharing a database.
 - Successful operator commands exit 0; refusals and failures exit 1.

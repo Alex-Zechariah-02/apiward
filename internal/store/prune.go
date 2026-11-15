@@ -77,3 +77,45 @@ func prune(ctx context.Context, tx *sql.Tx, keep int) error {
 	}
 	return nil
 }
+
+// MaxUnused is how many unused candidates (staged or withdrawn, never
+// activated) the database keeps: at the 64 KiB policy ceiling about
+// 6.4 MiB. Staging past it deletes the oldest, so repeated staging cannot
+// fill the disk the audit log shares.
+const MaxUnused = 100
+
+// unusedCandidate holds for a candidate c no activation names whose staging
+// and withdrawal records are durably audited.
+const unusedCandidate = `c.status IN ('validated', 'withdrawn')
+	AND NOT EXISTS (SELECT 1 FROM activation AS a WHERE a.candidate = c.id)
+	AND NOT EXISTS (SELECT 1 FROM transition AS t WHERE t.result_candidate = c.id AND t.audited_at IS NULL)`
+
+// trimming deletes the oldest unused candidates past ?1 to keep, with the
+// transitions that produced them, child rows first.
+var trimming = []string{
+	`DELETE FROM control_result WHERE transition IN (SELECT id FROM transition WHERE result_candidate IN
+		(SELECT c.id FROM candidate AS c WHERE ` + unusedCandidate + ` ORDER BY c.id LIMIT ?1))`,
+	`DELETE FROM transition WHERE result_candidate IN
+		(SELECT c.id FROM candidate AS c WHERE ` + unusedCandidate + ` ORDER BY c.id LIMIT ?1)`,
+	`DELETE FROM candidate WHERE id IN
+		(SELECT c.id FROM candidate AS c WHERE ` + unusedCandidate + ` ORDER BY c.id LIMIT ?1)`,
+}
+
+// trimCandidates makes room for one more candidate: when MaxUnused unused
+// candidates exist, it deletes the oldest so MaxUnused-1 remain.
+func trimCandidates(ctx context.Context, tx *sql.Tx) error {
+	var unused int
+	if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM candidate AS c WHERE `+unusedCandidate).Scan(&unused); err != nil {
+		return fmt.Errorf("trimming candidates: %w", err)
+	}
+	excess := unused - (MaxUnused - 1)
+	if excess <= 0 {
+		return nil
+	}
+	for _, query := range trimming {
+		if _, err := tx.ExecContext(ctx, query, excess); err != nil {
+			return fmt.Errorf("trimming candidates: %w", err)
+		}
+	}
+	return nil
+}

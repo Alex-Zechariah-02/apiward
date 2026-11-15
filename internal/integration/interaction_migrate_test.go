@@ -62,6 +62,14 @@ func writeVersion3Overrides(t *testing.T, path string) {
 	now := time.Now()
 	ms := func(d time.Duration) int64 { return now.Add(d).UnixMilli() }
 	db := gatewaytest.Inspect(t, path)
+	revoke, err := store.Digest("tpo.revoke", "override 1", sql.NullInt64{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	grant, err := store.Digest("tpo.create", "override", sql.NullInt64{Int64: 1, Valid: true}, version3Grant)
+	if err != nil {
+		t.Fatal(err)
+	}
 	transition := `INSERT INTO transition (id, kind, actor, target, expected, digest, outcome, reason, committed_at, published_at, published_by, audited_at)
 		VALUES (?, ?, ?, ?, ?, ?, 'committed', '', ?, ?, 'publisher', ?)`
 	transitions := []struct {
@@ -71,13 +79,13 @@ func writeVersion3Overrides(t *testing.T, path string) {
 		at                      int64
 	}{
 		{"admin:harness:version3-grant-00001", "tpo.create", gatewaytest.HarnessAdmin, "override", 1, "version3-grant", ms(-2 * time.Hour)},
-		{"admin:harness:version3-revoke-0001", "tpo.revoke", gatewaytest.HarnessAdmin, "override 1", nil, store.Digest("tpo.revoke", "override 1", sql.NullInt64{}, nil), ms(-119 * time.Minute)},
+		{"admin:harness:version3-revoke-0001", "tpo.revoke", gatewaytest.HarnessAdmin, "override 1", nil, revoke, ms(-119 * time.Minute)},
 		{"admin:harness:version3-close-00001", "tpo.create", gatewaytest.HarnessAdmin, "override", 1, "version3-close", ms(-2 * time.Hour)},
 		{"auto-expire:2", "tpo.expire", "controller", "override 2", nil, "auto-expire:2", ms(-119 * time.Minute)},
 		{"admin:harness:version3-limit-00001", "tpo.create", gatewaytest.HarnessAdmin, "override", 1, "version3-limit", ms(-2 * time.Hour)},
 		{"operator:restore:" + strings.Repeat("e", 32), "operator.restore", "operator", "older.db", nil, "version3-restore", ms(-118 * time.Minute)},
 		{"admin:harness:version3-grant-00002", "tpo.create", gatewaytest.HarnessAdmin, "override", 1,
-			store.Digest("tpo.create", "override", sql.NullInt64{Int64: 1, Valid: true}, version3Grant), ms(-time.Minute)},
+			grant, ms(-time.Minute)},
 	}
 	for _, tr := range transitions {
 		if _, err := db.Exec(transition, tr.id, tr.kind, tr.actor, tr.target, tr.expected, tr.digest, tr.at, tr.at, tr.at); err != nil {

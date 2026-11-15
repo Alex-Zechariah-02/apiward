@@ -88,7 +88,10 @@ func (s *Server) handlePostCandidate(w http.ResponseWriter, r *http.Request, who
 		adminError(w, http.StatusBadRequest, "bad_request", "")
 		return
 	}
-	t := adminTransition(who, key, "candidate.create", "candidate", expected, compact.String())
+	t, ok := s.transition(w, r, who, key, "candidate.create", "candidate", expected, compact.String())
+	if !ok {
+		return
+	}
 	outcome, status := s.control.StageCandidate(r.Context(), t, body.Policy)
 	if status != http.StatusOK {
 		pipeline.WriteJSON(w, status, outcome)
@@ -114,7 +117,10 @@ func (s *Server) handleWithdrawCandidate(w http.ResponseWriter, r *http.Request,
 	if !ok {
 		return
 	}
-	t := adminTransition(who, key, "candidate.withdraw", fmt.Sprintf("candidate %d", id), sql.NullInt64{}, nil)
+	t, ok := s.transition(w, r, who, key, "candidate.withdraw", fmt.Sprintf("candidate %d", id), sql.NullInt64{}, nil)
+	if !ok {
+		return
+	}
 	outcome, status := s.control.WithdrawCandidate(r.Context(), t, id)
 	pipeline.WriteJSON(w, status, outcome)
 }
@@ -157,7 +163,10 @@ func (s *Server) handleActivate(w http.ResponseWriter, r *http.Request, who call
 	if !decodeBody(w, r, maxAdminBody, &body) {
 		return
 	}
-	t := adminTransition(who, key, "cpa.activate", fmt.Sprintf("candidate %d", body.Candidate), expected, body)
+	t, ok := s.transition(w, r, who, key, "cpa.activate", fmt.Sprintf("candidate %d", body.Candidate), expected, body)
+	if !ok {
+		return
+	}
 	outcome, status := s.control.Activate(r.Context(), t, body.Candidate, body.Checksum, body.ConfirmWithinSeconds)
 	s.writePolicyOutcome(w, r, outcome, status)
 }
@@ -180,7 +189,10 @@ func (s *Server) handleResolve(kind, disposition string) adminHandler {
 		if !decodeBody(w, r, maxAdminBody, &body) {
 			return
 		}
-		t := adminTransition(who, key, kind, fmt.Sprintf("revision %d", body.Revision), expected, body)
+		t, ok := s.transition(w, r, who, key, kind, fmt.Sprintf("revision %d", body.Revision), expected, body)
+		if !ok {
+			return
+		}
 		outcome, status := s.control.Resolve(r.Context(), t, body.Revision, disposition)
 		s.writePolicyOutcome(w, r, outcome, status)
 	}

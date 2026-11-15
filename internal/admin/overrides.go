@@ -109,7 +109,10 @@ func (s *Server) handleCreateOverride(w http.ResponseWriter, r *http.Request, wh
 	if !decodeBody(w, r, maxAdminBody, &request) {
 		return
 	}
-	t := adminTransition(who, key, "tpo.create", "override", expected, request)
+	t, ok := s.transition(w, r, who, key, "tpo.create", "override", expected, request)
+	if !ok {
+		return
+	}
 	outcome, status := s.control.CreateOverride(r.Context(), t, request)
 	switch status {
 	case http.StatusOK:
@@ -132,7 +135,10 @@ func (s *Server) handleRevokeOverride(w http.ResponseWriter, r *http.Request, wh
 	if !ok {
 		return
 	}
-	t := adminTransition(who, key, "tpo.revoke", fmt.Sprintf("override %d", id), sql.NullInt64{}, nil)
+	t, ok := s.transition(w, r, who, key, "tpo.revoke", fmt.Sprintf("override %d", id), sql.NullInt64{}, nil)
+	if !ok {
+		return
+	}
 	outcome, status := s.control.RevokeOverride(r.Context(), t, id)
 	pipeline.WriteJSON(w, status, outcome)
 }

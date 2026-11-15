@@ -71,7 +71,10 @@ func (s *Server) handleBlockAddress(w http.ResponseWriter, r *http.Request, who 
 		at := request.ExpiresAt.UTC().Truncate(time.Millisecond)
 		request.ExpiresAt = &at
 	}
-	t := adminTransition(who, key, "address.block", prefix.String(), sql.NullInt64{}, request)
+	t, ok := s.transition(w, r, who, key, "address.block", prefix.String(), sql.NullInt64{}, request)
+	if !ok {
+		return
+	}
 	body, status := s.control.BlockAddress(r.Context(), t, store.BlockedAddress{Range: prefix.String(), Prefix: prefix, Reason: request.Reason, ExpiresAt: request.ExpiresAt})
 	pipeline.WriteJSON(w, status, body)
 }
@@ -85,7 +88,10 @@ func (s *Server) handleUnblockAddress(w http.ResponseWriter, r *http.Request, wh
 	if !ok {
 		return
 	}
-	t := adminTransition(who, key, "address.unblock", prefix.String(), sql.NullInt64{}, nil)
+	t, ok := s.transition(w, r, who, key, "address.unblock", prefix.String(), sql.NullInt64{}, nil)
+	if !ok {
+		return
+	}
 	body, status := s.control.UnblockAddress(r.Context(), t, store.BlockedAddress{Range: prefix.String(), Prefix: prefix})
 	pipeline.WriteJSON(w, status, body)
 }

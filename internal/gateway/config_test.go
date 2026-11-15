@@ -82,6 +82,7 @@ func TestNativeConfigSettings(t *testing.T) {
 			AdminListen:          "127.0.0.1:9440",
 			AdminIdleTimeout:     15 * time.Minute,
 			AdminSessionLifetime: 8 * time.Hour,
+			AdminSessions:        8,
 			AuditTimeout:         2 * time.Second,
 			AuditMaxBytes:        64 << 20,
 			AuditMaxFiles:        8,
@@ -118,7 +119,7 @@ func TestNativeConfigSettings(t *testing.T) {
 	cfg, err = parseConfig(configDocument(t, dir, func(s map[string]any) {
 		s["gateway"].(map[string]any)["database"] = filepath.Join(dir, "$${state}.db")
 		maps.Copy(s["gateway"].(map[string]any), map[string]any{
-			"admin_idle_timeout": "10m", "admin_session_lifetime": "1h", "audit_timeout": "1s",
+			"admin_idle_timeout": "10m", "admin_session_lifetime": "1h", "admin_sessions": 3, "audit_timeout": "1s",
 			"audit_max_bytes": 1 << 20, "audit_max_files": 4, "admin_ui": "${APIWARD_TEST_DASHBOARD}",
 			"audit_when_full": "evict_oldest", "shutdown_grace": "30s", "shutdown_delay": "2s", "audit_sync_window": "2ms",
 			"audit_prefill": false,
@@ -136,7 +137,7 @@ func TestNativeConfigSettings(t *testing.T) {
 		t.Fatal(err)
 	}
 	c := cfg.controller
-	if c.AdminIdleTimeout != 10*time.Minute || c.AdminSessionLifetime != time.Hour || c.AuditTimeout != time.Second ||
+	if c.AdminIdleTimeout != 10*time.Minute || c.AdminSessionLifetime != time.Hour || c.AdminSessions != 3 || c.AuditTimeout != time.Second ||
 		c.AuditMaxBytes != 1<<20 || c.AuditMaxFiles != 4 || cfg.adminUI != site || c.Database != filepath.Join(dir, "${state}.db") ||
 		c.AuditWhenFull != "evict_oldest" || c.AuditQueue != 2048 || c.AuditSyncWindow != 2*time.Millisecond || !c.AuditAppend || cfg.shutdownGrace != 30*time.Second || cfg.shutdownDelay != 2*time.Second ||
 		!reflect.DeepEqual(cfg.limits, pipeline.Limits{MaxBodyBytes: 2048, MaxInFlight: 512, IPv6RatePrefix: 56, TrustedProxies: []netip.Prefix{netip.MustParsePrefix("10.0.0.0/8"), netip.MustParsePrefix("192.0.2.7/32")}}) || cfg.maxConnections != 100 || cfg.http2 || cfg.headerLimit != 32768 || cfg.readHeaderTimeout != 2*time.Second ||
@@ -227,6 +228,8 @@ func TestNativeConfigRefusals(t *testing.T) {
 		{"timeout too long", string(configDocument(t, dir, set("upstream", "response_header_timeout", "6m"))), "upstream.response_header_timeout must be 1s to 5m0s"},
 		{"idle timeout too long", string(configDocument(t, dir, set("data", "idle_timeout", "11m"))), "data.idle_timeout must be 1s to 10m0s"},
 		{"admission wait too short", string(configDocument(t, dir, set("gateway", "audit_timeout", "10ms"))), "gateway.audit_timeout must be 100ms to 30s"},
+		{"no administrator sessions", string(configDocument(t, dir, set("gateway", "admin_sessions", 0))), "gateway.admin_sessions must be 1 to 64"},
+		{"administrator sessions past the bound", string(configDocument(t, dir, set("gateway", "admin_sessions", 65))), "gateway.admin_sessions must be 1 to 64"},
 		{"session idle too short", string(configDocument(t, dir, set("gateway", "admin_idle_timeout", "500ms"))), "gateway.admin_idle_timeout must be 1s to 24h0m0s"},
 		{"header before the whole request", string(configDocument(t, dir, func(s map[string]any) {
 			gatewaytest.Section(s, "data")["read_header_timeout"] = "20s"

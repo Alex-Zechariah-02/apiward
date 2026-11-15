@@ -106,6 +106,7 @@ type gatewaySettings struct {
 	MetricsListenAny     bool                 `json:"metrics_listen_any"`
 	AdminIdleTimeout     *string              `json:"admin_idle_timeout"`
 	AdminSessionLifetime *string              `json:"admin_session_lifetime"`
+	AdminSessions        *int                 `json:"admin_sessions"`
 	AuditTimeout         *string              `json:"audit_timeout"`
 	AuditMaxBytes        *int64               `json:"audit_max_bytes"`
 	AuditMaxFiles        *int                 `json:"audit_max_files"`

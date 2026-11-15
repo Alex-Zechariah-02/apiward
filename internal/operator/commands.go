@@ -50,6 +50,7 @@ type Config struct {
 // operatorContext is the deployment an operator command acts on and who
 // runs it.
 type operatorContext struct {
+	ctx    context.Context
 	config Config
 	audit  *audit.AuditLog
 	actor  string
@@ -125,7 +126,7 @@ func runInstall(o *operatorContext, flags map[string]string) (int, error) {
 	if err := o.record(audit.Event{Kind: "transition.intent", Transition: t.ID, Target: name}); err != nil {
 		return 1, err
 	}
-	st, err := store.CreateStore(o.config.Database, installation, first, t, now)
+	st, err := store.CreateStore(o.ctx, o.config.Database, installation, first, t, now)
 	if err != nil {
 		return 1, fmt.Errorf("installing: %w", err)
 	}
@@ -133,7 +134,7 @@ func runInstall(o *operatorContext, flags map[string]string) (int, error) {
 	if err := o.record(audit.Event{Kind: "transition.committed", Transition: t.ID}); err != nil {
 		return 1, err
 	}
-	if err := st.MarkAudited(context.Background(), t.ID, time.Now()); err != nil {
+	if err := st.MarkAudited(o.ctx, t.ID, time.Now()); err != nil {
 		return 1, err
 	}
 
@@ -166,13 +167,13 @@ func runEnrol(o *operatorContext, flags map[string]string) (int, error) {
 	if err := o.record(audit.Event{Kind: "transition.intent", Transition: t.ID, Target: granted}); err != nil {
 		return 1, err
 	}
-	if err := st.IssueEnrolment(context.Background(), t, e, now); err != nil {
+	if err := st.IssueEnrolment(o.ctx, t, e, now); err != nil {
 		return 1, err
 	}
 	if err := o.record(audit.Event{Kind: "transition.committed", Transition: t.ID}); err != nil {
 		return 1, err
 	}
-	if err := st.MarkAudited(context.Background(), t.ID, time.Now()); err != nil {
+	if err := st.MarkAudited(o.ctx, t.ID, time.Now()); err != nil {
 		return 1, err
 	}
 	fmt.Printf("enrolment secret for %s (%v), valid until %s: %s\n", name, permissions.Names(), e.ExpiresAt.UTC().Format(time.RFC3339), secret)
@@ -197,13 +198,13 @@ func runMigrate(o *operatorContext) (int, error) {
 	if err := o.record(audit.Event{Kind: "transition.intent", Transition: t.ID, Target: t.Target}); err != nil {
 		return 1, err
 	}
-	if err := st.Migrate(context.Background(), from, t, time.Now()); err != nil {
+	if err := st.Migrate(o.ctx, from, t, time.Now()); err != nil {
 		return 1, fmt.Errorf("migrating: %w", err)
 	}
 	if err := o.record(audit.Event{Kind: "transition.committed", Transition: t.ID}); err != nil {
 		return 1, err
 	}
-	if err := st.MarkAudited(context.Background(), t.ID, time.Now()); err != nil {
+	if err := st.MarkAudited(o.ctx, t.ID, time.Now()); err != nil {
 		return 1, err
 	}
 	fmt.Printf("migrated %s from schema version %d to %d\n", o.config.Database, from, store.DatabaseVersion)
@@ -215,7 +216,10 @@ func runMigrate(o *operatorContext) (int, error) {
 // deployment's lock for the whole command, across restore's SQLite file
 // replacement, and returns the exit code.
 func Run(command string, cfg Config, flags map[string]string) (int, error) {
-	o := &operatorContext{config: cfg, actor: operatorActor()}
+	// No deadline: a command runs in the foreground with the gateway
+	// stopped, its operator ends it with Ctrl+C, and SQLite recovers the
+	// database from its log; a fixed bound would fail a large backup.
+	o := &operatorContext{ctx: context.Background(), config: cfg, actor: operatorActor()}
 	if err := CheckPaths(flags["config"], o.config, command, flags); err != nil {
 		return 1, err
 	}

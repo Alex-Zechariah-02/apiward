@@ -65,7 +65,10 @@ func (s *Server) handleReloadKeys(w http.ResponseWriter, r *http.Request, who ca
 	if !ok {
 		return
 	}
-	t := adminTransition(who, key, "keys.reload", "keys", sql.NullInt64{}, nil)
+	t, ok := s.transition(w, r, who, key, "keys.reload", "keys", sql.NullInt64{}, nil)
+	if !ok {
+		return
+	}
 	body, status := s.control.ReloadKeys(r.Context(), t)
 	pipeline.WriteJSON(w, status, body)
 }
@@ -115,7 +118,10 @@ func (s *Server) handleBlockAccount(w http.ResponseWriter, r *http.Request, who 
 		adminError(w, http.StatusBadRequest, "bad_request", "reason")
 		return
 	}
-	t := adminTransition(who, key, "account.block", subject, sql.NullInt64{}, request)
+	t, ok := s.transition(w, r, who, key, "account.block", subject, sql.NullInt64{}, request)
+	if !ok {
+		return
+	}
 	body, status := s.control.Block(r.Context(), t, request.Reason)
 	pipeline.WriteJSON(w, status, body)
 }
@@ -133,7 +139,10 @@ func (s *Server) handleUnblockAccount(w http.ResponseWriter, r *http.Request, wh
 	if !ok {
 		return
 	}
-	t := adminTransition(who, key, "account.unblock", subject, sql.NullInt64{}, nil)
+	t, ok := s.transition(w, r, who, key, "account.unblock", subject, sql.NullInt64{}, nil)
+	if !ok {
+		return
+	}
 	body, status := s.control.Unblock(r.Context(), t)
 	pipeline.WriteJSON(w, status, body)
 }

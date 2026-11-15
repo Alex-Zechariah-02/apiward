@@ -62,6 +62,9 @@ func OpenStore(path string) (*DB, error) {
 	if err != nil || info.Size() == 0 {
 		return nil, fmt.Errorf("%w: database %q missing or empty", ErrUnavailable, path)
 	}
+	if err := CheckPrivate(path); err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrUnavailable, err)
+	}
 	db, err := Connect(path, "WAL")
 	if err != nil {
 		return nil, err
@@ -115,7 +118,7 @@ func Verify(db *sql.DB) error {
 // transaction. The file must not exist: installation never replaces a
 // database. An interrupted install leaves a file without a schema, which
 // startup and install both refuse.
-func CreateStore(path, installation string, first Enrolment, install TransitionRecord, now time.Time) (*DB, error) {
+func CreateStore(ctx context.Context, path, installation string, first Enrolment, install TransitionRecord, now time.Time) (*DB, error) {
 	if err := CreatePrivate(path); err != nil {
 		return nil, err
 	}
@@ -123,7 +126,6 @@ func CreateStore(path, installation string, first Enrolment, install TransitionR
 	if err != nil {
 		return nil, err
 	}
-	ctx := context.Background()
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		db.Close()
@@ -182,21 +184,31 @@ func (s *DB) Close() error { return s.db.Close() }
 // store's close closes it.
 func Adopt(db *sql.DB) *DB { return &DB{db: db} }
 
-// Ping reports whether the database connection is still usable.
-func (s *DB) Ping() error { return s.db.Ping() }
-
 // Snapshot writes a consistent copy of the database to path, which must not
-// exist yet.
-func (s *DB) Snapshot(path string) error {
-	_, err := s.db.Exec("VACUUM INTO ?", path)
+// exist yet; cancelling ctx interrupts the copy.
+func (s *DB) Snapshot(ctx context.Context, path string) error {
+	_, err := s.db.ExecContext(ctx, "VACUUM INTO ?", path)
 	return err
 }
 
+// querier is what a read needs from a connection or a transaction.
+type querier interface {
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+}
+
+// Load reads the deployment's authority. Its reads share one transaction,
+// so a commit between them can never mix two states.
 func (s *DB) Load(ctx context.Context) (Authority, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return Authority{}, fmt.Errorf("%w: reading base state: %v", ErrUnavailable, err)
+	}
+	defer tx.Rollback()
 	var a Authority
 	var highWater int64
 	var provisional, deadline sql.NullInt64
-	err := s.db.QueryRowContext(ctx, `
+	err = tx.QueryRowContext(ctx, `
 		SELECT d.mode, d.installation, coalesce(d.recovery_episode, ''), d.high_water,
 			coalesce(b.confirmed, 0), b.provisional, b.deadline
 		FROM deployment d, base b WHERE d.id = 1 AND b.id = 1`).
@@ -211,10 +223,10 @@ func (s *DB) Load(ctx context.Context) (Authority, error) {
 		a.Revision = provisional.Int64
 		a.Deadline = time.UnixMilli(deadline.Int64)
 	}
-	if err := s.checkActivation(ctx, &a); err != nil {
+	if err := checkActivation(ctx, tx, &a); err != nil {
 		return Authority{}, err
 	}
-	a.Overrides, err = s.Overrides(ctx, `WHERE status = 'active' ORDER BY id`)
+	a.Overrides, err = overrides(ctx, tx, `WHERE status = 'active' ORDER BY id`)
 	if err != nil {
 		return Authority{}, fmt.Errorf("%w: reading overrides: %v", ErrUnavailable, err)
 	}
@@ -225,7 +237,7 @@ func (s *DB) Load(ctx context.Context) (Authority, error) {
 		return Authority{}, fmt.Errorf("%w: normal mode without a confirmed base", ErrUnavailable)
 	}
 	var checksum string
-	if err := s.db.QueryRowContext(ctx, `SELECT document, checksum FROM revision WHERE id = ?`, a.Revision).
+	if err := tx.QueryRowContext(ctx, `SELECT document, checksum FROM revision WHERE id = ?`, a.Revision).
 		Scan(&a.Document, &checksum); err != nil {
 		return Authority{}, fmt.Errorf("%w: reading revision %d: %v", ErrUnavailable, a.Revision, err)
 	}

@@ -47,7 +47,7 @@ func runRestore(o *operatorContext, flags map[string]string) (int, error) {
 		return 1, err
 	}
 	defer removeFiles(staging, staging+"-wal", staging+"-shm", staging+"-journal")
-	if err := copyDatabase(backup, staging); err != nil {
+	if err := copyDatabase(o.ctx, backup, staging); err != nil {
 		return 1, fmt.Errorf("staging the backup: %w", err)
 	}
 	// SQLite opened the backup by name: it must still be the file checked.
@@ -61,7 +61,7 @@ func runRestore(o *operatorContext, flags map[string]string) (int, error) {
 	if err := o.record(audit.Event{Kind: "transition.intent", Transition: t.ID, File: filepath.Base(backup)}); err != nil {
 		return 1, err
 	}
-	if err := markRecovery(staging, t, episode, now); err != nil {
+	if err := markRecovery(o.ctx, staging, t, episode, now); err != nil {
 		return 1, fmt.Errorf("marking the staged database: %w", err)
 	}
 	fault.CrashPoint("restore-before-promote")
@@ -88,7 +88,7 @@ func runRestore(o *operatorContext, flags map[string]string) (int, error) {
 	// The restore is complete. If its audit receipt cannot be recorded here,
 	// the gateway records the outcome event again at its next startup.
 	if st, err := store.OpenStore(live); err == nil {
-		st.MarkAudited(context.Background(), t.ID, time.Now())
+		st.MarkAudited(o.ctx, t.ID, time.Now())
 		st.Close()
 	}
 	fmt.Printf("restored %s as %s in %s mode (episode %s)\n", backup, live, store.ModeRecovery, episode)
@@ -219,7 +219,7 @@ func liveInstallation(live string) (string, error) {
 }
 
 // copyDatabase copies a database file through SQLite into a new file.
-func copyDatabase(source, target string) error {
+func copyDatabase(ctx context.Context, source, target string) error {
 	db, err := sql.Open("sqlite", store.DatabaseURI(source)+"?mode=ro")
 	if err != nil {
 		return err
@@ -229,19 +229,19 @@ func copyDatabase(source, target string) error {
 	if err := store.CreatePrivate(target); err != nil {
 		return err
 	}
-	if _, err := db.Exec("VACUUM INTO ?", target); err != nil {
+	if _, err := db.ExecContext(ctx, "VACUUM INTO ?", target); err != nil {
 		return err
 	}
 	return checkDatabaseFile(target)
 }
 
-func markRecovery(path string, t store.TransitionRecord, episode string, now time.Time) error {
+func markRecovery(ctx context.Context, path string, t store.TransitionRecord, episode string, now time.Time) error {
 	db, err := store.Connect(path, "DELETE")
 	if err != nil {
 		return err
 	}
 	s := store.Adopt(db)
-	err = s.DeclareRecovery(context.Background(), t, episode, now)
+	err = s.DeclareRecovery(ctx, t, episode, now)
 	return errors.Join(err, s.Close())
 }
 

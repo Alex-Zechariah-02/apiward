@@ -3,7 +3,6 @@
 package operator
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -49,7 +48,7 @@ func runBackup(o *operatorContext, flags map[string]string) (int, error) {
 	}
 	defer st.Close()
 	o.openAudit()
-	a, err := st.Load(context.Background())
+	a, err := st.Load(o.ctx)
 	if err != nil {
 		return 1, err
 	}
@@ -69,7 +68,7 @@ func runBackup(o *operatorContext, flags map[string]string) (int, error) {
 	if err != nil {
 		return 1, err
 	}
-	if err := st.Snapshot(partial); err != nil {
+	if err := st.Snapshot(o.ctx, partial); err != nil {
 		return 1, fmt.Errorf("writing snapshot: %w", err)
 	}
 	fault.CrashPoint("backup-before-verify")

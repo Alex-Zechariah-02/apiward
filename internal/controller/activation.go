@@ -35,7 +35,9 @@ func (c *Controller) EstablishBase(ctx context.Context, kind, actor string, cand
 		t.ID, t.Kind = "recovery:"+a.Episode, "recovery_base"
 		requiredMode = store.ModeRecovery
 	}
-	t.Digest = store.Digest(t.Kind, t.Target, sql.NullInt64{}, checksum)
+	if t.Digest, err = store.Digest(t.Kind, t.Target, sql.NullInt64{}, checksum); err != nil {
+		return c.storeFailure(kind, err)
+	}
 	if result, status, done := c.replay(ctx, t); done {
 		return result, status
 	}

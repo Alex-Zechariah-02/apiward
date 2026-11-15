@@ -16,6 +16,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/Alex-Zechariah-02/apiward/internal/filecheck"
 	"github.com/Alex-Zechariah-02/apiward/internal/forward"
 	"github.com/Alex-Zechariah-02/apiward/internal/policy"
 )
@@ -164,7 +165,7 @@ func (c TrustConfig) bounds() (time.Duration, int, error) {
 }
 
 func readVerificationKey(path string, minBits int) (*rsa.PublicKey, string, error) {
-	data, err := forward.ReadPEM(path, forward.CheckTrusted)
+	data, err := forward.ReadPEM(path, filecheck.Trusted)
 	if err != nil {
 		return nil, "", fmt.Errorf("reading public key: %w", err)
 	}

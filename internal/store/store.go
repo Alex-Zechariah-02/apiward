@@ -96,13 +96,17 @@ type TransitionRecord struct {
 }
 
 // Digest identifies a mutation request by its kind, target, required
-// revision and canonical payload; a resent request must match it.
-func Digest(kind, target string, expected sql.NullInt64, payload any) string {
-	canonical, _ := json.Marshal(payload)
+// revision and canonical payload; a resent request must match it. It fails
+// only on a payload JSON cannot encode.
+func Digest(kind, target string, expected sql.NullInt64, payload any) (string, error) {
+	canonical, err := json.Marshal(payload)
+	if err != nil {
+		return "", fmt.Errorf("digest of %s: %w", kind, err)
+	}
 	sum := sha256.New()
 	fmt.Fprintf(sum, "%s|%s|%v|%d|", kind, target, expected.Valid, expected.Int64)
 	sum.Write(canonical)
-	return hex.EncodeToString(sum.Sum(nil))
+	return hex.EncodeToString(sum.Sum(nil)), nil
 }
 
 // RevisionChange is a new active base and the state committed with it.

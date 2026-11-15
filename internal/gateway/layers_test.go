@@ -17,18 +17,19 @@ import (
 // layers lists, for each internal package, the internal packages it may import.
 var layers = map[string][]string{
 	"fault":       nil,
+	"filecheck":   nil,
 	"adminui":     nil,
 	"policy":      nil,
 	"compile":     {"fault", "policy"},
-	"forward":     {"policy", "compile"},
-	"store":       {"fault", "policy"},
+	"forward":     {"filecheck", "policy", "compile"},
+	"store":       {"fault", "filecheck", "policy"},
 	"audit":       {"fault"},
 	"session":     nil,
 	"connections": nil,
 	"monitor":     {"policy", "compile", "audit"},
 	"issuertest":  nil,
 	"storetest":   {"policy", "store"},
-	"pipeline":    {"fault", "policy", "compile", "forward", "store", "audit", "monitor"},
+	"pipeline":    {"fault", "filecheck", "policy", "compile", "forward", "store", "audit", "monitor"},
 	"controller":  {"fault", "policy", "compile", "forward", "store", "audit", "session", "monitor", "pipeline", "connections"},
 	"admin":       {"policy", "compile", "store", "audit", "session", "monitor", "pipeline", "controller"},
 	"operator":    {"fault", "policy", "store", "audit", "session"},
@@ -104,7 +105,8 @@ func TestPackageLayers(t *testing.T) {
 			}
 			for _, imp := range slices.Concat(pkg.TestImports, pkg.XTestImports) {
 				dep, ok := strings.CutPrefix(imp, module+"/internal/")
-				if ok && !slices.Contains(allowed, dep) && !slices.Contains(unlayered, dep) && !slices.Contains(support, dep) {
+				// An external test package (package x_test) imports the package it tests.
+				if ok && dep != name && !slices.Contains(allowed, dep) && !slices.Contains(unlayered, dep) && !slices.Contains(support, dep) {
 					t.Errorf("internal/%s tests import internal/%s (tags %v)", name, dep, tags)
 				}
 			}
