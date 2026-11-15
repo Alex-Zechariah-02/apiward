@@ -15,7 +15,7 @@ const source = (...dirs: string[]) =>
     .map((file) => readFileSync(file, 'utf8'))
     .join('\n')
 const found = (text: string, pattern: RegExp) => [...new Set([...text.matchAll(pattern)].map((match) => match[1]))]
-const adminCodes = found(source('admin'), /(?:adminError\(w|refuse\(w, r), [^,]+, "([a-z_]+)"/g)
+const adminCodes = found(source('admin'), /(?:adminError\(w|refuse\(w, r|fail\(w, r), [^,]+, "([a-z_]+)"/g)
 const controllerReasons = [
   ...new Set([
     ...found(source('controller'), /"([A-Z][A-Z_]{3,})"/g),
