@@ -22,6 +22,7 @@ function ListField(props: { label: string; hint: string; value: string[]; editab
       <textarea
         id={id}
         className="input mono"
+        // 2 to 8 rows: room for one new line; a longer list scrolls inside the field instead of pushing the form down.
         rows={Math.min(Math.max(props.value.length + 1, 2), 8)}
         value={text}
         readOnly={!props.editable}
@@ -159,8 +160,12 @@ export function ApiFields(props: { api: ApiEntry; policy: Policy; editable: bool
               disabled={!editable || api.cors.origins.includes('*')}
               onChange={(on) => cors((rule) => (on ? (rule.credentials = true) : delete rule.credentials))}
             />
-            {text('max_age', 'Cache Preflight For (Seconds)', String(api.cors.max_age_seconds ?? 600),
-              (value) => cors((rule) => (rule.max_age_seconds = Number(value))), 'From 0 to 86400. Browsers reuse a preflight answer this long.')}
+            {/* Digits only: any other text would be saved as no value, which the gateway reads as its default. */}
+            {text('max_age', 'Cache Preflight For (Seconds)', api.cors.max_age_seconds === undefined ? '' : String(api.cors.max_age_seconds),
+              (value) => {
+                if (value === '') cors((rule) => delete rule.max_age_seconds)
+                else if (/^\d+$/.test(value)) cors((rule) => (rule.max_age_seconds = Number(value)))
+              }, "From 0 to 86400, digits only. Browsers reuse a preflight answer this long. Empty: the gateway's default, 600.")}
           </>
         ) : null}
       </fieldset>

@@ -52,9 +52,25 @@ export function SecurityLogView({ admin }: ViewProps) {
   const asked = useFocus('search')
   const resumed = useRef(false)
 
+  // reading is the read in flight. A newer read or leaving the page aborts
+  // it, so an earlier search's answer never lands after a later one's.
+  const reading = useRef<AbortController | null>(null)
+  useEffect(() => () => reading.current?.abort(), [])
+
+  // read runs a new search, or with more reads its next page. A new search
+  // empties the list first: after a search that fails, no earlier search's
+  // rows or count stay on screen as if they answered it. No page size is
+  // sent, so each read is the gateway's default page (50 rows) and stays
+  // short; pages add up only as far as Show Older is pressed, until the next
+  // search.
   async function read(next: URLSearchParams, more: boolean) {
+    reading.current?.abort()
+    const controller = new AbortController()
+    reading.current = controller
     setLoading(true)
-    const answer = await admin.get<LogPage>(`/admin/security-log?${next}`)
+    if (!more) setPages([])
+    const answer = await admin.get<LogPage>(`/admin/security-log?${next}`, controller.signal)
+    if (controller.signal.aborted || answer.kind === 'aborted') return
     setLoading(false)
     setReply(answer)
     if (answer.kind === 'ok') setPages((earlier) => (more ? [...earlier, answer.body] : [answer.body]))
@@ -86,6 +102,7 @@ export function SecurityLogView({ admin }: ViewProps) {
   }, [asked])
   const items = pages.flatMap((page) => page.items)
   const last = pages.at(-1)
+  // An export uses the search's filters; the gateway caps it (10,000 rows), as the hint beside the buttons says.
   const exportQuery = (format: string) => `/admin/security-log?${new URLSearchParams([...(query ?? new URLSearchParams()), ['format', format]])}`
   const set = (name: keyof typeof blankLogForm) => (e: { target: { value: string } }) => setForm({ ...form, [name]: e.target.value })
 

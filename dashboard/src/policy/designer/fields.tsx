@@ -1,62 +1,10 @@
-import { useEffect, useId, useState, type ReactNode } from 'react'
+import type { ReactNode } from 'react'
 import type { Operation, Policy } from '../../shared/api'
 import { copy, type BoxKey } from './model'
 import { RequestRules } from '../request-rules'
-import { Field, describedBy } from '../../shared/ui'
+import { SchemaEditor } from './schema'
 
-// An endpoint in the box editor: its fields, the JSON editor for its schemas, and its checks in order.
-
-function SchemaEditor({
-  label,
-  value,
-  editable,
-  onChange,
-  onIssue,
-}: {
-  label: string
-  value: unknown
-  editable: boolean
-  onChange: (value: unknown) => void
-  onIssue: (message: string | null) => void
-}) {
-  const id = useId()
-  const serialised = JSON.stringify(value, null, 2)
-  const [text, setText] = useState(serialised)
-  const [error, setError] = useState('')
-  useEffect(() => {
-    setText(serialised)
-    setError('')
-    onIssue(null)
-  }, [serialised])
-  return (
-    <Field id={id} label={label} hint="The gateway validates the schema on save." error={error || undefined} wide>
-      <textarea
-        id={id}
-        className="input code-input"
-        value={text}
-        readOnly={!editable}
-        spellCheck={false}
-        aria-invalid={!!error}
-        aria-describedby={describedBy(id, 'hint', error)}
-        onChange={(event) => {
-          const next = event.target.value
-          setText(next)
-          try {
-            const parsed: unknown = JSON.parse(next)
-            if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('Use a JSON object.')
-            setError('')
-            onIssue(null)
-            onChange(parsed)
-          } catch (caught) {
-            const message = caught instanceof Error ? caught.message : 'Enter a JSON object.'
-            setError(message)
-            onIssue(message)
-          }
-        }}
-      />
-    </Field>
-  )
-}
+// An endpoint in the box editor: its fields, with the JSON editors for its schemas, and its checks in order.
 
 // The form helpers ObjectForm lends to the endpoint fields.
 type Input = (name: string, label: string, value: string | number, update: (value: string) => void, hint?: string, type?: string) => ReactNode
@@ -81,6 +29,7 @@ export function OperationFields(props: {
   const { operation, policy, editable, id, selection, fieldId, input, select, patch, onChange, onBufferIssue, setMakingPublic } = props
   return (
     <>
+      {/* The seven methods a policy may name. */}
       {select('method', 'Method', operation.method, ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'], (method) =>
         patch({ method }),
       )}
@@ -147,6 +96,7 @@ export function OperationFields(props: {
               const next = copy(policy)
               const target = next.operations.find((entry) => entry.id === id)!
               const key = operation.auth === 'none' ? 'client_address' : 'subject'
+              // Starts at 100 a minute, like an endpoint added from the canvas; the real numbers are then set below.
               if (event.target.checked) target.rate = { algorithm: 'sliding-window', key, count: 100, window_seconds: 60 }
               else delete target.rate
               onChange(next)
@@ -204,6 +154,7 @@ export function OperationFields(props: {
             onChange={(event) => {
               const next = copy(policy)
               const target = next.operations.find((entry) => entry.id === id)!
+              // Starts closed: 1,024 bytes and an empty object, so nothing is accepted until members are declared.
               if (event.target.checked)
                 target.body = { max_bytes: 1024, schema: { type: 'object', properties: {}, additionalProperties: false } }
               else delete target.body
@@ -212,6 +163,9 @@ export function OperationFields(props: {
           />{' '}
           Body rule
         </label>
+        {operation.body && admits(operation.body.schema) === 'none' ? (
+          <p className="hint">This schema accepts only an empty JSON object. Declare the members to accept under properties.</p>
+        ) : null}
       </div>
       {operation.body ? (
         <>
@@ -241,6 +195,7 @@ export function OperationFields(props: {
             onChange={(event) => {
               const next = copy(policy)
               const target = next.operations.find((entry) => entry.id === id)!
+              // Starts open: a closed header schema would refuse every browser's request; declared headers are then checked.
               if (event.target.checked) target.headers = { type: 'object', properties: {}, additionalProperties: true }
               else delete target.headers
               onChange(next)
@@ -248,6 +203,9 @@ export function OperationFields(props: {
           />{' '}
           Header rule
         </label>
+        {admits(operation.headers) === 'any' ? (
+          <p className="hint">This schema accepts any headers. Declare the headers to check under properties.</p>
+        ) : null}
       </div>
       {operation.headers !== undefined ? (
         <SchemaEditor
@@ -266,6 +224,25 @@ export function OperationFields(props: {
       ) : null}
     </>
   )
+}
+
+// admits says what a schema that declares no members lets through: any
+// member, or none. A rule switched on starts as one of these, which the form
+// and the canvas say in words, because "Body rule" alone reads as "bodies
+// accepted" and "Header rule" as "headers restricted".
+function admits(schema: unknown): 'any' | 'none' | 'declared' {
+  if (!schema || typeof schema !== 'object') return 'declared'
+  const { type: _type, properties, additionalProperties, ...rest } = schema as Record<string, unknown>
+  if (Object.keys(rest).length || Object.keys((properties as object | undefined) ?? {}).length) return 'declared'
+  return additionalProperties === false ? 'none' : 'any'
+}
+
+// requestWords is the canvas line for an endpoint's body and header rules.
+function requestWords(operation: Operation): string {
+  const headers = operation.headers === undefined ? '' : admits(operation.headers) === 'any' ? 'any headers' : 'headers'
+  if (!operation.body) return headers || 'none'
+  const body = `≤ ${operation.body.max_bytes} B${admits(operation.body.schema) === 'none' ? ', empty object only' : ''}`
+  return headers ? `${body} + ${headers}` : body
 }
 
 // checks lists what the gateway checks on an endpoint, in its fixed order;
@@ -288,7 +265,7 @@ export function checks(policy: Policy, operation: Operation): { name: string; va
     },
     {
       name: 'Body',
-      value: operation.body ? `≤ ${operation.body.max_bytes} B${operation.headers ? ' + headers' : ''}` : operation.headers ? 'headers' : 'none',
+      value: requestWords(operation),
       tone: operation.body || operation.headers ? 'neutral' : null,
     },
     { name: 'Record', value: 'always', tone: 'neutral' },

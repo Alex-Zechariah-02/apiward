@@ -9,6 +9,9 @@ export interface DesignerDraft {
   document: Policy
   base: Policy
   baseRevision: number
+  // saved is the document as last saved as a draft change; saving the same
+  // document again would only store a duplicate.
+  saved?: Policy
 }
 export interface Issue {
   id: string
@@ -32,6 +35,8 @@ export function capital(text: string): string {
 export function copy<T>(value: T): T {
   return structuredClone(value)
 }
+// canonical writes members sorted and arrays in order, so two documents that
+// differ only in member order compare equal.
 export function canonical(value: unknown): string {
   return JSON.stringify(value, (_, item: unknown) =>
     item && typeof item === 'object' && !Array.isArray(item)
@@ -259,6 +264,7 @@ export function add(policy: Policy, kind: BoxKind): { document: Policy; key: Box
   if (kind === 'role') next.roles.push({ id })
   if (kind === 'upstream') next.upstreams.push({ id, dial: '' })
   if (kind === 'api') next.apis.push({ id, upstream: next.upstreams[0].id })
+  // A new endpoint starts closed (Access: Deny, sign-in required), so a half-edited one admits nothing.
   if (kind === 'operation')
     next.operations.push({
       id,

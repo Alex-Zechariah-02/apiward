@@ -30,10 +30,12 @@ export function RolesSection(props: { policy: Policy; active: Override[]; recent
       if (!subjects.includes(event.subject)) seen.set(role, [...subjects, event.subject])
     }
   }
+  // An endpoint set to Access: Deny is closed to everyone, whatever its permissions say.
+  const open = doc.operations.filter((operation) => operation.access !== 'deny')
   const allowedFor = (role: string) =>
     role === publicTab
-      ? doc.operations.filter((operation) => operation.auth === 'none')
-      : doc.operations.filter((operation) => doc.permits.some((permit) => permit.role === role && permit.operation === operation.id))
+      ? open.filter((operation) => operation.auth === 'none')
+      : open.filter((operation) => doc.permits.some((permit) => permit.role === role && permit.operation === operation.id))
   const tabs: [string, string][] = [...doc.roles.map((role): [string, string] => [role.id, role.id]), [publicTab, 'Public']]
   const role = tabs.some(([id]) => id === chosen) ? chosen : tabs[0][0]
   const allowed = allowedFor(role)

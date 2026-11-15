@@ -1,6 +1,7 @@
 import { lazy, Suspense, useContext, useEffect, useRef, useState } from 'react'
 import { type Admin } from '../shared/http'
-import type { Permission, SessionInfo, Status } from '../shared/api'
+import type { Permission, Reply, SessionInfo, Status } from '../shared/api'
+import { Problem } from '../shared/replies'
 import {
   Can,
   GatewayState,
@@ -86,6 +87,8 @@ export function Shell(props: {
   const [candidate, setCandidate] = useState<number | undefined>(undefined)
   const [designerDraft, setDesignerDraft] = useState<DesignerDraft | null>(null)
   const [menuOpen, setMenuOpen] = useState(false)
+  // exit is the gateway's refusal of the latest sign-out, shown until the next attempt.
+  const [exit, setExit] = useState<Reply<unknown> | null>(null)
   const [wide, setWide] = useState(readSidebar)
   // toggled lets the sidebar's labels fade in after a widening, never on load.
   const [toggled, setToggled] = useState(false)
@@ -160,11 +163,16 @@ export function Shell(props: {
   }
 
   async function signOut() {
+    setExit(null)
     const reply = await admin.send({ method: 'DELETE', path: '/admin/session' })
     if (reply.kind === 'ok') {
       signedOut('Signed out.', true)
     } else if (reply.kind === 'unknown') {
       signedOut('Signed out of this page, but the gateway did not confirm it; the session ends at its idle timeout.', true)
+    } else if (reply.kind === 'refused') {
+      // Still signed in: the refusal is shown at the top of the page.
+      setExit(reply)
+      document.getElementById('content')?.focus()
     }
   }
 
@@ -201,6 +209,12 @@ export function Shell(props: {
         />
         <main id="content" className="page" tabIndex={-1}>
           <Notifications status={facts} view={view} />
+          {exit ? (
+            <section className="section" aria-label="Sign-out refused">
+              <p className="hint">You are still signed in: the gateway refused the sign-out.</p>
+              <Problem reply={exit} />
+            </section>
+          ) : null}
           {/* The Overview shows the gateway's state in full; every other page
               says so at the top when the gateway refuses everything. */}
           {facts && view !== 'overview' && (facts.admission !== 'ready' || facts.audit_failed) ? (

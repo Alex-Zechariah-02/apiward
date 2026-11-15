@@ -18,6 +18,7 @@ The administrator Dashboard: a React and TypeScript single-page application that
 - **Live Traffic:** every request as the gateway decides it, streamed; pause for inspection; filters for changes only (anything but reads) or refusals only; keeps the latest 1,000 requests and draws the newest 200 that match.
 - **Request details:** every request row on Overview, Live Traffic and the Security Log opens the request in a side panel at the page's own address plus `?ref=`; Back closes it.
 - The panel shows arrival time, method and path, response, policy version and account; each check passed, the deciding check and those never reached; the full reason; the Ref to copy.
+- A path longer than 256 bytes is recorded cut; request lists and the panel end it with an ellipsis and say so. Exports carry `path_truncated`.
 - The **Search** box in every page header opens a full Ref the same way, opens the Security Log on an account or endpoint ID (never placed in the address), and finds a draft change ("change 12"), a temporary rule ("rule 3") or a version ("version 4").
 - **APIs:** each API's endpoints, who may call them, rate limits and bodies, traffic figures, and each endpoint's request rules in words with the exact schema under More Details.
 
@@ -68,14 +69,16 @@ The administrator Dashboard: a React and TypeScript single-page application that
 - Edit one draft in Canvas, Form or JSON. Boxes show roles, endpoints, APIs and service addresses; arrows show permissions and routing.
 - The checks on an endpoint stay in the gateway's enforcement order, with the same names as Live Traffic.
 - The Form tab offers every editing option by keyboard.
-- **Templates** prepares a common change in the draft: limit sign-in attempts, read-only access for a role to an API, remove a role's access to an API, or a tighter rate limit on an endpoint. It only edits the unsaved draft and says what it changed.
+- **Templates** prepares a common change in the draft: limit sign-in attempts, read-only access for a role to an API, remove a role's access to an API, or a tighter rate limit on an endpoint. It only edits the unsaved draft and says what it changed. The sign-in template keeps a limit that is already stricter.
 - **Step by Step** walks through three edits (give a role access, change a rate limit, add an endpoint), each ending on a review; **Apply to the Draft** only edits the unsaved draft.
 - **Connect an API** opens in a side drawer from the Policy page, its empty canvas, the APIs page or the Getting Started guide. Steps: service address, API, endpoints, roles, rate limits and, optionally, a JSON Schema for each write endpoint's request body; the review lists what the draft gains; **Add to the Draft** only edits the unsaved draft.
 - The gateway's compiler checks the result, schemas included, when the draft is saved.
 - The draft stays in the signed-in page's memory across pages and ends with the session.
 - **Save Draft Change** asks the gateway to check and store the whole document; the change continues on the Changes page. A save with no answer remains an unknown outcome; only an explicit identical resend reuses its request key.
 - The in-force and on-trial modes are read-only. Live markers show temporary permissions, removals, rates, endpoint denial and changes on trial without rewriting the draft.
-- Trace explains the selected document and sends no request; it does not apply temporary rules or decide actual access.
+- Trace explains the selected document and sends no request; it does not apply temporary rules or decide actual access. Its first step is the blocked-address check.
+- A saved draft shows "Saved as a draft change"; Save Changes is offered again only after a further edit.
+- The policy size limit shown on the Changes page and the JSON tab is the gateway's own (`limits.policy_bytes`); the Limits page lists it with the active policy's size.
 
 ## Serving
 

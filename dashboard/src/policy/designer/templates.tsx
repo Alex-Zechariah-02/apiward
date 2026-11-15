@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import type { Policy } from '../../shared/api'
-import { limitSignIn, readOnlyAccess, removeApiAccess, tightenRate, type TemplateResult } from './edits'
+import { limitSignIn, readOnlyAccess, removeApiAccess, signIn, tightenRate, type TemplateResult } from './edits'
 
 // Templates offers ready-made starting points for common changes. Applying one
 // only edits the unsaved draft; the draft is then saved, checked by the
@@ -14,6 +14,7 @@ export function Templates(props: { policy: Policy; apply: (document: Policy, sum
   const [role, setRole] = useState('')
   const [api, setApi] = useState('')
   const [endpoint, setEndpoint] = useState('')
+  // Starts at 5, the sign-in template's count; any whole number below the current limit is accepted.
   const [count, setCount] = useState('5')
   const [problem, setProblem] = useState('')
   // The open menu lies over the page, so a click elsewhere or Escape closes it.
@@ -68,7 +69,9 @@ export function Templates(props: { policy: Policy; apply: (document: Policy, sum
         <p className="hint">Templates edit this draft only.</p>
         <section aria-labelledby={`${id}-login`}>
           <h3 id={`${id}-login`}>Limit Sign-In Attempts</h3>
-          <p className="hint">accounts.login: 5 requests per 60 s per client address.</p>
+          <p className="hint">
+            accounts.login: {signIn.count} requests per {signIn.window_seconds} s per client address. A stricter limit is kept.
+          </p>
           <button type="button" className="btn btn-small" onClick={() => run(limitSignIn(props.policy))}>
             Apply: limit sign-in attempts
           </button>

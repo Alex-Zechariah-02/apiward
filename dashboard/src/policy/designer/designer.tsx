@@ -1,6 +1,7 @@
 import { useCallback, useContext, useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from 'react'
 import type { Candidate, OverridesView, Page, Policy, ProvisionalView, Revision } from '../../shared/api'
 import { useGatewayState, useMutation, useResource, ViewMemory } from '../../shared/hooks'
+import { sizeProblem, usePolicyLimit } from '../../shared/limits'
 import { DesignerCanvas } from './canvas'
 import type { TracePath } from './graph'
 import { FormView, Issues } from './form'
@@ -54,6 +55,7 @@ export function Designer({
     (signal) => (pendingId !== undefined ? admin.get(`/admin/revisions/${pendingId}`, signal) : Promise.resolve({ kind: 'aborted' })),
     [pendingId],
   )
+  // The page opens on the draft, which is what it edits; the active and trial versions are one click away.
   const [mode, setMode] = useState<Mode>('draft')
   const [tab, setTab] = useState<Tab>('canvas')
   const [selection, setSelection] = useState<BoxKey | null>(null)
@@ -61,6 +63,7 @@ export function Designer({
   const [jsonError, setJsonError] = useState('')
   const [buffers, setBuffers] = useState<Record<string, string>>({})
   const [expanded, setExpanded] = useState(false)
+  // Temporary rules show by default: they change what requests get now, so hiding them is a deliberate choice.
   const [showLive, setShowLive] = useState(true)
   const [showTrace, setShowTrace] = useState(false)
   const [wizard, setWizard] = useState<{ task: GuidedTask; api?: string } | null>(null)
@@ -88,8 +91,14 @@ export function Designer({
           ? provisionalDocument.reply.body.document
           : undefined
   const editable = can('manage_policy') && mode === 'draft'
+  // Changed means the canonical forms differ, so member order or spacing alone never counts as a change.
   const dirty = !!draft && canonical(draft.document) !== canonical(draft.base)
+  // saved: the draft differs from the active version but is exactly what was last saved as a draft change.
+  const saved = dirty && !!draft?.saved && canonical(draft.document) === canonical(draft.saved)
+  const limit = usePolicyLimit(admin)
   const changed = useMemo(() => (draft ? changes(draft.base, draft.document) : []), [draft])
+  // A schema text that is not a JSON object blocks saving like any other issue: the draft would otherwise be saved
+  // without the edit the administrator is looking at.
   const issues = useMemo(
     () =>
       document ? [...localIssues(document), ...Object.entries(buffers).map(([field, message]) => ({ id: 'shape', field, message }))] : [],
@@ -116,6 +125,7 @@ export function Designer({
       setDraft({
         document: copy(current.document),
         base: copy(current.document),
+        // The ETag "r<n>" names the version the draft is based on; the version's own id is the same number.
         baseRevision: Number(etag?.match(/^"r(\d+)"$/)?.[1] ?? current.id),
       })
     }
@@ -136,20 +146,24 @@ export function Designer({
     setJsonError('')
   }, [serialised, mode])
   useEffect(() => {
-    if (!dirty && !(editable && tab === 'json' && json !== serialised)) return
+    if ((!dirty || saved) && !(editable && tab === 'json' && json !== serialised)) return
     const warn = (event: BeforeUnloadEvent) => {
       event.preventDefault()
       event.returnValue = ''
     }
     window.addEventListener('beforeunload', warn)
     return () => window.removeEventListener('beforeunload', warn)
-  }, [dirty, editable, tab, json, serialised])
+  }, [dirty, saved, editable, tab, json, serialised])
   useEffect(() => {
     if (mode === 'provisional' && pendingId === undefined) setMode('confirmed')
   }, [mode, pendingId])
   useEffect(() => {
     if (phase.state !== 'replied') return
-    if (phase.reply.kind === 'ok') requestAnimationFrame(() => review.current?.focus())
+    if (phase.reply.kind === 'ok') {
+      const document = submitted.current
+      if (document) setDraft((previous) => (previous ? { ...previous, saved: document } : previous))
+      requestAnimationFrame(() => review.current?.focus())
+    }
     if (phase.reply.kind !== 'refused') return
     const field = phase.reply.outcome?.field ?? phase.reply.field ?? ''
     const code = phase.reply.outcome?.reason ?? phase.reply.error
@@ -257,6 +271,11 @@ export function Designer({
   }
   function applyJson(): boolean {
     if (!editable || !draft || json === serialised) return true
+    const large = sizeProblem('document', new TextEncoder().encode(json).length, limit)
+    if (large) {
+      setJsonError(large)
+      return false
+    }
     try {
       const parsed: unknown = JSON.parse(json)
       const issue = shapeIssue(parsed)
@@ -306,9 +325,12 @@ export function Designer({
   const formProps = document
     ? { policy: document, editable, onChange: update, onRename: renameBox, onDelete: setDeleteKey, onBufferIssue }
     : null
+  // Save needs all of: may edit, something not yet saved, no issue, no save in flight or unanswered, and the JSON tab
+  // applied. Each one missing would save something other than what is on screen, or save it twice.
   const canStage =
     editable &&
     dirty &&
+    !saved &&
     issues.length === 0 &&
     !mutation.pending &&
     !(phase.state === 'replied' && phase.reply.kind === 'unknown') &&
@@ -317,7 +339,7 @@ export function Designer({
     !!draft && (dirty || draft.baseRevision !== current?.id || (tab === 'json' && json !== serialised) || Object.keys(buffers).length > 0)
 
   return (
-    <ProfilesContext.Provider value={profiles.last?.body.items ?? []}>
+    <ProfilesContext.Provider value={profiles.last?.body.items ?? (profiles.failed ? null : [])}>
       <PageHeader
         title="Policy"
         lede="Define which roles may call each endpoint and where each API forwards requests."
@@ -366,6 +388,15 @@ export function Designer({
               </button>
             </>
           ) : null}
+          {profiles.reply && profiles.reply.kind !== 'ok' ? (
+            <>
+              <p className="hint">The gateway's TLS profiles could not be read, so service addresses cannot list them; that does not mean there are none.</p>
+              <Problem reply={profiles.reply} />
+              <button className="btn btn-small" type="button" onClick={profiles.refresh}>
+                Retry Reading TLS Profiles
+              </button>
+            </>
+          ) : null}
           {/* One command row: the views on the left with what each is for, and
               which version is shown, the draft's state and its actions on the
               right, so the canvas below can take the rest of the window. */}
@@ -379,6 +410,7 @@ export function Designer({
             setDiscardConfirm={setDiscardConfirm}
             current={current}
             dirty={dirty}
+            saved={saved}
             changed={changed}
             issues={issues}
             mutation={mutation}
@@ -555,6 +587,7 @@ export function Designer({
                 setJsonError={setJsonError}
                 current={current}
                 editable={editable}
+                limit={limit}
                 applyJson={applyJson}
               />
             ) : null}

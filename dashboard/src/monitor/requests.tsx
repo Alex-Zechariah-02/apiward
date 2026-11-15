@@ -23,6 +23,24 @@ export interface RequestEvent {
   code: string | null
   generation: string
   duration_ms: number
+  // path_truncated says the gateway recorded only the start of a long path.
+  path_truncated?: true
+}
+
+// RequestLine is a request's method and path. A path the gateway recorded
+// only the start of ends in an ellipsis that says so, so the start is never
+// read as the whole path.
+export function RequestLine({ event, className }: { event: Pick<RequestEvent, 'method' | 'path' | 'path_truncated'>; className?: string }) {
+  return (
+    <code className={className}>
+      <span className="method">{event.method}</span> {event.path}
+      {event.path_truncated ? (
+        <span title="The gateway recorded only the start of this path.">
+          …<span className="visually-hidden"> (path cut: only its start was recorded)</span>
+        </span>
+      ) : null}
+    </code>
+  )
 }
 
 // Plain words for the gateway's refusal codes; the code stays one
@@ -127,6 +145,7 @@ export function EventRows({ events, label }: { events: RequestEvent[]; label: st
               <td className="nowrap">
                 <a className="xref" href={refAddress(e.request_id)}>
                   <span className="visually-hidden">Open request </span>
+                  {/* 8 characters tell rows apart at a glance; the link and the drawer carry the full Ref. */}
                   <code>{e.request_id.slice(0, 8)}</code>
                 </a>
               </td>
@@ -136,14 +155,10 @@ export function EventRows({ events, label }: { events: RequestEvent[]; label: st
               <td className="nowrap">
                 {e.operation ? (
                   <XRef view="policy" focus={{ select: `operation:${e.operation}` }}>
-                    <code>
-                      <span className="method">{e.method}</span> {e.path}
-                    </code>
+                    <RequestLine event={e} />
                   </XRef>
                 ) : (
-                  <code>
-                    <span className="method">{e.method}</span> {e.path}
-                  </code>
+                  <RequestLine event={e} />
                 )}
               </td>
               <td className="nowrap">

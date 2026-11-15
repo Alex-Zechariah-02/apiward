@@ -8,7 +8,8 @@ import type { Handoff, View } from '../app/views'
 // can never replace a later one. It also keeps the last successful answer
 // and when it arrived, so a view can go on showing it, marked with its age,
 // after a later read fails. A change of deps (another window, another item)
-// forgets it: an answer about something else is never shown as this one.
+// forgets both it and the latest reply: an answer about something else is
+// never shown as this one.
 export function useResource<T>(load: (signal: AbortSignal) => Promise<Reply<T>>, deps: unknown[]) {
   const [reply, setReply] = useState<Reply<T> | null>(null)
   const [last, setLast] = useState<{ body: T; at: Date; date?: number } | null>(null)
@@ -21,6 +22,7 @@ export function useResource<T>(load: (signal: AbortSignal) => Promise<Reply<T>>,
     if (scope.current.length !== deps.length || scope.current.some((value, i) => !Object.is(value, deps[i]))) {
       scope.current = deps
       setLast(null)
+      setReply(null)
     }
     setLoading(true)
     load(controller.signal).then((r) => {

@@ -23,6 +23,8 @@ export function trace(policy: Policy, who: string, operation: Operation): TraceS
     })
     if (refused && applicable) stopped = true
   }
+  // The gateway refuses a blocked client address before it routes the request.
+  step('Blocked Address', 'A blocked client address is refused (403 address_blocked). Blocked addresses are kept apart from the policy.')
   step(
     'Route',
     `${operation.method} ${operation.target}. A request whose path also matches a more specific target is routed there instead.`,

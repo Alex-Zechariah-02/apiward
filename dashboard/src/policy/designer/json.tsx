@@ -3,12 +3,13 @@ import type { Revision } from '../../shared/api'
 import type { DesignerDraft } from './model'
 import { CodeBlock, Field } from '../../shared/ui'
 import type { Mode } from './panels'
+import { readPolicy } from '../../shared/limits'
 
 // The Policy page's JSON tab: the whole document to copy, download, load, edit and apply.
 
 // JsonTools copies or downloads the document shown, or loads one from a
 // file into the editor; loading changes nothing until Apply JSON.
-function JsonTools(props: { text: string; name: string; editable: boolean; onLoad: (text: string) => void }) {
+function JsonTools(props: { text: string; name: string; editable: boolean; limit: number | undefined; onLoad: (text: string) => void }) {
   const [copied, setCopied] = useState(false)
   const [href, setHref] = useState('')
   const [fileProblem, setFileProblem] = useState('')
@@ -52,13 +53,10 @@ function JsonTools(props: { text: string; name: string; editable: boolean; onLoa
               const chosen = event.target.files?.[0]
               event.target.value = ''
               if (!chosen) return
-              chosen.text().then(
-                (text) => {
-                  setFileProblem('')
-                  props.onLoad(text)
-                },
-                () => setFileProblem('The file could not be read.'),
-              )
+              void readPolicy(chosen, props.limit).then((read) => {
+                setFileProblem('problem' in read ? read.problem : '')
+                if ('text' in read) props.onLoad(read.text)
+              })
             }}
           />
         </>
@@ -83,15 +81,18 @@ export function JsonView(props: {
   setJsonError: (value: string) => void
   current: Revision
   editable: boolean
+  // limit is the gateway's policy size limit, if read.
+  limit: number | undefined
   applyJson: () => boolean
 }) {
-  const { draft, pendingId, mode, json, setJson, jsonError, setJsonError, current, editable, applyJson } = props
+  const { draft, pendingId, mode, json, setJson, jsonError, setJsonError, current, editable, limit, applyJson } = props
   return (
     <div className="designer-json">
       <JsonTools
         text={json}
         name={mode === 'draft' ? `gateway-policy-draft-r${draft.baseRevision}.json` : `gateway-policy-r${mode === 'confirmed' ? current.id : pendingId}.json`}
         editable={editable}
+        limit={limit}
         onLoad={(text) => {
           setJson(text)
           setJsonError('')

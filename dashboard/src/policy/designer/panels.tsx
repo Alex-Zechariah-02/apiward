@@ -105,6 +105,8 @@ export function DesignerBar(props: {
   setDiscardConfirm: (value: boolean) => void
   current: Revision
   dirty: boolean
+  // saved: the draft is exactly what was last saved as a draft change.
+  saved: boolean
   changed: ReturnType<typeof changes>
   issues: Issue[]
   mutation: Mutation<Staged>
@@ -115,7 +117,7 @@ export function DesignerBar(props: {
   // onConnect, given while the draft can be edited, opens Connect an API.
   onConnect?: () => void
 }) {
-  const { can, draft, pendingId, mode, tab, setStageConfirm, setDiscardConfirm, current, dirty, changed, issues, mutation, changeTab, changeMode, canStage, canDiscard, onConnect } = props
+  const { can, draft, pendingId, mode, tab, setStageConfirm, setDiscardConfirm, current, dirty, saved, changed, issues, mutation, changeTab, changeMode, canStage, canDiscard, onConnect } = props
   return (
     <div className="designer-bar">
       <div className="designer-views">
@@ -165,10 +167,12 @@ export function DesignerBar(props: {
         ) : null}
         {can('manage_policy') ? (
           <>
-            <p className={`designer-draft-state${dirty ? ' is-dirty' : ''}`} role="status">
+            <p className={`designer-draft-state${dirty && !saved ? ' is-dirty' : ''}`} role="status">
               {mode !== 'draft'
                 ? 'Edits go to the draft.'
-                : dirty
+                : saved
+                  ? 'Saved as a draft change'
+                  : dirty
                   ? `${changed.length} unsaved ${changed.length === 1 ? 'change' : 'changes'}`
                   : `No changes to version ${draft.baseRevision}`}
             </p>

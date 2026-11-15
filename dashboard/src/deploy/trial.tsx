@@ -8,11 +8,20 @@ import { controls } from './activation'
 
 // The evidence for keeping a trial: its traffic since the start, and the fresh check in the keep dialog.
 
+// gatewayNow is the gateway's clock now, in milliseconds: the time it stamped
+// on a read, plus the time since that read arrived. The trial's start is the
+// gateway's time, so its age is never measured with the browser's clock,
+// which may be minutes off. Without a stamped read it is the browser's clock.
+export function gatewayNow(read: { at: Date; date?: number } | null | undefined): number {
+  return read?.date === undefined ? Date.now() : read.date + (Date.now() - read.at.getTime())
+}
+
 // trafficWindow is the smallest traffic window, in seconds, that reaches back
-// to the start of the trial; a trial older than an hour is counted over the
-// last hour only.
-export function trafficWindow(activatedAt: string): number {
-  const elapsed = (Date.now() - new Date(activatedAt).getTime()) / 1000
+// from now (the gateway's clock) to the start of the trial; a trial older
+// than an hour is counted over the last hour only. The three windows are the
+// ones the gateway's traffic read offers.
+export function trafficWindow(activatedAt: string, now: number): number {
+  const elapsed = (now - new Date(activatedAt).getTime()) / 1000
   return elapsed <= 60 ? 60 : elapsed <= 300 ? 300 : 3600
 }
 
@@ -29,6 +38,11 @@ export function sinceStart(traffic: Traffic, activatedAt: string) {
   }
   return { allowed, refused, total: allowed + refused }
 }
+
+// listed is how many changes the keep dialog names: 8 fit it without
+// scrolling on a small screen; the rest are counted and are on the trial card.
+const listed = 8
+
 // The dialog open on the trial, if any.
 export type Asking = 'confirm' | 'rollback' | null
 
@@ -48,7 +62,7 @@ export function TrialTraffic(props: { traffic: ReturnType<typeof useResource<Tra
   return (
     <section className="trial-traffic" aria-labelledby="trial-traffic-title">
       <h3 id="trial-traffic-title">Requests Since the Trial Started</h3>
-      {last ? <TrafficFigures traffic={last.body} activatedAt={activatedAt} /> : <p className="hint">{traffic.failed ? 'Not read.' : 'Reading…'}</p>}
+      {last ? <TrafficFigures traffic={last.body} activatedAt={activatedAt} now={gatewayNow(last)} /> : <p className="hint">{traffic.failed ? 'Not read.' : 'Reading…'}</p>}
       <p className={traffic.failed ? 'hint read-stamp-failed' : 'hint'}>
         {last ? (
           <>
@@ -64,7 +78,7 @@ export function TrialTraffic(props: { traffic: ReturnType<typeof useResource<Tra
   )
 }
 
-function TrafficFigures({ traffic, activatedAt }: { traffic: Traffic; activatedAt: string }) {
+function TrafficFigures({ traffic, activatedAt, now }: { traffic: Traffic; activatedAt: string; now: number }) {
   const counts = sinceStart(traffic, activatedAt)
   const windowWords = traffic.window_seconds === 3600 ? 'last hour' : `last ${traffic.window_seconds / 60 >= 1 ? `${traffic.window_seconds / 60} min` : `${traffic.window_seconds} s`}`
   if (counts.total === 0) {
@@ -74,7 +88,7 @@ function TrafficFigures({ traffic, activatedAt }: { traffic: Traffic; activatedA
     <>
       <p className="trial-counts">
         <strong>{counts.total.toLocaleString()}</strong> decided · {counts.allowed.toLocaleString()} allowed · {counts.refused.toLocaleString()} refused
-        {traffic.window_seconds === 3600 && Date.now() - new Date(activatedAt).getTime() > 3_600_000 ? ' (last hour only)' : ''}
+        {traffic.window_seconds === 3600 && now - new Date(activatedAt).getTime() > 3_600_000 ? ' (last hour only)' : ''}
       </p>
       {traffic.refusal_reasons.length > 0 ? (
         <p className="hint">
@@ -135,13 +149,13 @@ export function KeepDialog(props: {
         <div className="change-set">
           <h3>What Stays Active ({asked.changes.length} {asked.changes.length === 1 ? 'change' : 'changes'})</h3>
           <ul>
-            {asked.changes.slice(0, 8).map((c) => (
+            {asked.changes.slice(0, listed).map((c) => (
               <li key={`${c.control}:${c.target}`}>
                 {controls[c.control] ?? c.control} <code>{c.target}</code>
               </li>
             ))}
           </ul>
-          {asked.changes.length > 8 ? <p className="hint">And {asked.changes.length - 8} more, listed on the trial card.</p> : null}
+          {asked.changes.length > listed ? <p className="hint">And {asked.changes.length - listed} more, listed on the trial card.</p> : null}
         </div>
       ) : null}
         <p className="hint" role="status">

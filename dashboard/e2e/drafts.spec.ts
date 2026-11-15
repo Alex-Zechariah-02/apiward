@@ -129,6 +129,7 @@ test.describe.serial('Policy Designer on the native Gateway', () => {
     await page.getByLabel('Who', { exact: true }).selectOption('role:CUSTOMER')
     const trace = page.getByRole('complementary', { name: 'Trace policy document' })
     await expect(trace).toContainText('403: no permission')
+    await expect(trace.locator('li').first()).toContainText('403 address_blocked')
     await expect(trace.locator('li').filter({ hasText: 'Blocked List' })).toContainText('403 account_blocked')
     await expect(trace.locator('li').last()).toContainText('Not Reached')
     await capture('designer-trace-refused')
@@ -150,6 +151,9 @@ test.describe.serial('Policy Designer on the native Gateway', () => {
     await page.getByText('Templates', { exact: true }).click()
     await page.getByRole('button', { name: 'Apply: limit sign-in attempts', exact: true }).click()
     await expect(page.getByText('Template applied to the draft: accounts.login limited to 5 requests per 60 s per client address.', { exact: false })).toBeVisible()
+    await page.getByText('Templates', { exact: true }).click()
+    await page.getByRole('button', { name: 'Apply: limit sign-in attempts', exact: true }).click()
+    await expect(page.getByText(/already limited to 5 per 60 s, at least as strict/)).toBeVisible()
     // Nothing was sent: the draft only changed in this page.
     await expect(page.getByText(/^The gateway checked it/)).toHaveCount(0)
     const expected: Policy = structuredClone(baseline)

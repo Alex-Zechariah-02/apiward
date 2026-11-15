@@ -4,19 +4,17 @@ import { Can, usePoll, useResource, ViewMemory } from '../shared/hooks'
 import { searchLog } from '../shared/links'
 import { Badge, Field, TableScroll } from '../shared/ui'
 import { PageHeader } from '../app/header'
-import { ReplyView } from '../shared/replies'
+import { Problem, ReplyView } from '../shared/replies'
+import type { Limit } from '../shared/limits'
 import { ReadStamp, Time } from '../shared/time'
 import type { ViewProps } from '../app/views'
 
 // The limits page, the advice page and the Overview's alerts: reads the
 // gateway answers itself. None of them changes anything.
 
-interface Limit {
-  used: number
-  max: number
-}
-
+// One row per limit the gateway reports, in its words; a limit an older gateway does not report is left out.
 const limitRows: { id: string; name: string; atLimit: string; bytes?: boolean }[] = [
+  { id: 'policy_bytes', name: 'Policy Document', atLimit: 'A larger draft change is refused when it is saved.', bytes: true },
   { id: 'temporary_rules', name: 'Active Temporary Rules', atLimit: 'New temporary rules are refused until one ends or is revoked.' },
   { id: 'live_views', name: 'Open Live Views', atLimit: 'Another Live Traffic view cannot connect until one closes.' },
   { id: 'administrator_sessions', name: 'Administrator Sessions', atLimit: 'New sign-ins are refused until a session ends.' },
@@ -62,6 +60,7 @@ export function LimitsView({ admin }: ViewProps) {
                           <span className="num">
                             {amount(limit.used, row.bytes)} of {amount(limit.max, row.bytes)}
                           </span>{' '}
+                          {/* Nearly full from 80 %: early enough to act before the limit; the meter turns at 80 % and 95 %. */}
                           {share >= 0.8 ? <Badge tone={share >= 1 ? 'refused' : 'unknown'}>{share >= 1 ? 'At the limit' : 'Nearly full'}</Badge> : null}
                           <meter className="limit-meter" min={0} max={limit.max} value={limit.used} low={limit.max * 0.8} high={limit.max * 0.95} optimum={0} aria-label={`${row.name} in use`} />
                         </td>
@@ -216,8 +215,9 @@ export function AdviceView({ admin }: ViewProps) {
 }
 
 // Alerts shows the gateway's active alerts above the Overview, and nothing
-// when there are none. It reads every 5 seconds: each read is recorded in
-// the security log, so it is not read every second.
+// when there are none. A read that fails is shown as such, never as "no
+// alerts". It reads every 5 seconds: each read is recorded in the security
+// log, so it is not read every second.
 export function Alerts({ admin, open }: { admin: ViewProps['admin']; open: ViewProps['open'] }) {
   const alerts = useResource<{ alerts: Finding[] }>((signal) => admin.get('/admin/alerts', signal), [])
   const memory = useContext(ViewMemory)
@@ -225,7 +225,15 @@ export function Alerts({ admin, open }: { admin: ViewProps['admin']; open: ViewP
   // Refusals open in the Security Log for an administrator who may read it, else in Live Traffic.
   const seeRefusals = () => (can('read_history') ? searchLog(memory, { decision: 'refused' }) : open('live-traffic'))
   usePoll(alerts.refresh, 5_000, false)
-  const items = alerts.reply?.kind === 'ok' ? alerts.reply.body.alerts : []
+  if (alerts.reply && alerts.reply.kind !== 'ok') {
+    return (
+      <section className="section" aria-label="Alerts">
+        <p className="hint">The gateway's alerts could not be read, so none are shown; that does not mean there are none.</p>
+        <Problem reply={alerts.reply} />
+      </section>
+    )
+  }
+  const items = alerts.reply?.body.alerts ?? []
   if (!items.length) return null
   return (
     <section className="section notice tone-refused" aria-label="Alerts" role="status">

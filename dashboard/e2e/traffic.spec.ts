@@ -159,6 +159,8 @@ test.describe.serial('dashboard', () => {
     await go(admin, 'Limits')
     await expect(admin.getByRole('row', { name: /Administrator Sessions/ })).toContainText(/\d+ of 64/)
     await expect(admin.getByRole('row', { name: /Security Log Files/ })).toContainText(/1 of \d+/)
+    // The policy size limit is the gateway's own figure (its default, 64 KiB).
+    await expect(admin.getByRole('row', { name: /Policy Document/ })).toContainText(/[\d.]+ KiB of 64\.0 KiB/)
     await shot(admin, '46-limits')
 
     await go(admin, 'Team')

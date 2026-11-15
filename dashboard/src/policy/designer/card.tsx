@@ -44,7 +44,8 @@ export interface CardSpec {
 // or the service addresses. A long group opens on demand, so the whole
 // policy fits on screen and its connections stay few and readable.
 const Card = memo(function Card({ id, data }: NodeProps<CardNode>) {
-  const listId = `designer-card-${id.replace(/\W+/g, '-')}`
+  // Percent-encoding keeps the DOM id free of spaces and different for every card id.
+  const listId = `designer-card-${encodeURIComponent(id)}`
   return (
     <section className={`designer-card designer-kind-${data.kind}${data.dim ? ' is-dim' : ''}`} aria-label={data.title}>
       <Handle type="target" position={Position.Left} isConnectable={false} />
@@ -118,6 +119,7 @@ function BusEdge({ sourceX, sourceY, targetX, targetY, markerEnd, interactionWid
   let path = `M ${sourceX},${sourceY} L ${targetX},${targetY}`
   if (Math.abs(rise) >= 1) {
     const turn = Math.sign(rise)
+    // A soft 8 px bend, never more than half the rise or the run, so the two bends cannot overlap.
     const radius = Math.min(8, Math.abs(rise) / 2, Math.abs(targetX - sourceX) / 2)
     path = [
       `M ${sourceX},${sourceY}`,

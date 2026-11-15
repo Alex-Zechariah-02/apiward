@@ -87,6 +87,9 @@ export async function stagedDraft(): Promise<number> {
   await dialogButton(page, 'Save Draft Change').click()
   const result = page.getByText(/^The gateway checked it: saved as draft change \d+\. Nothing is active yet\.$/)
   await expect(result).toBeVisible()
+  // The saved draft is no longer unsaved: saving it again would store a duplicate.
+  await expect(page.getByText('Saved as a draft change', { exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Save Changes', exact: true })).toBeDisabled()
   return Number((await result.textContent())!.match(/change (\d+)/)![1])
 }
 

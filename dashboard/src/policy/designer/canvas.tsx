@@ -33,7 +33,10 @@ const gap = 20
 
 function CanvasGraph(props: CanvasProps) {
   const flow = useReactFlow()
+  // message is why the latest Delete was refused; it goes away at the next
+  // key on the canvas, selection or edit.
   const [message, setMessage] = useState('')
+  useEffect(() => setMessage(''), [props.selection, props.policy])
   const measured = useNodesInitialized()
   const placed = useRef(false)
   // refit is set by Expand All and Collapse All: once the cards have their
@@ -59,6 +62,7 @@ function CanvasGraph(props: CanvasProps) {
   // Cards stand in four columns from one top line, so a group that opens or
   // closes moves only the cards below it in its own column.
   function laidOut(heights: Record<string, number>): CardNode[] {
+    // 56 px, about a closed card, places a card until React Flow has measured it.
     const height = (id: string) => heights[id] ?? 56
     const columns = kinds.map((kind) => graph.cards.filter((card) => card.kind === kind))
     return columns.flatMap((list, index) => {
@@ -217,6 +221,7 @@ function CanvasGraph(props: CanvasProps) {
             props.onExpand()
             return
           }
+          setMessage('')
           if (event.key !== 'Delete' || !props.editable || !props.selection) return
           if ((event.target as HTMLElement).closest('input,textarea,select')) return
           event.preventDefault()

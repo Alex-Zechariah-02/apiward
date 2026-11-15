@@ -1,22 +1,19 @@
-import { useEffect, useId, useRef, useState, type FormEvent } from 'react'
-import { newKey } from '../shared/http'
-import type { Candidate, Outcome, Revision } from '../shared/api'
-import { useGatewayState, useMutation, usePaged, useRereadWhen, useResource } from '../shared/hooks'
+import { useEffect, useState } from 'react'
+import type { Candidate, Revision } from '../shared/api'
+import { useGatewayState, usePaged, useRereadWhen, useResource } from '../shared/hooks'
 import { ActivationHistory } from './activation'
 import { TrialDecision } from './provisional'
-import { Badge, describedBy, Field, ListToolbar, matches, TableScroll } from '../shared/ui'
-import { Confirm } from '../shared/dialogs'
+import { Badge, ListToolbar, matches, TableScroll } from '../shared/ui'
 import { ReadStamp, Time } from '../shared/time'
-import { MutationResult, Problem, Receipt, ShowMore } from '../shared/replies'
+import { Problem, ShowMore } from '../shared/replies'
 import { PageHeader } from '../app/header'
 import { useFocus } from '../shared/links'
 import type { ViewProps } from '../app/views'
 import { CandidateStatus, statusWords } from './draft'
 import { CandidateDetail } from './draft-detail'
+import { StageForm } from './stage'
 
 // The Changes page: the change on trial, saved draft changes, saving a new one, and trial history.
-
-const maxCandidateBytes = 80 * 1024
 
 // Changes is the guided way a policy change goes live: drafted, checked
 // by the gateway's own compiler when staged, previewed against recent
@@ -57,6 +54,8 @@ export function Candidates({ admin, can, draft, candidate }: ViewProps & { draft
         ? '"r0"'
         : undefined
   const confirmed = policy.reply?.kind === 'ok' ? policy.reply.body : undefined
+  // Without the active version's ETag nothing can be saved or put on trial, so a failed read of it is shown.
+  const unread = policy.reply && policy.reply.kind !== 'ok' && ifMatch === undefined ? policy.reply : null
   const status = state.facts
   const manage = can('manage_policy')
   const shown = list.items.filter((c) =>
@@ -77,8 +76,15 @@ export function Candidates({ admin, can, draft, candidate }: ViewProps & { draft
         title="Changes"
         lede="Review draft changes, preview their impact and activate one through a timed trial."
       >
-        <ReadStamp okAt={list.last?.at ?? null} failed={list.failed} loading={list.loading || policy.loading} onRefresh={refresh} />
+        <ReadStamp okAt={list.last?.at ?? null} failed={list.failed || unread !== null} loading={list.loading || policy.loading} onRefresh={refresh} />
       </PageHeader>
+
+      {unread ? (
+        <section className="section" aria-label="Active version not read">
+          <p className="hint">The active version could not be read, so a draft change cannot be saved or put on trial until it is. Refresh to read it again.</p>
+          <Problem reply={unread} />
+        </section>
+      ) : null}
 
       <TrialDecision admin={admin} manage={manage} variant="full" />
 
@@ -169,129 +175,5 @@ export function Candidates({ admin, can, draft, candidate }: ViewProps & { draft
 
       {can('read_history') ? <ActivationHistory admin={admin} reads={trials} /> : null}
     </>
-  )
-}
-
-function StageForm(props: {
-  admin: ViewProps['admin']
-  ifMatch?: string
-  draft?: string
-  confirmed?: Revision
-  changed: () => void
-  review: (id: number) => void
-}) {
-  const id = useId()
-  const [text, setText] = useState(props.draft ?? '')
-  const [replacing, setReplacing] = useState(false)
-  // advanced shows the document editor; a draft handed over from another page opens it.
-  const [advanced, setAdvanced] = useState(props.draft !== undefined)
-  const editor = useRef<HTMLTextAreaElement>(null)
-  const mutation = useMutation<{ receipt: Outcome; candidate: Candidate }>(props.admin, props.changed)
-  const bytes = new TextEncoder().encode(text).length
-  let localError: string | undefined
-  if (text.trim() !== '') {
-    try {
-      JSON.parse(text)
-    } catch {
-      localError = 'This is not valid JSON.'
-    }
-  }
-  if (bytes > maxCandidateBytes) localError = `The document is ${bytes} bytes; the gateway accepts at most ${maxCandidateBytes}.`
-
-  async function load(file: File | undefined) {
-    if (file) setText(await file.text())
-  }
-
-  // startFromConfirmed puts the confirmed document in the editor, to be
-  // changed and staged as a whole: a change is always a complete policy.
-  function startFromConfirmed() {
-    setReplacing(false)
-    if (!props.confirmed?.document) return
-    setText(JSON.stringify(props.confirmed.document, null, 2))
-    setAdvanced(true)
-    requestAnimationFrame(() => editor.current?.focus())
-  }
-
-  async function submit(event: FormEvent) {
-    event.preventDefault()
-    if (localError || text.trim() === '') return
-    // The document is sent as written, so the gateway's strict decoder sees
-    // exactly what the administrator reviewed (repeated members included).
-    await mutation.run({ method: 'POST', path: '/admin/candidates', rawBody: `{"policy":${text}}`, ifMatch: props.ifMatch, key: newKey() })
-  }
-
-  return (
-    <section className="section card card-pad" aria-labelledby="stage-title">
-      <h2 id="stage-title">Save a Draft Change</h2>
-      <p className="hint form-intro">
-        Draft the change on the Policy page, where every view checks it as you edit. To change the document itself, start from the active version.
-      </p>
-      <div className="actions">
-        <a className="btn btn-primary" href="#/policy">
-          Open the Policy Page
-        </a>
-        {props.confirmed?.document ? (
-          <button type="button" className="btn" onClick={() => (text.trim() === '' ? startFromConfirmed() : setReplacing(true))}>
-            Start from Version {props.confirmed.id}
-          </button>
-        ) : null}
-      </div>
-      <details className="advanced" open={advanced} onToggle={(event) => setAdvanced(event.currentTarget.open)}>
-        <summary>Advanced: Paste or Load a Policy Document</summary>
-        <form className="advanced-body" onSubmit={submit}>
-          <Field id={`${id}-file`} label="Load a Policy Document from a File (Optional)">
-            <input id={`${id}-file`} className="file" type="file" accept="application/json,.json" onChange={(e) => load(e.target.files?.[0])} />
-          </Field>
-          <Field
-            id={`${id}-text`}
-            label="Complete Policy Document (JSON)"
-            hint={`Checked by the gateway with the same compiler that builds the enforced policy. ${bytes.toLocaleString()} of ${maxCandidateBytes.toLocaleString()} bytes.`}
-            error={localError}
-          >
-            <textarea
-              ref={editor}
-              id={`${id}-text`}
-              className="input code-input"
-              rows={8}
-              spellCheck={false}
-              autoComplete="off"
-              value={text}
-              aria-invalid={localError ? true : undefined}
-              aria-describedby={describedBy(`${id}-text`, 'hint', localError)}
-              onChange={(e) => setText(e.target.value)}
-            />
-          </Field>
-          <div className="actions">
-            <button type="submit" className="btn btn-primary" disabled={mutation.pending || props.ifMatch === undefined || text.trim() === ''}>
-              {mutation.pending ? 'Saving…' : 'Save Draft and Check'}
-            </button>
-          </div>
-          </form>
-      </details>
-      <Confirm
-        open={replacing}
-        title="Replace the document being edited?"
-        confirmLabel="Replace It"
-        onCancel={() => setReplacing(false)}
-        onConfirm={startFromConfirmed}
-      >
-        <p>The text in the editor is replaced by version {props.confirmed?.id}, the active version. Nothing is sent to the gateway.</p>
-      </Confirm>
-      <MutationResult<{ receipt: Outcome; candidate: Candidate }>
-        mutation={mutation}
-        onRefresh={props.changed}
-        success={(body) => (
-          <>
-            <p className="notice-title">The gateway checked it: saved as draft change {body.candidate.id}. Nothing is active yet.</p>
-            <div className="actions">
-              <button type="button" className="btn" onClick={() => props.review(body.candidate.id)}>
-                Review Change {body.candidate.id}
-              </button>
-            </div>
-            <Receipt outcome={body.receipt} />
-          </>
-        )}
-      />
-    </section>
   )
 }

@@ -13,7 +13,8 @@ export interface ServiceProfile {
   client_certificate_expires_at: string | null
 }
 
-export const ProfilesContext = createContext<ServiceProfile[]>([])
+// The gateway's profiles; null when they could not be read, which is not "none".
+export const ProfilesContext = createContext<ServiceProfile[] | null>([])
 
 // secure reports an https service address, the only kind with TLS settings.
 export function secure(address: string): boolean {
@@ -32,7 +33,8 @@ export function TransportFields(props: {
   editable?: boolean
   onChange: (patch: Pick<Upstream, 'tls' | 'host'>) => void
 }) {
-  const profiles = useContext(ProfilesContext)
+  const known = useContext(ProfilesContext)
+  const profiles = known ?? []
   const host = props.upstream.host ?? 'upstream'
   const listed = profiles.some((profile) => profile.id === props.upstream.tls)
   const disabled = props.editable === false
@@ -41,7 +43,7 @@ export function TransportFields(props: {
       <Field
         id={`${props.id}-tls`}
         label="TLS Profile"
-        hint="Which certificate authority the service’s certificate must come from, and the client certificate the gateway presents. Profiles are set in the gateway’s settings."
+        hint={`Which certificate authority the service’s certificate must come from, and the client certificate the gateway presents. Profiles are set in the gateway’s settings.${known ? '' : ' The gateway’s profiles could not be read, so none are listed here.'}`}
       >
         <select
           id={`${props.id}-tls`}
@@ -56,7 +58,7 @@ export function TransportFields(props: {
               {profileLabel(profile)}
             </option>
           ))}
-          {props.upstream.tls && !listed ? <option value={props.upstream.tls}>{props.upstream.tls} (not on this gateway)</option> : null}
+          {props.upstream.tls && !listed ? <option value={props.upstream.tls}>{props.upstream.tls} ({known ? 'not on this gateway' : 'profiles not read'})</option> : null}
         </select>
       </Field>
       <div className="field">

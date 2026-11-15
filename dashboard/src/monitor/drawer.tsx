@@ -11,11 +11,12 @@ import { keepTabInside } from '../shared/dialogs'
 import { refAddress } from '../app/views'
 import { blockHandoff } from '../access/blocking'
 import { addressHandoff } from '../access/addresses'
-import { CheckList, decisionTone, outcomeOf, reasonOf, type RequestEvent } from './requests'
+import { CheckList, decisionTone, outcomeOf, reasonOf, RequestLine, type RequestEvent } from './requests'
 
 // The request drawer: one request's facts and checks over the page it was
 // opened from, at that page's address plus ?ref=.
 
+// A Ref is the gateway's request ID, 32 lowercase hex characters; anything else is never sent as a query.
 const fullRef = /^[0-9a-f]{32}$/
 
 interface Found {
@@ -65,6 +66,7 @@ export function RequestDrawer({ admin }: { admin: Admin }) {
     navigate?.('blocking')
   }
   const found = useResource<Found | null>((signal) => (valid ? findRequest(admin, ref, history, signal) : Promise.resolve(nothing)), [ref, history])
+  // The whole blocked list is read: the gateway's read of it has no paging.
   const blocked = useResource<{ items: { subject: string }[] } | null>(
     (signal) => (valid && manage ? admin.get('/admin/blocked-accounts', signal) : Promise.resolve(nothing)),
     [ref, manage],
@@ -109,7 +111,9 @@ export function RequestDrawer({ admin }: { admin: Admin }) {
   const event = answer?.kind === 'ok' ? answer.body?.event : undefined
   const blockedList = blocked.reply?.kind === 'ok' ? blocked.reply.body?.items : undefined
   const isBlocked = !!event?.subject && !!blockedList?.some((b) => b.subject === event.subject)
-  const title = event ? `${event.method} ${event.path}` : !valid ? 'Not a Full Ref' : answer?.kind === 'ok' && answer.body ? 'No Request with This Ref' : 'Request'
+  // A blocked list that could not be read leaves the account's state unknown, never "not blocked".
+  const unread = blocked.reply && blocked.reply.kind !== 'ok' ? blocked.reply : undefined
+  const title = !valid ? 'Not a Full Ref' : answer?.kind === 'ok' && answer.body ? 'No Request with This Ref' : 'Request'
 
   return (
     <dialog
@@ -130,7 +134,7 @@ export function RequestDrawer({ admin }: { admin: Admin }) {
         <div className="drawer-panel">
           <div className="drawer-head">
             <h2 id={titleId} className={event ? 'drawer-request' : undefined}>
-              {event ? <code>{title}</code> : title}
+              {event ? <RequestLine event={event} /> : title}
             </h2>
             <button type="button" className="btn btn-small" onClick={close}>
               <X size={14} aria-hidden="true" /> Close
@@ -152,6 +156,7 @@ export function RequestDrawer({ admin }: { admin: Admin }) {
               <RequestFacts
                 event={event}
                 blocked={isBlocked}
+                unread={unread}
                 block={manage && event.subject && blockedList && !isBlocked ? handOff(blockHandoff, event.subject) : undefined}
                 blockAddress={manage && event.client_address ? handOff(addressHandoff, event.client_address) : undefined}
               />
@@ -176,7 +181,8 @@ export function RequestDrawer({ admin }: { admin: Admin }) {
 
 // RequestFacts is what the gateway recorded about one request, each fact
 // linked to the page where it lives.
-function RequestFacts({ event, blocked, block, blockAddress }: { event: RequestEvent; blocked: boolean; block?: () => void; blockAddress?: () => void }) {
+function RequestFacts(props: { event: RequestEvent; blocked: boolean; unread?: Reply<unknown>; block?: () => void; blockAddress?: () => void }) {
+  const { event, blocked, unread, block, blockAddress } = props
   const policy = versionOf(event.generation)
   return (
     <>
@@ -196,16 +202,13 @@ function RequestFacts({ event, blocked, block, blockAddress }: { event: RequestE
           <dd>
             {event.operation ? (
               <XRef view="policy" focus={{ select: `operation:${event.operation}` }}>
-                <code>
-                  {event.method} {event.path}
-                </code>
+                <RequestLine event={event} />
               </XRef>
             ) : (
-              <code>
-                {event.method} {event.path}
-              </code>
+              <RequestLine event={event} />
             )}
             <span className="cell-sub">{event.operation ? <>Endpoint <code>{event.operation}</code></> : 'No endpoint matched'}</span>
+            {event.path_truncated ? <span className="cell-sub">The path was longer: the gateway recorded only its start.</span> : null}
           </dd>
         </div>
         <div className="fact">
@@ -240,6 +243,7 @@ function RequestFacts({ event, blocked, block, blockAddress }: { event: RequestE
                 </AccountLink>
                 {event.roles.length ? <span className="muted"> as {event.roles.join(', ')}</span> : null}
                 {blocked ? <> <Badge tone="refused">Blocked</Badge></> : null}
+                {unread ? <span className="cell-sub">Whether this account is blocked is not known: the blocked list could not be read.</span> : null}
                 {block ? (
                   <button type="button" className="btn btn-small drawer-block" onClick={block}>
                     Block Account…
@@ -263,6 +267,7 @@ function RequestFacts({ event, blocked, block, blockAddress }: { event: RequestE
           </dd>
         </div>
       </dl>
+      {unread ? <Problem reply={unread} /> : null}
       <h3 className="drawer-section">Checks</h3>
       <CheckList event={event} />
       <dl className="facts drawer-facts">

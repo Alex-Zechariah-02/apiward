@@ -10,12 +10,21 @@ import { upstreamFrom } from './inputs'
 // a trial and keeping, like any other change.
 export type TemplateResult = { document: Policy; summary: string } | { problem: string }
 
+// signIn is the sign-in template's limit: 5 attempts a minute per client
+// address slows password guessing without locking out someone who mistypes.
+export const signIn = { count: 5, window_seconds: 60 }
+
 export function limitSignIn(policy: Policy): TemplateResult {
   const next = copy(policy)
   const login = next.operations.find((operation) => operation.id === 'accounts.login')
   if (!login) return { problem: 'This policy has no accounts.login endpoint.' }
-  login.rate = { algorithm: 'sliding-window', count: 5, window_seconds: 60, key: 'client_address' }
-  return { document: next, summary: 'accounts.login limited to 5 requests per 60 s per client address.' }
+  // The template never loosens: a limit already at least as strict (requests per second) is kept.
+  if (login.rate && login.rate.count * signIn.window_seconds <= signIn.count * login.rate.window_seconds)
+    return {
+      problem: `accounts.login is already limited to ${login.rate.count} per ${login.rate.window_seconds} s, at least as strict as this template; nothing changed.`,
+    }
+  login.rate = { algorithm: 'sliding-window', ...signIn, key: 'client_address' }
+  return { document: next, summary: `accounts.login limited to ${signIn.count} requests per ${signIn.window_seconds} s per client address.` }
 }
 
 export function readOnlyAccess(policy: Policy, role: string, api: string): TemplateResult {
@@ -41,9 +50,13 @@ export function tightenRate(policy: Policy, endpoint: string, count: number): Te
   const next = copy(policy)
   const operation = next.operations.find((item) => item.id === endpoint)
   if (!operation) return { problem: `This policy has no endpoint ${endpoint}.` }
+  // A limit of 0 would refuse every request; closing an endpoint is Access: Deny. A number that is not lower is
+  // refused, never applied: the template only tightens.
   if (!Number.isInteger(count) || count < 1) return { problem: 'Enter a whole number of requests, at least 1.' }
   if (operation.rate && count >= operation.rate.count)
     return { problem: `${endpoint} already allows ${operation.rate.count} per window; enter a lower number.` }
+  // A new limit counts per minute, the window the endpoint form also starts with, and per account where callers sign
+  // in, per client address where they do not (the only key a public endpoint may use).
   const key = operation.auth === 'none' ? 'client_address' : 'subject'
   operation.rate = operation.rate ? { ...operation.rate, count } : { algorithm: 'sliding-window', count, window_seconds: 60, key }
   return { document: next, summary: `${endpoint} limited to ${count} requests per ${operation.rate.window_seconds} s.` }
@@ -63,6 +76,7 @@ export function setRate(policy: Policy, endpoint: string, count: number, windowS
   const next = copy(policy)
   const operation = next.operations.find((item) => item.id === endpoint)
   if (!operation) return next
+  // The same default key as the templates: per account with a sign-in, per client address without.
   const key = operation.rate?.key ?? (operation.auth === 'none' ? 'client_address' : 'subject')
   operation.rate = { algorithm: 'sliding-window', count, window_seconds: windowSeconds, key }
   return next
@@ -88,6 +102,7 @@ export function addEndpoint(policy: Policy, endpoint: NewEndpoint): Policy {
     method: endpoint.method,
     target: endpoint.target,
     access: 'allow',
+    // A new endpoint needs a sign-in unless the wizard's open switch is set: public is always a deliberate choice.
     auth: endpoint.open ? 'none' : 'required',
     rate: {
       algorithm: 'sliding-window',
@@ -117,6 +132,7 @@ export function withBrowserAccess(policy: Policy, api: string, origins: string[]
   if (!origins.length) return policy
   const next = copy(policy)
   const endpoints = next.operations.filter((operation) => operation.api === api)
+  // Browsers must be allowed to send Content-Type for JSON bodies, and Authorization where an endpoint needs a token.
   const headers = endpoints.some((operation) => operation.auth === 'required') ? ['Authorization', 'Content-Type'] : ['Content-Type']
   next.apis.find((entry) => entry.id === api)!.cors = { origins, methods: [...new Set(endpoints.map((operation) => operation.method))], headers }
   return next

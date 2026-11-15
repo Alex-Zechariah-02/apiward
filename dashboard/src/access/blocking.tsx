@@ -9,7 +9,7 @@ import { MutationResult, Problem } from '../shared/replies'
 import { PageHeader } from '../app/header'
 import { ReadStamp, Time, Zone } from '../shared/time'
 import type { ViewProps } from '../app/views'
-import { reasonOf, type RequestEvent } from '../monitor/requests'
+import { reasonOf, RequestLine, type RequestEvent } from '../monitor/requests'
 import { addressHandoff, AddressesPanel, BlockedSwitch, useHandoff } from './addresses'
 
 // The Blocking page: blocked accounts and accounts seen in traffic, and the
@@ -203,9 +203,7 @@ export function BlockingView(props: ViewProps) {
                         <td>
                           {e ? (
                             <>
-                              <code className="soft">
-                                <span className="method">{e.method}</span> {e.path}
-                              </code>
+                              <RequestLine event={e} className="soft" />
                               <span className={`cell-sub ${e.decision === 'allowed' ? '' : 'refused-word'}`}>
                                 {e.decision === 'allowed' ? 'Allowed' : reasonOf(e.code)}
                               </span>

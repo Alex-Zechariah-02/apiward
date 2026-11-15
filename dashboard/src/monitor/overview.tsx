@@ -140,25 +140,30 @@ function GettingStarted({ admin, can, status, open }: ViewProps & { status: Stat
   // Until the trials are read, the steps are unknown: nothing is shown, so
   // a finished guide never flashes before it hides itself.
   if (hidden || !trials.reply) return null
+  // When the trials cannot be read, the steps that depend on them are not
+  // known: the guide stays away unless My Account asked for it, and then
+  // marks those steps Not Read, never To Do.
+  const read = trials.reply.kind === 'ok'
+  if (!read && hidden === undefined) return null
   // The first trial ever is listed first; only one runs at a time, so once it
   // has ended a trial has been kept or undone.
-  const first = trials.reply?.kind === 'ok' ? trials.reply.body.items[0] : undefined
-  const steps = [
-    { done: status.confirmed !== undefined, text: 'A policy is active.', go: 'versions' as const, label: 'Versions' },
-    { done: first !== undefined, text: 'A draft change has been saved, checked and put on trial.', go: 'changes' as const, label: 'Changes' },
-    { done: first?.disposition !== undefined, text: 'A trial has ended: the change was kept, or undone.', go: 'changes' as const, label: 'Changes' },
+  const first = trials.reply.kind === 'ok' ? trials.reply.body.items[0] : undefined
+  const steps: { done: boolean | undefined; text: string; go: 'versions' | 'changes'; label: string }[] = [
+    { done: status.confirmed !== undefined, text: 'A policy is active.', go: 'versions', label: 'Versions' },
+    { done: read ? first !== undefined : undefined, text: 'A draft change has been saved, checked and put on trial.', go: 'changes', label: 'Changes' },
+    { done: read ? first?.disposition !== undefined : undefined, text: 'A trial has ended: the change was kept, or undone.', go: 'changes', label: 'Changes' },
   ]
   const done = steps.filter((step) => step.done).length
   if (hidden === undefined && done === steps.length) return null
   return (
     <details className="section card card-pad getting-started">
       <summary>
-        Getting Started · {done} of {steps.length} done
+        Getting Started · {read ? `${done} of ${steps.length} done` : 'progress not read'}
       </summary>
       <ol className="setup-steps">
         {steps.map((step) => (
           <li key={step.text}>
-            <Badge tone={step.done ? 'ok' : 'neutral'}>{step.done ? 'Done' : 'To Do'}</Badge> {step.text}{' '}
+            <Badge tone={step.done ? 'ok' : step.done === undefined ? 'unknown' : 'neutral'}>{step.done ? 'Done' : step.done === undefined ? 'Not Read' : 'To Do'}</Badge> {step.text}{' '}
             <button type="button" className="btn-link" onClick={() => open(step.go)}>
               {step.label}
             </button>

@@ -1,4 +1,4 @@
-import { useId, useState } from 'react'
+import { useId, useRef, useState } from 'react'
 import { connectApi, withBrowserAccess } from './edits'
 import { Wizard } from '../../shared/dialogs'
 import { Choice, Review, type WizardProps } from './wizards'
@@ -26,6 +26,9 @@ export function ConnectWizard({ policy, apply, close }: WizardProps) {
   const [transport, setTransport] = useState<Pick<Upstream, 'tls' | 'host'>>({})
   const [api, setApi] = useState('')
   const [rows, setRows] = useState<Row[]>([blank(1)])
+  // keys counts the endpoint rows ever added, so a new row's key is never one
+  // a removed row had, also after every row was removed.
+  const keys = useRef(1)
   // origins are the web pages allowed to call the API from a browser, separated by spaces.
   const [origins, setOrigins] = useState('')
   // revealed lists the steps whose Next was pressed early; their fields show what to fix.
@@ -133,7 +136,10 @@ export function ConnectWizard({ policy, apply, close }: WizardProps) {
               rows={rows}
               errors={marks(2)}
               change={change}
-              add={() => setRows((list) => [...list, blank(Math.max(...list.map((row) => row.key)) + 1)])}
+              add={() => {
+                const key = ++keys.current
+                setRows((list) => [...list, blank(key)])
+              }}
               remove={(key) => setRows((list) => list.filter((row) => row.key !== key))}
             />
           ),

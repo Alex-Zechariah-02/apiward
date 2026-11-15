@@ -6,7 +6,7 @@ import type { Traffic } from '../monitor/summary'
 import { MutationResult, Problem, Receipt } from '../shared/replies'
 import { age, Remaining, staleAfterMs, Time } from '../shared/time'
 import { Confirm } from '../shared/dialogs'
-import { type Asking, type Check, KeepDialog, sinceStart, trafficWindow, TrialTraffic } from './trial'
+import { type Asking, type Check, gatewayNow, KeepDialog, sinceStart, trafficWindow, TrialTraffic } from './trial'
 import { DeadlineBar, TrialSide, TrialTile } from './activation'
 
 // The change on trial: keep it or undo it, in full on Changes or as a tile on the Overview.
@@ -58,7 +58,7 @@ export function TrialDecision(props: { admin: Admin; manage: boolean; variant: '
   const traffic = useResource<Traffic>(
     (signal) =>
       activatedAt && variant === 'full'
-        ? admin.get(`/admin/traffic?window=${trafficWindow(activatedAt)}`, signal)
+        ? admin.get(`/admin/traffic?window=${trafficWindow(activatedAt, gatewayNow(current.last))}`, signal)
         : Promise.resolve({ kind: 'aborted' } as Reply<Traffic>),
     [activatedAt, variant],
   )
@@ -77,7 +77,7 @@ export function TrialDecision(props: { admin: Admin; manage: boolean; variant: '
     const [trial, status, figures] = await Promise.all([
       admin.get<ProvisionalView>('/admin/provisional'),
       admin.get<Status>('/admin/status'),
-      admin.get<Traffic>(`/admin/traffic?window=${trafficWindow(before.activatedAt)}`),
+      admin.get<Traffic>(`/admin/traffic?window=${trafficWindow(before.activatedAt, gatewayNow(current.last))}`),
     ])
     if (mine !== checks.current) return
     if (trial.kind === 'refused' && trial.error === 'no_provisional') {
