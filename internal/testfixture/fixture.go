@@ -20,10 +20,17 @@ import (
 )
 
 const (
-	maxBodyBytes      = 8 << 10
-	maxReceipts       = 10000
+	// maxBodyBytes: above every catalogue request body, so a larger one
+	// is a test fault answered 413.
+	maxBodyBytes = 8 << 10
+	// maxReceipts: more than any test run sends to one fixture, while a
+	// runaway client cannot grow the log without bound.
+	maxReceipts = 10000
+	// maxRecordedTarget: a recorded header or target is cut here, enough
+	// for every test's value and bounding a receipt's size.
 	maxRecordedTarget = 512
-	minSecretBytes    = 32
+	// minSecretBytes: 256 bits, so the control secret cannot be guessed.
+	minSecretBytes = 32
 )
 
 // Receipt is the fixture's own record of one request it received, written
@@ -150,7 +157,9 @@ func (s *Service) Control(secret []byte) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Service", s.name)
 		token, found := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
-		if !found || subtle.ConstantTimeCompare([]byte(token), secret) != 1 {
+		// A short or empty secret refuses every caller, also when the
+		// handler was built without Run's check.
+		if len(secret) < minSecretBytes || !found || subtle.ConstantTimeCompare([]byte(token), secret) != 1 {
 			writeJSON(w, http.StatusUnauthorized, errorBody("unauthenticated"))
 			return
 		}

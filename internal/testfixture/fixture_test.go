@@ -44,7 +44,7 @@ func TestCatalogueOperationsExist(t *testing.T) {
 	c := loadCatalogue(t)
 	declared := map[string]bool{}
 	for _, f := range c.Fixtures {
-		s, _ := New(f.Service)
+		s := service(t, f.Service)
 		for _, op := range s.operations {
 			declared[op.id] = true
 		}
@@ -70,7 +70,7 @@ func TestScenariosInProcess(t *testing.T) {
 		apis[op.ID] = op.API
 	}
 	for _, f := range c.Fixtures {
-		services[f.Service], _ = New(f.Service)
+		services[f.Service] = service(t, f.Service)
 	}
 	roles := map[string]string{}
 	for _, s := range c.Subjects {
@@ -128,7 +128,7 @@ func TestOrderOwnership(t *testing.T) {
 		{"customer creates for another", http.MethodPost, "/orders", `{"customer":"cust-002","item":"ITM-001","quantity":1}`, "cust-001", "CUSTOMER", http.StatusForbidden},
 	}
 	for _, tc := range cases {
-		s, _ := New("orders")
+		s := service(t, "orders")
 		before := s.state().SHA256
 		req := httptest.NewRequest(tc.method, tc.path, strings.NewReader(tc.body))
 		req.Header.Set("Content-Type", "application/json")
@@ -148,7 +148,7 @@ func TestOrderOwnership(t *testing.T) {
 }
 
 func TestEveryArrivalIsRecorded(t *testing.T) {
-	s, _ := New("orders")
+	s := service(t, "orders")
 	requests := []*http.Request{
 		httptest.NewRequest(http.MethodGet, "/unknown", nil),
 		httptest.NewRequest(http.MethodDelete, "/orders", nil),
@@ -177,7 +177,7 @@ func TestEveryArrivalIsRecorded(t *testing.T) {
 }
 
 func TestFullReceiptLogRefusesRequests(t *testing.T) {
-	s, _ := New("inventory")
+	s := service(t, "inventory")
 	s.receipts = make([]Receipt, maxReceipts)
 	rec := httptest.NewRecorder()
 	s.ServeHTTP(rec, httptest.NewRequest(http.MethodPatch, "/inventory/items/ITM-001", strings.NewReader(`{"delta":1}`)))
@@ -191,7 +191,7 @@ func TestFullReceiptLogRefusesRequests(t *testing.T) {
 
 func TestControlRequiresSecret(t *testing.T) {
 	secret := []byte(strings.Repeat("s", minSecretBytes))
-	s, _ := New("orders")
+	s := service(t, "orders")
 	control := httptest.NewServer(s.Control(secret))
 	defer control.Close()
 
@@ -259,4 +259,14 @@ func sameJSON(t *testing.T, got, want []byte) bool {
 	x, _ := json.Marshal(a)
 	y, _ := json.Marshal(b)
 	return bytes.Equal(x, y)
+}
+
+// service returns a fresh fixture, failing the test if it cannot be built.
+func service(t *testing.T, name string) *Service {
+	t.Helper()
+	s, err := New(name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return s
 }

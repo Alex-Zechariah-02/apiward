@@ -54,14 +54,10 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		Roles:         allValues(r.Header, "X-Gateway-Roles"),
 		BodyBytes:     len(body),
 	}
-	if len(receipt.Target) > maxRecordedTarget {
-		receipt.Target = receipt.Target[:maxRecordedTarget]
-	}
-	if len(receipt.Subject) > maxRecordedTarget {
-		receipt.Subject = receipt.Subject[:maxRecordedTarget]
-	}
-	if len(receipt.Roles) > maxRecordedTarget {
-		receipt.Roles = receipt.Roles[:maxRecordedTarget]
+	for _, field := range []*string{&receipt.RequestID, &receipt.Generation, &receipt.Target, &receipt.Subject, &receipt.Roles} {
+		if len(*field) > maxRecordedTarget {
+			*field = (*field)[:maxRecordedTarget]
+		}
 	}
 	if op != nil {
 		receipt.Operation = op.id
