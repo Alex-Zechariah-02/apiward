@@ -49,16 +49,16 @@ func TestZeroFilledLog(t *testing.T) {
 	for _, appends := range []bool{false, true} {
 		path := filepath.Join(t.TempDir(), "audit.log")
 		a := OpenAudit(path, Settings{MaxBytes: 4 << 10, MaxFiles: 4, Append: appends})
-		commitN(a, 3)
+		if commitN(a, 3) != 3 {
+			t.Fatal("a commit was refused")
+		}
 		info, err := os.Stat(path)
 		active, _, _, _ := a.Usage()
 		filled := runtime.GOOS == "linux" && !appends
 		if err != nil || (info.Size() > active) != filled {
 			t.Fatalf("append %v: file %d bytes, content %d (%v)", appends, info.Size(), active, err)
 		}
-		for !fileExists(path + ".1") {
-			commitN(a, 1)
-		}
+		commitUntil(t, a, func() bool { return fileExists(path + ".1") })
 		if err := a.Close(context.Background()); err != nil {
 			t.Fatal(err)
 		}

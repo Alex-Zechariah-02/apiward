@@ -42,7 +42,14 @@ func heldAudit(t *testing.T) (*AuditLog, func()) {
 	release := func() { once.Do(func() { go a.run() }) }
 	t.Cleanup(func() {
 		release()
-		a.Close(context.Background())
+		// A test that closed the log judged that close itself; a later close
+		// reports the same state again.
+		a.mu.Lock()
+		judged := a.closing
+		a.mu.Unlock()
+		if err := a.Close(context.Background()); err != nil && !judged {
+			t.Errorf("closing the log: %v", err)
+		}
 	})
 	return a, release
 }
@@ -226,6 +233,13 @@ func TestAuditCloseAcceptanceBoundary(t *testing.T) {
 		case <-finished:
 		case <-time.After(10 * time.Second):
 			t.Fatalf("round %d: a producer did not finish", round)
+		}
+		// A close that timed out leaves the writer running: the file is read
+		// only once it has ended.
+		select {
+		case <-a.done:
+		case <-time.After(10 * time.Second):
+			t.Fatalf("round %d: the writer did not end", round)
 		}
 		// Only events refused after the writer ended may be unwritten.
 		if err != nil && !strings.Contains(err.Error(), ": 0 accepted events") {

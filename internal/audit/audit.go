@@ -15,13 +15,19 @@ const (
 	// AuditQueueSize is the smallest queue; QueueSize grows it with the
 	// requests a deployment admits at once.
 	AuditQueueSize = 1024
+	// auditBatchSize bounds the events one sync covers, so a slow sync
+	// delays at most this many acknowledgements.
 	auditBatchSize = 128
-	MaxLoggedPath  = 256
+	// MaxLoggedPath bounds a recorded path: longer than the targets a
+	// policy names in practice, short enough that a client cannot inflate
+	// every record with a long request target.
+	MaxLoggedPath = 256
 	// MaxRecordBytes bounds one record, so an incomplete last record is
 	// always found within this many bytes of the end of the file.
 	MaxRecordBytes = 64 << 10
 	// AuditDrainWait bounds how long a graceful stop waits for the writer to
-	// write what was queued before the log closed.
+	// write what was queued before the log closed; with the listeners' own
+	// bound it keeps a stop inside Docker's default 10 s grace period.
 	AuditDrainWait = 5 * time.Second
 )
 

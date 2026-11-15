@@ -12,11 +12,13 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"slices"
 	"sync/atomic"
 	"time"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/admin"
 	"github.com/Alex-Zechariah-02/apiward/internal/adminui"
+	"github.com/Alex-Zechariah-02/apiward/internal/audit"
 	"github.com/Alex-Zechariah-02/apiward/internal/connections"
 	"github.com/Alex-Zechariah-02/apiward/internal/controller"
 	"github.com/Alex-Zechariah-02/apiward/internal/forward"
@@ -148,6 +150,18 @@ type deployment struct {
 	draining atomic.Bool
 }
 
+// warnAudit names at start each security log setting that keeps fewer
+// records than the defaults: eviction deletes the oldest rotated file, and
+// reads added to the ignored ones write no admin.read record.
+func warnAudit(cfg controller.Config, logger *slog.Logger) {
+	if cfg.AuditWhenFull == audit.FullEvict {
+		logger.Warn("security log eviction on (gateway.audit_when_full): the oldest rotated file is deleted when the file limit is reached")
+	}
+	if extra := slices.DeleteFunc(slices.Clone(cfg.IgnoredReads), func(path string) bool { return slices.Contains(controller.DefaultIgnoredReads, path) }); len(extra) > 0 {
+		logger.Warn("security log skips more reads (gateway.audit_ignore_reads): these reads write no admin.read record", "paths", extra)
+	}
+}
+
 // openDeployment opens cfg's deployment and builds its handlers; it binds no
 // listener. When it returns an error, everything it opened is released.
 func openDeployment(cfg nativeConfig, logger *slog.Logger) (*deployment, error) {
@@ -158,6 +172,7 @@ func openDeployment(cfg nativeConfig, logger *slog.Logger) (*deployment, error) 
 	if cfg.unsigned {
 		logger.Warn("identity assertion off (upstream.unsigned_identity): upstreams receive unsigned X-Gateway-Subject and X-Gateway-Roles and must accept requests only from the gateway")
 	}
+	warnAudit(cfg.controller, logger)
 	if certificate != nil {
 		cfg.controller.ReloadCertificate = certificate.reload
 	}
@@ -192,6 +207,8 @@ func openDeployment(cfg nativeConfig, logger *slog.Logger) (*deployment, error) 
 		certificate: certificate,
 		upstreams:   proxy,
 	}
+	// The health and metrics reads are small and local: 5 s bounds a stuck
+	// scraper without failing a slow one.
 	d.metrics = &http.Server{
 		Handler:           health(monitor.Metrics(c.Observations(), c.Gauges), func() bool { return !d.draining.Load() && ready(c, certificate) }),
 		ReadHeaderTimeout: 5 * time.Second,

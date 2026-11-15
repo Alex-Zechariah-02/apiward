@@ -29,10 +29,29 @@ func commitN(a *AuditLog, n int) int {
 	return acknowledged
 }
 
+// commitUntil commits one event at a time until done reports true. It fails
+// the test on a refused commit, or when done does not hold within 1000
+// commits.
+func commitUntil(t *testing.T, a *AuditLog, done func() bool) {
+	t.Helper()
+	for i := 0; !done(); i++ {
+		if i == 1000 {
+			t.Fatal("the log did not reach the awaited state within 1000 commits")
+		}
+		if commitN(a, 1) != 1 {
+			t.Fatal("a commit was refused")
+		}
+	}
+}
+
 func TestFullLogResumesWhenFilesMoved(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "audit.log")
 	a := OpenAudit(path, Settings{MaxBytes: 4 << 10, MaxFiles: 2})
-	t.Cleanup(func() { a.Close(context.Background()) })
+	t.Cleanup(func() {
+		if err := a.Close(context.Background()); err != nil {
+			t.Errorf("closing the log: %v", err)
+		}
+	})
 	for i := 0; !a.Failed(); i++ {
 		if i > 1000 {
 			t.Fatal("the log never filled")
@@ -54,18 +73,12 @@ func TestFullLogResumesWhenFilesMoved(t *testing.T) {
 func TestEvictionRecordsBeforeDeleting(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "audit.log")
 	a := OpenAudit(path, Settings{MaxBytes: 4 << 10, MaxFiles: 2, WhenFull: FullEvict})
-	for !fileExists(path + ".1") {
-		commitN(a, 1)
-	}
+	commitUntil(t, a, func() bool { return fileExists(path + ".1") })
 	oldest, err := os.ReadFile(path + ".1")
 	if err != nil {
 		t.Fatal(err)
 	}
-	for fileExists(path + ".1") {
-		if commitN(a, 1) != 1 {
-			t.Fatal("an evicting log refused a record")
-		}
-	}
+	commitUntil(t, a, func() bool { return !fileExists(path + ".1") })
 	if err := a.Close(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -130,12 +143,14 @@ func fileExists(name string) bool {
 }
 
 // With a sync window, a lone record is synced at once, and every record is
-// in the file when its commit is acknowledged.
+// in the file when its commit is acknowledged. A lone record must return
+// well before the window: half of it leaves room for a slow disk's sync.
 func TestSyncWindow(t *testing.T) {
+	const window = time.Second
 	path := filepath.Join(t.TempDir(), "audit.log")
-	a := OpenAudit(path, Settings{MaxBytes: 1 << 20, MaxFiles: 2, Window: 200 * time.Millisecond})
+	a := OpenAudit(path, Settings{MaxBytes: 1 << 20, MaxFiles: 2, Window: window})
 	started := time.Now()
-	if commitN(a, 1) != 1 || time.Since(started) > 150*time.Millisecond {
+	if commitN(a, 1) != 1 || time.Since(started) > window/2 {
 		t.Fatalf("a lone record waited %v, want no window", time.Since(started))
 	}
 	var wg sync.WaitGroup

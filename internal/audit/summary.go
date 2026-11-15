@@ -16,8 +16,12 @@ import (
 // SummaryInterval, with the addresses that sent the most. A flood of them
 // costs a counter, not a durable record each.
 const (
+	// SummaryInterval keeps a flood to one record a minute while still
+	// placing it in time to the minute.
 	SummaryInterval = time.Minute
-	summaryTop      = 16
+	// summaryTop is how many of the busiest addresses one summary names:
+	// enough to see a flood's sources, few enough for one readable record.
+	summaryTop = 16
 	// summaryAddresses bounds the addresses counted per interval; refusals
 	// from further addresses still count in their reason.
 	summaryAddresses = 4096
