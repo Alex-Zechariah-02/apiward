@@ -54,7 +54,10 @@ func (f *memoryForwarder) forward(w http.ResponseWriter, r *http.Request) error 
 	if d.Endpoint() != nil {
 		dial = d.Endpoint().Address()
 	}
-	body, _ := io.ReadAll(r.Body)
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		return err
+	}
 	f.mu.Lock()
 	f.got = append(f.got, handedRequest{
 		bound:  bound,
@@ -253,7 +256,9 @@ func TestEnforcementAuditFailureBlocksForwarding(t *testing.T) {
 		Error     string `json:"error"`
 		RequestID string `json:"request_id"`
 	}
-	json.Unmarshal([]byte(body), &reply)
+	if err := json.Unmarshal([]byte(body), &reply); err != nil {
+		t.Fatalf("reply %q: %v", body, err)
+	}
 	if code != http.StatusServiceUnavailable || reply.Error != "gateway_unavailable" || reply.RequestID == "" {
 		t.Fatalf("with a failed audit log: %d %s", code, body)
 	}

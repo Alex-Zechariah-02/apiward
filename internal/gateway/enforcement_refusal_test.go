@@ -119,9 +119,9 @@ func TestEnforcementRefusals(t *testing.T) {
 			Error     string `json:"error"`
 			RequestID string `json:"request_id"`
 		}
-		json.Unmarshal([]byte(body), &reply)
-		if resp.StatusCode != tc.status || reply.Error != tc.code || reply.RequestID == "" {
-			t.Errorf("%s: %d %s, want %d %s", tc.name, resp.StatusCode, body, tc.status, tc.code)
+		err := json.Unmarshal([]byte(body), &reply)
+		if err != nil || resp.StatusCode != tc.status || reply.Error != tc.code || reply.RequestID == "" {
+			t.Errorf("%s: %d %s (%v), want %d %s", tc.name, resp.StatusCode, body, err, tc.status, tc.code)
 			continue
 		}
 		if tc.allowed != "" && !strings.Contains(resp.Header.Get("Allow"), tc.allowed) {

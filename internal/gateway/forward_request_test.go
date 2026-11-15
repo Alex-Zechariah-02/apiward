@@ -76,6 +76,10 @@ func TestNativeForwardingRequestIntact(t *testing.T) {
 	if h := e.A.Receipts()[1].Headers; h.Get("User-Agent") != "" || h.Get("Accept-Encoding") != "" {
 		t.Errorf("fields the client did not send: User-Agent %q, Accept-Encoding %q", h.Get("User-Agent"), h.Get("Accept-Encoding"))
 	}
+	// Stopped, the controller has written every record, the outcomes too.
+	if err := c.Stop(); err != nil {
+		t.Fatal(err)
+	}
 	for name, text := range map[string]string{"audit log": fmt.Sprint(e.AuditEvents()), "proxy log": logs.String()} {
 		if strings.Contains(text, token[7:]) || strings.Contains(text, "c2VjcmV0") {
 			t.Errorf("the %s holds a credential", name)

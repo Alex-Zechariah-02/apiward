@@ -101,7 +101,7 @@ func TestPackageLayers(t *testing.T) {
 					t.Errorf("internal/%s imports internal/%s (tags %v)", name, dep, tags)
 				}
 			}
-			for _, imp := range pkg.TestImports {
+			for _, imp := range slices.Concat(pkg.TestImports, pkg.XTestImports) {
 				dep, ok := strings.CutPrefix(imp, module+"/internal/")
 				if ok && !slices.Contains(allowed, dep) && !slices.Contains(unlayered, dep) && !slices.Contains(support, dep) {
 					t.Errorf("internal/%s tests import internal/%s (tags %v)", name, dep, tags)

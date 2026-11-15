@@ -18,11 +18,19 @@ func TestVersionCommand(t *testing.T) {
 		t.Fatal(err)
 	}
 	stdout := os.Stdout
+	t.Cleanup(func() {
+		os.Stdout = stdout
+		write.Close()
+		read.Close()
+	})
 	os.Stdout = write
 	code := Main([]string{"version"})
 	os.Stdout = stdout
 	write.Close()
-	out, _ := io.ReadAll(read)
+	out, err := io.ReadAll(read)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if code != 0 || string(out) != admin.VersionText() || !strings.Contains(string(out), "\nmodule jwt identity ") {
 		t.Fatalf("version: exit %d, output %q", code, out)
 	}

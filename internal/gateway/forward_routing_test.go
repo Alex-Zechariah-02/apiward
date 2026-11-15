@@ -261,6 +261,11 @@ func TestNativeForwardingRefusalsReachNoUpstream(t *testing.T) {
 		t.Fatalf("with a failed audit log: %d %s", code, body)
 	}
 	e.AssertReceipts(3, 0, 0)
+	// Stopped, the controller has written every record it still can; the
+	// failed log is reported.
+	if err := c.Stop(); err == nil || !strings.Contains(err.Error(), "audit log incomplete") {
+		t.Fatalf("stop with a failed audit log: %v", err)
+	}
 	for name, text := range map[string]string{"audit log": fmt.Sprint(e.AuditEvents()), "proxy log": logs.String()} {
 		if strings.Contains(text, token) || strings.Contains(text, segments[2]) {
 			t.Errorf("the %s holds the token", name)

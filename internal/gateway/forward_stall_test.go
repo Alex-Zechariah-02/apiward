@@ -121,7 +121,11 @@ func TestNativeForwardingResponseStalls(t *testing.T) {
 		// gateway had only begun buffering never reaches the client; a longer
 		// one arrives in part and then the connection closes. Neither ends
 		// as a complete response.
-		for _, sent := range []int{10, 16 << 10} {
+		for _, tc := range []struct {
+			sent     int
+			response bool // whether the status line reaches the client
+		}{{10, false}, {16 << 10, true}} {
+			sent := tc.sent
 			set(func(w http.ResponseWriter, r *http.Request) {
 				conn, buffered, _ := http.NewResponseController(w).Hijack()
 				fmt.Fprintf(buffered, "HTTP/1.1 200 OK\r\nContent-Length: %d\r\n\r\n%s", 2*sent, strings.Repeat("x", sent))
@@ -135,9 +139,10 @@ func TestNativeForwardingResponseStalls(t *testing.T) {
 			conn.SetDeadline(time.Now().Add(10 * time.Second))
 			io.WriteString(conn, "GET /a/x HTTP/1.1\r\nHost: gw\r\n\r\n")
 			resp, err := http.ReadResponse(bufio.NewReader(conn), nil)
-			if err != nil {
-				t.Logf("%d of %d bytes sent: the client received no response (%v)", sent, 2*sent, err)
-			} else {
+			if (err == nil) != tc.response {
+				t.Fatalf("%d of %d bytes sent: response %v, want %v (%v)", sent, 2*sent, err == nil, tc.response, err)
+			}
+			if err == nil {
 				received, err := io.ReadAll(resp.Body)
 				if resp.StatusCode != http.StatusOK || !errors.Is(err, io.ErrUnexpectedEOF) || len(received) > sent {
 					t.Fatalf("%d of %d bytes sent: client received %d %d bytes, %v", sent, 2*sent, resp.StatusCode, len(received), err)

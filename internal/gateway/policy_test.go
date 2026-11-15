@@ -111,7 +111,10 @@ func TestValidPolicyCompilesDeterministically(t *testing.T) {
 	}
 
 	// A different revision is a different generation.
-	other, _ := compile.Compile(threeAPIPolicy(), 8, time.Time{}, policy.Limits{})
+	other, err := compile.Compile(threeAPIPolicy(), 8, time.Time{}, policy.Limits{})
+	if err != nil {
+		t.Fatal(err)
+	}
 	if other.ID == first.ID {
 		t.Fatal("revision is not part of the generation identity")
 	}

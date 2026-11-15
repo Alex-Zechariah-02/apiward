@@ -10,6 +10,8 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/http/httptrace"
+	"net/textproto"
 	"strings"
 	"testing"
 
@@ -35,9 +37,29 @@ func TestEnforcementResponses(t *testing.T) {
 			io.WriteString(w, "accepted")
 			return nil
 		})
-		resp, body := e.Exchange(http.MethodGet, "/a/x", "", "", "")
+		var early []string
+		trace := &httptrace.ClientTrace{Got1xxResponse: func(code int, header textproto.MIMEHeader) error {
+			early = append(early, fmt.Sprint(code, " ", header.Get("Link")))
+			return nil
+		}}
+		req, err := http.NewRequestWithContext(httptrace.WithClientTrace(context.Background(), trace), http.MethodGet, "http://"+e.DataAddr+"/a/x", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(early) != 1 || early[0] != "103 </style.css>; rel=preload" {
+			t.Fatalf("informational responses received: %q", early)
+		}
 		id := f.handed()[len(f.handed())-1].header.Get("X-Request-Id")
-		if ev := forwardedEvent(id); resp.StatusCode != http.StatusAccepted || body != "accepted" || ev["status"] != float64(202) || ev["decision"] != "forwarded" {
+		if ev := forwardedEvent(id); resp.StatusCode != http.StatusAccepted || string(body) != "accepted" || ev["status"] != float64(202) || ev["decision"] != "forwarded" {
 			t.Fatalf("%d %q, event %v", resp.StatusCode, body, ev)
 		}
 	})
@@ -104,7 +126,10 @@ func TestEnforcementResponses(t *testing.T) {
 			return r.Context().Err()
 		})
 		ctx, cancel := context.WithCancel(context.Background())
-		req, _ := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+e.DataAddr+"/a/x", nil)
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+e.DataAddr+"/a/x", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
 		result := make(chan error, 1)
 		go func() {
 			resp, err := http.DefaultClient.Do(req)
