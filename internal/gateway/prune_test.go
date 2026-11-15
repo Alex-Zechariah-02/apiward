@@ -93,6 +93,9 @@ func TestHistoryPruning(t *testing.T) {
 			}
 			got = append(got, value)
 		}
+		if err := rows.Err(); err != nil {
+			t.Fatalf("%s: %v", what, err)
+		}
 		if !slices.Equal(got, want) {
 			t.Fatalf("%s: %v, want %v", what, got, want)
 		}
