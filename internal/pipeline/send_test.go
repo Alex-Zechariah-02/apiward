@@ -92,6 +92,13 @@ func exchange(t *testing.T, s setup, requests ...*http.Request) (*httptest.Respo
 	return rec, records, recovered
 }
 
+// quick reports whether a record's duration is that of an immediate request;
+// a zero duration is left out of the record.
+func quick(e map[string]any) bool {
+	ms, _ := e["duration_ms"].(float64)
+	return ms >= 0 && ms < 10_000
+}
+
 // last is the final record, or an empty one.
 func last(records []map[string]any) map[string]any {
 	if len(records) == 0 {
@@ -149,7 +156,7 @@ func TestMaxForwards(t *testing.T) {
 		return r
 	}
 	rec, records, _ := exchange(t, s, request(http.MethodOptions, "/a/x", "0"))
-	if e := last(records); rec.Code != http.StatusNoContent || !strings.Contains(rec.Header().Get("Allow"), "GET") || e["kind"] != "request.preflight" || e["error"] != "max_forwards" {
+	if e := last(records); rec.Code != http.StatusNoContent || !strings.Contains(rec.Header().Get("Allow"), "GET") || e["kind"] != "request.preflight" || e["error"] != "max_forwards" || !quick(e) {
 		t.Fatalf("Max-Forwards 0: %d %v %v", rec.Code, rec.Header(), e)
 	}
 	for _, tc := range []struct{ method, target, value, want string }{{"OPTIONS", "/a/o", "5", "4"}, {"OPTIONS", "/a/o", "1", "0"}, {"GET", "/a/x", "0", "0"}} {
@@ -286,7 +293,7 @@ func TestPathAtLogBound(t *testing.T) {
 // A recorded method is cut to the logged bound.
 func TestLongMethodRecord(t *testing.T) {
 	_, records, _ := exchange(t, setup{ops: []policy.Operation{public("GET", "/a/x")}}, httptest.NewRequest(strings.Repeat("M", 40), "/a/x", nil))
-	if e := last(records); e["method"] != strings.Repeat("M", audit.MaxLoggedMethod) || e["path_truncated"] != nil {
+	if e := last(records); e["method"] != strings.Repeat("M", audit.MaxLoggedMethod) || e["path_truncated"] != nil || !quick(e) {
 		t.Fatalf("record %v", e)
 	}
 }

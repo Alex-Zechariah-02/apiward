@@ -50,11 +50,12 @@ func TestPanicLeavesFailedRecord(t *testing.T) {
 	var e struct {
 		Kind, Decision, Reason string
 		Status                 int
+		DurationMS             float64 `json:"duration_ms"`
 	}
 	if err := json.Unmarshal([]byte(strings.TrimSpace(string(data))), &e); err != nil {
 		t.Fatalf("records %s: %v", data, err)
 	}
-	if e.Kind != "request.rejected" || e.Decision != "failed" || e.Reason != "internal_error" || e.Status != http.StatusInternalServerError {
+	if e.Kind != "request.rejected" || e.Decision != "failed" || e.Reason != "internal_error" || e.Status != http.StatusInternalServerError || e.DurationMS < 0 || e.DurationMS > 10_000 {
 		t.Fatalf("record %+v, want a failed internal_error outcome", e)
 	}
 }
