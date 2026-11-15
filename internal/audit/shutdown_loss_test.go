@@ -153,9 +153,10 @@ func TestAuditCloseTimeout(t *testing.T) {
 	for i := range 50 {
 		a.Record(Event{Kind: "request.rejected", RequestID: strconv.Itoa(i)})
 	}
+	// The bound runs from the context's creation, so the clock starts first.
+	started := time.Now()
 	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
 	defer cancel()
-	started := time.Now()
 	err := a.Close(ctx)
 	if elapsed := time.Since(started); elapsed < 300*time.Millisecond || elapsed > 2*time.Second {
 		t.Fatalf("close returned after %s", elapsed)
