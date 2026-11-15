@@ -241,7 +241,9 @@ func TestRetryAfter(t *testing.T) {
 	r := func() *http.Request { return httptest.NewRequest(http.MethodGet, "/a/x", nil) }
 	rec, _, _ := exchange(t, setup{ops: []policy.Operation{op}}, r(), r(), r())
 	seconds, err := strconv.Atoi(rec.Header().Get("Retry-After"))
-	if rec.Code != http.StatusTooManyRequests || err != nil || seconds < 1 || seconds > 120 {
+	// Two requests counted in the current minute: the next is admitted only
+	// after this bucket has become the previous one and faded by half.
+	if rec.Code != http.StatusTooManyRequests || err != nil || seconds < 30 || seconds > 120 {
 		t.Fatalf("answer %d, Retry-After %q", rec.Code, rec.Header().Get("Retry-After"))
 	}
 }
@@ -269,6 +271,15 @@ func TestAssertionBound(t *testing.T) {
 	rec, records, _ := exchange(t, s, httptest.NewRequest(http.MethodGet, "/a/"+strings.Repeat("x", MaxAssertionBytes), nil))
 	if e := last(records); rec.Code != http.StatusBadRequest || sent != "" || e["reason"] != "assertion_too_large" || e["stage"] != "BIND" {
 		t.Fatalf("long path: %d, sent %d bytes, record %v", rec.Code, len(sent), e)
+	}
+}
+
+// A path of exactly the logged bound is kept whole and not marked as cut.
+func TestPathAtLogBound(t *testing.T) {
+	path := "/a/" + strings.Repeat("p", audit.MaxLoggedPath-3)
+	_, records, _ := exchange(t, setup{ops: []policy.Operation{public("GET", "/a/*")}}, httptest.NewRequest(http.MethodGet, path, nil))
+	if e := last(records); e["path"] != path || e["path_truncated"] != nil {
+		t.Fatalf("record %v", e)
 	}
 }
 
