@@ -252,3 +252,29 @@ func TestPoolSurvivesCloseRace(t *testing.T) {
 		panic("the pool hung when a closing connection was taken")
 	}
 }
+
+// A request under a reloaded network closes the idle connections made under
+// the earlier one, so the idle limit holds across a reload.
+func TestPoolRetiresEarlierNetwork(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	t.Cleanup(s.Close)
+	var current atomic.Pointer[Network]
+	current.Store(closed())
+	proxy, err := NewUpstreamProxy(bounds, testPool, current.Load, slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(proxy.Close)
+	d := destination(t, policy.Upstream{ID: "u", Dial: s.Listener.Addr().String()}, http.MethodGet)
+	send := func() {
+		r := httptest.NewRequest(http.MethodGet, "/x", nil)
+		if err := proxy.Forward(httptest.NewRecorder(), r.WithContext(Bind(context.Background(), d))); err != nil {
+			t.Fatal(err)
+		}
+	}
+	send()
+	waitIdle(t, proxy.pool, 1)
+	current.Store(closed())
+	send()
+	waitIdle(t, proxy.pool, 1)
+}

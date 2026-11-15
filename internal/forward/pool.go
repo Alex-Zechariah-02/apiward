@@ -52,9 +52,14 @@ type connPool struct {
 	settings  PoolSettings
 	transport *http.Transport // keep-alive; used only by NewClientConn
 	network   func() *Network
-	mu        sync.Mutex
-	idle      map[poolKey][]*pooledConn
-	closed    bool
+	// mu is one lock for the whole pool: each hold is a few map operations,
+	// so per-endpoint locks would add state without measurable gain.
+	mu   sync.Mutex
+	idle map[poolKey][]*pooledConn
+	// current is the network of the newest request; idle connections made
+	// under another are closed, so a reload never doubles the idle limit.
+	current *Network
+	closed  bool
 }
 
 func newConnPool(settings PoolSettings, base *http.Transport, network func() *Network) *connPool {
@@ -71,6 +76,7 @@ func (p *connPool) RoundTrip(req *http.Request) (*http.Response, error) {
 	d, _ := Bound(req.Context())
 	e := d.Endpoint()
 	key := poolKey{network: p.network(), scheme: e.Scheme(), address: e.Address(), profile: e.Profile()}
+	p.retire(key.network)
 	c := p.take(key)
 	reused := c != nil
 	if c == nil {
@@ -147,7 +153,7 @@ func (p *connPool) changed(c *pooledConn) {
 		p.mu.Unlock()
 		return
 	}
-	if p.closed || len(p.idle[c.key]) >= p.settings.MaxIdle {
+	if p.closed || c.key.network != p.current || len(p.idle[c.key]) >= p.settings.MaxIdle {
 		p.mu.Unlock()
 		c.conn.Close()
 		return
@@ -177,6 +183,31 @@ func (p *connPool) unlist(c *pooledConn) bool {
 		}
 	}
 	return true
+}
+
+// retire makes n the current network and closes the idle connections made
+// under any other, which no request can reuse.
+func (p *connPool) retire(n *Network) {
+	p.mu.Lock()
+	if p.current == n {
+		p.mu.Unlock()
+		return
+	}
+	p.current = n
+	var old []*pooledConn
+	for key, list := range p.idle {
+		if key.network == n {
+			continue
+		}
+		for _, c := range list {
+			c.idle = false
+			c.timer.Stop()
+		}
+		old = append(old, list...)
+		delete(p.idle, key)
+	}
+	p.mu.Unlock()
+	closeAll(old)
 }
 
 // close closes every idle connection and keeps no more; connections still

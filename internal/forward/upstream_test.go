@@ -21,6 +21,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -124,7 +125,10 @@ func destination(t *testing.T, u policy.Upstream, method string) compile.Destina
 // An address is checked when the connection is made, not only at compile: a
 // public address the operator no longer allows is refused before connecting.
 func TestUpstreamConnectCheck(t *testing.T) {
-	public, _ := LoadNetwork(true, nil, 0)
+	public, err := LoadNetwork(true, nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
 	g, err := compile.Compile(policy.Policy{SchemaVersion: policy.LatestSchemaVersion, Profile: policy.ProfileCore,
 		Upstreams: []policy.Upstream{{ID: "u", URL: "http://192.0.2.10:9"}}}, 1, time.Time{}, policy.Limits{})
 	if err != nil || g.CheckNetwork(public) != nil {
@@ -219,5 +223,27 @@ func TestUpstreamHostHeader(t *testing.T) {
 		if reason, status := send(t, closed(), policy.Upstream{ID: "u", URL: "http://" + addr, Host: mode}, "shop.example"); reason != "" || status != http.StatusOK || host.Load() != want {
 			t.Errorf("host %q: %q %d, Host %v, want %s", mode, reason, status, host.Load(), want)
 		}
+	}
+}
+
+// A CA pin file is read only when it is a regular file that, on Unix, the
+// group and others cannot rewrite.
+func TestCAFileChecks(t *testing.T) {
+	dir := t.TempDir()
+	path := newIssuer(t).file(t, dir)
+	if _, err := LoadNetwork(false, []ProfileSettings{{ID: "p", CAFile: dir}}, 0); err == nil || !strings.Contains(err.Error(), "regular file") {
+		t.Fatalf("a directory as CA file: %v", err)
+	}
+	if _, err := LoadNetwork(false, []ProfileSettings{{ID: "p", CAFile: path}}, 0); err != nil {
+		t.Fatal(err)
+	}
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows grants file access by ACL; modes are not checked")
+	}
+	if err := os.Chmod(path, 0o620); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadNetwork(false, []ProfileSettings{{ID: "p", CAFile: path}}, 0); err == nil || !strings.Contains(err.Error(), "writable") {
+		t.Fatalf("a group-writable CA file: %v", err)
 	}
 }

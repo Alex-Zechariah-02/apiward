@@ -26,13 +26,17 @@ import (
 )
 
 const (
-	// MaxProfiles bounds the TLS profiles of one operator file.
+	// MaxProfiles bounds the TLS profiles of one operator file: one per
+	// upstream trust domain, far more than a small team runs.
 	MaxProfiles = 32
-	// maxPEMBytes bounds each certificate or key file.
+	// maxPEMBytes bounds each certificate or key file: a long chain with an
+	// RSA 8,192-bit key stays well below it.
 	maxPEMBytes = 64 << 10
-	// maxPinned bounds the certificates of one CA file.
+	// maxPinned bounds the certificates of one CA file: room for a root and
+	// intermediates during a rotation, not a whole system store.
 	maxPinned = 16
-	// minRSABits is the smallest RSA client key accepted.
+	// minRSABits is the smallest RSA client key accepted (NIST SP 800-131A:
+	// 2,048 bits is the floor for RSA).
 	minRSABits = 2048
 )
 
@@ -123,8 +127,9 @@ func loadProfile(s ProfileSettings) (*profile, error) {
 	return p, nil
 }
 
-// readPEMFile reads a bounded file at an absolute path.
-func readPEMFile(path string) ([]byte, error) {
+// readPEMFile reads a bounded regular file at an absolute path, after check,
+// when given, accepted the opened file's information.
+func readPEMFile(path string, check func(os.FileInfo) error) ([]byte, error) {
 	if !filepath.IsAbs(path) {
 		return nil, errors.New("the path must be absolute")
 	}
@@ -133,6 +138,18 @@ func readPEMFile(path string) ([]byte, error) {
 		return nil, err
 	}
 	defer file.Close()
+	info, err := file.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if !info.Mode().IsRegular() {
+		return nil, errors.New("the path must name a regular file")
+	}
+	if check != nil {
+		if err := check(info); err != nil {
+			return nil, err
+		}
+	}
 	data, err := io.ReadAll(io.LimitReader(file, maxPEMBytes+1))
 	if err != nil {
 		return nil, err
@@ -144,7 +161,7 @@ func readPEMFile(path string) ([]byte, error) {
 }
 
 func loadRoots(path string) (*x509.CertPool, error) {
-	data, err := readPEMFile(path)
+	data, err := readPEMFile(path, checkTrusted)
 	if err != nil {
 		return nil, err
 	}
@@ -171,14 +188,14 @@ func loadRoots(path string) (*x509.CertPool, error) {
 // an ECDSA P-256 key, in a file the group and others cannot read on Unix.
 // The returned certificate's Leaf is parsed.
 func LoadCertificate(certificateFile, keyFile string) (*tls.Certificate, error) {
-	chain, err := readPEMFile(certificateFile)
+	chain, err := readPEMFile(certificateFile, nil)
 	if err != nil {
 		return nil, fmt.Errorf("certificate file: %w", err)
 	}
 	if err := CheckKeyFile(keyFile); err != nil {
 		return nil, fmt.Errorf("key file: %w", err)
 	}
-	key, err := readPEMFile(keyFile)
+	key, err := readPEMFile(keyFile, nil)
 	if err != nil {
 		return nil, fmt.Errorf("key file: %w", err)
 	}
@@ -215,6 +232,20 @@ func CheckKeyFile(path string) error {
 		return errors.New("the key file must not be accessible to the group or others (chmod 600)")
 	}
 	return nil
+}
+
+// checkTrusted refuses a CA pin file another local account could rewrite to
+// make the gateway trust its certificates: on Unix it must not be writable
+// by the group or others and must belong to the gateway's user or root.
+// Windows grants access by ACL, which the operator sets (docs/keys.md).
+func checkTrusted(info os.FileInfo) error {
+	if runtime.GOOS == "windows" {
+		return nil
+	}
+	if info.Mode().Perm()&0o022 != 0 {
+		return errors.New("the file must not be writable by the group or others (chmod go-w)")
+	}
+	return checkOwner(info)
 }
 
 // Public reports whether upstreams may use public addresses.

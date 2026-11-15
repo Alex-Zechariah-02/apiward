@@ -272,9 +272,9 @@ func FuzzDecodeAndCompile(f *testing.F) {
 			}
 			return
 		}
-		second, _ := compile.Compile(p, 1, time.Time{}, policy.Limits{})
-		if second == nil || first.ID != second.ID {
-			t.Fatal("accepted policy compiled to different identities")
+		second, err := compile.Compile(p, 1, time.Time{}, policy.Limits{})
+		if err != nil || first.ID != second.ID {
+			t.Fatalf("accepted policy compiled again to a different identity or failed: %v", err)
 		}
 	})
 }

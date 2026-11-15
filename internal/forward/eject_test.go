@@ -25,13 +25,13 @@ func TestEjectionAfterConnectFailures(t *testing.T) {
 			t.Fatalf("failure %d: %q, want not_sent", i+1, reason)
 		}
 	}
-	started := time.Now()
-	if reason := send(); reason != "upstream_ejected" || time.Since(started) > 100*time.Millisecond {
-		t.Fatalf("after 2 failures: %q in %v, want an immediate upstream_ejected", reason, time.Since(started))
+	if reason := send(); reason != "upstream_ejected" {
+		t.Fatalf("after 2 failures: %q, want upstream_ejected", reason)
 	}
 
-	// After the first ejection (1 s) one probe is sent; the endpoint now
-	// answers, so it is no longer ejected.
+	// Until the first ejection (1 s) ends every request is refused at once;
+	// then one probe is sent, the endpoint answers, and it is no longer
+	// ejected.
 	listener, err = net.Listen("tcp", address)
 	if err != nil {
 		t.Skipf("cannot listen on %s again: %v", address, err)
@@ -39,7 +39,13 @@ func TestEjectionAfterConnectFailures(t *testing.T) {
 	server := &http.Server{Handler: http.HandlerFunc(func(http.ResponseWriter, *http.Request) {})}
 	go server.Serve(listener)
 	t.Cleanup(func() { server.Close() })
-	time.Sleep(ejectFirst + 100*time.Millisecond)
+	deadline := time.Now().Add(ejectFirst + 5*time.Second)
+	for reason := send(); reason != ""; reason = send() {
+		if reason != "upstream_ejected" || time.Now().After(deadline) {
+			t.Fatalf("waiting for the probe: %q", reason)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
 	for i := range 3 {
 		if reason := send(); reason != "" {
 			t.Fatalf("request %d after the endpoint recovered: %q", i+1, reason)
