@@ -65,12 +65,21 @@ func runBackup(o *operatorContext, flags map[string]string) (int, error) {
 		return 1, err
 	}
 	defer removeFiles(partial)
+	created, err := os.Lstat(partial)
+	if err != nil {
+		return 1, err
+	}
 	if err := st.Snapshot(partial); err != nil {
 		return 1, fmt.Errorf("writing snapshot: %w", err)
 	}
 	fault.CrashPoint("backup-before-verify")
 	if err := checkDatabaseFile(partial); err != nil {
 		return 1, fmt.Errorf("verifying snapshot: %w", err)
+	}
+	// SQLite opens files by name: the verified file must still be the one
+	// this command created.
+	if err := samePath(partial, created); err != nil {
+		return 1, err
 	}
 	if err := os.Link(partial, output); err != nil {
 		return 1, err
@@ -81,9 +90,12 @@ func runBackup(o *operatorContext, flags map[string]string) (int, error) {
 			removeFiles(output)
 		}
 	}()
-	sum, size, err := fileDigest(output)
+	sum, size, linked, err := fileDigest(output)
 	if err != nil {
 		return 1, err
+	}
+	if !os.SameFile(linked, created) {
+		return 1, fmt.Errorf("%s was replaced while the command used it", output)
 	}
 	manifest := backupManifest{
 		Format:        backupFormat,
@@ -103,6 +115,9 @@ func runBackup(o *operatorContext, flags map[string]string) (int, error) {
 			removeFiles(manifestPath(output))
 		}
 	}()
+	if err := syncDir(filepath.Dir(output)); err != nil {
+		return 1, fmt.Errorf("syncing the backup's directory: %w", err)
+	}
 	if err := o.record(audit.Event{Kind: "operator.backup", File: filepath.Base(output), Revision: a.Confirmed}); err != nil {
 		return 1, err
 	}

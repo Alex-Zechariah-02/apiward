@@ -5,6 +5,7 @@ package integration
 import (
 	"net/http"
 	"os"
+	"os/user"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -112,9 +113,14 @@ func TestBackupIncludesWALAndRestoresElsewhere(t *testing.T) {
 		t.Fatal("the temporary backup file remains")
 	}
 	backupHash := gatewaytest.FileSHA256(t, output)
+	// The record names the operating system account that ran the command.
+	account, err := user.Current()
+	if err != nil {
+		t.Fatal(err)
+	}
 	backups := 0
 	for _, ev := range e.AuditEvents() {
-		if ev["kind"] == "operator.backup" && ev["actor"] == "operator" && ev["revision"] == float64(2) {
+		if ev["kind"] == "operator.backup" && ev["actor"] == "operator:"+account.Username && ev["revision"] == float64(2) {
 			backups++
 		}
 	}

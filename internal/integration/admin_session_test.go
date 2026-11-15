@@ -5,6 +5,7 @@ package integration
 import (
 	"encoding/base64"
 	"net/http"
+	"os/user"
 	"strings"
 	"testing"
 	"time"
@@ -246,10 +247,15 @@ func TestAdminEventsAreSecretSafe(t *testing.T) {
 
 	recorded := []string{"admin.authenticated", "admin.rejected", "admin.logout", "transition.intent", "transition.committed"}
 	events := e.EventsWhen(func(events []map[string]any) bool { return gatewaytest.HasKinds(events, recorded...) })
+	// Operator commands name the operating system account that ran them.
+	account, err := user.Current()
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, ev := range events {
 		kind := ev["kind"].(string)
 		if (strings.HasPrefix(kind, "admin.") && kind != "admin.rejected") || strings.HasPrefix(kind, "transition.") {
-			if ev["actor"] != "root" && ev["actor"] != "operator" {
+			if ev["actor"] != "root" && ev["actor"] != "operator:"+account.Username {
 				t.Errorf("event %s attributed to %v", kind, ev["actor"])
 			}
 		}

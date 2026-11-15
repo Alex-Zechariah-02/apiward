@@ -194,6 +194,18 @@ func TestRestoreRefusals(t *testing.T) {
 		}
 	}
 
+	// A live database whose authority does not load is still checked: its
+	// installation is read directly, so another installation's backup is
+	// refused.
+	broken := gatewaytest.Inspect(t, foreign.Database)
+	if _, err := broken.Exec(`DELETE FROM base`); err != nil {
+		t.Fatal(err)
+	}
+	broken.Close()
+	if out, code := foreign.RunOperator(gatewaytest.Binaries.Plain, nil, "restore", "--backup", good); code == 0 || !strings.Contains(out, "belongs to installation") {
+		t.Errorf("restore over an unloadable live database: exit %d: %s", code, out)
+	}
+
 	// A running gateway's database is never replaced.
 	e.Start(gatewaytest.Binaries.Plain)
 	out, code := e.RunOperator(gatewaytest.Binaries.Plain, nil, "restore", "--backup", good)

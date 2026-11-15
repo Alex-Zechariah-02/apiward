@@ -33,7 +33,7 @@ func runRestore(o *operatorContext, flags map[string]string) (int, error) {
 	if sameFile(backup, live) {
 		return 1, errors.New("the backup cannot be the live database")
 	}
-	manifest, err := checkBackup(backup)
+	manifest, checked, err := checkBackup(backup)
 	if err != nil {
 		return 1, err
 	}
@@ -50,10 +50,14 @@ func runRestore(o *operatorContext, flags map[string]string) (int, error) {
 	if err := copyDatabase(backup, staging); err != nil {
 		return 1, fmt.Errorf("staging the backup: %w", err)
 	}
+	// SQLite opened the backup by name: it must still be the file checked.
+	if err := samePath(backup, checked); err != nil {
+		return 1, err
+	}
 
 	now := time.Now()
 	episode := randomHex(16)
-	t := store.TransitionRecord{ID: "operator:restore:" + episode, Kind: "operator.restore", Actor: "operator", Target: filepath.Base(backup), Digest: manifest.SHA256}
+	t := store.TransitionRecord{ID: "operator:restore:" + episode, Kind: "operator.restore", Actor: o.actor, Target: filepath.Base(backup), Digest: manifest.SHA256}
 	if err := o.record(audit.Event{Kind: "transition.intent", Transition: t.ID, File: filepath.Base(backup)}); err != nil {
 		return 1, err
 	}
@@ -95,68 +99,86 @@ func runRestore(o *operatorContext, flags map[string]string) (int, error) {
 	return 0, nil
 }
 
+// maxManifestBytes bounds the manifest read: one written by backup is under
+// 1 KiB, so 64 KiB refuses only a file that is not one.
+const maxManifestBytes = 64 << 10
+
 // checkBackup verifies the backup against its manifest and runs the database
-// checks on it without changing it.
-func checkBackup(backup string) (backupManifest, error) {
+// checks on it without changing it. It returns the manifest and the identity
+// of the file it checked.
+func checkBackup(backup string) (backupManifest, os.FileInfo, error) {
+	manifest, err := backupChecks(backup)
+	if err != nil {
+		return manifest, nil, err
+	}
+	sum, size, info, err := fileDigest(backup)
+	if err != nil {
+		return manifest, nil, err
+	}
+	if sum != manifest.SHA256 || size != manifest.Bytes {
+		return manifest, nil, errors.New("the backup does not match its manifest checksum")
+	}
+	return manifest, info, checkBackupDatabase(backup, manifest)
+}
+
+// backupChecks reads and checks the backup's manifest.
+func backupChecks(backup string) (backupManifest, error) {
 	var manifest backupManifest
-	data, err := os.ReadFile(manifestPath(backup))
+	data, err := readBounded(manifestPath(backup), maxManifestBytes)
 	if err != nil {
 		return manifest, fmt.Errorf("reading the backup manifest: %w", err)
 	}
 	if err := policy.DecodeStrict(data, &manifest); err != nil || manifest.Format != backupFormat {
 		return manifest, errors.New("the backup manifest is not a gateway backup manifest")
 	}
-	sum, size, err := fileDigest(backup)
-	if err != nil {
-		return manifest, err
-	}
-	if sum != manifest.SHA256 || size != manifest.Bytes {
-		return manifest, errors.New("the backup does not match its manifest checksum")
-	}
 	if manifest.SchemaVersion != store.DatabaseVersion {
 		return manifest, fmt.Errorf("the backup has schema version %d, this gateway needs %d", manifest.SchemaVersion, store.DatabaseVersion)
 	}
+	return manifest, nil
+}
+
+// checkBackupDatabase runs the integrity and schema checks on the backup and
+// compares its authority with the manifest.
+func checkBackupDatabase(backup string, manifest backupManifest) error {
 	db, err := sql.Open("sqlite", store.DatabaseURI(backup)+"?mode=ro&_pragma=foreign_keys(ON)")
 	if err != nil {
-		return manifest, err
+		return err
 	}
 	defer db.Close()
 	db.SetMaxOpenConns(1)
 	var check string
 	if err := db.QueryRow("PRAGMA integrity_check").Scan(&check); err != nil || check != "ok" {
-		return manifest, fmt.Errorf("the backup fails the integrity check: %v %s", err, check)
+		return fmt.Errorf("the backup fails the integrity check: %v %s", err, check)
 	}
 	if err := store.Verify(db); err != nil {
-		return manifest, fmt.Errorf("the backup is not usable: %w", err)
+		return fmt.Errorf("the backup is not usable: %w", err)
 	}
 	var installation, mode string
 	var revision int64
 	if err := db.QueryRow("SELECT d.installation, d.mode, coalesce(b.confirmed, 0) FROM deployment d, base b WHERE d.id = 1 AND b.id = 1").Scan(&installation, &mode, &revision); err != nil {
-		return manifest, err
+		return err
 	}
 	if installation != manifest.Installation || mode != manifest.Mode || revision != manifest.Revision {
-		return manifest, errors.New("the backup authority does not match its manifest")
+		return errors.New("the backup authority does not match its manifest")
 	}
-	return manifest, nil
+	return nil
 }
 
-// checkLive refuses to replace a live database that is in use, that belongs to
-// another installation, or that still has write-ahead log or rollback journal
-// files beside it, which would be applied to the restored file.
+// checkLive refuses to replace a live database that belongs to another
+// installation, whose installation cannot be read, or that still has
+// write-ahead log or rollback journal files beside it, which would be applied
+// to the restored file. The deployment lock already refuses a database in use.
 func checkLive(live, installation string) error {
-	if _, err := os.Stat(live); err == nil {
+	_, missing := os.Stat(live)
+	if missing == nil {
+		// Opening and closing the store folds a write-ahead log a stopped
+		// gateway left back into the database; unavailable authority is
+		// checked below.
 		st, err := store.OpenStore(live)
-		switch {
-		case err == nil:
-			a, loadErr := st.Load(context.Background())
-			closeErr := st.Close()
-			if loadErr == nil && a.Installation != installation {
-				return fmt.Errorf("the backup belongs to installation %s, the live database to %s", installation, a.Installation)
-			}
-			if closeErr != nil {
-				return closeErr
-			}
-		case !errors.Is(err, store.ErrUnavailable):
+		if err == nil {
+			err = st.Close()
+		}
+		if err != nil && !errors.Is(err, store.ErrUnavailable) {
 			return err
 		}
 	}
@@ -167,7 +189,33 @@ func checkLive(live, installation string) error {
 			return fmt.Errorf("%s exists; move the live database and its companion files aside before restoring", companion)
 		}
 	}
+	if missing != nil {
+		return nil
+	}
+	current, err := liveInstallation(live)
+	if err != nil {
+		return fmt.Errorf("the live database's installation cannot be read (%w); move the live database aside before restoring", err)
+	}
+	if current != installation {
+		return fmt.Errorf("the backup belongs to installation %s, the live database to %s", installation, current)
+	}
 	return nil
+}
+
+// liveInstallation reads the installation straight from the live database,
+// so one whose authority does not load is still checked. immutable opens it
+// without locks or companion files: the deployment lock is held and the
+// companions were refused above.
+func liveInstallation(live string) (string, error) {
+	db, err := sql.Open("sqlite", store.DatabaseURI(live)+"?mode=ro&immutable=1")
+	if err != nil {
+		return "", err
+	}
+	defer db.Close()
+	db.SetMaxOpenConns(1)
+	var installation string
+	err = db.QueryRow("SELECT installation FROM deployment WHERE id = 1").Scan(&installation)
+	return installation, err
 }
 
 // copyDatabase copies a database file through SQLite into a new file.

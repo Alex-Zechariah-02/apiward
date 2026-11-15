@@ -9,6 +9,8 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"os/user"
+	"strings"
 	"time"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/audit"
@@ -45,10 +47,22 @@ type Config struct {
 	IdentityKey string
 }
 
-// operatorContext is the deployment an operator command acts on.
+// operatorContext is the deployment an operator command acts on and who
+// runs it.
 type operatorContext struct {
 	config Config
 	audit  *audit.AuditLog
+	actor  string
+}
+
+// operatorActor names who ran the command: the operating system account, as
+// the commands run only on the gateway host; unknown when it cannot be read.
+func operatorActor() string {
+	account, err := user.Current()
+	if err != nil || account.Username == "" {
+		return "operator:unknown"
+	}
+	return "operator:" + account.Username
 }
 
 // openAudit opens the deployment's audit log. Commands that act on an
@@ -74,7 +88,7 @@ func (o *operatorContext) close() {
 // record durably writes an operator event. No operator change proceeds
 // without its record.
 func (o *operatorContext) record(e audit.Event) error {
-	e.Actor = "operator"
+	e.Actor = o.actor
 	ctx, cancel := context.WithTimeout(context.Background(), o.config.AuditTimeout)
 	defer cancel()
 	if err := o.audit.Commit(ctx, e); err != nil {
@@ -107,8 +121,8 @@ func runInstall(o *operatorContext, flags map[string]string) (int, error) {
 	installation := randomHex(16)
 	secret := session.NewToken()
 	first := store.Enrolment{Name: name, Secret: session.Hash(secret), Permissions: store.PermAll, ExpiresAt: now.Add(enrolmentLifetime)}
-	t := store.TransitionRecord{ID: "operator:install:" + installation, Kind: "operator.install", Actor: "operator", Target: name, Digest: "operator"}
-	if err := o.record(audit.Event{Kind: "transition.intent", Transition: t.ID}); err != nil {
+	t := store.TransitionRecord{ID: "operator:install:" + installation, Kind: "operator.install", Actor: o.actor, Target: name, Digest: "operator"}
+	if err := o.record(audit.Event{Kind: "transition.intent", Transition: t.ID, Target: name}); err != nil {
 		return 1, err
 	}
 	st, err := store.CreateStore(o.config.Database, installation, first, t, now)
@@ -147,8 +161,9 @@ func runEnrol(o *operatorContext, flags map[string]string) (int, error) {
 	now := time.Now()
 	secret := session.NewToken()
 	e := store.Enrolment{Name: name, Secret: session.Hash(secret), Permissions: permissions, ExpiresAt: now.Add(enrolmentLifetime)}
-	t := store.TransitionRecord{ID: fmt.Sprintf("operator:enrol:%s:%s", name, randomHex(8)), Kind: "operator.enrol", Actor: "operator", Target: name, Digest: "operator"}
-	if err := o.record(audit.Event{Kind: "transition.intent", Transition: t.ID}); err != nil {
+	t := store.TransitionRecord{ID: fmt.Sprintf("operator:enrol:%s:%s", name, randomHex(8)), Kind: "operator.enrol", Actor: o.actor, Target: name, Digest: "operator"}
+	granted := name + " (" + strings.Join(permissions.Names(), ", ") + ")"
+	if err := o.record(audit.Event{Kind: "transition.intent", Transition: t.ID, Target: granted}); err != nil {
 		return 1, err
 	}
 	if err := st.IssueEnrolment(context.Background(), t, e, now); err != nil {
@@ -175,11 +190,11 @@ func runMigrate(o *operatorContext) (int, error) {
 	t := store.TransitionRecord{
 		ID:     fmt.Sprintf("operator:migrate:%d:%s", store.DatabaseVersion, randomHex(8)),
 		Kind:   "operator.migrate",
-		Actor:  "operator",
+		Actor:  o.actor,
 		Target: fmt.Sprintf("schema version %d", store.DatabaseVersion),
 		Digest: "operator",
 	}
-	if err := o.record(audit.Event{Kind: "transition.intent", Transition: t.ID}); err != nil {
+	if err := o.record(audit.Event{Kind: "transition.intent", Transition: t.ID, Target: t.Target}); err != nil {
 		return 1, err
 	}
 	if err := st.Migrate(context.Background(), from, t, time.Now()); err != nil {
@@ -200,7 +215,7 @@ func runMigrate(o *operatorContext) (int, error) {
 // deployment's lock for the whole command, across restore's SQLite file
 // replacement, and returns the exit code.
 func Run(command string, cfg Config, flags map[string]string) (int, error) {
-	o := &operatorContext{config: cfg}
+	o := &operatorContext{config: cfg, actor: operatorActor()}
 	if err := CheckPaths(flags["config"], o.config, command, flags); err != nil {
 		return 1, err
 	}
