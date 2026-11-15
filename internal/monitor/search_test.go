@@ -64,7 +64,7 @@ func TestSecurityLogSearch(t *testing.T) {
 	}
 	// A log that keeps three files (two rotated) could no longer hold .1, so
 	// its absence is eviction, not archiving.
-	if _, missing, _ := LogFiles(active, 3); len(missing) != 0 {
+	if _, missing, err := LogFiles(active, 3); err != nil || len(missing) != 0 {
 		t.Fatalf("missing beyond the file limit: %v", missing)
 	}
 
@@ -129,21 +129,27 @@ func TestSecurityLogSearch(t *testing.T) {
 		t.Fatal(err)
 	}
 	writeAuditFile(t, active, 20, 21, "")
-	files, _, _ = LogFiles(active, 8)
+	if files, _, err = LogFiles(active, 8); err != nil {
+		t.Fatal(err)
+	}
 	rest, err := Search(t.Context(), dir, files, first.Next, Query{}, 100, PageScan)
 	if err != nil || !slices.Equal(refsOf(rest.Items), want[2:]) {
 		t.Errorf("after rotation: %v (%v)", refsOf(rest.Items), err)
 	}
 	// A file moved away to archive ends that cursor clearly.
-	os.Remove(active + ".4")
-	files, _, _ = LogFiles(active, 8)
+	if err := os.Remove(active + ".4"); err != nil {
+		t.Fatal(err)
+	}
+	if files, _, err = LogFiles(active, 8); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := Search(t.Context(), dir, files, first.Next, Query{}, 100, PageScan); err != ErrCursorGone {
 		t.Errorf("archived cursor: %v", err)
 	}
 
 	// A damaged request record is counted, not hidden.
 	os.WriteFile(active, []byte(`{"event_id":"x","kind":"request.rejected","time":"not a time"}`+"\n"), 0o600)
-	if result, _ := Search(t.Context(), dir, []string{"audit.log"}, nil, Query{}, 100, PageScan); result.Unreadable != 1 || len(result.Items) != 0 {
+	if result, err := Search(t.Context(), dir, []string{"audit.log"}, nil, Query{}, 100, PageScan); err != nil || result.Unreadable != 1 || len(result.Items) != 0 {
 		t.Errorf("damaged record: %+v", result)
 	}
 

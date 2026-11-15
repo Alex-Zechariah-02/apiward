@@ -95,14 +95,15 @@ func (o *Observations) Refuser(listener string) func() {
 type AdminFailure int
 
 const (
-	FailStore AdminFailure = iota // the database could not be read
-	FailAudit                     // the security log did not confirm a record
-	FailBusy                      // every password-hashing slot was in use
-	FailLog                       // the security log files could not be read
+	FailStore   AdminFailure = iota // the database could not be read
+	FailAudit                       // the security log did not confirm a record
+	FailBusy                        // every password-hashing slot was in use
+	FailLog                         // the security log files could not be read
+	FailStreams                     // every live-view slot was in use
 	adminFailures
 )
 
-var adminFailureNames = [adminFailures]string{"store", "audit", "busy", "log"}
+var adminFailureNames = [adminFailures]string{"store", "audit", "busy", "log", "streams"}
 
 // String is the failure's label value and refusal reason.
 func (f AdminFailure) String() string { return adminFailureNames[f] }

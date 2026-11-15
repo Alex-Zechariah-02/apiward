@@ -220,6 +220,16 @@ func TestFetchEventStreams(t *testing.T) {
 			if response.StatusCode != 503 {
 				t.Errorf("ninth stream: %d", response.StatusCode)
 			}
+			// The refused view is counted where an operator looks.
+			scrape, err := client.Get("http://" + e.Metrics + "/metrics")
+			if err != nil {
+				t.Fatal(err)
+			}
+			body, err := io.ReadAll(scrape.Body)
+			scrape.Body.Close()
+			if err != nil || !strings.Contains(string(body), "gateway_admin_failures_total{reason=\"streams\"} 1\n") {
+				t.Errorf("refused stream not counted (%v)", err)
+			}
 			continue
 		}
 		if response.StatusCode != 200 || response.Header.Get("Content-Type") != "text/event-stream" {

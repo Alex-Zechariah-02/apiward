@@ -117,9 +117,10 @@ type UnusedReport struct {
 	MinCount      int       `json:"min_requests"`
 }
 
-// UnusedPermissions lists permits no allowed request in the security log
-// used, once the records read cover enough time and requests. missing names
-// log files moved away, which were not read.
+// UnusedPermissions lists permits no request in the security log used, once
+// the records read cover enough time and requests and the read reached the
+// oldest retained record. missing names log files moved away, which were
+// not read.
 func UnusedPermissions(g *compile.Generation, use LogUse, missing []string, now time.Time) UnusedReport {
 	report := UnusedReport{
 		Requests: use.requests, Complete: use.complete, FilesSearched: use.Searched, FilesMissing: missing, Items: []Finding{},
@@ -140,13 +141,18 @@ func UnusedPermissions(g *compile.Generation, use LogUse, missing []string, now 
 		report.Withheld = &reason
 		return report
 	}
+	if !use.complete {
+		reason := "The security log is larger than one advice read covers, so a permission used only in older records would be listed as unused."
+		report.Withheld = &reason
+		return report
+	}
 	for _, r := range g.Rules() {
 		if r.Public() || !r.Permitted() {
 			continue
 		}
 		for _, role := range r.Roles() {
 			if !use.used[[2]string{role, r.Operation()}] {
-				report.Items = append(report.Items, Finding{"U1", "low", role + " → " + r.Operation(), "No allowed request in the security log used this permission. Review whether the role still needs it."})
+				report.Items = append(report.Items, Finding{"U1", "low", role + " → " + r.Operation(), "No request in the security log used this permission. Review whether the role still needs it."})
 			}
 		}
 	}

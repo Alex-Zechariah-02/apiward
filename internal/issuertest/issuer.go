@@ -119,7 +119,10 @@ func (i *Issuer) Token(t testing.TB, claims map[string]any) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	payload, _ := json.Marshal(claims)
+	payload, err := json.Marshal(claims)
+	if err != nil {
+		t.Fatal(err)
+	}
 	signed, err := signer.Sign(payload)
 	if err != nil {
 		t.Fatal(err)
@@ -162,7 +165,12 @@ func HMACToken(secret []byte, payload string) string {
 
 func EncodeSegment(s string) string { return base64.RawURLEncoding.EncodeToString([]byte(s)) }
 
+// ClaimsJSON encodes claims for SignRaw; it panics on a value JSON cannot
+// encode, as SignRaw does on a signing failure.
 func ClaimsJSON(claims map[string]any) string {
-	data, _ := json.Marshal(claims)
+	data, err := json.Marshal(claims)
+	if err != nil {
+		panic(err)
+	}
 	return string(data)
 }

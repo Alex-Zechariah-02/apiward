@@ -78,7 +78,7 @@ func (s *Server) handleEventStream(w http.ResponseWriter, r *http.Request, who c
 	}
 	viewer := s.observations.Subscribe()
 	if viewer == nil {
-		adminError(w, http.StatusServiceUnavailable, "stream_limit", "")
+		s.fail(w, r, &who, "stream_limit", monitor.FailStreams, nil)
 		return
 	}
 	defer s.observations.Unsubscribe(viewer)

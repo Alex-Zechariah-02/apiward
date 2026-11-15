@@ -15,8 +15,12 @@ import (
 
 const (
 	// securityLogWindow bounds the bytes read from disk at once; a page reads
-	// at most securityLogPageScan bytes and an export securityLogExportScan,
-	// so every answer ends in bounded time and memory however large the files.
+	// at most PageScan bytes and an export ExportScan, so every answer ends in
+	// bounded time and memory however large the files. A window holds at
+	// least 64 records of the largest size (audit.MaxRecordBytes); a page
+	// reads four windows; an export reads four audit files of the default
+	// size (audit.DefaultAuditBytes) and lists at most as many requests as
+	// the live window keeps by default (policy.DefaultWindow).
 	securityLogWindow = 4 << 20
 	PageScan          = 16 << 20
 	ExportScan        = 256 << 20

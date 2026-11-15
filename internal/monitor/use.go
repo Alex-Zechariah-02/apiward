@@ -11,8 +11,11 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 	"time"
+
+	"github.com/Alex-Zechariah-02/apiward/internal/audit"
 )
 
 // LogUse is what the security log shows about permission use: the role and
@@ -107,7 +110,10 @@ func (c *Summaries) read(ctx context.Context, path string, rotated bool, budget 
 	return part, stopped, err
 }
 
-// visit counts one line if it is a request's final record.
+// visit counts one line if it is a request's final record. A permission
+// counts as used once its request passed the role check, also when a later
+// stage or the service refused it: an outage must not make permits look
+// unused.
 func (u *fileUse) visit(line []byte, _ int64) bool {
 	if !bytes.Contains(line, rejectedKind) && !bytes.Contains(line, forwardedKind) {
 		return false
@@ -120,7 +126,7 @@ func (u *fileUse) visit(line []byte, _ int64) bool {
 	if u.oldest.IsZero() || record.Time.Before(u.oldest) {
 		u.oldest = record.Time
 	}
-	if record.Decision == "forwarded" {
+	if record.Decision == "forwarded" || slices.Index(audit.StageNames[:], record.Stage) > audit.StageRBAC {
 		for _, role := range record.Roles {
 			u.used[[2]string{role, record.Operation}] = true
 		}

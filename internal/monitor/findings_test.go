@@ -70,7 +70,10 @@ func TestPermitUseFromSecurityLog(t *testing.T) {
 	active := filepath.Join(dir, "audit.log")
 	writeAuditFile(t, active+".1", 1, 4, "")
 	writeAuditFile(t, active, 5, 8, "")
-	files, _, _ := LogFiles(active, 8)
+	files, _, err := LogFiles(active, 8)
+	if err != nil {
+		t.Fatal(err)
+	}
 	use, err := (&Summaries{}).PermitUse(t.Context(), dir, files, ExportScan)
 	// Odd records are forwarded (allowed) read-a requests carrying READER.
 	if err != nil || !use.used[[2]string{"READER", "read-a"}] || use.used[[2]string{"WRITER", "read-a"}] {
@@ -83,10 +86,20 @@ func TestPermitUseFromSecurityLog(t *testing.T) {
 	if err != nil || short.complete || short.requests >= 8 {
 		t.Errorf("a small budget stops early and says so: %+v (%v)", short, err)
 	}
+	// A request refused after the role check (here by the service) used its
+	// permission; one refused at the role check did not.
+	refused := filepath.Join(t.TempDir(), "audit.log")
+	writeAuditFile(t, refused, 1, 1, `{"event_id":"t1","kind":"request.rejected","time":"2026-11-02T09:00:30Z","request_id":"t1","stage":"FORWARD","decision":"reject","operation":"write-b","roles":["WRITER"]}`+"\n"+
+		`{"event_id":"t2","kind":"request.rejected","time":"2026-11-02T09:00:31Z","request_id":"t2","stage":"RBAC","decision":"reject","operation":"write-c","roles":["WRITER"]}`+"\n")
+	use, err = (&Summaries{}).PermitUse(t.Context(), filepath.Dir(refused), []string{"audit.log"}, ExportScan)
+	if err != nil || !use.used[[2]string{"WRITER", "write-b"}] || use.used[[2]string{"WRITER", "write-c"}] {
+		t.Errorf("refused after the role check: %v (%v)", use.used, err)
+	}
 }
 
 // Unused permissions are withheld until the log covers enough time and
-// requests, then list each permit no allowed request used.
+// requests and was read to its oldest record, then list each permit no
+// request used.
 func TestUnusedPermissions(t *testing.T) {
 	g := adviceGeneration(t)
 	now := time.Date(2026, 11, 2, 12, 0, 0, 0, time.UTC)
@@ -98,9 +111,13 @@ func TestUnusedPermissions(t *testing.T) {
 	if report := UnusedPermissions(g, recent, nil, now); report.Withheld == nil {
 		t.Errorf("too short a span: %+v", report)
 	}
-	enough := LogUse{used: map[[2]string]bool{}, requests: unusedMinRequests, oldest: now.Add(-2 * time.Hour), complete: false, Searched: []string{"audit.log"}}
+	partial := LogUse{used: map[[2]string]bool{}, requests: unusedMinRequests, oldest: now.Add(-2 * time.Hour), complete: false, Searched: []string{"audit.log"}}
+	if report := UnusedPermissions(g, partial, nil, now); report.Withheld == nil || len(report.Items) != 0 || report.Complete {
+		t.Errorf("a read cut by the scan budget: %+v", report)
+	}
+	enough := LogUse{used: map[[2]string]bool{}, requests: unusedMinRequests, oldest: now.Add(-2 * time.Hour), complete: true, Searched: []string{"audit.log"}}
 	report := UnusedPermissions(g, enough, []string{"audit.log.1"}, now)
-	if report.Withheld != nil || !slices.Equal(ids(report.Items), []string{"U1:READER → read"}) || report.Complete || !slices.Equal(report.FilesMissing, []string{"audit.log.1"}) {
+	if report.Withheld != nil || !slices.Equal(ids(report.Items), []string{"U1:READER → read"}) || !report.Complete || !slices.Equal(report.FilesMissing, []string{"audit.log.1"}) {
 		t.Errorf("unused: %+v", report)
 	}
 	enough.used[[2]string{"READER", "read"}] = true

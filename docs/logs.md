@@ -82,5 +82,5 @@ What the gateway records, when a record is waited for, and how to read the log. 
 - `GET /admin/advice` reads the files for unused permissions; `GET /admin/alerts` reads the active file's last 1 MiB for its write rate.
 - The Dashboard's Security Log page uses these endpoints; its live views read the gateway's memory, not the files.
 - `gateway_audit_bytes` and `gateway_audit_budget_bytes` on the metrics listener show how full the log is.
-- `gateway_admin_failures_total{reason}` counts Admin API requests the gateway could not answer itself: `store`, `audit`, `busy`, `log`.
+- `gateway_admin_failures_total{reason}` counts Admin API requests the gateway could not answer itself: `store`, `audit`, `busy`, `log`, `streams` (every live-view slot in use).
 - `/readyz` answers `503` while the log has failed or is full.
