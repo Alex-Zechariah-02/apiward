@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"strings"
 	"sync"
@@ -67,11 +68,21 @@ func TestNativeForwardingResponses(t *testing.T) {
 			w.WriteHeader(http.StatusOK)
 			io.WriteString(w, "final")
 		})
-		resp, conn := e.OpenResponse("GET /a/x HTTP/1.1\r\nHost: gw\r\nConnection: close\r\n\r\n")
-		if resp.StatusCode != http.StatusEarlyHints || resp.Header.Get("Link") == "" {
-			t.Fatalf("first response %d %v", resp.StatusCode, resp.Header)
+		// One reader for both: a 1xx response has no body, so bytes of the
+		// final response read with it would be lost to a second reader.
+		conn, err := net.DialTimeout("tcp", e.DataAddr, 5*time.Second)
+		if err != nil {
+			t.Fatal(err)
 		}
-		final, err := http.ReadResponse(bufio.NewReader(io.MultiReader(resp.Body, conn)), nil)
+		defer conn.Close()
+		conn.SetDeadline(time.Now().Add(30 * time.Second))
+		io.WriteString(conn, "GET /a/x HTTP/1.1\r\nHost: gw\r\nConnection: close\r\n\r\n")
+		reader := bufio.NewReader(conn)
+		resp, err := http.ReadResponse(reader, nil)
+		if err != nil || resp.StatusCode != http.StatusEarlyHints || resp.Header.Get("Link") == "" {
+			t.Fatalf("first response %v: %v", resp, err)
+		}
+		final, err := http.ReadResponse(reader, nil)
 		if err != nil || final.StatusCode != http.StatusOK {
 			t.Fatalf("final response %v: %v", final, err)
 		}
