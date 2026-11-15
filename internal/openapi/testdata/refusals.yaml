@@ -3,6 +3,33 @@ info:
   title: Refusals
   version: "1"
 paths:
+  /both-schemes:
+    get:
+      operationId: bothSchemes
+      security:
+        - bearer: []
+          bearer2: []
+  /no-schema:
+    post:
+      operationId: noSchema
+      requestBody:
+        content:
+          application/json: {}
+  /mistyped-required:
+    get:
+      operationId: mistypedRequired
+      parameters:
+        - name: X-A
+          in: header
+          required: "yes"
+          schema:
+            type: string
+  /mistyped-in:
+    get:
+      operationId: mistypedIn
+      parameters:
+        - name: X-A
+          in: 1
   /a/{x}:
     get:
       operationId: collideA
@@ -157,6 +184,9 @@ components:
       type: http
       scheme: basic
     bearer:
+      type: http
+      scheme: bearer
+    bearer2:
       type: http
       scheme: bearer
   schemas:

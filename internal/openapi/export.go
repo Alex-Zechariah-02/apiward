@@ -3,6 +3,7 @@
 package openapi
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -56,6 +57,10 @@ func Export(p policy.Policy, options ExportOptions) (map[string]any, *ExportRepo
 	if _, err := compile.Compile(p, 0, time.Time{}, policy.Limits{}); err != nil {
 		return nil, nil, fmt.Errorf("the policy is not valid: %w", err)
 	}
+	encoded, err := policy.Encode(p)
+	if err != nil {
+		return nil, nil, err
+	}
 	index := slices.IndexFunc(p.APIs, func(a policy.API) bool { return a.ID == options.API })
 	if index < 0 {
 		return nil, nil, fmt.Errorf("api %q is not in the policy", policy.Clip(options.API))
@@ -96,7 +101,10 @@ func Export(p policy.Policy, options ExportOptions) (map[string]any, *ExportRepo
 	}
 	slices.SortFunc(report.Exported, func(a, b Exported) int { return strings.Compare(a.Operation, b.Operation) })
 
-	document := map[string]any{"openapi": "3.1.0", "info": map[string]any{"title": options.API, "version": "1"}, "paths": paths}
+	// The version is the SHA-256 of the policy as the gateway encodes it, so a
+	// description names the exact policy it was exported from.
+	version := fmt.Sprintf("sha256:%x", sha256.Sum256(encoded))
+	document := map[string]any{"openapi": "3.1.0", "info": map[string]any{"title": options.API, "version": version}, "paths": paths}
 	if signedIn {
 		document["components"] = map[string]any{"securitySchemes": map[string]any{
 			scheme: map[string]any{"type": "http", "scheme": "bearer", "bearerFormat": "JWT"}}}
@@ -155,9 +163,11 @@ func describe(op policy.Operation, roles []any, report *ExportReport) (string, m
 	}
 	if op.Body != nil {
 		operation["requestBody"] = map[string]any{"required": true,
-			"content": map[string]any{"application/json": map[string]any{"schema": op.Body.Schema}}}
+			"description": fmt.Sprintf("At most %d bytes; the gateway refuses a larger body with 413.", op.Body.MaxBytes),
+			"content":     map[string]any{"application/json": map[string]any{"schema": op.Body.Schema}}}
 		operation["x-apiward-max-bytes"] = op.Body.MaxBytes
 	}
+	operation["responses"] = responses(op)
 	if op.Rate != nil {
 		operation["x-apiward-rate"] = op.Rate
 	}
@@ -165,6 +175,33 @@ func describe(op policy.Operation, roles []any, report *ExportReport) (string, m
 		operation[policy.WhenExtension] = op.When
 	}
 	return path, operation
+}
+
+// refusalSchema is the body of every answer the gateway gives itself.
+var refusalSchema = map[string]any{"type": "object", "required": []any{"error", "request_id"},
+	"properties": map[string]any{"error": map[string]any{"type": "string"}, "request_id": map[string]any{"type": "string"}}}
+
+// responses lists the answers the gateway may give for op before the service
+// sees the request, and the service's own answer as the default.
+func responses(op policy.Operation) map[string]any {
+	refusal := func(text string) map[string]any {
+		return map[string]any{"description": text, "content": map[string]any{"application/json": map[string]any{"schema": refusalSchema}}}
+	}
+	out := map[string]any{
+		"default": map[string]any{"description": "The service's answer, passed through."},
+		"400":     refusal("Refused by the gateway: the path (a control character in a segment included), a declared header or the body breaks the endpoint's rules."),
+		"403":     refusal("Refused by the gateway: the endpoint, the client address or the browser origin is not allowed, or the caller lacks the permission."),
+		"429":     refusal("Refused by the gateway: the endpoint's rate limit, or a temporary rule's, was reached."),
+		"503":     refusal("The gateway could not decide on or record the request."),
+	}
+	if op.Auth == "required" {
+		out["401"] = refusal("Refused by the gateway: no valid bearer token.")
+	}
+	if op.Body != nil {
+		out["413"] = refusal("Refused by the gateway: the body is larger than the endpoint allows.")
+		out["415"] = refusal("Refused by the gateway: the body is not application/json.")
+	}
+	return out
 }
 
 // conditioned ranks operations with conditions after those without.

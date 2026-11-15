@@ -20,7 +20,10 @@ const (
 	YAML Format = "yaml"
 )
 
-// MaxSpecBytes is the largest description accepted, checked before parsing.
+// MaxSpecBytes is the largest description accepted, checked before parsing:
+// 16 times policy.MaxPolicyBytes, the largest policy the import can write,
+// as a description also carries text, examples and response schemas the
+// policy drops.
 const MaxSpecBytes = 1 << 20
 
 // formatOf chooses the format from the file extension alone.

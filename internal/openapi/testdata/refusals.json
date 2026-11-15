@@ -132,6 +132,10 @@
       }
     },
     "securitySchemes": {
+      "bearer2": {
+        "scheme": "bearer",
+        "type": "http"
+      },
       "basic": {
         "scheme": "basic",
         "type": "http"
@@ -153,6 +157,53 @@
   },
   "openapi": "3.0.3",
   "paths": {
+    "/both-schemes": {
+      "get": {
+        "operationId": "bothSchemes",
+        "security": [
+          {
+            "bearer": [],
+            "bearer2": []
+          }
+        ]
+      }
+    },
+    "/no-schema": {
+      "post": {
+        "operationId": "noSchema",
+        "requestBody": {
+          "content": {
+            "application/json": {}
+          }
+        }
+      }
+    },
+    "/mistyped-required": {
+      "get": {
+        "operationId": "mistypedRequired",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-A",
+            "required": "yes",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/mistyped-in": {
+      "get": {
+        "operationId": "mistypedIn",
+        "parameters": [
+          {
+            "in": 1,
+            "name": "X-A"
+          }
+        ]
+      }
+    },
     "/a/{x}": {
       "get": {
         "operationId": "collideA"

@@ -23,6 +23,7 @@ const (
 	CodeRefInvalid      = "REF_INVALID"
 	CodeKeyword         = "SCHEMA_KEYWORD_UNSUPPORTED"
 	CodeSchemaLimit     = "SCHEMA_LIMIT_EXCEEDED"
+	CodeSchemaMissing   = "SCHEMA_MISSING"
 	CodeCompiler        = "COMPILER_REFUSED"
 )
 
@@ -30,6 +31,7 @@ const (
 // present, never null, and in a deterministic order.
 type Report struct {
 	SpecVersion        string        `json:"spec_version"`
+	DescriptionVersion string        `json:"description_version"`
 	SourceFormat       Format        `json:"source_format"`
 	API                string        `json:"api"`
 	OperationsInSpec   int           `json:"operations_in_spec"`
@@ -44,6 +46,8 @@ type Report struct {
 	AnnotationsRemoved []Removed     `json:"annotations_removed"`
 	RemovedOperations  []string      `json:"removed_operations"`
 	RemovedPermits     []Permit      `json:"removed_permits"`
+	AddedPermits       []Permit      `json:"added_permits"`
+	ReplacedSettings   []string      `json:"replaced_settings"`
 	Ignored            []string      `json:"ignored"`
 }
 
@@ -99,7 +103,8 @@ type Removed struct {
 	Field     string `json:"field"`
 }
 
-// Permit is a base permit removed because its operation was replaced.
+// Permit is a base permit removed because its operation was replaced, or
+// one the import adds from x-apiward-roles.
 type Permit struct {
 	Role      string `json:"role"`
 	Operation string `json:"operation"`
@@ -112,7 +117,7 @@ func newReport(format Format, api string) *Report {
 		Mapped: []Mapped{}, Widened: []Mapped{}, Assumed: []Assumed{}, Changed: []Changed{},
 		Refused: []Refused{}, NeedsPermissions: []string{}, ScopesNotMapped: []string{},
 		NotEnforced: []NotEnforced{}, AnnotationsRemoved: []Removed{}, RemovedOperations: []string{},
-		RemovedPermits: []Permit{}, Ignored: []string{},
+		RemovedPermits: []Permit{}, AddedPermits: []Permit{}, ReplacedSettings: []string{}, Ignored: []string{},
 	}
 }
 

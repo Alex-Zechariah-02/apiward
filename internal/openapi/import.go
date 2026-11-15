@@ -5,6 +5,7 @@ package openapi
 import (
 	"errors"
 	"fmt"
+	"reflect"
 	"regexp"
 	"slices"
 	"time"
@@ -79,6 +80,9 @@ func assemble(root map[string]any, format Format, options Options) (policy.Polic
 	}
 	report := newReport(format, options.API)
 	report.SpecVersion = version
+	info, _ := root["info"].(map[string]any)
+	described, _ := info["version"].(string)
+	report.DescriptionVersion = policy.Clip(described)
 	m := &mapper{root: root, options: options, report: report, ignored: map[string]bool{}}
 	found := m.operations()
 
@@ -106,9 +110,11 @@ func replaceAPI(options Options, settings policy.API, report *Report) policy.Pol
 	result.Roles = slices.Clone(base.Roles)
 	result.APIs = nil
 	for _, api := range base.APIs {
-		if api.ID != options.API {
-			result.APIs = append(result.APIs, api)
+		if api.ID == options.API {
+			report.ReplacedSettings = replacedSettings(api, settings)
+			continue
 		}
+		result.APIs = append(result.APIs, api)
 	}
 	settings.ID, settings.Upstream = options.API, options.Upstream
 	result.APIs = append(result.APIs, settings)
@@ -168,11 +174,12 @@ func accept(c *candidate, result *policy.Policy, report *Report) {
 	} else {
 		report.Mapped = append(report.Mapped, c.entry)
 	}
-	if c.op.Auth == "required" && c.roles == nil {
+	if c.op.Auth == "required" && len(c.roles) == 0 {
 		report.NeedsPermissions = append(report.NeedsPermissions, c.op.ID)
 	}
 	for _, role := range c.roles {
 		result.Permits = append(result.Permits, policy.Permit{Role: role, Operation: c.op.ID})
+		report.AddedPermits = append(report.AddedPermits, Permit{Role: role, Operation: c.op.ID})
 		if !slices.ContainsFunc(result.Roles, func(r policy.Role) bool { return r.ID == role }) {
 			result.Roles = append(result.Roles, policy.Role{ID: role})
 		}
@@ -182,6 +189,27 @@ func accept(c *candidate, result *policy.Policy, report *Report) {
 	report.NotEnforced = append(report.NotEnforced, c.notEnforced...)
 	report.AnnotationsRemoved = append(report.AnnotationsRemoved, c.annotations...)
 	report.ScopesNotMapped = append(report.ScopesNotMapped, c.scopes...)
+}
+
+// replacedSettings names the settings of the API being replaced that the
+// description removes or changes, so a re-import never drops one silently.
+func replacedSettings(old, settings policy.API) []string {
+	names := []string{}
+	for _, s := range []struct {
+		name     string
+		old, new any
+		present  bool
+	}{
+		{"forward", old.Forward, settings.Forward, old.Forward != nil},
+		{"cors", old.CORS, settings.CORS, old.CORS != nil},
+		{"response_headers", old.ResponseHeaders, settings.ResponseHeaders, old.ResponseHeaders != nil},
+		{"allow_addresses", old.AllowAddresses, settings.AllowAddresses, old.AllowAddresses != nil},
+	} {
+		if s.present && !reflect.DeepEqual(s.old, s.new) {
+			names = append(names, s.name)
+		}
+	}
+	return names
 }
 
 // compiles runs the result through what staging runs, on the bytes that
@@ -198,6 +226,11 @@ func compiles(result policy.Policy) error {
 		if decoded, err = policy.DecodePolicy(document, policy.Limits{}); err == nil {
 			_, err = compile.Compile(decoded, 0, time.Time{}, policy.Limits{})
 		}
+	}
+	var invalid *policy.PolicyError
+	if errors.As(err, &invalid) && invalid.Code == "LIMIT_EXCEEDED" {
+		return fmt.Errorf("the result exceeds the default capacity limits the import checks against (policy %d bytes, %d APIs, %d operations, %d roles, %d permits), which a deployment may have raised: %w",
+			policy.DefaultPolicyBytes, policy.DefaultAPIs, policy.DefaultOperations, policy.DefaultRoles, policy.DefaultPermits, err)
 	}
 	if err != nil {
 		return fmt.Errorf("the result is not a valid policy: %w", err)

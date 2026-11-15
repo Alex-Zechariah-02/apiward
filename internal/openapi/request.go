@@ -42,6 +42,9 @@ func (m *mapper) security(object map[string]any, c *candidate) *refusal {
 		if len(requirement) == 0 {
 			return refuse(CodeSecurity, "", "Optional sign-in ({}) cannot be expressed; make it required or public.")
 		}
+		if len(requirement) > 1 {
+			return refuse(CodeSecurity, "", "A requirement naming several schemes needs all of them; the gateway checks one bearer token.")
+		}
 		for _, name := range sortedKeys(requirement) {
 			if refused := m.scheme(defined, name); refused != nil {
 				return refused
@@ -194,14 +197,16 @@ func (m *mapper) body(object map[string]any, pointer string, c *candidate, s *sc
 		c.maxBytes = m.options.MaxBodyBytes
 		c.assumed = append(c.assumed, Assumed{Operation: c.op.ID, Field: "body.max_bytes", Value: c.maxBytes})
 	}
-	c.op.Body = &policy.BodyRule{MaxBytes: c.maxBytes} // without a schema the compiler refuses it
-	if schema, present := first["schema"]; present {
-		converted, refused := s.convert(schema, at+"/content/"+escape(types[0])+"/schema", "body.schema", 1, nil)
-		if refused != nil {
-			return refused
-		}
-		c.op.Body.Schema, _ = json.Marshal(converted)
+	schema, present := first["schema"]
+	if !present {
+		return refuse(CodeSchemaMissing, at+"/content/"+escape(types[0]), "The JSON request body has no schema; the gateway validates every JSON body against one.")
 	}
+	converted, refused := s.convert(schema, at+"/content/"+escape(types[0])+"/schema", "body.schema", 1, nil)
+	if refused != nil {
+		return refused
+	}
+	c.op.Body = &policy.BodyRule{MaxBytes: c.maxBytes}
+	c.op.Body.Schema, _ = json.Marshal(converted)
 	if isRequired, _ := requestBody["required"].(bool); !isRequired {
 		c.changed = append(c.changed, Changed{Operation: c.op.ID, Field: "body", Note: emptyBodyNote})
 	}

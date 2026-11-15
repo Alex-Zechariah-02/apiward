@@ -125,6 +125,9 @@ func (m *mapper) operation(method, path string, item map[string]any, itemPointer
 	if refused := m.security(object, c); refused != nil {
 		return nil, refused
 	}
+	if c.op.Auth != "required" && len(c.roles) > 0 {
+		return nil, refuse(CodeExtension, "x-apiward-roles", "x-apiward-roles names who may call a signed-in operation; this one is public.")
+	}
 	c.entry.Auth = c.op.Auth
 	s := &schemas{root: m.root, operation: id}
 	if refused := m.parameters(item, object, itemPointer, pointer, c, s); refused != nil {

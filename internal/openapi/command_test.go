@@ -178,7 +178,10 @@ func TestExportCommand(t *testing.T) {
 		if code := Command(args(out, report), &stderr); code != ExitPartial || !strings.Contains(stderr.String(), "exported 8 of 8 operations (3 changed)") {
 			t.Fatalf("exit %d: %s", code, stderr.String())
 		}
-		raw, _ := os.ReadFile(report)
+		raw, err := os.ReadFile(report)
+		if err != nil {
+			t.Fatal(err)
+		}
 		var written ExportReport
 		if err := json.Unmarshal(raw, &written); err != nil || len(written.Changed) != 3 {
 			t.Fatalf("report %v %s", err, raw)
@@ -186,13 +189,22 @@ func TestExportCommand(t *testing.T) {
 		imported, importReport := filepath.Join(dir, "back.json"), filepath.Join(dir, "back.report.json")
 		code := Command([]string{"import-openapi", "--spec", out, "--api", "shop", "--upstream", "shop-svc", "--base", source,
 			"--with-permits", "--out", imported, "--report", importReport}, &stderr)
-		back, _ := os.ReadFile(imported)
+		back, err := os.ReadFile(imported)
+		if err != nil {
+			t.Fatal(err)
+		}
 		decoded, err := policy.DecodePolicy(back, policy.Limits{})
 		if code != ExitComplete || err != nil {
 			t.Fatalf("import exit %d, %v: %s", code, err, stderr.String())
 		}
-		got, _ := policy.Encode(decoded)
-		want, _ := policy.Encode(policyFixture(t, "policy-shop.json"))
+		got, err := policy.Encode(decoded)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want, err := policy.Encode(policyFixture(t, "policy-shop.json"))
+		if err != nil {
+			t.Fatal(err)
+		}
 		if !bytes.Equal(got, want) {
 			t.Fatalf("command round trip differs:\n%s", got)
 		}

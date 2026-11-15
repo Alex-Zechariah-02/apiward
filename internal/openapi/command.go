@@ -290,7 +290,9 @@ func writeNew(files map[string][]byte) error {
 	}
 	if failure != nil {
 		for path := range opened {
-			os.Remove(path)
+			if err := os.Remove(path); err != nil {
+				failure = errors.Join(failure, fmt.Errorf("%s was left behind; remove it by hand: %w", path, err))
+			}
 		}
 	}
 	return failure

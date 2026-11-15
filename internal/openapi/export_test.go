@@ -3,8 +3,11 @@
 package openapi
 
 import (
+	"crypto/sha256"
 	"encoding/json"
+	"fmt"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -192,8 +195,19 @@ func TestRoundTripPolicy(t *testing.T) {
 					if string(got) != string(want) {
 						t.Fatalf("round trip differs:\n%s\nwant:\n%s", got, want)
 					}
-					if len(report.Widened) != 0 || len(report.Refused) != 0 || len(report.NeedsPermissions) != 0 {
+					// Only signed-in operations no role may call need permissions.
+					var unpermitted []string
+					for _, op := range p.Operations {
+						if op.API == api.ID && op.Auth == "required" && !slices.ContainsFunc(p.Permits, func(permit policy.Permit) bool { return permit.Operation == op.ID }) {
+							unpermitted = append(unpermitted, op.ID)
+						}
+					}
+					if len(report.Widened) != 0 || len(report.Refused) != 0 || !slices.Equal(report.NeedsPermissions, unpermitted) {
 						t.Fatalf("report %+v", report)
+					}
+					// The description names the exact policy it came from.
+					if report.DescriptionVersion != fmt.Sprintf("sha256:%x", sha256.Sum256(want)) {
+						t.Fatalf("description version %q", report.DescriptionVersion)
 					}
 				})
 			}

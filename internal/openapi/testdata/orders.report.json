@@ -1,5 +1,8 @@
 {
   "spec_version": "3.1.0",
+  "description_version": "1.0",
+  "added_permits": [],
+  "replaced_settings": [],
   "source_format": "json",
   "api": "orders",
   "operations_in_spec": 8,
