@@ -113,6 +113,14 @@ jobs:
           ./...
 
   dashboard:
+    # The browser tests run one at a time against one stack per spec file, so
+    # three machines each take a third of the files; the checks that need run
+    # only once go with the first.
+    name: dashboard (${{ matrix.shard }}/3)
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     env:
@@ -150,15 +158,19 @@ jobs:
       - run: npm run check
       - run: npm run build
       # A release binary embeds this build: prove the embedui build carries it.
-      - run: cp -r dist ../internal/adminui/dist
-      - run: go -C .. vet -tags embedui ./...
-      - run: go -C .. test -tags embedui ./internal/adminui -count=1
+      - if: matrix.shard == 1
+        run: cp -r dist ../internal/adminui/dist
+      - if: matrix.shard == 1
+        run: go -C .. vet -tags embedui ./...
+      - if: matrix.shard == 1
+        run: go -C .. test -tags embedui ./internal/adminui -count=1
       # high: a high or critical advisory fails the job; lower ones go with the routine updates.
-      - run: npm audit --audit-level=high
+      - if: matrix.shard == 1
+        run: npm audit --audit-level=high
       # The tests run in the runner image's Chrome (playwright.config.ts).
       # Failure traces hold page contents and test credentials, so they stay
       # on the machine that ran the tests and are not uploaded.
-      - run: npx playwright test
+      - run: npx playwright test --shard=${{ matrix.shard }}/3
 
   deps:
     if: github.event_name == 'pull_request'
