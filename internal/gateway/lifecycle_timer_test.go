@@ -14,6 +14,7 @@ import (
 // published and audited, or not started; never half done. The next owner
 // always ends with the rollback applied exactly once.
 func TestStopRacesDeadline(t *testing.T) {
+	t.Parallel()
 	outcomes := map[string]int{}
 	for round := range 10 {
 		e := gatewaytest.NewEnv(t)

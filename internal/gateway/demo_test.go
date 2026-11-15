@@ -21,6 +21,7 @@ import (
 const demoPortShift = 200
 
 func TestNativeDemoCommands(t *testing.T) {
+	// Serial: sets EAT_PORT_OFFSET and uses the demo's fixed ports.
 	offset, err := strconv.Atoi(cmp.Or(os.Getenv("EAT_PORT_OFFSET"), "0"))
 	if err != nil {
 		t.Fatal(err)

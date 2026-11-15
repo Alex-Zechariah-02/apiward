@@ -23,6 +23,7 @@ import (
 // generation it captured, its outcome event names that generation, and no
 // denied request reaches any upstream.
 func TestNativeForwardingUnderConcurrency(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	toA, toB := e.Policy(e.A, false), e.Policy(e.B, false)
 	c, _ := serveNative(e, toA, forwardTimeouts)
@@ -102,6 +103,7 @@ func TestNativeForwardingUnderConcurrency(t *testing.T) {
 // encoding and its query byte for byte. Targets the gateway refuses, and
 // tunnels and protocol switches, reach no upstream.
 func TestNativeForwardingRoutingTable(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	policy := policy.Policy{
 		SchemaVersion: policy.SchemaVersion,
@@ -197,6 +199,7 @@ func TestNativeForwardingRoutingTable(t *testing.T) {
 // native proxy runs: no upstream receives the request, and the admitted
 // requests that follow do reach it.
 func TestNativeForwardingRefusalsReachNoUpstream(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	p := e.ProtectedPolicy()
 	p.Operations = append(p.Operations,

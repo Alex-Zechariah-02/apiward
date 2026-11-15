@@ -21,6 +21,7 @@ import (
 // transitions, and never a row in use: the confirmed base, an active
 // override, a transition whose audit record is missing, or what they name.
 func TestHistoryPruning(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.ProtectedPolicy(), gatewaytest.SeedOptions{Version: store.DatabaseVersion - 1})
 	ctx := t.Context()

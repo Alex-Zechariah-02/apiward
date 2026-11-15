@@ -25,6 +25,7 @@ import (
 // with its mapped status, an aborted response stays aborted, and a cancelled
 // request is not recorded as forwarded.
 func TestEnforcementResponses(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	_, _, f := serveEnforcement(e, e.Policy(e.A, false), pipeline.Limits{})
 	forwardedEvent := func(id string) map[string]any { return eventOf(e, id, 2) }
@@ -155,6 +156,7 @@ func TestEnforcementResponses(t *testing.T) {
 // field can choose or change the destination. The forwarder sends a request
 // without a binding nowhere (TestNativeForwardingBinding).
 func TestEnforcementTrustedBinding(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	_, _, f := serveEnforcement(e, e.Policy(e.A, true), pipeline.Limits{})
 	// Every field a client could use to name a destination names B.

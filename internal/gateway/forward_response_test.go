@@ -24,6 +24,7 @@ import (
 // arrive, and encoded bodies (never decoded). An upstream that switches
 // protocols is not followed into a tunnel.
 func TestNativeForwardingResponses(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	serveNative(e, e.Policy(e.A, false), forwardTimeouts)
 	var respond func(w http.ResponseWriter, r *http.Request)

@@ -13,6 +13,7 @@ import (
 )
 
 func TestFetchArraySchemas(t *testing.T) {
+	t.Parallel()
 	const items = `{"type":"array","minItems":1,"maxItems":2,"items":{"type":"object","additionalProperties":false,"required":["item","quantity"],"properties":{"item":{"type":"string","minLength":7,"maxLength":7},"quantity":{"type":"integer","minimum":1,"maximum":50}}}}`
 	for _, wrapped := range []bool{false, true} {
 		schema := items
@@ -57,6 +58,7 @@ func TestFetchArraySchemas(t *testing.T) {
 }
 
 func TestFetchArraySchemaRefusals(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct{ schema, code string }{
 		{`{"type":"array"}`, "INVALID_VALUE"},
 		{`{"type":"array","items":true}`, "UNSUPPORTED_FEATURE"},

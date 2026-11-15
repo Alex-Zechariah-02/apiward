@@ -18,6 +18,7 @@ import (
 // compiler refuses, gives a controller that serves nothing and says why; it
 // never serves an earlier or default policy, and never creates a database.
 func TestControllerWithoutAuthorityServesNothing(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name    string
 		prepare func(e *gatewaytest.Env)
@@ -81,6 +82,7 @@ func TestControllerWithoutAuthorityServesNothing(t *testing.T) {
 // holds the database, before it opens the audit log or a listener, and the
 // first keeps serving. Once the first stops, the second can take over.
 func TestSecondControllerCannotOwnDeployment(t *testing.T) {
+	// Serial: counts gateway goroutines across the whole test process.
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.Policy(e.A, false), gatewaytest.SeedOptions{})
 	first, _ := own(e, controllerConfig(e))
@@ -122,6 +124,7 @@ func TestSecondControllerCannotOwnDeployment(t *testing.T) {
 // A Start that cannot open the admin listener leaves no listener or server
 // goroutine, and Stop still releases the database and audit log.
 func TestStartFailureLeavesNoListener(t *testing.T) {
+	// Serial: counts gateway goroutines across the whole test process.
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.Policy(e.A, false), gatewaytest.SeedOptions{})
 	occupied, err := net.Listen("tcp", e.Admin)

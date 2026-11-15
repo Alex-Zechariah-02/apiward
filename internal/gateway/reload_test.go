@@ -16,6 +16,7 @@ import (
 // refused by name, and a file that is no longer a regular file is refused as
 // at start.
 func TestKeysReloadScope(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "settings.json")
 	save := func(change func(gateway, data map[string]any)) {

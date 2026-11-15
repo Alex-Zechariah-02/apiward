@@ -68,6 +68,7 @@ func gzipped(t *testing.T, content string) string {
 // an asset is kept for a year, and one the build compressed is sent as gzip
 // to a client that accepts it and inflated for one that does not.
 func TestDashboardFiles(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.Policy(e.A, false), gatewaytest.SeedOptions{})
 	e.WriteConfig(gatewaytest.ConfigOptions{Admin: map[string]any{"admin_ui": writeDashboard(t)}})
@@ -148,6 +149,7 @@ func TestDashboardFiles(t *testing.T) {
 // neither serves no dashboard, and an embedded build without its page is
 // refused at start.
 func TestEmbeddedUI(t *testing.T) {
+	t.Parallel()
 	dir := writeDashboard(t)
 	embedded := fstest.MapFS{"index.html": {Data: []byte("embedded page")}}
 	files, source, err := dashboardFiles(dir, embedded)

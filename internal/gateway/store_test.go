@@ -17,6 +17,7 @@ import (
 // verify refuses a connection without foreign key enforcement, and
 // the schema's constraints reject invalid rows on a production connection.
 func TestConnectionAndConstraints(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.ProtectedPolicy(), gatewaytest.SeedOptions{})
 
@@ -78,6 +79,7 @@ func TestConnectionAndConstraints(t *testing.T) {
 // and a refused change leaves nothing behind. overrideOf finds the one
 // override a temporary-override transition created or ended.
 func TestOverrideResolutionConstraints(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.ProtectedPolicy(), gatewaytest.SeedOptions{})
 	db, err := store.Connect(e.Database, "WAL")

@@ -58,6 +58,7 @@ var unlayered = []string{"testfixture"}
 var support = []string{"issuertest", "storetest", "gatewaytest", "demoports"}
 
 func TestPackageLayers(t *testing.T) {
+	t.Parallel()
 	root := filepath.Join("..", "..")
 	module := modulePath(t, root)
 	var found []string
@@ -112,6 +113,7 @@ func TestPackageLayers(t *testing.T) {
 }
 
 func TestPublicImports(t *testing.T) {
+	t.Parallel()
 	root := filepath.Join("..", "..")
 	module := modulePath(t, root)
 	for name, allowed := range exposed {
@@ -132,6 +134,7 @@ func TestPublicImports(t *testing.T) {
 // package imports the Fetch application or a package under examples/. (Go's
 // internal rule already keeps Fetch out of the gateway's internal packages.)
 func TestNoExampleImports(t *testing.T) {
+	t.Parallel()
 	root := filepath.Join("..", "..")
 	module := modulePath(t, root)
 	banned := []string{module + "/examples/", "github.com/Alex-Zechariah-02/fetch"}

@@ -16,6 +16,7 @@ import (
 )
 
 func TestBrowserCompile(t *testing.T) {
+	t.Parallel()
 	shop := func(p *policy.Policy) *policy.CORS {
 		p.APIs[0].CORS = &policy.CORS{Origins: []string{"https://shop.example"}, Methods: []string{"GET"}}
 		return p.APIs[0].CORS
@@ -70,6 +71,7 @@ func browserPolicy(e *gatewaytest.Env) policy.Policy {
 }
 
 func TestCORS(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	e.A.Handle = func(w http.ResponseWriter, r *http.Request) bool {
 		w.Header().Set("Access-Control-Allow-Origin", "https://evil.example")
@@ -143,6 +145,7 @@ func TestCORS(t *testing.T) {
 }
 
 func TestAddressLists(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	p := e.Policy(e.A, true)
 	p.APIs[0].AllowAddresses = []string{"10.0.0.0/8"}

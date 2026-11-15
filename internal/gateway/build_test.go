@@ -13,6 +13,7 @@ import (
 
 // version prints the same facts, reads no configuration and takes no options.
 func TestVersionCommand(t *testing.T) {
+	t.Parallel()
 	read, write, err := os.Pipe()
 	if err != nil {
 		t.Fatal(err)

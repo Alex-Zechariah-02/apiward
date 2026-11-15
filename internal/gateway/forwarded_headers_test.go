@@ -37,6 +37,7 @@ func itemRequest(lines string) string {
 // invalid and repeated values are refused, and a comma-separated value is
 // one value, checked as a whole, as before.
 func TestValidatedHeadersReachUpstream(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	serveNative(e, e.KeywordPolicy(), forwardTimeouts)
 
@@ -108,6 +109,7 @@ func TestValidatedHeadersReachUpstream(t *testing.T) {
 // leave every validated value in place, and those requests are forwarded with
 // the values checked.
 func TestConnectionCannotRemoveValidatedFields(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	serveNative(e, e.KeywordPolicy(), forwardTimeouts)
 

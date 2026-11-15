@@ -17,6 +17,7 @@ import (
 )
 
 func TestInvalidReferencesAndConflictsAreRejected(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name   string
 		change func(p *policy.Policy)
@@ -61,6 +62,7 @@ func TestInvalidReferencesAndConflictsAreRejected(t *testing.T) {
 // The former membership attack vectors now fail at the removed policy field;
 // sub and roles themselves are validated at the verified-token boundary.
 func TestPolicySubjectsRejected(t *testing.T) {
+	t.Parallel()
 	for _, subject := range []issuertest.Subject{
 		{ID: "s", Status: "active", Roles: []string{"ADMIN"}},
 		{ID: "s", Status: "active", Roles: []string{"customer"}},
@@ -81,6 +83,7 @@ func TestPolicySubjectsRejected(t *testing.T) {
 }
 
 func TestInvalidTargetsMethodsAndDestinations(t *testing.T) {
+	t.Parallel()
 	targets := []string{"", "orders", "/a*", "/a/*/b", "*", "/*/", "/a/**", "/a//b", "/a/./b", "/a/../b", "/a%2Fb", "/a b", "/a\\b", "/café"}
 	for _, target := range targets {
 		p := threeAPIPolicy()
@@ -114,6 +117,7 @@ func TestInvalidTargetsMethodsAndDestinations(t *testing.T) {
 
 // The selected operation does not depend on declaration order.
 func TestSpecificityIgnoresDeclarationOrder(t *testing.T) {
+	t.Parallel()
 	p := threeAPIPolicy()
 	p.Operations = append(p.Operations,
 		policy.Operation{ID: "all", API: "reports", Method: "GET", Target: "/*", Access: "allow", Auth: "none"},
@@ -168,6 +172,7 @@ func TestSpecificityIgnoresDeclarationOrder(t *testing.T) {
 
 // A policy with managed operations and no grant compiles, and admits nothing.
 func TestDenyAllPolicyCompiles(t *testing.T) {
+	t.Parallel()
 	p := threeAPIPolicy()
 	for i := range p.Operations {
 		p.Operations[i].Access = "deny"
@@ -206,6 +211,7 @@ func TestDenyAllPolicyCompiles(t *testing.T) {
 // Roles are flat: a subject is allowed an operation exactly when one of its
 // own trusted roles holds a permit for that operation.
 func TestRoleEvaluation(t *testing.T) {
+	t.Parallel()
 	g, err := compile.Compile(threeAPIPolicy(), 1, time.Time{}, policy.Limits{})
 	if err != nil {
 		t.Fatal(err)

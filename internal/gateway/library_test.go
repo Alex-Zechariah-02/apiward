@@ -54,6 +54,7 @@ func auditRecord(e *gatewaytest.Env, id, kind string) map[string]any {
 // Stop each happen once; Stop waits for requests in progress before the
 // audit log closes, and releases the deployment.
 func TestLibraryLifecycle(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	lib := openEmbedded(e)
 	host := httptest.NewServer(lib)
@@ -132,6 +133,7 @@ func TestLibraryLifecycle(t *testing.T) {
 // Mounted under a prefix, the path checked, recorded and forwarded is the
 // stripped path, and encodings refused at the root stay refused.
 func TestPrefixMount(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	lib := openEmbedded(e)
 	if err := lib.Start(); err != nil {
@@ -166,6 +168,7 @@ func TestPrefixMount(t *testing.T) {
 
 // The host's server takes the configured data-plane limits.
 func TestServerSettings(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	settings := e.NativeSettings()
 	data := gatewaytest.Section(settings, "data")
@@ -223,6 +226,7 @@ func kinds(err error) []error {
 // Each refusal while loading, opening and starting has one kind, and a
 // failed Start releases the deployment.
 func TestLibraryErrors(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	logger := slog.New(slog.NewJSONHandler(&gatewaytest.LogBuffer{}, nil))
 	if _, err := OpenEmbedded(Settings{}, logger); !slices.Equal(kinds(err), []error{ErrConfig}) {

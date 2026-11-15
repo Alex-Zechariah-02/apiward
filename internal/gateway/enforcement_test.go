@@ -164,6 +164,7 @@ func eventOf(e *gatewaytest.Env, requestID string, want int) map[string]any {
 
 // The handler needs a controller and a forwarder.
 func TestNewHandlerRefusesIncompleteSetup(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.Policy(e.A, false), gatewaytest.SeedOptions{})
 	c, _ := own(e, controllerConfig(e))
@@ -184,6 +185,7 @@ func TestNewHandlerRefusesIncompleteSetup(t *testing.T) {
 // own metadata and no credential, after a durable admission record; no real
 // upstream is contacted.
 func TestEnforcementHandlerAdmits(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	c, _, f := serveEnforcement(e, e.ProtectedPolicy(), pipeline.Limits{})
 	g := c.Current()
@@ -243,6 +245,7 @@ func TestEnforcementHandlerAdmits(t *testing.T) {
 // forwarded: the request is refused at the AUDIT stage, after every other
 // stage passed, and the refusal it cannot record is counted as lost.
 func TestEnforcementAuditFailureBlocksForwarding(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	c, _, f := serveEnforcement(e, e.ProtectedPolicy(), pipeline.Limits{})
 	if code, _ := e.Get("/a/x", "Authorization", "Bearer "+gatewaytest.Issuer.TokenFor(t, "alice")); code != http.StatusOK {

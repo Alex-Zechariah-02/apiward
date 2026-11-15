@@ -11,6 +11,7 @@ import (
 )
 
 func TestFetchRateKeyCompilation(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct{ auth, key, code string }{
 		{"none", "client_address", ""}, {"required", "client_address", ""}, {"required", "subject", ""},
 		{"none", "subject", "INVALID_VALUE"}, {"required", "X-Forwarded-For", "UNSUPPORTED_FEATURE"},

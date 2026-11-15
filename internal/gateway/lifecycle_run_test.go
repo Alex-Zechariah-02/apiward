@@ -16,6 +16,7 @@ import (
 // audited, and a restart ends every administrator session while keeping the
 // confirmed authority.
 func TestOwnedControllerRunsPolicyLifecycles(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.ProtectedPolicy(), gatewaytest.SeedOptions{})
 	c, _ := own(e, controllerConfig(e))

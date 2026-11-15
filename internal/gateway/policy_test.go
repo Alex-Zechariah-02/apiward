@@ -73,6 +73,7 @@ func errorCode(err error) string {
 }
 
 func TestValidPolicyCompilesDeterministically(t *testing.T) {
+	t.Parallel()
 	p := threeAPIPolicy()
 	original, _ := json.Marshal(p)
 
@@ -121,6 +122,7 @@ func TestValidPolicyCompilesDeterministically(t *testing.T) {
 }
 
 func TestMalformedPolicyDocumentsAreRejected(t *testing.T) {
+	t.Parallel()
 	valid, _ := json.Marshal(threeAPIPolicy())
 	head := `{"schema_version":4,"profile":"core"`
 	cases := []struct {
@@ -175,6 +177,7 @@ func TestMalformedPolicyDocumentsAreRejected(t *testing.T) {
 }
 
 func TestPolicyCountAndLengthLimits(t *testing.T) {
+	t.Parallel()
 	repeat := func(n int, item func(i int) string) string {
 		items := make([]string, n)
 		for i := range items {

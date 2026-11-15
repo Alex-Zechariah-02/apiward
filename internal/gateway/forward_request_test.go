@@ -21,6 +21,7 @@ import (
 // without the client credential, the proxy credential or any field the
 // gateway did not receive; the upstream response returns unchanged.
 func TestNativeForwardingRequestIntact(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	c, logs := serveNative(e, e.Policy(e.A, false), forwardTimeouts)
 	g := c.Current().ID
@@ -99,6 +100,7 @@ func TestNativeForwardingRequestIntact(t *testing.T) {
 // response keeps the upstream's Server field, loses its hop-by-hop fields,
 // including those it names in Connection, and gains Via.
 func TestNativeForwardingMetadata(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	serveNative(e, e.Policy(e.A, false), forwardTimeouts)
 	// Written raw: net/http would replace the Connection field of a handler's
@@ -166,6 +168,7 @@ func TestNativeForwardingMetadata(t *testing.T) {
 // body's trailer fields stay behind. Expect: 100-continue behaves as before.
 // Conflicting framing cannot carry a second request upstream.
 func TestNativeForwardingBodies(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	p := e.Policy(e.A, false)
 	p.Operations = append(p.Operations,

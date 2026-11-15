@@ -12,6 +12,7 @@ import (
 )
 
 func TestFetchIngressDiscardsClientIdentityHeaders(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	_, handler, _ := serveEnforcement(e, e.Policy(e.A, true), pipeline.Limits{})
 	for _, method := range []string{"CONNECT", "POST"} {
@@ -38,6 +39,7 @@ func TestFetchIngressDiscardsClientIdentityHeaders(t *testing.T) {
 }
 
 func TestFetchSeparateNetworkAddressRespectsOffset(t *testing.T) {
+	// Serial: sets EAT_PORT_OFFSET for the whole process.
 	t.Setenv("EAT_PORT_OFFSET", "1000")
 	if got := gatewaytest.WSLDataAddress(t, "192.0.2.1"); got != "192.0.2.1:19443" {
 		t.Fatalf("separate-network listener: %s", got)

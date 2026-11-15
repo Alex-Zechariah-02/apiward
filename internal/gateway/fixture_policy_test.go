@@ -17,6 +17,7 @@ import (
 // every operation, permit and subject, and the catalogue's role truth
 // distinguishes profiles.
 func TestPolicyAgreesWithCatalogue(t *testing.T) {
+	t.Parallel()
 	c := gatewaytest.LoadCatalogue(t)
 	p := gatewaytest.FixturePolicy(map[string]*gatewaytest.FixtureProcess{
 		"orders": {Addr: "127.0.0.1:1"}, "inventory": {Addr: "127.0.0.1:2"}, "reports": {Addr: "127.0.0.1:3"},

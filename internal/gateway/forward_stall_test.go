@@ -27,6 +27,7 @@ import (
 // completes; a pause before the header is bounded by the header timeout
 // instead. A client that leaves during a response ends the upstream request.
 func TestNativeForwardingResponseStalls(t *testing.T) {
+	t.Parallel()
 	const idle = 500 * time.Millisecond
 	timeouts := forwardTimeouts
 	timeouts.ReadIdle = idle
@@ -188,6 +189,7 @@ func TestNativeForwardingResponseStalls(t *testing.T) {
 // releases its upstream request and connection: no transport goroutine is
 // left once the clients are done.
 func TestNativeForwardingReleasesStalledExchanges(t *testing.T) {
+	// Serial: counts gateway goroutines across the whole test process.
 	const transportGoroutine = "net/http.(*persistConn)."
 	e := gatewaytest.NewEnv(t)
 	timeouts := forwardTimeouts

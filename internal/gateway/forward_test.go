@@ -91,6 +91,7 @@ func failedOutcome(ev map[string]any, status int, code, reason string) bool {
 // sees the gateway's identity headers, and every step the gateway refuses
 // reaches no fixture.
 func TestNativeForwardingThroughFixtures(t *testing.T) {
+	t.Parallel()
 	fixtures := gatewaytest.StartFixtures(t)
 	e := gatewaytest.NewEnv(t)
 	serveNative(e, gatewaytest.FixturePolicy(fixtures), forwardTimeouts)
@@ -118,6 +119,7 @@ func TestNativeForwardingThroughFixtures(t *testing.T) {
 // missing, forged or not a literal loopback address is sent nowhere: no
 // fallback destination exists.
 func TestNativeForwardingBinding(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	serveNative(e, e.Policy(e.A, true), forwardTimeouts)
 
@@ -148,6 +150,7 @@ func TestNativeForwardingBinding(t *testing.T) {
 // another generation is published during its exchange; the next request
 // uses the new one.
 func TestNativeForwardingKeepsCapturedDestination(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	c, _ := serveNative(e, e.Policy(e.A, false), forwardTimeouts)
 	captured := c.Current().ID

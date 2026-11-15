@@ -20,6 +20,7 @@ import (
 // after a stop, and after a start that fails part way. Concurrent stops share
 // one result.
 func TestNativeStartAndStopRelease(t *testing.T) {
+	// Serial: counts gateway goroutines across the whole test process.
 	const dataServer = "gateway.startNative.func"
 	e := gatewaytest.NewEnv(t)
 	provisional := e.Policy(e.A, true)

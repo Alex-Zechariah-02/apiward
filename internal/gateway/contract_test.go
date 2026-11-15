@@ -11,6 +11,7 @@ import (
 )
 
 func TestHarnessContract(t *testing.T) {
+	t.Parallel()
 	values := []struct {
 		name            string
 		harness, native int

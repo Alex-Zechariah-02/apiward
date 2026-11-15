@@ -25,6 +25,7 @@ import (
 // may have acted on the request, and "client_cancelled" when the client went
 // away. Nothing is resent and no other destination is tried.
 func TestNativeForwardingFailuresBeforeResponse(t *testing.T) {
+	t.Parallel()
 	t.Run("connection refused", func(t *testing.T) {
 		e := gatewaytest.NewEnv(t)
 		closed := gatewaytest.FreeAddr(t)
@@ -162,6 +163,7 @@ func TestNativeForwardingFailuresBeforeResponse(t *testing.T) {
 // attempt is refused at once on Windows even when the listener's queue is
 // full. The dial errors are the real dialer's.
 func TestNativeForwardingFailureClassification(t *testing.T) {
+	t.Parallel()
 	addr := gatewaytest.FreeAddr(t)
 	_, refused := net.Dial("tcp", addr)
 	_, timedOut := (&net.Dialer{Deadline: time.Now().Add(-time.Second)}).Dial("tcp", addr)
@@ -211,6 +213,7 @@ func (timeoutError) Temporary() bool { return true }
 // which a transport with idle connections would resend after a reused
 // connection fails, are not resent either.
 func TestNativeForwardingNeverResends(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	p := e.Policy(e.A, false)
 	p.Operations = append(p.Operations, policy.Operation{ID: "remove-a", API: "a", Method: "DELETE", Target: "/a/item", Access: "allow", Auth: "none"})

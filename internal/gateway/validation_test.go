@@ -24,6 +24,7 @@ func schemaPolicy(schema string) policy.Policy {
 // Supported schemas compile into the operation's rule; anything outside the
 // subset, or inconsistent, rejects the whole policy and is never ignored.
 func TestSchemaCompilation(t *testing.T) {
+	t.Parallel()
 	valid := []string{
 		gatewaytest.OrdersCreateSchema,
 		gatewaytest.InventoryAdjustSchema,

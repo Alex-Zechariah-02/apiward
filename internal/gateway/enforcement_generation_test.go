@@ -38,6 +38,7 @@ func (a *publishOnCapture) Current() *compile.Generation {
 // is published while it is in progress: the body schema, the binding and the
 // metadata all come from it. The next request uses the new generation.
 func TestEnforcementUsesCapturedGeneration(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.Policy(e.A, false), gatewaytest.SeedOptions{})
 	c, _ := own(e, controllerConfig(e))
@@ -83,6 +84,7 @@ func TestEnforcementUsesCapturedGeneration(t *testing.T) {
 // its deadline as a late timer would leave it (the controller then withdraws
 // it rather than serve it), and a stopped controller.
 func TestEnforcementWithoutUsableGeneration(t *testing.T) {
+	t.Parallel()
 	t.Run("none published", func(t *testing.T) {
 		e := gatewaytest.NewEnv(t)
 		c, _ := own(e, controllerConfig(e))
@@ -141,6 +143,7 @@ func TestEnforcementWithoutUsableGeneration(t *testing.T) {
 // carries the generation it was admitted under, its binding is that
 // generation's upstream, and its outcome event names the same generation.
 func TestEnforcementGenerationsUnderConcurrency(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	toA, toB := e.Policy(e.A, false), e.Policy(e.B, false)
 	c, _, f := serveEnforcement(e, toA, pipeline.Limits{})

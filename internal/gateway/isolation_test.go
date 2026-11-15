@@ -14,6 +14,7 @@ import (
 // through any other interface of the host. It cannot show that a client on
 // another machine is blocked; that requires a separate network position.
 func TestUpstreamsBindOnlyToLoopback(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	addrs, err := net.InterfaceAddrs()
 	if err != nil {

@@ -17,6 +17,7 @@ import (
 // under every target of its API at a segment boundary; the destination is
 // the inbound path rewritten and checked canonical again.
 func TestRewriteCompile(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		forward policy.Forward
 		field   string
@@ -56,6 +57,7 @@ func TestRewriteCompile(t *testing.T) {
 // admission record keeps the inbound path beside it, and the rewritten path
 // itself matches nothing, since every decision is made on the inbound path.
 func TestRewriteForward(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	p := e.Policy(e.A, false)
 	p.APIs[0].Forward = &policy.Forward{StripPrefix: "/a", AddPrefix: "/v1"}

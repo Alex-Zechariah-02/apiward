@@ -13,6 +13,7 @@ import (
 )
 
 func TestEnrolmentExpiryAtConsumption(t *testing.T) {
+	t.Parallel()
 	for _, delta := range []time.Duration{-time.Millisecond, 0, time.Millisecond} {
 		t.Run(delta.String(), func(t *testing.T) {
 			e := gatewaytest.NewEnv(t)

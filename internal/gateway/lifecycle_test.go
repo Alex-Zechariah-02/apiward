@@ -121,6 +121,7 @@ func assertReleased(t *testing.T, c *controller.Controller, cfg controller.Confi
 // listener opens, Start serves the Admin API once, and Stop releases
 // everything, once, however often it is called.
 func TestControllerOwnedByApplication(t *testing.T) {
+	// Serial: counts gateway goroutines across the whole test process.
 	e := gatewaytest.NewEnv(t)
 	document := e.ProtectedPolicy()
 	gatewaytest.Seed(t, e.Database, document, gatewaytest.SeedOptions{})
@@ -192,6 +193,7 @@ func TestControllerOwnedByApplication(t *testing.T) {
 // opened: no audit file is created, no database lock taken, no listener or
 // goroutine started.
 func TestControllerRefusesInvalidConfiguration(t *testing.T) {
+	// Serial: counts gateway goroutines across the whole test process.
 	privateKey := filepath.Join(t.TempDir(), "private.pem")
 	der, _ := x509.MarshalPKCS8PrivateKey(issuertest.New(2048).Key())
 	if err := os.WriteFile(privateKey, pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der}), 0o600); err != nil {

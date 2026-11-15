@@ -9,6 +9,7 @@ import (
 )
 
 func TestFetchRejectsLegacyPolicyAndSubjects(t *testing.T) {
+	t.Parallel()
 	for document, want := range map[string]string{
 		`{"schema_version":3,"profile":"core"}`:               "SCHEMA_VERSION_UNSUPPORTED",
 		`{"schema_version":4,"profile":"core","subjects":[]}`: "UNKNOWN_FIELD",

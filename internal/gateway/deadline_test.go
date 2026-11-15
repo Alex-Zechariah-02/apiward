@@ -16,6 +16,7 @@ import (
 // (The test gateway can also move its wall clock alone: see
 // TestOverrideExpiryUnderClockChanges.)
 func TestDeadlinePredicate(t *testing.T) {
+	t.Parallel()
 	deadline := time.UnixMilli(time.Now().Add(time.Hour).UnixMilli())
 	g, err := compile.Compile(threeAPIPolicy(), 2, deadline, policy.Limits{})
 	if err != nil {

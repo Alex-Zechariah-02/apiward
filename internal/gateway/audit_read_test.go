@@ -14,6 +14,7 @@ import (
 // an audit.recovered record. The reader skips exactly that line and still
 // refuses any other line that is not one record.
 func TestParseAuditSkipsOnlyRecoveredRecords(t *testing.T) {
+	t.Parallel()
 	first := `{"kind":"request.admitted","seq":1}` + "\n"
 	partial := `{"kind":"request.rejected","request_id":"94d3` + "\n"
 	recovered := `{"kind":"audit.recovered","file":"audit.log","offset":` + strconv.Itoa(len(first)) + `}` + "\n"

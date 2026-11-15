@@ -17,6 +17,7 @@ import (
 )
 
 func TestFetchStalledViewerCannotBlockEnforcement(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	controller, _ := serveNative(e, e.Policy(e.A, true), forwardTimeouts)
 	admin := e.MustLogin(gatewaytest.HarnessAdmin, gatewaytest.HarnessPassword)

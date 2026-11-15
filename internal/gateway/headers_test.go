@@ -23,6 +23,7 @@ import (
 // and the forwarding fields. A publication declaring one is refused and the
 // current generation stays.
 func TestHeaderSchemaRefusesUnforwardedFields(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	c, _ := serveNative(e, e.KeywordPolicy(), forwardTimeouts)
 	current := c.Current().ID
@@ -58,6 +59,7 @@ func TestHeaderSchemaRefusesUnforwardedFields(t *testing.T) {
 // of forged ones; a subject without the permit, and a permitted subject naming
 // a validated field in Connection, reach nothing.
 func TestValidatedHeadersWithAuthentication(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	p := e.ProtectedPolicy()
 	for i := range p.Operations {
@@ -116,6 +118,7 @@ func TestValidatedHeadersWithAuthentication(t *testing.T) {
 // alive carries an admitted request, a refused nomination and an admitted
 // write in turn, and the upstream receives the two admitted ones.
 func TestValidatedHeadersOnKeptConnection(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	serveNative(e, e.KeywordPolicy(), forwardTimeouts)
 	conn, err := net.DialTimeout("tcp", e.DataAddr, 5*time.Second)

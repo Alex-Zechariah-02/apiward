@@ -58,6 +58,7 @@ func parseConfig(document []byte) (nativeConfig, error) {
 // A minimal file takes the legacy values for every bound it omits, and every
 // written setting is taken as written.
 func TestNativeConfigSettings(t *testing.T) {
+	// Serial: sets APIWARD_TEST_DASHBOARD for the whole process.
 	dir := t.TempDir()
 	document := configDocument(t, dir, nil)
 	cfg, err := parseConfig(document)
@@ -150,6 +151,7 @@ func TestNativeConfigSettings(t *testing.T) {
 // with a message that names the problem: no setting falls back to a default
 // when it is written with an invalid value.
 func TestNativeConfigRefusals(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	set := func(object, name string, value any) func(map[string]any) {
 		return func(s map[string]any) { gatewaytest.Section(s, object)[name] = value }

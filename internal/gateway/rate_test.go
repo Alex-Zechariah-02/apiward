@@ -17,6 +17,7 @@ import (
 // bounded count and window, and a per-account key only on an authenticated
 // operation. Any invalid rule rejects the whole policy.
 func TestRateRuleCompilation(t *testing.T) {
+	t.Parallel()
 	p := threeAPIPolicy()
 	p.Operations[0].Rate = gatewaytest.Rate(10, 60)
 	g, err := compile.Compile(p, 1, time.Time{}, policy.Limits{})

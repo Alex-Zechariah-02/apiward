@@ -12,6 +12,7 @@ import (
 
 // Rejecting v4 here prevents a fresh Fetch deployment from activating at all.
 func TestFetchPolicyVersion4(t *testing.T) {
+	t.Parallel()
 	const document = `{
 		"schema_version":4,"profile":"core",
 		"upstreams":[{"id":"inventory-svc","dial":"127.0.0.1:10501"}],

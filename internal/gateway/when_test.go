@@ -25,6 +25,7 @@ func variant(p *policy.Policy, i int, id string, when policy.When) *policy.Opera
 }
 
 func TestWhenCompile(t *testing.T) {
+	t.Parallel()
 	v2 := policy.When{Headers: []policy.HeaderCondition{{Name: "X-Version", Value: "2"}}}
 	host := policy.When{Hosts: []string{"*.example.com"}}
 	for name, tc := range map[string]struct {
@@ -104,6 +105,7 @@ func TestWhenCompile(t *testing.T) {
 // target with only a conditioned operation a request without the condition
 // finds no operation: neither path reaches the upstream.
 func TestWhenNeverGrants(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	p := e.Policy(e.A, false)
 	v2 := policy.When{Headers: []policy.HeaderCondition{{Name: "X-Version", Value: "2"}}}
@@ -130,6 +132,7 @@ func TestWhenNeverGrants(t *testing.T) {
 // A conditioned operation counts on its unconditioned sibling's counter, so
 // alternating a header cannot exceed the plain operation's quota.
 func TestWhenSharesCounter(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	p := e.Policy(e.A, false)
 	p.Operations[0].Rate = &policy.RateRule{Algorithm: "sliding-window", Count: 2, WindowSeconds: 60, Key: "client_address"}

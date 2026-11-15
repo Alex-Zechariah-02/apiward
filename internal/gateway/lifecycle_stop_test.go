@@ -24,6 +24,7 @@ import (
 // Stop waits a bounded time for an admin request in progress, then closes its
 // connection and reports the incomplete shutdown rather than a clean one.
 func TestStopIsBoundedByStuckAdminRequest(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.Policy(e.A, false), gatewaytest.SeedOptions{})
 	c, _ := own(e, controllerConfig(e))
@@ -64,6 +65,7 @@ func TestStopIsBoundedByStuckAdminRequest(t *testing.T) {
 // audited, and every later one is refused as unavailable; concurrent Stop
 // calls share one result. The next owner serves the last committed revision.
 func TestStopWaitsForMutations(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.Policy(e.A, false), gatewaytest.SeedOptions{})
 	c, _ := own(e, controllerConfig(e))
@@ -141,6 +143,7 @@ func TestStopWaitsForMutations(t *testing.T) {
 // CAPTURE; a mutation is refused, Start is refused and the controller reports
 // it is stopping. The stop that follows writes every event of both requests.
 func TestBeginStopEndsAdmission(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	c, _, f := serveEnforcement(e, e.Policy(e.A, true), pipeline.Limits{})
 	held, proceed := make(chan struct{}), make(chan struct{})

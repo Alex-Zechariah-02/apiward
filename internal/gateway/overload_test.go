@@ -20,6 +20,7 @@ import (
 )
 
 func TestInFlightCapRefuses(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	c, _, f := serveEnforcement(e, e.Policy(e.A, true), pipeline.Limits{MaxInFlight: 1})
 	held, proceed := make(chan struct{}), make(chan struct{})
@@ -69,6 +70,7 @@ func TestInFlightCapRefuses(t *testing.T) {
 }
 
 func TestConnectionCapClosesExtra(t *testing.T) {
+	t.Parallel()
 	inner, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -114,6 +116,7 @@ func TestConnectionCapClosesExtra(t *testing.T) {
 // A request whose body is still arriving holds its connection, not an
 // in-flight place: with one place, other requests are still served.
 func TestSlowBodyTakesNoPlace(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	serveEnforcement(e, e.Policy(e.A, true), pipeline.Limits{MaxInFlight: 1})
 	conn, err := net.Dial("tcp", e.DataAddr)

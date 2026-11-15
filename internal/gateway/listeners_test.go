@@ -53,6 +53,7 @@ func writeCertificate(t *testing.T, certFile, keyFile, host string, serial int64
 // learns the request came over https in HTTP/2, a failed reload keeps the served certificate and is
 // recorded, a good one replaces it, and readiness reflects the gateway.
 func TestDataListenerTLSFiles(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.Policy(e.A, false), gatewaytest.SeedOptions{})
 	host, _, _ := net.SplitHostPort(e.DataAddr)
@@ -128,6 +129,7 @@ func TestDataListenerTLSFiles(t *testing.T) {
 // The redirect answers 308 to the configured origin whatever the client
 // names as host, keeps the path and query, and counts its redirects only.
 func TestRedirectListener(t *testing.T) {
+	t.Parallel()
 	observed := monitor.New(policy.DefaultWindow, policy.DefaultAPIs)
 	h := redirect("https://api.example.com", observed)
 	for target, want := range map[string]string{
@@ -157,6 +159,7 @@ func TestRedirectListener(t *testing.T) {
 
 // Health answers carry fixed bodies; other paths still reach the metrics.
 func TestHealthEndpoints(t *testing.T) {
+	t.Parallel()
 	metrics := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { io.WriteString(w, "metrics") })
 	for _, ok := range []bool{true, false} {
 		h := health(metrics, func() bool { return ok })
@@ -183,6 +186,7 @@ func TestHealthEndpoints(t *testing.T) {
 // Every interface and the network-wide metrics listener are deliberate
 // switches; ACME is not available.
 func TestListenAllInterfaces(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	set := func(section, name string, value any) func(map[string]any) {
 		return func(s map[string]any) { gatewaytest.Section(s, section)[name] = value }
@@ -226,6 +230,7 @@ func TestListenAllInterfaces(t *testing.T) {
 // The health command reads the configuration file alone: an unreadable
 // identity key and a missing TLS profile file do not stop it asking.
 func TestHealthCommand(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "settings.json")
 	broken := filepath.Join(dir, "identity.pem")
