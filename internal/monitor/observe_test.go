@@ -3,6 +3,7 @@ package monitor
 import (
 	"fmt"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -21,6 +22,28 @@ func fillObservations(o *Observations, n int, end time.Time) {
 		o.Record(audit.Event{RequestID: fmt.Sprintf("req-%05d", i), Time: end.Add(time.Duration(i-n+1) * time.Second),
 			Method: "GET", Path: "/a/x", Operation: "a.read", API: "a", Subject: fmt.Sprintf("user-%d", i%7),
 			Decision: decision, Stage: "FORWARD", Status: 200})
+	}
+}
+
+// A request view says when its path was cut: for a live event that still
+// holds the whole path and for a record read back already cut, never for a
+// whole path.
+func TestViewMarksCutPath(t *testing.T) {
+	whole := "/a/" + strings.Repeat("x", audit.MaxLoggedPath-3)
+	for _, tc := range []struct {
+		name  string
+		event audit.Event
+		want  bool
+	}{
+		{"live long path", audit.Event{Path: whole + "/tail"}, true},
+		{"stored cut path", audit.Event{Path: whole, Truncated: true}, true},
+		{"path of exactly the bound", audit.Event{Path: whole}, false},
+		{"short path", audit.Event{Path: "/a/x"}, false},
+	} {
+		view := View(tc.event)
+		if view.Truncated != tc.want || len(view.Path) > audit.MaxLoggedPath {
+			t.Errorf("%s: truncated = %v (path %d bytes), want %v", tc.name, view.Truncated, len(view.Path), tc.want)
+		}
 	}
 }
 

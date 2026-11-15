@@ -10,13 +10,17 @@ import (
 	"github.com/Alex-Zechariah-02/apiward/internal/monitor"
 )
 
-// Client-chosen values cannot run as spreadsheet formulas in an export.
+// Client-chosen values cannot run as spreadsheet formulas in an export, and
+// the last column says the path was cut.
 func TestSecurityLogCSV(t *testing.T) {
 	subject := "=HYPERLINK(1)"
 	w := httptest.NewRecorder()
-	writeSecurityLogCSV(w, monitor.Result{Items: []monitor.RequestView{{RequestID: "r", Path: "+1", Subject: &subject, Roles: []string{"-A"}}}, Searched: []string{"audit.log"}}, nil, []string{})
+	writeSecurityLogCSV(w, monitor.Result{Items: []monitor.RequestView{{RequestID: "r", Path: "+1", Subject: &subject, Roles: []string{"-A"}, Truncated: true}}, Searched: []string{"audit.log"}}, nil, []string{})
 	body := w.Body.String()
 	if !strings.Contains(body, "'+1") || !strings.Contains(body, "'=HYPERLINK(1)") || !strings.Contains(body, "'-A") || w.Header().Get("X-Security-Log-Complete") != "true" {
 		t.Errorf("csv: %s %v", body, w.Header())
+	}
+	if lines := strings.Split(strings.TrimSpace(body), "\n"); !strings.HasSuffix(lines[0], ",path_truncated") || !strings.HasSuffix(lines[1], ",true") {
+		t.Errorf("csv path_truncated column: %s", body)
 	}
 }

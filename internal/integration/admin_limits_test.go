@@ -8,6 +8,7 @@ import (
 
 	"github.com/Alex-Zechariah-02/apiward/internal/gatewaytest"
 	"github.com/Alex-Zechariah-02/apiward/internal/monitor"
+	"github.com/Alex-Zechariah-02/apiward/internal/policy"
 	"github.com/Alex-Zechariah-02/apiward/internal/session"
 	"github.com/Alex-Zechariah-02/apiward/internal/store"
 )
@@ -36,12 +37,15 @@ func TestAdminLimits(t *testing.T) {
 		Used int64 `json:"used"`
 		Max  int64 `json:"max"`
 	}
-	if err := json.Unmarshal([]byte(body), &limits); err != nil || len(limits) != 7 {
+	if err := json.Unmarshal([]byte(body), &limits); err != nil || len(limits) != 8 {
 		t.Fatalf("limits body: %s (%v)", body, err)
 	}
 	want := map[string]int64{
 		"temporary_rules": store.MaxActiveOverrides, "live_views": monitor.MaxStreams, "administrator_sessions": session.Max,
-		"rate_counters": 1000, "recent_requests": 500,
+		"rate_counters": 1000, "recent_requests": 500, "policy_bytes": policy.DefaultPolicyBytes,
+	}
+	if got := limits["policy_bytes"].Used; got < 1 || got > policy.DefaultPolicyBytes {
+		t.Errorf("policy bytes used = %d, want the seeded policy's size", got)
 	}
 	for name, max := range want {
 		if limits[name].Max != max {

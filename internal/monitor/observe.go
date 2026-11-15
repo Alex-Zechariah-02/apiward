@@ -14,7 +14,13 @@ import (
 	"github.com/Alex-Zechariah-02/apiward/internal/policy"
 )
 
+// QueueSize events buffer a burst for one live view; a view that falls
+// further behind is told how many it missed, so a slow reader never slows
+// request recording.
 const QueueSize = 128
+
+// MaxStreams live views may be open: each holds a queue and a response
+// writer, and eight cover a small team's open tabs.
 const MaxStreams = 8
 
 // RequestView is the explicit, secret-free Admin API projection. Private audit
@@ -37,6 +43,8 @@ type RequestView struct {
 	DurationMS    float64   `json:"duration_ms"`
 	// Modules is present only in builds with modules other than the built-ins.
 	Modules map[string]string `json:"modules,omitempty"`
+	// Truncated says Path was cut to audit.MaxLoggedPath.
+	Truncated bool `json:"path_truncated,omitempty"`
 }
 
 type Observed struct {
@@ -106,6 +114,11 @@ func View(event audit.Event) RequestView {
 		Roles: slices.Clone(event.Roles), ClientAddress: event.ClientAddress, Status: event.Status,
 		Code: OptionalString(event.Error), Generation: event.Generation, DurationMS: event.DurationMS,
 		Modules: maps.Clone(event.Modules),
+		// The path is cut at the stored record's bound, so live and searched
+		// views show the same text. A live event still holds the whole path;
+		// one read back from the log was cut when written and carries the
+		// record's flag.
+		Truncated: len(event.Path) > audit.MaxLoggedPath || (event.Truncated && len(event.Path) == audit.MaxLoggedPath),
 	}
 	if view.Roles == nil {
 		view.Roles = []string{}
@@ -148,6 +161,7 @@ func (o *Observations) Record(event audit.Event) {
 	if event.Stages[audit.StageCanonical] == audit.StagePass {
 		routingPath = strings.Clone(event.Path[:min(len(event.Path), policy.MaxTargetLength+1)])
 	}
+	// One lock keeps the window, the live feeds and the counters consistent with each other.
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	o.metrics.Record(view)

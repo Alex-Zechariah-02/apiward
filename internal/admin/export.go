@@ -12,11 +12,14 @@ import (
 	"github.com/Alex-Zechariah-02/apiward/internal/monitor"
 )
 
-var securityLogColumns = []string{"time", "request_id", "decision", "status", "code", "stage", "method", "path", "operation", "api", "subject", "roles", "client_address", "generation", "duration_ms"}
+// The names and order are fixed, because a spreadsheet or script reads the
+// export by column; a new column is added last.
+var securityLogColumns = []string{"time", "request_id", "decision", "status", "code", "stage", "method", "path", "operation", "api", "subject", "roles", "client_address", "generation", "duration_ms", "path_truncated"}
 
 // writeSecurityLogCSV writes the rows as CSV, with coverage in headers. A
 // value a spreadsheet would read as a formula is prefixed with an apostrophe:
-// paths and account IDs come from clients.
+// methods, paths, account IDs and roles come from clients; the other columns
+// are the gateway's own values or IDs an administrator wrote in the policy.
 func writeSecurityLogCSV(w http.ResponseWriter, result monitor.Result, next *string, missing []string) {
 	header := w.Header()
 	header.Set("Content-Type", "text/csv; charset=utf-8")
@@ -38,10 +41,14 @@ func writeSecurityLogCSV(w http.ResponseWriter, result monitor.Result, next *str
 		return *value
 	}
 	for _, v := range result.Items {
+		cut := ""
+		if v.Truncated {
+			cut = "true"
+		}
 		out.Write([]string{
 			v.Time.UTC().Format(time.RFC3339Nano), v.RequestID, v.Decision, strconv.Itoa(v.Status), text(v.Code), v.Stage,
-			v.Method, safeCell(v.Path), text(v.Operation), text(v.API), safeCell(text(v.Subject)), safeCell(strings.Join(v.Roles, " ")),
-			v.ClientAddress, v.Generation, strconv.FormatFloat(v.DurationMS, 'f', -1, 64),
+			safeCell(v.Method), safeCell(v.Path), text(v.Operation), text(v.API), safeCell(text(v.Subject)), safeCell(strings.Join(v.Roles, " ")),
+			v.ClientAddress, v.Generation, strconv.FormatFloat(v.DurationMS, 'f', -1, 64), cut,
 		})
 	}
 	out.Flush()
