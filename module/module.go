@@ -122,9 +122,24 @@ func Refuse(status int, code string) Result {
 	return Result{outcome: refuse, status: status, code: code}
 }
 
+// maxReason bounds a failure reason: a short fixed phrase, never request
+// data, so a record stays small.
+const maxReason = 128
+
 // Fail ends the request with 503 gateway_unavailable; reason is recorded
-// with the module's ID and must not contain request data.
-func Fail(reason string) Result { return Result{outcome: fail, code: reason} }
+// with the module's ID and must not contain request data. A reason that is
+// empty, longer than 128 bytes or not printable ASCII is recorded as
+// "invalid failure reason", as Refuse checks its code.
+func Fail(reason string) Result {
+	valid := reason != "" && len(reason) <= maxReason
+	for i := 0; valid && i < len(reason); i++ {
+		valid = reason[i] >= 0x20 && reason[i] <= 0x7e
+	}
+	if !valid {
+		reason = "invalid failure reason"
+	}
+	return Result{outcome: fail, code: reason}
+}
 
 // Passed, Refused and Failed report the decision; Status and Code are the
 // refusal's answer, and Reason a failure's reason.

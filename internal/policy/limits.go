@@ -2,15 +2,30 @@
 
 package policy
 
+// Each bound keeps the work and memory of one decode or one validation
+// small and predictable; none is a setting, since no compared gateway
+// exposes its JSON parser bounds and no register row shows one bites.
 const (
-	MaxJSONDepth        = 16
-	MaxJSONValues       = 4096
-	MaxNumberLength     = 32
-	maxExponentDigits   = 3
+	// MaxJSONDepth: deeper nesting than any API body or schema needs, and
+	// the decoder's stack stays small.
+	MaxJSONDepth = 16
+	// MaxJSONValues: values per body or schema; bounds decoding and
+	// validation work per request.
+	MaxJSONValues = 4096
+	// MaxNumberLength and maxExponentDigits: number literals the validator
+	// compares exactly without arbitrary-precision cost.
+	MaxNumberLength   = 32
+	maxExponentDigits = 3
+	// MaxSchemaProperties and MaxEnumValues: members a schema object may
+	// list, which bounds each object's validation.
 	MaxSchemaProperties = 64
 	MaxEnumValues       = 64
-	MaxSchemaLength     = 1 << 20
-	MaxHeaderName       = 64
+	// MaxSchemaLength: the largest string length keyword; a longer string
+	// could not fit in the largest body (MaxBodyLimit).
+	MaxSchemaLength = MaxBodyLimit
+	// MaxHeaderName: header names an operation may name; real names are
+	// far shorter.
+	MaxHeaderName = 64
 )
 
 // IsSubjectID accepts 1 to 128 printable ASCII characters without spaces. The

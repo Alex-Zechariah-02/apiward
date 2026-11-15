@@ -24,6 +24,8 @@ func NewTable[K comparable, V any](max int) *Table[K, V] {
 
 // Update replaces key's value with change(current, found) as one atomic step.
 // It returns false, changing nothing, when key is new and the table is full.
+// change runs under the table's lock: it must not call the table, or it
+// waits for itself forever, and it should return quickly.
 func (t *Table[K, V]) Update(key K, change func(current V, found bool) V) bool {
 	t.mu.Lock()
 	defer t.mu.Unlock()

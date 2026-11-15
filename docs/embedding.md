@@ -38,9 +38,12 @@ err = gw.Stop(ctx)                             // waits for requests in progress
   - A module cannot skip a later stage and never forwards anything.
 - A module's settings are the operation member named by its ID.
   - They are compiled once with the policy; a `Compile` error or panic refuses the draft with `MODULE_FAILED`.
-  - A member no module in the build reads is refused with `UNKNOWN_FIELD`, so a policy written for another build never loses a check silently.
+  - A member no module in the build reads is refused with `UNKNOWN_FIELD` naming the member, so a policy written for another build never loses a check silently.
+  - A setting must pass the policy's JSON bounds (nesting, value count); it is stored with its object members sorted, so one meaning has one form.
   - Ingress modules take no settings.
 - A check sees a copy of the method, path, client address, headers (without the bearer token) and the verified subject and roles: no body and no connection.
   - `Refuse` ends the request with a 4xx status and code; `Fail`, a panic or a missing result ends it with `503 gateway_unavailable`.
+  - A `Fail` reason is recorded when it is 1 to 128 bytes of printable ASCII, otherwise as `invalid failure reason`; it never holds request data.
   - Per-key state goes into a bounded `module.Table`, which refuses new keys when full.
+  - `Table.Update` runs its change function under the table's lock: the function must not call the table.
 - Each request record holds a `modules` member with every non-built-in module's result (`PASS`, `REJECT`, `FAIL`, `NA` for not configured, `NE` for not reached); a module refusal or failure is recorded at the stage of its phase. `apiward version` and `GET /admin/status` (`build`) list the version, the Go toolchain and every compiled-in control, the five built-ins (`jwt`, `rbac`, `rate`, `body`, `validation`) included; the Dashboard shows them on the Team page.

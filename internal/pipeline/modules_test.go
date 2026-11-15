@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -197,7 +198,7 @@ func TestModuleUnknownMember(t *testing.T) {
 	if err != nil || string(p.Operations[0].Modules["identity_a"]) != `"pass"` {
 		t.Fatalf("registered member: %v %v", p.Operations, err)
 	}
-	if _, err := policy.DecodePolicy(document(`"missing_module":"pass"`), policy.Limits{}); problemCode(err) != "UNKNOWN_FIELD " {
+	if _, err := policy.DecodePolicy(document(`"missing_module":"pass"`), policy.Limits{}); problemCode(err) != "UNKNOWN_FIELD missing_module" {
 		t.Errorf("unknown member: %v", err)
 	}
 	p, err = policy.DecodePolicy(document(`"ingress_a":"pass"`), policy.Limits{})
@@ -206,6 +207,38 @@ func TestModuleUnknownMember(t *testing.T) {
 	}
 	if problemCode(err) != "UNKNOWN_FIELD operations[0].ingress_a" {
 		t.Errorf("ingress member: %v", err)
+	}
+}
+
+// A module value has one byte form whatever its member order, and a value
+// past the JSON bounds is refused at decoding rather than at encoding.
+func TestModuleValueCanonical(t *testing.T) {
+	document := func(value string) []byte {
+		return []byte(`{"schema_version":4,"profile":"core","upstreams":[{"id":"A","dial":"127.0.0.1:9"}],"apis":[{"id":"a","upstream":"A"}],` +
+			`"operations":[{"id":"x","api":"a","method":"GET","target":"/a/x","access":"allow","auth":"none","identity_a":` + value + `}],"roles":[{"id":"READER"}],"permits":[]}`)
+	}
+	var encoded []string
+	for _, value := range []string{`{"b":{"d":1,"c":2},"a":[2,1]}`, `{"a":[2,1],"b":{"c":2,"d":1}}`} {
+		p, err := policy.DecodePolicy(document(value), policy.Limits{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		out, err := policy.Encode(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		encoded = append(encoded, string(out))
+	}
+	if encoded[0] != encoded[1] || !strings.Contains(encoded[0], `"identity_a": {
+        "a": [
+          2,
+          1
+        ],`) {
+		t.Fatalf("module values not canonical:\n%s\n%s", encoded[0], encoded[1])
+	}
+	many := "[" + strings.TrimSuffix(strings.Repeat("1,", policy.MaxJSONValues), ",") + "]"
+	if _, err := policy.DecodePolicy(document(many), policy.Limits{}); problemCode(err) != "SCHEMA_INVALID operations[0].identity_a" {
+		t.Errorf("value past the value bound: %v", err)
 	}
 }
 

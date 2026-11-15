@@ -59,7 +59,10 @@ func TestCanonicalOrder(t *testing.T) {
 	if !strings.HasSuffix(string(got), "}\n") || !strings.Contains(string(got), "\n  \"profile\": \"core\",\n") {
 		t.Fatalf("not 2-space JSON with a trailing newline:\n%s", got)
 	}
-	again, _ := Encode(decoded)
+	again, err := Encode(decoded)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if string(again) != string(got) {
 		t.Fatal("Encode is not stable on its own output")
 	}
@@ -104,4 +107,22 @@ func compactJSON(t *testing.T, raw json.RawMessage) string {
 	}
 	out, _ := json.Marshal(value)
 	return string(out)
+}
+
+// A schema is re-encoded under the JSON value bound every schema meets, not
+// the string length bound.
+func TestEncodeSchemaBound(t *testing.T) {
+	schema := func(items int) json.RawMessage {
+		return json.RawMessage("[" + strings.TrimSuffix(strings.Repeat("1,", items), ",") + "]")
+	}
+	encode := func(items int) error {
+		_, err := Encode(Policy{SchemaVersion: SchemaVersion, Profile: ProfileCore, Operations: []Operation{{ID: "x", Headers: schema(items)}}})
+		return err
+	}
+	if err := encode(MaxJSONValues - 1); err != nil {
+		t.Fatalf("schema at the value bound: %v", err)
+	}
+	if err := encode(MaxJSONValues); err == nil {
+		t.Fatal("schema past the value bound encoded")
+	}
 }

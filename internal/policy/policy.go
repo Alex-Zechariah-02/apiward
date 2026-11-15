@@ -162,12 +162,12 @@ func DecodePolicy(document []byte, limits Limits) (Policy, error) {
 
 	document, modules, err := takeModules(document)
 	if err != nil {
-		return Policy{}, Invalid("SCHEMA_INVALID", "")
+		return Policy{}, err
 	}
 	var p Policy
 	if err := DecodeStrict(document, &p); err != nil {
-		if strings.HasPrefix(err.Error(), "json: unknown field ") {
-			return Policy{}, Invalid("UNKNOWN_FIELD", "")
+		if name, found := strings.CutPrefix(err.Error(), "json: unknown field "); found {
+			return Policy{}, Invalid("UNKNOWN_FIELD", "%s", Clip(strings.Trim(name, "\"")))
 		}
 		if typeErr, ok := errors.AsType[*json.UnmarshalTypeError](err); ok {
 			return Policy{}, Invalid("SCHEMA_INVALID", "%s", typeErr.Field)
@@ -244,7 +244,7 @@ func CheckMembers(data []byte, maxDepth int) error {
 		if parent != nil && parent.object && parent.wantName {
 			name := token.(string)
 			if !parent.schema && !isMemberName(name) {
-				return Invalid("UNKNOWN_FIELD", "")
+				return Invalid("UNKNOWN_FIELD", "%s", Clip(name))
 			}
 			if parent.names[name] {
 				return Invalid("DUPLICATE_MEMBER", "%s", name)

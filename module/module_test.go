@@ -1,9 +1,10 @@
-// Registration rules and the bounded table.
+// Registration rules, the bounded table and failure reasons.
 
 package module
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
@@ -36,5 +37,21 @@ func TestTableBound(t *testing.T) {
 	add := func(_ int, _ bool) int { return 1 }
 	if !table.Update("a", add) || table.Update("b", add) || !table.Update("a", add) || table.Len() != 1 {
 		t.Fatalf("bounded table: len %d", table.Len())
+	}
+}
+
+// A failure reason is recorded only when it is a short printable phrase.
+func TestFailReason(t *testing.T) {
+	for _, tc := range []struct{ reason, want string }{
+		{"store unavailable", "store unavailable"},
+		{strings.Repeat("r", maxReason), strings.Repeat("r", maxReason)},
+		{"", "invalid failure reason"},
+		{strings.Repeat("r", maxReason+1), "invalid failure reason"},
+		{"line\nbreak", "invalid failure reason"},
+		{"caf\xc3\xa9", "invalid failure reason"},
+	} {
+		if got := Fail(tc.reason); !got.Failed() || got.Reason() != tc.want {
+			t.Errorf("Fail(%q): %q, want %q", tc.reason, got.Reason(), tc.want)
+		}
 	}
 }
