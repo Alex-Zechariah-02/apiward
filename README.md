@@ -95,6 +95,7 @@ The settings file is described in [docs/settings.md](docs/settings.md).
 | `jwks` | Print the public key of the signed identity |
 | `policy import-openapi` | Make a policy file from an OpenAPI description |
 | `policy export-openapi` | Write one API of a policy as OpenAPI |
+| `policy validate` | Check a policy file as the gateway checks a draft, for CI |
 | `version` | Print the version and compiled-in checks |
 
 - All commands except `version` and `policy` take `--config <file>`.

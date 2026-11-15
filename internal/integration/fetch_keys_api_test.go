@@ -39,7 +39,16 @@ func TestFetchKeyReload(t *testing.T) {
 	if err := os.WriteFile(keyFile, other.PublicPEM(), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	config := e.NativeSettings()
+	// Only the key list changes: a reload refuses a changed setting that
+	// takes effect at a restart.
+	var config map[string]any
+	current, err := os.ReadFile(e.Config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(current, &config); err != nil {
+		t.Fatal(err)
+	}
 	trust := gatewaytest.TestTrust(issuertest.Name, issuertest.Audience, e.PublicKey)
 	trust.Keys = append(trust.Keys, pipeline.VerificationKey{Kid: "test-b", PublicKeyFile: keyFile})
 	gatewaytest.Section(config, "gateway")["jwt"] = trust

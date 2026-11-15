@@ -76,6 +76,10 @@ var Auxiliary = []string{"admin", "metrics", "redirect"}
 // Redirected counts one redirect of the HTTP-to-HTTPS redirect listener.
 func (o *Observations) Redirected() { o.redirects.Add(1) }
 
+// HTTP2Error counts one HTTP/2 protocol error of the data listener; its type
+// (Go's name for it) stays out of the metric, which counts them all.
+func (o *Observations) HTTP2Error(string) { o.http2.Add(1) }
+
 // ConnectionRefused counts one data connection closed at the cap.
 func (o *Observations) ConnectionRefused() { o.refused.Add(1) }
 
@@ -167,6 +171,7 @@ func serveMetrics(w http.ResponseWriter, r *http.Request, o *Observations, gauge
 	fmt.Fprintf(&body, "# TYPE gateway_event_stream_dropped_total counter\ngateway_event_stream_dropped_total %d\n", dropped)
 	fmt.Fprintf(&body, "# TYPE gateway_redirects_total counter\ngateway_redirects_total %d\n", o.redirects.Load())
 	fmt.Fprintf(&body, "# TYPE gateway_connections_refused_total counter\ngateway_connections_refused_total %d\n", o.refused.Load())
+	fmt.Fprintf(&body, "# TYPE gateway_http2_errors_total counter\ngateway_http2_errors_total %d\n", o.http2.Load())
 	fmt.Fprintln(&body, "# TYPE gateway_listener_connections_refused_total counter")
 	for _, name := range Auxiliary {
 		fmt.Fprintf(&body, "gateway_listener_connections_refused_total{listener=%q} %d\n", name, o.auxiliary[name].Load())

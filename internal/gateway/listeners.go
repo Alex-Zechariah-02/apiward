@@ -13,7 +13,6 @@ import (
 	"net/http"
 	"net/netip"
 	"net/url"
-	"os"
 	"path/filepath"
 	"sync"
 	"sync/atomic"
@@ -40,7 +39,7 @@ type dataTLS struct {
 }
 
 // checkTransport checks the data listener's TLS and redirect settings.
-func checkTransport(d dataSettings, others ...string) error {
+func checkTransport(d dataSettings) error {
 	if d.TLS != nil {
 		f := d.TLS.Files
 		if f == nil {
@@ -60,11 +59,6 @@ func checkTransport(d dataSettings, others ...string) error {
 	addr, err := netip.ParseAddrPort(r.Listen)
 	if err != nil || addr.Port() == 0 || (addr.Addr().Unmap().IsUnspecified() && !d.ListenAllInterfaces) {
 		return errors.New("data.redirect_http.listen must be a literal IP address with a port (all interfaces only with data.listen_all_interfaces)")
-	}
-	for _, other := range append(others, d.Listen) {
-		if r.Listen == other {
-			return errors.New("data.redirect_http.listen must differ from every other listener")
-		}
 	}
 	origin, err := url.Parse(r.Origin)
 	if err != nil || origin.Scheme != "https" || origin.Host == "" || origin.User != nil || origin.Path != "" || origin.RawQuery != "" || origin.Fragment != "" || r.Origin != origin.String() {
@@ -122,6 +116,7 @@ func (s *servingCertificate) reload() {
 	}
 	s.current.Store(c)
 	s.logger.Info("data listener certificate reloaded", "expires", c.Leaf.NotAfter)
+	s.audit.Record(audit.Event{Kind: "tls.reloaded", Expires: c.Leaf.NotAfter})
 }
 
 // valid reports whether the current certificate is valid at now.
@@ -176,22 +171,24 @@ func closeListeners(listeners ...net.Listener) {
 
 // checkHealth runs the health command: it asks the configured metrics
 // listener whether the gateway is ready and exits 0 only on 200. Container
-// health checks use it, since minimal images have no HTTP client.
-func checkHealth(configPath string) int {
-	cfg, err := loadNativeConfig(configPath)
+// health checks use it, since minimal images have no HTTP client. It reads
+// the configuration file alone, never the key or certificate files it names.
+func checkHealth(configPath string, logger *slog.Logger) int {
+	cfg, err := readNativeConfig(configPath)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "apiward:", err)
+		logger.Error("configuration refused", "error", err)
 		return exitFailed
 	}
+	// 5 s: a probe of a local listener; the image's check allows 8 s.
 	client := &http.Client{Timeout: 5 * time.Second}
 	reply, err := client.Get("http://" + loopbackForm(cfg.metricsListen) + "/readyz")
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "apiward: not ready:", err)
+		logger.Error("not ready", "error", err)
 		return exitFailed
 	}
 	reply.Body.Close()
 	if reply.StatusCode != http.StatusOK {
-		fmt.Fprintln(os.Stderr, "apiward: not ready:", reply.Status)
+		logger.Error("not ready", "status", reply.StatusCode)
 		return exitFailed
 	}
 	return 0
@@ -199,17 +196,21 @@ func checkHealth(configPath string) int {
 
 // printJWKS runs the jwks command: it prints the public key set of the
 // identity assertion, for the file an upstream verifies assertions with. It
-// reads only the configuration, so it works before the gateway first runs.
-func printJWKS(configPath string) int {
-	cfg, err := loadNativeConfig(configPath)
+// reads only the configuration file and the identity key, so it works before
+// the gateway first runs.
+func printJWKS(configPath string, logger *slog.Logger) int {
+	cfg, err := readNativeConfig(configPath)
 	if err == nil && cfg.unsigned {
 		err = errors.New("upstream.unsigned_identity is set: no identity assertion is signed")
+	}
+	if err == nil {
+		err = cfg.identity(cfg.file.Upstream)
 	}
 	if err == nil {
 		err = cfg.requireIdentity()
 	}
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "apiward:", err)
+		logger.Error("command refused", "command", "jwks", "error", err)
 		return exitFailed
 	}
 	fmt.Println(string(cfg.signer.JWKS()))

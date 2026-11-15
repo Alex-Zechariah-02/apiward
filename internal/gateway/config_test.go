@@ -48,14 +48,23 @@ func parseConfig(document []byte) (nativeConfig, error) {
 	if err != nil {
 		return nativeConfig{}, err
 	}
-	return settings.check()
+	cfg, err := settings.check()
+	if err != nil {
+		return nativeConfig{}, err
+	}
+	return cfg, cfg.loadFiles()
 }
 
 // A minimal file takes the legacy values for every bound it omits, and every
 // written setting is taken as written.
 func TestNativeConfigSettings(t *testing.T) {
 	dir := t.TempDir()
-	cfg, err := parseConfig(configDocument(t, dir, nil))
+	document := configDocument(t, dir, nil)
+	cfg, err := parseConfig(document)
+	if err != nil {
+		t.Fatal(err)
+	}
+	written, err := decodeNativeFile(document)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -94,16 +103,21 @@ func TestNativeConfigSettings(t *testing.T) {
 		shutdownGrace:     5 * time.Second,
 		upstream:          forward.UpstreamTimeouts{Dial: 2 * time.Second, ResponseHeader: 5 * time.Second, ReadIdle: 5 * time.Second},
 		pool:              forward.PoolSettings{MaxIdle: 16, IdleTimeout: 30 * time.Second, EjectAfter: 5},
+		file:              written,
+		sessionLife:       time.Hour,
 	}
 	if !reflect.DeepEqual(cfg, want) {
 		t.Fatalf("defaults\n got %+v\nwant %+v", cfg, want)
 	}
 
 	site := writeDashboard(t)
+	// ${NAME} takes an environment variable; $${ writes a literal ${.
+	t.Setenv("APIWARD_TEST_DASHBOARD", site)
 	cfg, err = parseConfig(configDocument(t, dir, func(s map[string]any) {
+		s["gateway"].(map[string]any)["database"] = filepath.Join(dir, "$${state}.db")
 		maps.Copy(s["gateway"].(map[string]any), map[string]any{
 			"admin_idle_timeout": "10m", "admin_session_lifetime": "1h", "audit_timeout": "1s",
-			"audit_max_bytes": 1 << 20, "audit_max_files": 4, "admin_ui": site,
+			"audit_max_bytes": 1 << 20, "audit_max_files": 4, "admin_ui": "${APIWARD_TEST_DASHBOARD}",
 			"audit_when_full": "evict_oldest", "shutdown_grace": "30s", "shutdown_delay": "2s", "audit_sync_window": "2ms",
 			"audit_prefill": false,
 		})
@@ -121,7 +135,7 @@ func TestNativeConfigSettings(t *testing.T) {
 	}
 	c := cfg.controller
 	if c.AdminIdleTimeout != 10*time.Minute || c.AdminSessionLifetime != time.Hour || c.AuditTimeout != time.Second ||
-		c.AuditMaxBytes != 1<<20 || c.AuditMaxFiles != 4 || cfg.adminUI != site ||
+		c.AuditMaxBytes != 1<<20 || c.AuditMaxFiles != 4 || cfg.adminUI != site || c.Database != filepath.Join(dir, "${state}.db") ||
 		c.AuditWhenFull != "evict_oldest" || c.AuditQueue != 2048 || c.AuditSyncWindow != 2*time.Millisecond || !c.AuditAppend || cfg.shutdownGrace != 30*time.Second || cfg.shutdownDelay != 2*time.Second ||
 		cfg.limits != (pipeline.Limits{MaxBodyBytes: 2048, MaxInFlight: 512, IPv6RatePrefix: 56}) || cfg.maxConnections != 100 || cfg.http2 || cfg.headerLimit != 32768 || cfg.readHeaderTimeout != 2*time.Second ||
 		cfg.readTimeout != 3*time.Second || cfg.writeTimeout != 4*time.Second || cfg.idleTimeout != time.Minute ||
@@ -190,8 +204,19 @@ func TestNativeConfigRefusals(t *testing.T) {
 		{"data address without a port", string(configDocument(t, dir, set("data", "listen", "127.0.0.2"))), "data.listen"},
 		{"data address with port zero", string(configDocument(t, dir, set("data", "listen", "127.0.0.2:0"))), "data.listen"},
 		{"multicast data address", string(configDocument(t, dir, set("data", "listen", "224.0.0.1:9480"))), "data.listen"},
-		{"data and admin on one address", string(configDocument(t, dir, set("data", "listen", "127.0.0.1:9440"))), "must be different addresses"},
-		{"data and admin on one IPv4-mapped address", string(configDocument(t, dir, set("data", "listen", "[::ffff:127.0.0.1]:9440"))), "must be different addresses"},
+		{"data and admin on one address", string(configDocument(t, dir, set("data", "listen", "127.0.0.1:9440"))), "must not share an address and port"},
+		{"data and admin on one IPv4-mapped address", string(configDocument(t, dir, set("data", "listen", "[::ffff:127.0.0.1]:9440"))), "must not share an address and port"},
+		{"metrics on the data port of every interface", string(configDocument(t, dir, func(s map[string]any) {
+			gatewaytest.Section(s, "data")["listen"] = "0.0.0.0:9450"
+			gatewaytest.Section(s, "data")["listen_all_interfaces"] = true
+		})), "data.listen and gateway.metrics_listen must not share"},
+		{"metrics on the admin port under the IPv6 wildcard", string(configDocument(t, dir, func(s map[string]any) {
+			gatewaytest.Section(s, "gateway")["metrics_listen"] = "[::]:9440"
+			gatewaytest.Section(s, "gateway")["metrics_listen_any"] = true
+		})), "gateway.admin_listen and gateway.metrics_listen must not share"},
+		{"relative identity key", string(configDocument(t, dir, set("upstream", "identity_key", "identity.pem"))), "upstream.identity_key must be an absolute path"},
+		{"unset environment variable", string(configDocument(t, dir, set("data", "listen", "${APIWARD_TEST_UNSET}"))), "data.listen: the environment variable APIWARD_TEST_UNSET is not set"},
+		{"malformed reference", string(configDocument(t, dir, set("gateway", "audit_log", "/${1x}/audit.log"))), "gateway.audit_log: a ${ must start a reference"},
 		{"invalid duration", string(configDocument(t, dir, set("upstream", "dial_timeout", "2 seconds"))), `upstream.dial_timeout: "2 seconds" is not a duration`},
 		{"day duration", string(configDocument(t, dir, set("gateway", "admin_session_lifetime", "1d"))), "gateway.admin_session_lifetime"},
 		{"zero timeout", string(configDocument(t, dir, set("data", "write_timeout", "0s"))), "data.write_timeout must be 1s to 10m0s"},
@@ -239,6 +264,22 @@ func TestNativeConfigRefusals(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("settings file not regular", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "settings.json")
+		if err := os.WriteFile(path, []byte(valid), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		link := filepath.Join(t.TempDir(), "link.json")
+		for _, refused := range []string{filepath.Dir(path), link} {
+			if refused == link && os.Symlink(path, link) != nil {
+				continue
+			}
+			if _, err := readNativeConfig(refused); err == nil || !strings.Contains(err.Error(), "must be a regular file") {
+				t.Errorf("%s: got %v", refused, err)
+			}
+		}
+	})
 
 	t.Run("file larger than the bound", func(t *testing.T) {
 		path := filepath.Join(t.TempDir(), "large.json")

@@ -18,10 +18,10 @@ const (
 	// nativeConfigVersion is the only configuration file version this gateway
 	// reads.
 	nativeConfigVersion = 1
-	maxConfigBytes      = 64 << 10
 	// The file is read whole before anything is opened, so its size and
 	// nesting are bounded: 64 KiB and six levels hold every setting many
 	// times over.
+	maxConfigBytes = 64 << 10
 	maxConfigDepth = 6
 	// defaultMetricsListen is the metrics address when gateway.metrics_listen
 	// is absent; it never depends on the environment. Loopback keeps the
@@ -200,6 +200,14 @@ type nativeConfig struct {
 	// adminUI is an optional directory of built dashboard files, served by
 	// the admin listener so the dashboard shares the Admin API's origin.
 	adminUI string
+	// file is the configuration as written, with references resolved; a
+	// keys reload compares it with the file read again. sessionLife is
+	// upstream.tls_session_lifetime, for the profiles loadFiles reads.
+	file        nativeFile
+	sessionLife time.Duration
+	// source is the file the settings came from; empty for a document
+	// decoded without one.
+	source settingsSource
 }
 
 // operatorConfig is what the operator commands need of the settings: the

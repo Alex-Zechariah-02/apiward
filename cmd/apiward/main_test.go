@@ -42,6 +42,7 @@ func TestRouting(t *testing.T) {
 	}{
 		{[]string{"migrate", "--config", missing}, "missing.json", "is required"},
 		{[]string{"policy", "export-openapi"}, "--policy is required\nusage: apiward policy export-openapi", ""},
+		{[]string{"policy", "validate", "--policy", writeInvalid(t)}, "policy refused", "is valid"},
 	}
 	for _, c := range cases {
 		code, stderr := stderrOf(t, c.args...)
@@ -49,4 +50,23 @@ func TestRouting(t *testing.T) {
 			t.Errorf("%v: exit %d, stderr %q", c.args, code, stderr)
 		}
 	}
+	valid := filepath.Join("..", "..", "internal", "openapi", "testdata", "policy-shop.json")
+	if code, stderr := stderrOf(t, "policy", "validate", "--policy", valid); code != 0 || !strings.Contains(stderr, "the policy is valid") {
+		t.Errorf("valid policy: exit %d, stderr %q", code, stderr)
+	}
+}
+
+// writeInvalid writes a policy the gateway refuses: it holds a member the
+// policy grammar does not define.
+func writeInvalid(t *testing.T) string {
+	t.Helper()
+	source, err := os.ReadFile(filepath.Join("..", "..", "internal", "openapi", "testdata", "policy-shop.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "invalid.json")
+	if err := os.WriteFile(path, []byte(strings.Replace(string(source), `"schema_version"`, `"schema_version": 1, "unused"`, 1)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
 }

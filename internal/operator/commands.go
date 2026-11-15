@@ -8,7 +8,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"os"
+	"log/slog"
 	"time"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/audit"
@@ -22,6 +22,8 @@ import (
 // exclusive lock refuses them while it runs.
 
 const (
+	// A day lets the secret be handed over out of band; an unused one then
+	// expires.
 	enrolmentLifetime = 24 * time.Hour
 	backupFormat      = "gateway-backup-1"
 )
@@ -65,7 +67,7 @@ func (o *operatorContext) close() {
 	ctx, cancel := context.WithTimeout(context.Background(), audit.AuditDrainWait)
 	defer cancel()
 	if err := o.audit.Close(ctx); err != nil {
-		fmt.Fprintln(os.Stderr, "apiward:", err)
+		slog.Error("audit log not closed completely", "error", err)
 	}
 }
 

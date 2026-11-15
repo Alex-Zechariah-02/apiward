@@ -4,8 +4,8 @@ package pipeline
 
 import (
 	"fmt"
+	"log/slog"
 	"net/http"
-	"os"
 	"runtime/debug"
 	"time"
 
@@ -131,7 +131,7 @@ func (q *request) recoverPanic() {
 	if recovered == http.ErrAbortHandler {
 		panic(recovered)
 	}
-	fmt.Fprintf(os.Stderr, "apiward: panic in request %s: %v\n%s", q.event.RequestID, recovered, debug.Stack())
+	slog.Error("panic in request", "request_id", q.event.RequestID, "panic", fmt.Sprint(recovered), "stack", string(debug.Stack()))
 	if q.event.Kind != "" && q.event.Kind != "request.admitted" {
 		panic(http.ErrAbortHandler)
 	}

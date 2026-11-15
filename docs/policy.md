@@ -182,6 +182,8 @@ An API's `"response_headers": {"hsts": true, "nosniff": true, "frame": "deny", "
 
 ## Changing a policy
 
+- `apiward policy validate --policy <file>` checks a policy file as the gateway checks a draft, with the default capacity limits, and prints its warnings; it exits 0 only for a valid policy, so CI can run it on policy kept in Git. Upstream addresses and TLS profiles depend on the gateway's settings and are checked when the policy is activated.
+
 Administrators change the policy through two workflows.
 
 ### Confirmed Policy Activation

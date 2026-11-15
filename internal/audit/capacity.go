@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -146,7 +147,7 @@ func describe(name string) (Event, error) {
 // retries at each later rotation, so it is not failed.
 func (a *AuditLog) markFull(err error) {
 	if a.full.CompareAndSwap(false, true) {
-		fmt.Fprintf(os.Stderr, "apiward: audit log full; protected admission refused until rotated files are moved away: %v\n", err)
+		slog.Error("audit log full; protected admission refused until rotated files are moved away", "error", err)
 	}
 }
 

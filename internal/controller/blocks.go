@@ -100,6 +100,7 @@ func (c *Controller) reloadKeys(ctx context.Context, t store.TransitionRecord) (
 	}
 	trust, network, err := c.config.ReloadKeys()
 	if err != nil {
+		c.logger.Warn("keys not reloaded", "error", err)
 		return c.rejectControl(ctx, t, "KEYS_INVALID", now)
 	}
 	// The served generation's upstreams must stay reachable: a reload may

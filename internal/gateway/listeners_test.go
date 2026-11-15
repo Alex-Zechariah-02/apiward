@@ -114,8 +114,14 @@ func TestDataListenerTLSFiles(t *testing.T) {
 	if err := g.stop(); err != nil {
 		t.Fatal(err)
 	}
-	if log, _ := os.ReadFile(e.AuditLog); !strings.Contains(string(log), `"tls.reload_failed"`) {
-		t.Fatal("the failed reload was not recorded")
+	log, err := os.ReadFile(e.AuditLog)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, record := range []string{`"tls.reload_failed"`, `"tls.reloaded"`, `"gateway.started"`, `"kind":"gateway.key","target":"test-a"`} {
+		if !strings.Contains(string(log), record) {
+			t.Errorf("no %s record", record)
+		}
 	}
 }
 
@@ -157,7 +163,11 @@ func TestHealthEndpoints(t *testing.T) {
 		for path, want := range map[string]string{"/livez": "ok\n", "/readyz": map[bool]string{true: "ok\n", false: "unavailable\n"}[ok], "/metrics": "metrics"} {
 			w := httptest.NewRecorder()
 			h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, path, nil))
-			if w.Body.String() != want {
+			status := http.StatusOK
+			if path == "/readyz" && !ok {
+				status = http.StatusServiceUnavailable
+			}
+			if w.Code != status || w.Body.String() != want {
 				t.Errorf("ready %v %s: %d %q", ok, path, w.Code, w.Body.String())
 			}
 		}
@@ -198,9 +208,40 @@ func TestListenAllInterfaces(t *testing.T) {
 		"redirect with TLS":                 {both(tlsFiles, set("data", "redirect_http", map[string]any{"listen": "127.0.0.2:9080", "origin": "https://api.example.com"})), true},
 		"ACME":                              {set("data", "tls", map[string]any{"acme": map[string]any{"domains": []string{"api.example.com"}}}), false},
 	} {
-		_, err := parseConfig(configDocument(t, dir, tc.change))
+		cfg, err := parseConfig(configDocument(t, dir, tc.change))
 		if (err == nil) != tc.ok {
 			t.Errorf("%s: %v", name, err)
 		}
+		// A switch that is on is named in a start warning.
+		var logs gatewaytest.LogBuffer
+		warnSettings(cfg, slog.New(slog.NewJSONHandler(&logs, nil)))
+		for setting, on := range map[string]bool{"data.listen_all_interfaces": cfg.listen == "0.0.0.0:9480", "gateway.metrics_listen_any": cfg.metricsListen == "0.0.0.0:9450"} {
+			if on != strings.Contains(logs.String(), setting) {
+				t.Errorf("%s: warning for %s %v, want %v", name, setting, !on, on)
+			}
+		}
+	}
+}
+
+// The health command reads the configuration file alone: an unreadable
+// identity key and a missing TLS profile file do not stop it asking.
+func TestHealthCommand(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "settings.json")
+	broken := filepath.Join(dir, "identity.pem")
+	if err := os.WriteFile(broken, []byte("not a key"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	document := configDocument(t, dir, func(s map[string]any) {
+		gatewaytest.Section(s, "gateway")["metrics_listen"] = "127.0.0.1:1"
+		gatewaytest.Section(s, "upstream")["identity_key"] = broken
+		gatewaytest.Section(s, "upstream")["tls_profiles"] = []any{map[string]any{"id": "fetch", "ca_file": filepath.Join(dir, "none.pem")}}
+	})
+	if err := os.WriteFile(path, document, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var logs gatewaytest.LogBuffer
+	if code := checkHealth(path, slog.New(slog.NewJSONHandler(&logs, nil))); code != exitFailed || !strings.Contains(logs.String(), `"msg":"not ready"`) {
+		t.Fatalf("exit %d: %s", code, logs.String())
 	}
 }

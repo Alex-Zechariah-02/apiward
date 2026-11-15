@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -30,7 +31,11 @@ func openEmbedded(e *gatewaytest.Env) *Embedded {
 	if err != nil {
 		e.T.Fatal(err)
 	}
-	e.T.Cleanup(func() { lib.Stop(context.Background()) })
+	e.T.Cleanup(func() {
+		if err := lib.Stop(context.Background()); err != nil {
+			e.T.Errorf("stop: %v", err)
+		}
+	})
 	return lib
 }
 
@@ -182,6 +187,13 @@ func TestServerSettings(t *testing.T) {
 		server.HTTP2.MaxConcurrentStreams != maxStreams || server.HTTP2.MaxReceiveBufferPerConnection != receiveBuffer {
 		t.Fatalf("applied protocols %v, HTTP/2 settings %+v", server.Protocols, server.HTTP2)
 	}
+	// The host server's HTTP/2 protocol errors reach the gateway's metrics.
+	server.HTTP2.CountError("frame_too_large")
+	metrics := httptest.NewRecorder()
+	lib.deployment.metrics.Handler.ServeHTTP(metrics, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	if !strings.Contains(metrics.Body.String(), "gateway_http2_errors_total 1\n") {
+		t.Fatalf("metrics:\n%s", metrics.Body.String())
+	}
 
 	// With HTTP/2 off, the host serves HTTP/1 only.
 	data["http2"] = false
@@ -228,6 +240,17 @@ func TestLibraryErrors(t *testing.T) {
 	}
 	if _, err := OpenEmbedded(settings, nil); !slices.Equal(kinds(err), []error{ErrConfig}) {
 		t.Fatalf("no logger: %v", err)
+	}
+	// A setting only the gateway's own listener applies is refused by name.
+	native := e.NativeSettings()
+	gatewaytest.Section(native, "data")["max_connections"] = 64
+	e.WriteNative(native)
+	hosted, err := LoadSettings(e.Config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := OpenEmbedded(hosted, logger); !slices.Equal(kinds(err), []error{ErrConfig}) || !strings.Contains(err.Error(), "data.max_connections") {
+		t.Fatalf("connection limit for a host's server: %v", err)
 	}
 	if _, err := OpenEmbedded(settings, logger); !slices.Equal(kinds(err), []error{ErrLocked}) {
 		t.Fatalf("second gateway for one deployment: %v", err)

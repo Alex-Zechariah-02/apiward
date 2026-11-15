@@ -13,7 +13,6 @@ import (
 
 	"github.com/Alex-Zechariah-02/apiward/internal/audit"
 	"github.com/Alex-Zechariah-02/apiward/internal/controller"
-	"github.com/Alex-Zechariah-02/apiward/internal/forward"
 	"github.com/Alex-Zechariah-02/apiward/internal/pipeline"
 	"github.com/Alex-Zechariah-02/apiward/internal/policy"
 )
@@ -23,6 +22,7 @@ import (
 func (f nativeFile) check() (nativeConfig, error) {
 	g, d, u := f.Gateway, f.Data, f.Upstream
 	cfg := nativeConfig{
+		file: f,
 		controller: controller.Config{
 			Database:    g.Database,
 			AuditLog:    g.AuditLog,
@@ -60,12 +60,13 @@ func (f nativeFile) check() (nativeConfig, error) {
 		{"gateway.database", &g.Database},
 		{"gateway.audit_log", &g.AuditLog},
 		{"gateway.admin_ui", g.AdminUI},
+		{"upstream.identity_key", u.IdentityKey},
 	} {
 		if file.value != nil && !filepath.IsAbs(*file.value) {
 			return nativeConfig{}, fmt.Errorf("%s must be an absolute path", file.name)
 		}
 	}
-	if err := checkDataListen(d.Listen, g.AdminListen, d.ListenAllInterfaces); err != nil {
+	if err := checkDataListen(d.Listen, d.ListenAllInterfaces); err != nil {
 		return nativeConfig{}, err
 	}
 	metrics := defaultMetricsListen
@@ -73,17 +74,19 @@ func (f nativeFile) check() (nativeConfig, error) {
 		metrics = *g.MetricsListen
 	}
 	address, err := netip.ParseAddrPort(metrics)
-	if err != nil || (!address.Addr().IsLoopback() && !g.MetricsListenAny) || address.Port() == 0 || metrics == d.Listen || metrics == g.AdminListen {
-		return nativeConfig{}, errors.New("gateway.metrics_listen must be a separate loopback address with a nonzero port (any address only with gateway.metrics_listen_any)")
+	if err != nil || (!address.Addr().IsLoopback() && !g.MetricsListenAny) || address.Port() == 0 {
+		return nativeConfig{}, errors.New("gateway.metrics_listen must be a loopback address with a nonzero port (any address only with gateway.metrics_listen_any)")
 	}
 	cfg.metricsListen = metrics
-	if err := checkTransport(d, metrics, g.AdminListen); err != nil {
+	if err := checkTransport(d); err != nil {
+		return nativeConfig{}, err
+	}
+	if err := checkDistinct(d, g.AdminListen, metrics); err != nil {
 		return nativeConfig{}, err
 	}
 	cfg.tls, cfg.redirect = d.TLS, d.RedirectHTTP
 	cfg.http2 = d.HTTP2 == nil || *d.HTTP2
 
-	var sessionLife time.Duration
 	durations := []struct {
 		name      string
 		value     *string
@@ -105,7 +108,7 @@ func (f nativeFile) check() (nativeConfig, error) {
 		{"upstream.response_header_timeout", u.ResponseHeaderTimeout, defaultUpstreamWait, minUpstreamTimeout, maxUpstreamTimeout, &cfg.upstream.ResponseHeader},
 		{"upstream.read_idle_timeout", u.ReadIdleTimeout, defaultUpstreamWait, minUpstreamTimeout, maxUpstreamTimeout, &cfg.upstream.ReadIdle},
 		{"upstream.idle_conn_timeout", u.IdleConnTimeout, defaultIdleConn, minUpstreamTimeout, maxUpstreamTimeout, &cfg.pool.IdleTimeout},
-		{"upstream.tls_session_lifetime", u.TLSSessionLifetime, defaultSessionLife, minSessionLife, maxSessionLife, &sessionLife},
+		{"upstream.tls_session_lifetime", u.TLSSessionLifetime, defaultSessionLife, minSessionLife, maxSessionLife, &cfg.sessionLife},
 	}
 	for _, s := range durations {
 		if *s.into, err = durationSetting(s.name, s.value, s.def, s.low, s.high); err != nil {
@@ -152,19 +155,14 @@ func (f nativeFile) check() (nativeConfig, error) {
 		return nativeConfig{}, err
 	}
 
-	// Profile files are read here, so a missing or invalid one stops the
-	// start, and a reload reads them again with the rest of the file.
 	if cfg.pool.EjectAfter, err = numberSetting("upstream.eject_after", u.EjectAfter, defaultEjectAfter, 0, maxEjectAfter); err != nil {
 		return nativeConfig{}, err
 	}
 	if cfg.pool.MaxIdle, err = numberSetting("upstream.max_idle_per_upstream", u.MaxIdlePerUpstream, defaultMaxIdle, 0, maxIdlePerUpstream); err != nil {
 		return nativeConfig{}, err
 	}
-	if cfg.controller.Network, err = forward.LoadNetwork(u.AllowPublicAddresses, u.TLSProfiles, sessionLife); err != nil {
-		return nativeConfig{}, err
-	}
-	if err := cfg.identity(u); err != nil {
-		return nativeConfig{}, err
+	if u.UnsignedIdentity && u.IdentityKey != nil {
+		return nativeConfig{}, errors.New("upstream.identity_key and upstream.unsigned_identity exclude each other")
 	}
 
 	if g.AdminUI != nil {
@@ -203,19 +201,51 @@ func (s limitSettings) check() (policy.Limits, error) {
 }
 
 // checkDataListen requires the data-plane address to be a literal IP address
-// and port that names one interface, or every interface when all is set, and
-// to differ from the admin address. An IPv4-mapped IPv6 address is checked
-// as the IPv4 address it binds: "[::ffff:0.0.0.0]" listens on every interface.
-func checkDataListen(listen, adminListen string, all bool) error {
+// and port that names one interface, or every interface when all is set. An
+// IPv4-mapped IPv6 address is checked as the IPv4 address it binds:
+// "[::ffff:0.0.0.0]" listens on every interface.
+func checkDataListen(listen string, all bool) error {
 	addr, err := netip.ParseAddrPort(listen)
 	ip := addr.Addr().Unmap()
 	if err != nil || addr.Port() == 0 || (ip.IsUnspecified() && !all) || ip.IsMulticast() {
 		return fmt.Errorf("data.listen %q must be a literal IP address of one interface with a port (all interfaces only with data.listen_all_interfaces)", listen)
 	}
-	if admin, err := netip.ParseAddrPort(adminListen); err == nil && admin.Addr().Unmap() == ip && admin.Port() == addr.Port() {
-		return errors.New("data.listen and gateway.admin_listen must be different addresses")
+	return nil
+}
+
+// checkDistinct refuses two listeners that would bind the same port on a
+// shared address, so the conflict is named here rather than met at the bind.
+func checkDistinct(d dataSettings, admin, metrics string) error {
+	listeners := []struct{ name, address string }{{"data.listen", d.Listen}, {"gateway.admin_listen", admin}, {"gateway.metrics_listen", metrics}}
+	if d.RedirectHTTP != nil {
+		listeners = append(listeners, struct{ name, address string }{"data.redirect_http.listen", d.RedirectHTTP.Listen})
+	}
+	for i, a := range listeners {
+		for _, b := range listeners[:i] {
+			if overlap(a.address, b.address) {
+				return fmt.Errorf("%s and %s must not share an address and port", b.name, a.name)
+			}
+		}
 	}
 	return nil
+}
+
+// overlap reports whether two listen addresses take the same port on a
+// shared address: the same address, or a wildcard of the other's family. An
+// IPv6 wildcard ("[::]") also takes IPv4, as Go listens dual-stack there. An
+// address that is not a literal IP and port is compared as written.
+func overlap(a, b string) bool {
+	x, errX := netip.ParseAddrPort(a)
+	y, errY := netip.ParseAddrPort(b)
+	if errX != nil || errY != nil {
+		return a == b
+	}
+	p, q := x.Addr().Unmap(), y.Addr().Unmap()
+	if x.Port() != y.Port() {
+		return false
+	}
+	covers := func(wild, other netip.Addr) bool { return wild.IsUnspecified() && (wild.Is6() || other.Is4()) }
+	return p == q || covers(p, q) || covers(q, p)
 }
 
 // durationSetting resolves an optional duration: def when omitted, otherwise

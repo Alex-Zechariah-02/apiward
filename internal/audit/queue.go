@@ -5,6 +5,7 @@ package audit
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"strings"
 	"sync"
@@ -79,7 +80,7 @@ type AuditLog struct {
 
 func (a *AuditLog) Fail(err error) {
 	if a.failed.CompareAndSwap(false, true) {
-		fmt.Fprintf(os.Stderr, "apiward: audit log failed; protected admission disabled: %v\n", err)
+		slog.Error("audit log failed; protected admission disabled", "error", err)
 	}
 }
 

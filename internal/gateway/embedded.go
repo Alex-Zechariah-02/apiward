@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 	"sync"
 	"sync/atomic"
 
@@ -41,6 +42,9 @@ func OpenEmbedded(settings Settings, logger *slog.Logger) (*Embedded, error) {
 	}
 	if logger == nil {
 		return nil, classify(ErrConfig, errors.New("a logger is required"))
+	}
+	if unapplied := hostIgnored(settings.native.file.Data); len(unapplied) > 0 {
+		return nil, classify(ErrConfig, fmt.Errorf("the host program serves the data plane, so these settings would not apply: %s", strings.Join(unapplied, ", ")))
 	}
 	d, err := openDeployment(*settings.native, logger)
 	if err != nil {
@@ -86,8 +90,34 @@ func (e *Embedded) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	e.deployment.enforcement.ServeHTTP(w, r)
 }
 
-// ServerSettings returns the configured limits for the host's server.
-func (e *Embedded) ServerSettings() ServerSettings { return e.deployment.config.server() }
+// ServerSettings returns the configured limits for the host's server; its
+// HTTP/2 protocol errors are counted in the gateway's metrics.
+func (e *Embedded) ServerSettings() ServerSettings {
+	s := e.deployment.config.server()
+	s.countError = e.deployment.controller.Observations().HTTP2Error
+	return s
+}
+
+// hostIgnored names the data-plane settings that only the gateway's own
+// listener applies: a host program's server has its own TLS, connection
+// limit and addresses. data.listen stays required and is never bound.
+func hostIgnored(d dataSettings) []string {
+	var names []string
+	for _, s := range []struct {
+		name string
+		set  bool
+	}{
+		{"data.tls", d.TLS != nil},
+		{"data.redirect_http", d.RedirectHTTP != nil},
+		{"data.max_connections", d.MaxConnections != nil},
+		{"data.listen_all_interfaces", d.ListenAllInterfaces},
+	} {
+		if s.set {
+			names = append(names, s.name)
+		}
+	}
+	return names
+}
 
 // Stop ends admission (later requests are refused with 503), stops the
 // metrics listener, waits for ServeHTTP calls in progress, then stops the
@@ -149,6 +179,7 @@ func (q *calls) leave() {
 // after draining began (it is refused); wait then waits for it too.
 func (q *calls) wait(ctx context.Context) error {
 	q.draining.Store(true)
+	// No bound of its own: Stop's caller sets it through ctx.
 	for q.active.Load() != 0 {
 		select {
 		case <-q.idle:

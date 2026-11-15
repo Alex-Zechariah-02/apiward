@@ -22,9 +22,6 @@ const identityFile = "identity.pem"
 // them the install that creates it, still run.
 func (cfg *nativeConfig) identity(u upstreamSettings) error {
 	if u.UnsignedIdentity {
-		if u.IdentityKey != nil {
-			return errors.New("upstream.identity_key and upstream.unsigned_identity exclude each other")
-		}
 		cfg.unsigned = true
 		return nil
 	}

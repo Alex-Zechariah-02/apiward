@@ -1,7 +1,7 @@
 // What the standalone binary and an embedding host program both run: the
 // checked settings, the opened deployment (controller, enforcement handler,
-// metrics server), its listeners, the data-plane server limits and the
-// classified errors of the gateway's lifecycle.
+// metrics server), its listeners and the classified errors of the gateway's
+// lifecycle. The data-plane server limits are in server.go.
 
 package gateway
 
@@ -12,13 +12,11 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
-	"slices"
 	"sync/atomic"
 	"time"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/admin"
 	"github.com/Alex-Zechariah-02/apiward/internal/adminui"
-	"github.com/Alex-Zechariah-02/apiward/internal/audit"
 	"github.com/Alex-Zechariah-02/apiward/internal/connections"
 	"github.com/Alex-Zechariah-02/apiward/internal/controller"
 	"github.com/Alex-Zechariah-02/apiward/internal/forward"
@@ -63,71 +61,25 @@ type Settings struct{ native *nativeConfig }
 // LoadSettings reads and checks the configuration file at path, including
 // the files it names. Its errors are ErrConfig.
 func LoadSettings(path string) (Settings, error) {
+	cfg, err := loadChecked(path)
+	if err != nil {
+		return Settings{}, classify(ErrConfig, err)
+	}
+	cfg.controller.ReloadKeys = cfg.reloadKeys
+	return Settings{native: &cfg}, nil
+}
+
+// loadChecked reads the configuration file at path and the files it names,
+// checked as the run command checks them.
+func loadChecked(path string) (nativeConfig, error) {
 	cfg, err := loadNativeConfig(path)
 	if err == nil {
 		err = cfg.requireIdentity()
 	}
 	if err == nil {
-		err = operator.CheckPaths(path, operatorConfig(cfg), "run", nil)
+		err = operator.CheckPaths(cfg.source.path, operatorConfig(cfg), "run", nil)
 	}
-	if err != nil {
-		return Settings{}, classify(ErrConfig, err)
-	}
-	return Settings{native: &cfg}, nil
-}
-
-// ServerSettings are the configured limits of the server that runs the data
-// plane. Header size and the timeouts bound slow and oversized clients; the
-// gateway cannot enforce them on a server it does not own. HTTP2 allows
-// HTTP/2, which net/http serves only over TLS.
-type ServerSettings struct {
-	MaxHeaderBytes    int
-	ReadHeaderTimeout time.Duration
-	ReadTimeout       time.Duration
-	WriteTimeout      time.Duration
-	IdleTimeout       time.Duration
-	HTTP2             bool
-}
-
-// HTTP/2 bounds: concurrent streams per connection (Go's default is 250,
-// nginx's 128), and request bytes the server buffers per connection and per
-// stream before the handler reads them. Go's default buffers of 1 MiB would
-// let 1,024 connections hold 1 GiB; flow control only slows larger uploads.
-const (
-	maxStreams    = 100
-	receiveBuffer = 64 << 10
-)
-
-// Apply sets the limits and protocols on server, replacing its own values
-// for them, so a host never serves a protocol the gateway did not configure.
-// The header list of an HTTP/2 request is bounded by MaxHeaderBytes too.
-func (s ServerSettings) Apply(server *http.Server) {
-	server.MaxHeaderBytes = s.MaxHeaderBytes
-	server.ReadHeaderTimeout = s.ReadHeaderTimeout
-	server.ReadTimeout = s.ReadTimeout
-	server.WriteTimeout = s.WriteTimeout
-	server.IdleTimeout = s.IdleTimeout
-	protocols := new(http.Protocols)
-	protocols.SetHTTP1(true)
-	protocols.SetHTTP2(s.HTTP2)
-	server.Protocols = protocols
-	server.HTTP2 = &http.HTTP2Config{
-		MaxConcurrentStreams:          maxStreams,
-		MaxReceiveBufferPerConnection: receiveBuffer,
-		MaxReceiveBufferPerStream:     receiveBuffer,
-		WriteByteTimeout:              s.WriteTimeout,
-	}
-}
-
-func (cfg nativeConfig) server() ServerSettings {
-	return ServerSettings{
-		MaxHeaderBytes:    cfg.headerLimit,
-		ReadHeaderTimeout: cfg.readHeaderTimeout,
-		ReadTimeout:       cfg.readTimeout,
-		WriteTimeout:      cfg.writeTimeout,
-		IdleTimeout:       cfg.idleTimeout,
-		HTTP2:             cfg.http2,
-	}
+	return cfg, err
 }
 
 // deployment is an opened gateway that serves nothing yet.
@@ -150,18 +102,6 @@ type deployment struct {
 	draining atomic.Bool
 }
 
-// warnAudit names at start each security log setting that keeps fewer
-// records than the defaults: eviction deletes the oldest rotated file, and
-// reads added to the ignored ones write no admin.read record.
-func warnAudit(cfg controller.Config, logger *slog.Logger) {
-	if cfg.AuditWhenFull == audit.FullEvict {
-		logger.Warn("security log eviction on (gateway.audit_when_full): the oldest rotated file is deleted when the file limit is reached")
-	}
-	if extra := slices.DeleteFunc(slices.Clone(cfg.IgnoredReads), func(path string) bool { return slices.Contains(controller.DefaultIgnoredReads, path) }); len(extra) > 0 {
-		logger.Warn("security log skips more reads (gateway.audit_ignore_reads): these reads write no admin.read record", "paths", extra)
-	}
-}
-
 // openDeployment opens cfg's deployment and builds its handlers; it binds no
 // listener. When it returns an error, everything it opened is released.
 func openDeployment(cfg nativeConfig, logger *slog.Logger) (*deployment, error) {
@@ -169,10 +109,7 @@ func openDeployment(cfg nativeConfig, logger *slog.Logger) (*deployment, error) 
 	if err != nil {
 		return nil, err
 	}
-	if cfg.unsigned {
-		logger.Warn("identity assertion off (upstream.unsigned_identity): upstreams receive unsigned X-Gateway-Subject and X-Gateway-Roles and must accept requests only from the gateway")
-	}
-	warnAudit(cfg.controller, logger)
+	warnSettings(cfg, logger)
 	if certificate != nil {
 		cfg.controller.ReloadCertificate = certificate.reload
 	}
@@ -192,6 +129,7 @@ func openDeployment(cfg nativeConfig, logger *slog.Logger) (*deployment, error) 
 	if c.Audit().OpenErr() != nil {
 		return nil, errors.Join(classify(ErrStorage, fmt.Errorf("audit log: %w", c.Audit().OpenErr())), c.Stop())
 	}
+	recordStart(c, cfg)
 	limiter := pipeline.NewLimiter(c.Settings().Limits.RateCounters)
 	enforcement, err := newHandler(c, limiter, cfg.limits, proxy.Forward, cfg.signer)
 	if err != nil {
@@ -208,7 +146,8 @@ func openDeployment(cfg nativeConfig, logger *slog.Logger) (*deployment, error) 
 		upstreams:   proxy,
 	}
 	// The health and metrics reads are small and local: 5 s bounds a stuck
-	// scraper without failing a slow one.
+	// scraper without failing a slow one; 30 s idle keeps a scraper's
+	// connection between scrapes (Prometheus scrapes every 15 s by default).
 	d.metrics = &http.Server{
 		Handler:           health(monitor.Metrics(c.Observations(), c.Gauges), func() bool { return !d.draining.Load() && ready(c, certificate) }),
 		ReadHeaderTimeout: 5 * time.Second,

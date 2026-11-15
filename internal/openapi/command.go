@@ -1,4 +1,4 @@
-// The policy import-openapi and export-openapi commands: flags, bounded file reads, and output that never overwrites.
+// The policy subcommands (import-openapi, export-openapi, validate): flags, bounded file reads, and output that never overwrites.
 
 package openapi
 
@@ -11,16 +11,19 @@ import (
 	"io/fs"
 	"os"
 	"strconv"
+	"time"
 
+	"github.com/Alex-Zechariah-02/apiward/internal/compile"
 	"github.com/Alex-Zechariah-02/apiward/internal/policy"
 )
 
-// Synopses of the two commands.
+// Synopses of the commands.
 const (
 	importUsage = `apiward policy import-openapi --spec <file.json|.yaml|.yml> --api <id> --upstream <id>
   --base <policy.json> [--max-body-bytes <n>] [--with-permits] --out <new file> --report <new file>`
 	exportUsage = `apiward policy export-openapi --policy <policy.json> --api <id>
   --out <new file.json|.yaml|.yml> --report <new file> [--with-upstream]`
+	validateUsage = `apiward policy validate --policy <policy.json>`
 )
 
 // command is one subcommand: its flags and what it runs once they parse.
@@ -35,6 +38,7 @@ type command struct {
 var commands = map[string]command{
 	"import-openapi": {importUsage, []string{"spec", "api", "upstream", "base", "out", "report"},
 		map[string]string{"max-body-bytes": strconv.Itoa(DefaultBodyBytes)}, []string{"with-permits"}, runImport},
+	"validate":       {validateUsage, []string{"policy"}, nil, nil, runValidate},
 	"export-openapi": {exportUsage, []string{"policy", "api", "out", "report"}, nil, []string{"with-upstream"}, runExport},
 }
 
@@ -48,7 +52,7 @@ func Command(args []string, stderr io.Writer) int {
 		c, known = commands[args[0]]
 	}
 	if !known {
-		fmt.Fprintln(stderr, "usage: "+importUsage+"\n       "+exportUsage)
+		fmt.Fprintln(stderr, "usage: "+importUsage+"\n       "+exportUsage+"\n       "+validateUsage)
 		return ExitFailed
 	}
 	values, err := c.parse(args[1:])
@@ -173,6 +177,26 @@ func runExport(values map[string]string, stderr io.Writer) (int, error) {
 	fmt.Fprintf(stderr, "exported %d of %d operations (%d changed); see %s\n",
 		len(report.Exported), report.Operations, len(report.Changed), values["report"])
 	return report.Exit(), nil
+}
+
+// runValidate decodes and compiles a policy file as the gateway does a
+// candidate, with the default capacity limits, and prints its warnings; for
+// policy kept in Git and checked in CI. Upstream addresses and TLS profiles
+// depend on the gateway's settings and are checked when it is activated.
+func runValidate(values map[string]string, stderr io.Writer) (int, error) {
+	source, err := readPolicy(values["policy"], "policy")
+	if err != nil {
+		return ExitFailed, err
+	}
+	g, err := compile.Compile(source, 0, time.Time{}, policy.Limits{})
+	if err != nil {
+		return ExitFailed, fmt.Errorf("policy refused: %w", err)
+	}
+	for _, warning := range g.Warnings() {
+		fmt.Fprintln(stderr, "warning:", warning)
+	}
+	fmt.Fprintln(stderr, "the policy is valid")
+	return ExitComplete, nil
 }
 
 // readPolicy reads and strictly decodes a policy file.

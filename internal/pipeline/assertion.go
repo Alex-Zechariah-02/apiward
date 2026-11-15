@@ -52,6 +52,7 @@ type Signer struct {
 	// every assertion of this key.
 	prefix string
 	jwks   []byte
+	kid    string
 }
 
 // claims is the assertion's payload. A public operation has no account, so
@@ -133,8 +134,11 @@ func newSigner(key *ecdsa.PrivateKey) (*Signer, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Signer{key: key, prefix: base64.RawURLEncoding.EncodeToString(header) + ".", jwks: set}, nil
+	return &Signer{key: key, prefix: base64.RawURLEncoding.EncodeToString(header) + ".", jwks: set, kid: kid}, nil
 }
+
+// KeyID returns the key ID, the key's JWK thumbprint.
+func (s *Signer) KeyID() string { return s.kid }
 
 // JWKS returns the public key as a JSON Web Key Set; nil without a signer.
 func (s *Signer) JWKS() []byte {

@@ -83,6 +83,8 @@ type Observations struct {
 	// they need no lock.
 	redirects atomic.Uint64
 	refused   atomic.Uint64
+	// http2 counts the data listener's HTTP/2 protocol errors.
+	http2     atomic.Uint64
 	auxiliary map[string]*atomic.Uint64
 	// admin counts the Admin API's own failures by AdminFailure.
 	admin [adminFailures]atomic.Uint64

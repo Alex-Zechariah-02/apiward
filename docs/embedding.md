@@ -20,7 +20,8 @@ err = gw.Stop(ctx)                             // waits for requests in progress
 - Import `github.com/Alex-Zechariah-02/apiward`. The deployment is installed and its first policy published as for the binary (`apiward install`, then the Dashboard). The configuration's `data.listen` is still required and checked, but an embedded gateway never binds it.
 - Before `Start` and from `Stop` on, every request is refused with `503 gateway_unavailable` and recorded. `Start` and `Stop` each run once.
 - Errors from `LoadConfig`, `New`, `Start` and `Stop` match exactly one of `ErrConfig`, `ErrLocked`, `ErrStorage`, `ErrListen`, `ErrStarted`, `ErrStopped` or `ErrIncomplete` with `errors.Is`. Refused requests are HTTP responses, never Go errors.
-- Apply `ServerSettings` to your server: the gateway cannot enforce header size, timeouts or the connection cap (`data.max_connections`) on a server it does not own.
+- Apply `ServerSettings` to your server: the gateway cannot enforce header size or timeouts on a server it does not own. Its HTTP/2 protocol errors are then counted in `gateway_http2_errors_total`.
+- `New` refuses the settings only the gateway's own listener applies, naming them: `data.tls`, `data.redirect_http`, `data.max_connections` and `data.listen_all_interfaces`. Your server owns its TLS, connection limit and addresses.
   - Body limits and every other check stay in the handler.
   - Do not rewrite `RemoteAddr` from client headers before the gateway: address lists and per-address rate limits read it.
 - Package `github.com/Alex-Zechariah-02/apiward/policy` holds the policy document types, `Decode`, `Encode` (the canonical form: two policies with the same meaning encode to the same bytes) and `Check`, which answers offline whether a policy would allow a described request (route, access, roles and forwarded path; tokens, rate limits, bodies and blocked accounts need a running gateway).

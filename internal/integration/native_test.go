@@ -49,7 +49,7 @@ func TestNativeGatewayServesFixtures(t *testing.T) {
 	}
 	output := e.Output.String()
 	for _, want := range []string{
-		`"msg":"listening","data":"` + e.DataAddr + `","admin":"` + e.Admin + `"`,
+		`"msg":"listening","data":"` + e.DataAddr + `","transport":"http","http2":false,"admin":"` + e.Admin + `","metrics":"` + e.Metrics + `"`,
 		`"msg":"protected admission","admission":"ready","generation":"` + s.Generation + `"`,
 	} {
 		if !strings.Contains(output, want) {
