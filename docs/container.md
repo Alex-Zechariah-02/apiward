@@ -5,7 +5,7 @@ Back to the [README](../README.md).
 ## Build
 
 - `Dockerfile` builds one image of the gateway with the Dashboard inside.
-- Node.js 24 builds the Dashboard, Go 1.27.4 builds a static `gateway` with the `embedui` tag and cgo off, and the final image is built from `scratch`: the program, plus the certificate authority bundle, `passwd`, `group` and `nsswitch.conf` taken from the distroless static Debian 13 image.
+- Node.js 26 builds the Dashboard, Go 1.27.4 builds a static `apiward` with the `embedui` tag and cgo off, and the final image is built from `scratch`: the program, plus the certificate authority bundle, `passwd`, `group` and `nsswitch.conf` taken from the distroless static Debian 13 image.
 - It runs as that image's `nonroot` user, UID and GID 65532, and has no shell, time zone data or other system files.
 - Every base image is pinned by digest.
 In a checkout:

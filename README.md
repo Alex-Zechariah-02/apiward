@@ -32,7 +32,7 @@ It checks every request against one policy before forwarding it. One binary: HTT
 
 Run the [Fetch](https://github.com/Alex-Zechariah-02/fetch) demonstration: a shop with five APIs behind the gateway.
 
-Requires Go 1.26+ and Node.js 24.
+Requires Go 1.26+ and Node.js 26.
 
 ```
 git clone https://github.com/Alex-Zechariah-02/apiward
@@ -57,7 +57,7 @@ Gateway only:
 go build -trimpath -o apiward ./cmd/apiward
 ```
 
-With the Dashboard inside the binary (also requires Node.js 24):
+With the Dashboard inside the binary (also requires Node.js 26):
 
 ```
 cd dashboard && npm ci && npm run build && cd ..

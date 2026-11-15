@@ -5,7 +5,7 @@ Back to the [README](../README.md).
 ## Requirements
 
 - Go 1.26+. `go.mod` selects the 1.27.4 toolchain; with `GOTOOLCHAIN=auto`, Go downloads it when needed.
-- Node.js 24 for the Dashboard (`dashboard/`).
+- Node.js 26 for the Dashboard (`dashboard/`).
 - The [Fetch](https://github.com/Alex-Zechariah-02/fetch) repository checked out as `../fetch` for the stack and browser tests. CI checks it out at `FETCH_REF` in `.github/workflows/ci.yml`.
 
 ## Code layout

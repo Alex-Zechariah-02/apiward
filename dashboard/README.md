@@ -12,7 +12,7 @@ The administrator web console for APIWard: React and TypeScript, served by the g
 
 ## Requirements
 
-- Node.js 24 and npm 11
+- Node.js 26 and npm 11
 - Browser tests: Go, Git, Google Chrome, and the Fetch repository at `../fetch`
 
 ## Build
