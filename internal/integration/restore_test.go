@@ -110,8 +110,14 @@ func TestRestoreRefusals(t *testing.T) {
 	gatewaytest.Seed(t, e.Database, e.ProtectedPolicy(), gatewaytest.SeedOptions{})
 	good := filepath.Join(e.Dir, "good.db")
 	writeBackup(e, good)
-	goodData, _ := os.ReadFile(good)
-	goodManifest, _ := os.ReadFile(manifestOf(good))
+	goodData, err := os.ReadFile(good)
+	if err != nil {
+		t.Fatal(err)
+	}
+	goodManifest, err := os.ReadFile(manifestOf(good))
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	// Each case builds a backup file and its manifest.
 	write := func(name string, data []byte, manifest []byte) string {
@@ -131,7 +137,10 @@ func TestRestoreRefusals(t *testing.T) {
 	seal := func(path string, change func(*manifestFile)) string {
 		m := fromJSON[manifestFile](t, string(goodManifest))
 		m.SHA256 = gatewaytest.FileSHA256(t, path)
-		info, _ := os.Stat(path)
+		info, err := os.Stat(path)
+		if err != nil {
+			t.Fatal(err)
+		}
 		m.Bytes = info.Size()
 		if change != nil {
 			change(&m)

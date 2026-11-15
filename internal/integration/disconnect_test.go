@@ -40,14 +40,18 @@ func TestDisconnectDuringOutcomeKeepsAudit(t *testing.T) {
 	}
 
 	transition := "admin:" + gatewaytest.HarnessAdmin + ":disconnect-block"
-	e.EventsWhen(func(events []map[string]any) bool {
+	outcome := func(events []map[string]any) int {
+		n := 0
 		for _, ev := range events {
 			if ev["kind"] == "account.block" && ev["transition"] == transition {
-				return true
+				n++
 			}
 		}
-		return false
-	})
+		return n
+	}
+	if n := outcome(e.EventsWhen(func(events []map[string]any) bool { return outcome(events) > 0 })); n != 1 {
+		t.Fatalf("%d outcome records of the change, want 1", n)
+	}
 	if s := e.Status(); s.AuditFailed {
 		t.Fatal("a client disconnect failed the audit log")
 	}

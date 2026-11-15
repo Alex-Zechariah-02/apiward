@@ -142,7 +142,12 @@ func TestHistoryOrderAndFilters(t *testing.T) {
 	first, next := historyPage(e, "limit=3&order=desc")
 	control(http.MethodPut, "cust-950", "history-between-0001", http.StatusOK)
 	var rest []historyItem
-	for after := next; after != ""; {
+	// Every entry fits in len(reversed)/3+1 pages; one more would be a loop.
+	pages := 0
+	for after := next; after != ""; pages++ {
+		if pages > len(reversed)/3+1 {
+			t.Fatalf("paging did not end after %d pages", pages)
+		}
 		var page []historyItem
 		page, after = historyPage(e, "limit=3&order=desc&after="+after)
 		rest = append(rest, page...)

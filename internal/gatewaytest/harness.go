@@ -1,6 +1,6 @@
 // A disposable gateway deployment for tests: the programs built once per
 // test binary, the deployment's files, listeners and upstream receivers, and
-// control of the gateway process: start, readiness, stop and exit.
+// the gateway process's start and readiness (stop.go stops it).
 
 package gatewaytest
 
@@ -28,7 +28,8 @@ var Binaries struct {
 }
 
 // Issuer signs the tokens of every test. Its public key is the trust anchor
-// of every test gateway unless a test configures another.
+// of every test gateway unless a test configures another. 2048 bits is the
+// RS256 minimum (RFC 7518 section 3.3), the size a deployment's issuer uses.
 var Issuer = issuertest.New(2048)
 
 // The gateway process's exit codes and the configuration file version it
@@ -143,8 +144,8 @@ type Env struct {
 // ConfigOptions are the settings WriteConfig varies; a zero field takes the
 // default its comment names.
 type ConfigOptions struct {
-	HeaderTimeout string         // upstream response-header timeout; default 5s
-	MaxBodyBytes  int64          // global request body ceiling; default 16384
+	HeaderTimeout string         // upstream response-header timeout; default 5s, the gateway's own default
+	MaxBodyBytes  int64          // global request body ceiling; default 16384, the gateway's own default
 	JWT           any            // trust configuration; default the test issuer
 	Audit         map[string]any // extra gateway audit settings
 	Admin         map[string]any // extra gateway admin session settings
@@ -193,6 +194,7 @@ func (e *Env) Run(binary string, extraEnv ...string) {
 // WaitOutput waits until the running gateway has written text.
 func (e *Env) WaitOutput(text string) {
 	e.T.Helper()
+	// Like readiness, 30 s only stops a gateway that never writes the line.
 	WaitFor(e.T, time.Now().Add(30*time.Second), fmt.Sprintf("%q in the gateway output", text), func() bool {
 		return strings.Contains(e.Output.String(), text)
 	})
@@ -222,12 +224,14 @@ func (e *Env) Launch(binary string, args []string, extraEnv ...string) {
 		e.T.Fatal(err)
 	}
 	e.Process = cmd
+	// One buffered result, so the waiting goroutine ends even if none reads it.
 	e.exited = make(chan error, 1)
 	go func() { e.exited <- cmd.Wait() }()
 }
 
 func (e *Env) waitReady() {
 	e.T.Helper()
+	// A start takes about a second; 30 s only stops one that never ends.
 	deadline := time.Now().Add(30 * time.Second)
 	for time.Now().Before(deadline) {
 		select {
@@ -242,6 +246,7 @@ func (e *Env) waitReady() {
 		if observed && Dialable(e.DataAddr) && Dialable(e.Admin) {
 			return
 		}
+		// 50 ms adds little to a start and keeps the poll off the CPU.
 		time.Sleep(50 * time.Millisecond)
 	}
 	e.T.Fatalf("gateway not ready\n%s", e.Output)
@@ -249,50 +254,11 @@ func (e *Env) waitReady() {
 
 // Dialable reports whether a TCP connection to addr succeeds.
 func Dialable(addr string) bool {
+	// A loopback connect answers at once; 200 ms keeps each probe short.
 	conn, err := net.DialTimeout("tcp", addr, 200*time.Millisecond)
 	if err != nil {
 		return false
 	}
 	conn.Close()
 	return true
-}
-
-// Stop terminates the gateway abruptly. The design must tolerate this at any
-// point, so tests never rely on a graceful shutdown.
-func (e *Env) Stop() {
-	e.sessionMu.Lock()
-	e.session = AdminSession{}
-	e.sessionMu.Unlock()
-	if e.Process == nil {
-		return
-	}
-	e.Process.Process.Kill()
-	<-e.exited
-	e.Process = nil
-	e.checkRaces()
-}
-
-// checkRaces fails the test if the race detector reported anything in the
-// gateway process. Call only after the process has exited, so the output is
-// complete and no longer being written.
-func (e *Env) checkRaces() {
-	e.T.Helper()
-	if strings.Contains(e.Output.String(), "WARNING: DATA RACE") {
-		e.T.Errorf("race detected in gateway process:\n%s", e.Output)
-	}
-}
-
-// WaitExit waits for a gateway that is expected to terminate itself.
-func (e *Env) WaitExit() int {
-	e.T.Helper()
-	select {
-	case <-e.exited:
-		code := e.Process.ProcessState.ExitCode()
-		e.Process = nil
-		e.checkRaces()
-		return code
-	case <-time.After(30 * time.Second):
-		e.T.Fatalf("gateway did not exit\n%s", e.Output)
-		return 0
-	}
 }

@@ -50,8 +50,8 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		Status:        res.status,
 		Effect:        res.effect,
 		Authorization: r.Header.Get("Authorization") != "",
-		Subject:       r.Header.Get("X-Gateway-Subject"),
-		Roles:         r.Header.Get("X-Gateway-Roles"),
+		Subject:       allValues(r.Header, "X-Gateway-Subject"),
+		Roles:         allValues(r.Header, "X-Gateway-Roles"),
 		BodyBytes:     len(body),
 	}
 	if len(receipt.Target) > maxRecordedTarget {
@@ -144,4 +144,10 @@ func writeJSON(w http.ResponseWriter, status int, value any) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(status)
 	json.NewEncoder(w).Encode(value)
+}
+
+// allValues joins every line of one header as one field value (RFC 9110
+// section 5.3), so a duplicated identity header shows in the receipt.
+func allValues(header http.Header, name string) string {
+	return strings.Join(header.Values(name), ", ")
 }

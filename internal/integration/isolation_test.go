@@ -47,8 +47,8 @@ func TestNativeAdministrationIsAbsent(t *testing.T) {
 	// paths do not exist there, with or without an administrator session.
 	for _, path := range nativeAdminPaths {
 		for _, method := range []string{http.MethodGet, http.MethodPost} {
-			if code, _ := e.Request(method, path, "application/json", `{}`); code == http.StatusOK {
-				t.Fatalf("%s %s on the data plane returned 200", method, path)
+			if code, _ := e.Request(method, path, "application/json", `{}`); code != http.StatusNotFound {
+				t.Fatalf("%s %s on the data plane: %d, want 404", method, path, code)
 			}
 			if code, _, _ := e.AdminSend(method, path, `{}`, "Origin", e.AdminOrigin()); code != http.StatusNotFound {
 				t.Fatalf("%s %s on the admin listener without a session: %d", method, path, code)

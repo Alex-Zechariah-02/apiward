@@ -55,11 +55,20 @@ func TestStartupRefusesUntrustedDatabase(t *testing.T) {
 			if code, _ := e.Get("/a/x", "Authorization", "Bearer "+gatewaytest.Issuer.TokenFor(t, "alice")); code != http.StatusServiceUnavailable {
 				t.Fatalf("data plane: %d", code)
 			}
-			// No mutation is accepted, whether or not anyone can log in.
-			code, _, _ := e.HarnessCall(http.MethodPut, "/admin/blocked-accounts/alice", `{"reason":"contain"}`,
-				"If-Match", `"r1"`, "Idempotency-Key", "untrusted-database-1")
-			if code != http.StatusServiceUnavailable {
-				t.Fatalf("membership change on an untrusted database: %d", code)
+			// No mutation is accepted. Where the administrator records still
+			// allow a sign-in, the change itself is refused; elsewhere the
+			// sign-in every change needs is.
+			session, code := e.Login(gatewaytest.HarnessAdmin, gatewaytest.HarnessPassword)
+			switch code {
+			case http.StatusServiceUnavailable:
+			case http.StatusCreated:
+				code, body, _ := e.As(session, http.MethodPut, "/admin/blocked-accounts/alice", `{"reason":"contain"}`,
+					"If-Match", `"r1"`, "Idempotency-Key", "untrusted-database-1")
+				if code != http.StatusServiceUnavailable {
+					t.Fatalf("membership change on an untrusted database: %d %s", code, body)
+				}
+			default:
+				t.Fatalf("sign-in on an untrusted database: %d", code)
 			}
 			e.AssertReceipts(0, 0, 0)
 		})

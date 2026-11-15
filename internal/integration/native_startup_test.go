@@ -142,8 +142,12 @@ func TestNativeGracefulStop(t *testing.T) {
 			held <- err.Error()
 			return
 		}
-		body, _ := io.ReadAll(resp.Body)
+		body, err := io.ReadAll(resp.Body)
 		resp.Body.Close()
+		if err != nil {
+			held <- err.Error()
+			return
+		}
 		held <- fmt.Sprintf("%d %s", resp.StatusCode, body)
 	}()
 	waitForFile(t, holdFile)
@@ -190,7 +194,12 @@ func TestNativeGracefulStop(t *testing.T) {
 		e.Interruptible = true
 		holdFile, release := filepath.Join(e.Dir, "hold"), filepath.Join(e.Dir, "release")
 		e.Start(gatewaytest.Binaries.Fault, "GATEWAY_HOLD_PATH=/a/held", "GATEWAY_HOLD_FILE="+holdFile, "GATEWAY_HOLD_RELEASE="+release)
-		go (&http.Client{Timeout: 30 * time.Second}).Get("http://" + e.DataAddr + "/a/held")
+		go func() {
+			// The forced exit ends this request; only its body needs closing.
+			if resp, err := (&http.Client{Timeout: 30 * time.Second}).Get("http://" + e.DataAddr + "/a/held"); err == nil {
+				resp.Body.Close()
+			}
+		}()
 		waitForFile(t, holdFile)
 		gatewaytest.Interrupt(t, e.Process)
 		e.WaitOutput(`"msg":"stopping"`)

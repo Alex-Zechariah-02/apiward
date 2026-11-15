@@ -133,7 +133,9 @@ func TestNativeStartupRefusesConfiguration(t *testing.T) {
 			if err != nil {
 				t.Fatalf("the database is held: %v", err)
 			}
-			st.Close()
+			if err := st.Close(); err != nil {
+				t.Fatal(err)
+			}
 		})
 	}
 

@@ -20,6 +20,7 @@ import (
 // limit is answered 429 until they settle.
 func TestLoginThrottling(t *testing.T) {
 	e := gatewaytest.NewEnv(t)
+	e.Interruptible = true // assertAbsent stops it gracefully
 	gatewaytest.Seed(t, e.Database, e.Policy(e.A, false), gatewaytest.SeedOptions{})
 	e.Start(gatewaytest.Binaries.Plain)
 	_, secondPassword := addAdmin(e, gatewaytest.Binaries.Plain, "second", "read")
@@ -112,6 +113,10 @@ func TestBrowserRequestGuards(t *testing.T) {
 	writer := e.MustLogin(gatewaytest.HarnessAdmin, gatewaytest.HarnessPassword)
 	other := e.MustLogin(gatewaytest.HarnessAdmin, gatewaytest.HarnessPassword)
 	before := e.Status()
+	code, history, _ := e.HarnessCall(http.MethodGet, "/admin/history", "")
+	if code != http.StatusOK {
+		t.Fatalf("history before the refused requests: %d %s", code, history)
+	}
 
 	put := `{"reason":"test containment"}`
 	cookie := []string{"Cookie", gatewaytest.AdminCookie + "=" + writer.Cookie}
@@ -187,7 +192,8 @@ func TestBrowserRequestGuards(t *testing.T) {
 	if after := e.Status(); after.Generation != before.Generation || after.Revision != 1 {
 		t.Fatalf("refused requests changed the state: %+v", after)
 	}
-	if code, body, _ := e.HarnessCall(http.MethodGet, "/admin/history", ""); code != http.StatusOK || strings.Contains(body, "membership") {
-		t.Fatalf("history after refused requests: %d %s", code, body)
+	// No refused request may record a change: the history is as before.
+	if code, body, _ := e.HarnessCall(http.MethodGet, "/admin/history", ""); code != http.StatusOK || body != history {
+		t.Fatalf("history after refused requests: %d %s, want %s", code, body, history)
 	}
 }

@@ -66,6 +66,9 @@ func TestAuthenticationEvents(t *testing.T) {
 			header = []string{"Authorization", "Bearer " + tc.token}
 		}
 		resp, body := e.Exchange(tc.method, tc.path, "application/json", tc.body, header...)
+		if want := tc.want[len(tc.want)-1].status; resp.StatusCode != want {
+			t.Errorf("%s: response %d, want %d", tc.name, resp.StatusCode, want)
+		}
 		id := ""
 		if tc.receipts > 0 {
 			id = e.A.Receipts()[0].RequestID
@@ -107,6 +110,7 @@ func TestAuthenticationEvents(t *testing.T) {
 // output or a client error, whatever the request carries.
 func TestCredentialsNeverRecorded(t *testing.T) {
 	e := gatewaytest.NewEnv(t)
+	e.Interruptible = true // stopped gracefully before its records are read
 	gatewaytest.Seed(t, e.Database, e.ProtectedPolicy(), gatewaytest.SeedOptions{})
 	e.Start(gatewaytest.Binaries.Plain)
 
@@ -129,12 +133,13 @@ func TestCredentialsNeverRecorded(t *testing.T) {
 	e.EventsWhen(func(events []map[string]any) bool { return gatewaytest.CountKind(events, "request.rejected") >= 4 })
 	e.AssertReceipts(1, 0, 0)
 
+	// A graceful stop writes every queued record before the file is read.
+	e.Shutdown()
 	raw, err := os.ReadFile(e.AuditLog)
 	if err != nil {
 		t.Fatal(err)
 	}
 	logged := string(audit.Content(raw))
-	e.Stop()
 	output := e.Output.String()
 	signatures := []string{}
 	for _, token := range []string{valid, forged, multiline} {

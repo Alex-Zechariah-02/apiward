@@ -36,16 +36,23 @@ func TestFetchStreamHeartbeat(t *testing.T) {
 	gatewaytest.Seed(t, e.Database, e.Policy(e.A, true), gatewaytest.SeedOptions{})
 	e.Start(gatewaytest.Binaries.Plain)
 	admin := e.MustLogin(gatewaytest.HarnessAdmin, gatewaytest.HarnessPassword)
-	start := time.Now()
-	response := openEventStream(t, e, admin, &http.Client{Timeout: 20 * time.Second})
+	// Two heartbeats, each about 15 s after the one before, show a repeating
+	// heartbeat; the client allows 5 s more than two intervals.
+	last := time.Now()
+	response := openEventStream(t, e, admin, &http.Client{Timeout: 35 * time.Second})
 	scanner := bufio.NewScanner(response.Body)
+	beats := 0
 	for scanner.Scan() {
-		if scanner.Text() == ": heartbeat" {
-			if elapsed := time.Since(start); elapsed < 14*time.Second {
-				t.Fatalf("heartbeat arrived too early: %v", elapsed)
-			}
+		if scanner.Text() != ": heartbeat" {
+			continue
+		}
+		if elapsed := time.Since(last); elapsed < 14*time.Second {
+			t.Fatalf("heartbeat %d arrived too early: %v", beats+1, elapsed)
+		}
+		last = time.Now()
+		if beats++; beats == 2 {
 			return
 		}
 	}
-	t.Fatalf("no 15-second comment: %v", scanner.Err())
+	t.Fatalf("%d of 2 heartbeats 15 s apart: %v", beats, scanner.Err())
 }

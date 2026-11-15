@@ -66,17 +66,25 @@ func ParseAudit(data []byte, file string) ([]map[string]any, error) {
 	return events, nil
 }
 
-// EventsWhen waits until the audit log satisfies done. Events that do not
-// gate a decision are written asynchronously, so they may land shortly after
-// the response.
+// auditWait bounds EventsWhen: the writer flushes a batch within
+// milliseconds, so 5 s is far above it even on a loaded CI runner.
+const auditWait = 5 * time.Second
+
+// EventsWhen waits until the audit log satisfies done and fails the test
+// when it does not within auditWait. Events that do not gate a decision are
+// written asynchronously, so they may land shortly after the response.
 func (e *Env) EventsWhen(done func([]map[string]any) bool) []map[string]any {
 	e.T.Helper()
-	limit := time.Now().Add(5 * time.Second)
+	limit := time.Now().Add(auditWait)
 	for {
 		events := e.AuditEvents()
-		if done(events) || time.Now().After(limit) {
+		if done(events) {
 			return events
 		}
+		if time.Now().After(limit) {
+			e.T.Fatalf("the audit log did not reach the awaited state within %s (%d records)", auditWait, len(events))
+		}
+		// Each pass re-reads the whole file; 20 ms keeps that cheap.
 		time.Sleep(20 * time.Millisecond)
 	}
 }
@@ -200,10 +208,7 @@ func SameStages(got any, want map[string]any) bool {
 // counts by reason. The gateway must have been started Interruptible.
 func (e *Env) IngressSummary() map[string]int {
 	e.T.Helper()
-	Interrupt(e.T, e.Process)
-	if code := e.WaitExit(); code != ExitStopped {
-		e.T.Fatalf("exit status %d\n%s", code, e.Output)
-	}
+	e.Shutdown()
 	return SummaryCounts(e.AuditEvents())
 }
 

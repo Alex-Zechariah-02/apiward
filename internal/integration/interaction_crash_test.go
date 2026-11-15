@@ -185,8 +185,10 @@ func TestRestartWithOverrides(t *testing.T) {
 		t.Fatalf("status %+v", s)
 	}
 
-	// A provisional base with overrides restarts as it was.
-	expiring := e.MustOverride(harness, permitOverride(store.OverrideContainment, "WRITER", "read-a", 3), `"r1"`, "restart-expiring-01")
+	// A provisional base with overrides restarts as it was. The containment
+	// lasts 10 s, so it outlives the restart below even on a slow runner, and
+	// expires before the crashed rollback.
+	expiring := e.MustOverride(harness, permitOverride(store.OverrideContainment, "WRITER", "read-a", 10), `"r1"`, "restart-expiring-01")
 	_, activated := e.ProvisionalFrom(harness, upstreamCandidate(e), 1, 60, "restart-provisional")
 	e.Stop()
 	e.Start(gatewaytest.Binaries.Plain)

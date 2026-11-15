@@ -131,10 +131,8 @@ func TestCandidateStagingChangesNothingEnforced(t *testing.T) {
 		}
 		return false
 	})
-	for _, ev := range events {
-		if ev["transition"] == staged.Receipt.Transition && ev["kind"] == "transition.published" {
-			t.Fatalf("staging recorded a publication: %v", ev)
-		}
+	if findTransition(events, "transition.committed", staged.Receipt.Transition) == nil || findTransition(events, "transition.published", staged.Receipt.Transition) != nil {
+		t.Fatalf("staging records a commit and no publication: %v", events)
 	}
 	e.Stop()
 	if n := gatewaytest.QueryInt(t, e.Database, `SELECT COUNT(*) FROM revision`); n != 1 {

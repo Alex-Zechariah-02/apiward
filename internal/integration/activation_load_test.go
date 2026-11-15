@@ -110,6 +110,12 @@ func TestLifecycleUnderLoad(t *testing.T) {
 	var unexpected sync.Map
 	var forwarded, refused atomic.Int64
 	var wg sync.WaitGroup
+	// halt ends the clients once, also when an assertion ends the test early.
+	halt := sync.OnceFunc(func() {
+		close(stop)
+		wg.Wait()
+	})
+	t.Cleanup(halt)
 	bobToken := "Bearer " + gatewaytest.Issuer.TokenFor(t, "bob")
 	aliceToken := "Bearer " + gatewaytest.Issuer.TokenFor(t, "alice")
 	requests := []struct {
@@ -155,11 +161,12 @@ func TestLifecycleUnderLoad(t *testing.T) {
 	}
 
 	confirmed := int64(1)
+	served := e.Status().Generation
 	for round := range 4 {
-		time.Sleep(150 * time.Millisecond)
+		awaitGeneration(e, served)
 		_, activated := e.ProvisionalFrom(harness, e.CpaCandidate(), confirmed, 60, fmt.Sprintf("load-round-%02d", round))
 		candidateGenerations[activated.Generation] = true
-		time.Sleep(150 * time.Millisecond)
+		awaitGeneration(e, activated.Generation)
 		action := "rollback"
 		if round == 3 {
 			action = "confirm"
@@ -173,10 +180,10 @@ func TestLifecycleUnderLoad(t *testing.T) {
 		} else {
 			baseGenerations[outcome.Generation] = true
 		}
+		served = outcome.Generation
 	}
-	time.Sleep(150 * time.Millisecond)
-	close(stop)
-	wg.Wait()
+	awaitGeneration(e, served)
+	halt()
 
 	// The audit records of an unexpected answer say which stage gave it.
 	unexpected.Range(func(key, id any) bool {
@@ -204,4 +211,21 @@ func TestLifecycleUnderLoad(t *testing.T) {
 		t.Fatalf("traffic did not exercise both policies: A %d B %d C %d refused %d", e.A.Count(), e.B.Count(), e.C.Count(), refused.Load())
 	}
 	t.Logf("forwarded %d, refused %d; receipts A %d B %d C %d", forwarded.Load(), refused.Load(), e.A.Count(), e.B.Count(), e.C.Count())
+}
+
+// awaitGeneration waits until a receiver holds a request forwarded under
+// generation, so traffic has run under each published generation. Requests
+// flow continuously, so 10 s only stops a test whose traffic has stalled.
+func awaitGeneration(e *gatewaytest.Env, generation string) {
+	e.T.Helper()
+	gatewaytest.WaitFor(e.T, time.Now().Add(10*time.Second), "a request under generation "+generation, func() bool {
+		for _, rc := range []*gatewaytest.Receiver{e.A, e.B, e.C} {
+			for _, r := range rc.Receipts() {
+				if r.Generation == generation {
+					return true
+				}
+			}
+		}
+		return false
+	})
 }

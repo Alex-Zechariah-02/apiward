@@ -57,6 +57,7 @@ func TestAdminSessions(t *testing.T) {
 
 	t.Run("wrong credentials", func(t *testing.T) {
 		e := gatewaytest.NewEnv(t)
+		e.Interruptible = true // assertAbsent stops it gracefully
 		gatewaytest.Seed(t, e.Database, e.Policy(e.A, false), gatewaytest.SeedOptions{})
 		e.Start(gatewaytest.Binaries.Plain)
 		var bodies []string

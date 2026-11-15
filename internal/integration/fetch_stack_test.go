@@ -273,7 +273,6 @@ func TestFetchStackScenarios(t *testing.T) {
 			t.Fatalf("service %d reset retained receipts", i)
 		}
 	}
-	assertAbsent(t, e, customer, merchant, rider, support, ops, newToken.Token, "FetchDemo2026!", password)
 	s.input.Close()
 	select {
 	case err := <-s.exited:
@@ -283,6 +282,8 @@ func TestFetchStackScenarios(t *testing.T) {
 	case <-time.After(15 * time.Second):
 		t.Fatal("stack did not stop")
 	}
+	// The stack's gateway has stopped and written every record: scan now.
+	assertAbsent(t, e, customer, merchant, rider, support, ops, newToken.Token, "FetchDemo2026!", password)
 	for _, base := range []int{9440, 9450, 9480, 9501, 9502, 9503, 9504, 9505, 9601, 9602, 9603, 9604, 9605} {
 		host := "127.0.0.1"
 		if base == 9480 {

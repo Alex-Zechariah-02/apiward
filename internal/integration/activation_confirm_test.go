@@ -22,6 +22,7 @@ import (
 // makes it the confirmed base, once.
 func TestActivationAndConfirmation(t *testing.T) {
 	e := gatewaytest.NewEnv(t)
+	e.Interruptible = true // assertAbsent stops it gracefully
 	gatewaytest.Seed(t, e.Database, e.ProtectedPolicy(), gatewaytest.SeedOptions{})
 	e.Start(gatewaytest.Binaries.Plain)
 	harness := e.MustLogin(gatewaytest.HarnessAdmin, gatewaytest.HarnessPassword)

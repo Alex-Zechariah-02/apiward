@@ -99,9 +99,15 @@ func mustExec(t *testing.T, db *sql.DB, statements ...string) {
 
 func corrupt(t *testing.T, path string) {
 	t.Helper()
-	db, _ := sql.Open("sqlite", store.DatabaseURI(path))
-	db.Exec("PRAGMA wal_checkpoint(TRUNCATE)")
+	db, err := sql.Open("sqlite", store.DatabaseURI(path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = db.Exec("PRAGMA wal_checkpoint(TRUNCATE)")
 	db.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
 	file, err := os.OpenFile(path, os.O_WRONLY, 0)
 	if err != nil {
 		t.Fatal(err)

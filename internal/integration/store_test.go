@@ -9,9 +9,10 @@ import (
 	"github.com/Alex-Zechariah-02/apiward/internal/gatewaytest"
 )
 
-// An installed database has exactly the current schema: the eleven STRICT
-// tables, their keys and constraints, the activation and override indexes and
-// triggers (with those that keep rows in use), WAL journaling and user_version 7, and nothing else.
+// An installed database has exactly the current schema: the twelve STRICT
+// tables, their keys and constraints, the activation and override indexes
+// and triggers (with those that keep rows in use), WAL journaling and
+// user_version 7, and nothing else.
 func TestInstalledSchema(t *testing.T) {
 	e := gatewaytest.NewEnv(t)
 	if out, code := e.RunOperator(gatewaytest.Binaries.Plain, nil, "install", "--admin", "root"); code != 0 {
@@ -52,7 +53,9 @@ func TestInstalledSchema(t *testing.T) {
 	var names []string
 	for explicit.Next() {
 		var name string
-		explicit.Scan(&name)
+		if err := explicit.Scan(&name); err != nil {
+			t.Fatal(err)
+		}
 		names = append(names, name)
 	}
 	if err := explicit.Err(); err != nil {

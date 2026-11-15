@@ -101,8 +101,7 @@ func TestIncompleteRecordIsRecovered(t *testing.T) {
 	}
 	e.EventsWhen(func(events []map[string]any) bool { return gatewaytest.CountKind(events, "request.forwarded") == 1 })
 	e.Stop()
-	complete, _ := os.ReadFile(e.AuditLog)
-	complete = audit.Content(complete)
+	complete := readAudit(t, e.AuditLog)
 
 	e.Start(gatewaytest.Binaries.Fault, "GATEWAY_FAULT=audit-partial")
 	e.Status() // signs the harness in while the log still works
@@ -113,8 +112,7 @@ func TestIncompleteRecordIsRecovered(t *testing.T) {
 		t.Fatal("partial write not reported")
 	}
 	e.Stop()
-	partial, _ := os.ReadFile(e.AuditLog)
-	partial = audit.Content(partial)
+	partial := readAudit(t, e.AuditLog)
 	if !bytes.HasPrefix(partial, complete) || len(partial) == len(complete) || partial[len(partial)-1] == '\n' {
 		t.Fatalf("expected an incomplete record after %d complete bytes; file has %d bytes", len(complete), len(partial))
 	}
@@ -129,8 +127,7 @@ func TestIncompleteRecordIsRecovered(t *testing.T) {
 	var data []byte
 	var marker map[string]any
 	for deadline := time.Now().Add(5 * time.Second); marker == nil && time.Now().Before(deadline); time.Sleep(20 * time.Millisecond) {
-		data, _ = os.ReadFile(e.AuditLog)
-		data = audit.Content(data)
+		data = readAudit(t, e.AuditLog)
 		for line := range bytes.SplitSeq(data, []byte("\n")) {
 			var ev map[string]any
 			if json.Unmarshal(line, &ev) == nil && ev["kind"] == "audit.recovered" {
@@ -176,7 +173,10 @@ func TestTornWriteRecovered(t *testing.T) {
 	if code := e.WaitExit(); code != crashExit {
 		t.Fatalf("exit code %d", code)
 	}
-	raw, _ := os.ReadFile(e.AuditLog)
+	raw, err := os.ReadFile(e.AuditLog)
+	if err != nil {
+		t.Fatal(err)
+	}
 	torn := audit.Content(raw)
 	if runtime.GOOS == "linux" && len(raw) == len(torn) {
 		t.Fatal("the crashed zero-filled file has no zero tail")
@@ -287,4 +287,14 @@ func TestAuditFailureBlocksFixtureForwarding(t *testing.T) {
 	if s := e.Status(); !s.AuditFailed {
 		t.Fatalf("status %+v does not report the audit failure", s)
 	}
+}
+
+// readAudit reads an audit file up to its logical end.
+func readAudit(t *testing.T, path string) []byte {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return audit.Content(data)
 }

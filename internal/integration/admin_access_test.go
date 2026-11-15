@@ -6,6 +6,7 @@ package integration
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"slices"
 	"strings"
 	"testing"
@@ -34,9 +35,9 @@ func TestAdminAccessCheck(t *testing.T) {
 	}
 	ask := func(body string) answer {
 		t.Helper()
-		code, data, _ := e.As(admin, "POST", "/admin/access-check", body, "Content-Type", "application/json")
+		code, data, _ := e.As(admin, http.MethodPost, "/admin/access-check", body, "Content-Type", "application/json")
 		var reply answer
-		if code != 200 || json.Unmarshal([]byte(data), &reply) != nil {
+		if code != http.StatusOK || json.Unmarshal([]byte(data), &reply) != nil {
 			t.Fatalf("access check %s: %d %s", body, code, data)
 		}
 		return reply
@@ -67,7 +68,7 @@ func TestAdminAccessCheck(t *testing.T) {
 	}
 
 	// A subject is also checked against the blocked accounts.
-	if code, _, body := blockAccount(e, admin, "alice", "access check", "access-check-block-1"); code != 200 {
+	if code, _, body := blockAccount(e, admin, "alice", "access check", "access-check-block-1"); code != http.StatusOK {
 		t.Fatalf("block: %d %s", code, body)
 	}
 	if got := ask(`{"method":"GET","path":"/a/x","roles":["WRITER"],"subject":"alice"}`); got.Decision != "refused" || text(got.Check) != "blocked" || text(got.Code) != "account_blocked" {
@@ -78,7 +79,7 @@ func TestAdminAccessCheck(t *testing.T) {
 	widened := e.ProtectedPolicy()
 	widened.Permits = append(widened.Permits, policy.Permit{Role: "READER", Operation: "write-a"})
 	code, staged, body := e.Stage(admin, widened, `"r1"`, "access-check-stage-1")
-	if code != 201 {
+	if code != http.StatusCreated {
 		t.Fatalf("stage: %d %s", code, body)
 	}
 	draft := fmt.Sprintf(`{"method":"POST","path":"/a/item","roles":["READER"],"candidate":%d}`, staged.Candidate.ID)
@@ -89,7 +90,7 @@ func TestAdminAccessCheck(t *testing.T) {
 	// The answer names the path the upstream would receive.
 	rewritten := e.ProtectedPolicy()
 	rewritten.APIs[0].Forward = &policy.Forward{StripPrefix: "/a", AddPrefix: "/v1"}
-	if code, staged, body = e.Stage(admin, rewritten, `"r1"`, "access-check-stage-2"); code != 201 {
+	if code, staged, body = e.Stage(admin, rewritten, `"r1"`, "access-check-stage-2"); code != http.StatusCreated {
 		t.Fatalf("stage: %d %s", code, body)
 	}
 	if got := ask(fmt.Sprintf(`{"method":"POST","path":"/a/item","roles":["WRITER"],"candidate":%d}`, staged.Candidate.ID)); text(got.Forwarded) != "/v1/item" {
@@ -108,7 +109,7 @@ func TestAdminAccessCheck(t *testing.T) {
 			conditioned.Operations = append(conditioned.Operations, op)
 		}
 	}
-	if code, staged, body = e.Stage(admin, conditioned, `"r1"`, "access-check-stage-3"); code != 201 {
+	if code, staged, body = e.Stage(admin, conditioned, `"r1"`, "access-check-stage-3"); code != http.StatusCreated {
 		t.Fatalf("stage: %d %s", code, body)
 	}
 	variant := `{"method":"GET","path":"/a/x","roles":["READER"],"host":"API.example.com:443","headers":{"X-Version":"2"},"candidate":%d}`
@@ -126,11 +127,11 @@ func TestAdminAccessCheck(t *testing.T) {
 		{`{"method":"BREW","path":"/a/x","roles":[]}`, "method"},
 		{`{"method":"GET","path":"/a/x","roles":[""]}`, "roles"},
 	} {
-		if code, data, _ := e.As(admin, "POST", "/admin/access-check", tc.body, "Content-Type", "application/json"); code != 400 || !json.Valid([]byte(data)) || !strings.Contains(data, `"field":"`+tc.field+`"`) {
+		if code, data, _ := e.As(admin, http.MethodPost, "/admin/access-check", tc.body, "Content-Type", "application/json"); code != http.StatusBadRequest || !json.Valid([]byte(data)) || !strings.Contains(data, `"field":"`+tc.field+`"`) {
 			t.Errorf("%s: %d %s", tc.body, code, data)
 		}
 	}
-	if code, data, _ := e.As(admin, "POST", "/admin/access-check", `{"method":"GET","path":"/a/x","roles":[],"candidate":999}`, "Content-Type", "application/json"); code != 404 {
+	if code, data, _ := e.As(admin, http.MethodPost, "/admin/access-check", `{"method":"GET","path":"/a/x","roles":[],"candidate":999}`, "Content-Type", "application/json"); code != http.StatusNotFound {
 		t.Errorf("unknown draft: %d %s", code, data)
 	}
 }

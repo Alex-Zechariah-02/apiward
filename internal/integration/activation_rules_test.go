@@ -22,6 +22,7 @@ import (
 // returns someone else's receipt.
 func TestLifecycleNeedsAuthorisedAdministrator(t *testing.T) {
 	e := gatewaytest.NewEnv(t)
+	e.Interruptible = true // assertAbsent stops it gracefully
 	gatewaytest.Seed(t, e.Database, e.ProtectedPolicy(), gatewaytest.SeedOptions{})
 	e.Start(gatewaytest.Binaries.Plain)
 	// Each enrolment restarts the gateway, so everyone logs in afterwards.

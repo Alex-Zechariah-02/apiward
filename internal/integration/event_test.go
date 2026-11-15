@@ -36,6 +36,7 @@ func unvalidated(stages map[string]any) map[string]any {
 // the terminal one is never reported as passed.
 func TestEventEnvelopeReflectsStagesReached(t *testing.T) {
 	e := gatewaytest.NewEnv(t)
+	e.Interruptible = true // the ingress summary is read after a graceful stop
 	gatewaytest.Seed(t, e.Database, e.PolicyWithUpstream(gatewaytest.FreeAddr(t)), gatewaytest.SeedOptions{})
 	e.Start(gatewaytest.Binaries.Plain)
 	g := e.Status().Generation
@@ -102,10 +103,15 @@ func TestEventEnvelopeReflectsStagesReached(t *testing.T) {
 	}
 
 	seenIDs := map[string]bool{}
+	upgrade := ""
 	for _, tc := range cases {
 		_, requestID := tc.request()
 		if requestID == "" {
 			t.Fatalf("%s: no request ID", tc.name)
+		}
+		if tc.want == nil {
+			upgrade = requestID // checked against the ingress summary below
+			continue
 		}
 		events := e.EventsWhen(func(events []map[string]any) bool {
 			n := 0
@@ -154,6 +160,14 @@ func TestEventEnvelopeReflectsStagesReached(t *testing.T) {
 				t.Errorf("%s: a public request carries subject %v", tc.name, ev["subject"])
 			}
 		}
+	}
+	// The refused upgrade is counted in the summary written at the stop, and
+	// no record of its own exists once every queued record is written.
+	if counts := e.IngressSummary(); counts["upgrade"] < 1 {
+		t.Fatalf("ingress summary %v counts no refused upgrade", counts)
+	}
+	if ev := gatewaytest.RecordOf(e.AuditEvents(), []string{upgrade}); ev != nil {
+		t.Fatalf("the refused upgrade has its own record: %v", ev)
 	}
 }
 

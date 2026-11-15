@@ -226,8 +226,16 @@ func TestNativeAdmissionStatus(t *testing.T) {
 		if s := e.Status(); s.Admission != "ready" || !s.NotAfter.Equal(deadline) {
 			t.Fatalf("provisional %+v", s)
 		}
-		time.Sleep(time.Until(deadline.Add(200 * time.Millisecond)))
-		if s := e.Status(); s.Admission != "generation_expired" || s.Provisional != 2 {
+		var s gatewaytest.Status
+		gatewaytest.WaitFor(t, deadline.Add(5*time.Second), "the generation to expire", func() bool {
+			asked := time.Now()
+			s = e.Status()
+			if s.Admission == "generation_expired" && asked.Before(deadline) {
+				t.Fatalf("expired before its deadline: %+v", s)
+			}
+			return s.Admission == "generation_expired"
+		})
+		if s.Provisional != 2 {
 			t.Fatalf("past the deadline %+v", s)
 		}
 		unavailableAtCapture(e)

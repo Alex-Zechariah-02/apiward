@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/gatewaytest"
 )
@@ -22,7 +23,9 @@ func TestFetchMetrics(t *testing.T) {
 	if code, body, _ := e.As(admin, "PUT", "/admin/blocked-accounts/secret-subject", `{"reason":"test"}`, "Idempotency-Key", "metrics-block-test"); code != 200 {
 		t.Fatalf("block: %d %s", code, body)
 	}
-	response, err := http.Get("http://" + e.Metrics + "/metrics")
+	// A wedged listener fails the test instead of hanging the suite.
+	client := &http.Client{Timeout: 10 * time.Second}
+	response, err := client.Get("http://" + e.Metrics + "/metrics")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -46,7 +49,7 @@ func TestFetchMetrics(t *testing.T) {
 		}
 	}
 	for _, path := range []string{"/admin/status", "/", "/metrics/"} {
-		response, err := http.Get("http://" + e.Metrics + path)
+		response, err := client.Get("http://" + e.Metrics + path)
 		if err != nil {
 			t.Fatal(err)
 		}

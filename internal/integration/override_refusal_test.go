@@ -21,6 +21,7 @@ import (
 // malformed requests are answered 400 without reaching the controller.
 func TestOverrideRefusals(t *testing.T) {
 	e := gatewaytest.NewEnv(t)
+	e.Interruptible = true // assertAbsent stops it gracefully
 	p := e.ProtectedPolicy()
 	p.Operations[0].Rate = gatewaytest.Rate(4, 60) // read-a
 	gatewaytest.Seed(t, e.Database, p, gatewaytest.SeedOptions{})
@@ -134,9 +135,13 @@ func TestOverrideRefusals(t *testing.T) {
 	if code, _, _ := e.As(reader, http.MethodGet, "/admin/overrides", ""); code != http.StatusOK {
 		t.Errorf("reader overrides view: %d", code)
 	}
-	// The native Caddy administration endpoint does not exist.
-	if gatewaytest.Dialable("127.0.0.1:2019") {
-		t.Error("something listens on the native Caddy administration port")
+	// The gateway listens only on its own data, admin and metrics ports, so
+	// no native administration endpoint exists.
+	own := map[string]bool{gatewaytest.Port(e.DataAddr): true, gatewaytest.Port(e.Admin): true, gatewaytest.Port(e.Metrics): true}
+	for _, port := range gatewaytest.ListeningPorts(t, e.Process.Process.Pid) {
+		if !own[port] {
+			t.Errorf("the gateway listens on port %s besides its own", port)
+		}
 	}
 
 	// Validation answers without creating anything.

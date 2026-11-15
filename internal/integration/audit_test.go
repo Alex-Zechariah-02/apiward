@@ -211,7 +211,10 @@ func TestBodiesAndHeaderValuesNeverRecorded(t *testing.T) {
 	if gatewaytest.CountKind(events, "request.rejected") != 5 || gatewaytest.CountKind(events, "request.forwarded") != 1 {
 		t.Fatalf("events %v", events)
 	}
-	raw, _ := os.ReadFile(e.AuditLog)
+	raw, err := os.ReadFile(e.AuditLog)
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, secret := range append(secrets, "BODY-SE", "password", "jsonschema", "minLength", "enum") {
 		if bytes.Contains(raw, []byte(secret)) {
 			t.Errorf("audit log contains %q", secret)

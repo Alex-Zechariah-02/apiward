@@ -59,13 +59,19 @@ func TestAuditRotationAndRetention(t *testing.T) {
 	}
 	e.Stop()
 
-	rotated, _ := filepath.Glob(e.AuditLog + ".*")
+	rotated, err := filepath.Glob(e.AuditLog + ".*")
+	if err != nil {
+		t.Fatal(err)
+	}
 	slices.Sort(rotated)
 	if !slices.Equal(rotated, []string{e.AuditLog + ".1", e.AuditLog + ".2"}) {
 		t.Fatalf("rotated files %v", rotated)
 	}
 	for _, file := range append(rotated, e.AuditLog) {
-		info, _ := os.Stat(file)
+		info, err := os.Stat(file)
+		if err != nil {
+			t.Fatal(err)
+		}
 		// One batch may finish a file: at most 128 records of under 1 KiB.
 		if info.Size() > 8192+128*1024 {
 			t.Errorf("%s holds %d bytes", file, info.Size())
@@ -116,6 +122,7 @@ func TestAuditRotationAndRetention(t *testing.T) {
 // the renamed file holds them and the restarted gateway continues.
 func TestCrashDuringRotation(t *testing.T) {
 	e := gatewaytest.NewEnv(t)
+	e.Interruptible = true // stopped gracefully before its records are read
 	e.WriteConfig(gatewaytest.ConfigOptions{Audit: map[string]any{"audit_max_bytes": 4096, "audit_max_files": 4}})
 	gatewaytest.Seed(t, e.Database, e.Policy(e.A, false), gatewaytest.SeedOptions{})
 	e.Start(gatewaytest.Binaries.Fault, "GATEWAY_FAULT=audit-after-rename")
@@ -142,6 +149,8 @@ func TestCrashDuringRotation(t *testing.T) {
 	if code, _ := e.Get("/a/x"); code != http.StatusOK {
 		t.Fatalf("after restart: %d", code)
 	}
+	// A stopped writer leaves only complete records to read.
+	e.Shutdown()
 	records := auditRecords(e)
 	admitted := map[string]bool{}
 	for _, r := range records {

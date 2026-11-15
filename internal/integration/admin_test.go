@@ -25,6 +25,7 @@ func testPassword() string { return "pw-" + session.NewToken() }
 func installEnv(t *testing.T, binary string) (*gatewaytest.Env, string) {
 	t.Helper()
 	e := gatewaytest.NewEnv(t)
+	e.Interruptible = true // its callers scan for secrets after a graceful stop
 	out, code := e.RunOperator(binary, nil, "install", "--admin", "root")
 	if code != 0 {
 		t.Fatalf("install exited %d: %s", code, out)
@@ -59,19 +60,28 @@ func addAdmin(e *gatewaytest.Env, binary, name, permissions string) (gatewaytest
 	return e.MustLogin(name, password), password
 }
 
-// assertAbsent fails if any value appears in the audit files, the gateway's
-// output or the database files.
+// assertAbsent stops the gateway gracefully, so every record it queued is
+// written and nothing is written during the scan, then fails if any value
+// appears in the audit files, the gateway's output or the database files.
 func assertAbsent(t *testing.T, e *gatewaytest.Env, values ...string) {
 	t.Helper()
-	files, _ := filepath.Glob(e.AuditLog + "*")
-	databaseFiles, _ := filepath.Glob(e.Database + "*")
+	e.Shutdown()
+	files, err := filepath.Glob(e.AuditLog + "*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	databaseFiles, err := filepath.Glob(e.Database + "*")
+	if err != nil {
+		t.Fatal(err)
+	}
 	files = append(files, databaseFiles...)
 	sources := map[string]string{"gateway output": e.Output.String()}
 	for _, file := range files {
 		data, err := os.ReadFile(file)
-		if err == nil {
-			sources[filepath.Base(file)] = string(data)
+		if err != nil {
+			t.Fatalf("reading %s for secrets: %v", filepath.Base(file), err)
 		}
+		sources[filepath.Base(file)] = string(data)
 	}
 	for name, content := range sources {
 		for _, value := range values {
@@ -105,6 +115,7 @@ func fromJSON[T any](t *testing.T, body string) T {
 // one-time secret of the local install command, exactly once.
 func TestBootstrapIsLocalAndOneTime(t *testing.T) {
 	e := gatewaytest.NewEnv(t)
+	e.Interruptible = true // assertAbsent stops it gracefully
 	out, code := e.RunOperator(gatewaytest.Binaries.Plain, nil, "install", "--admin", "root")
 	if code != 0 {
 		t.Fatalf("install exited %d: %s", code, out)

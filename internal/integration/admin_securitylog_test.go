@@ -57,6 +57,9 @@ func TestAdminSecurityLog(t *testing.T) {
 	if code != 200 || !strings.HasPrefix(header.Get("Content-Type"), "text/csv") || !strings.HasPrefix(csvBody, "time,request_id,decision") || !strings.Contains(csvBody, ",refused,401,") {
 		t.Errorf("csv export: %d %s", code, csvBody)
 	}
+	if strings.Contains(csvBody, "Bearer") {
+		t.Fatalf("credential in the csv export: %s", csvBody)
+	}
 	for _, query := range []string{"limit=0", "limit=101", "decision=maybe", "from=yesterday", "after=!!", "format=xml"} {
 		if code, body, _ := e.As(admin, "GET", "/admin/security-log?"+query, ""); code != 400 {
 			t.Errorf("%s: %d %s", query, code, body)

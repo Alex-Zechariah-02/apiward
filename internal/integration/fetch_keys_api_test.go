@@ -172,9 +172,12 @@ func TestFetchConcurrentKeyReload(t *testing.T) {
 	e.Start(gatewaytest.Binaries.Plain)
 	s := e.MustLogin(gatewaytest.HarnessAdmin, gatewaytest.HarnessPassword)
 	tokens := []string{gatewaytest.Issuer.TokenFor(t, "alice"), other.SignRaw(`{"alg":"RS256","typ":"JWT","kid":"test-b"}`, issuertest.ClaimsJSON(issuertest.ValidClaims("alice")))}
+	// Requests and reloads all start at one barrier, so they overlap.
+	start := make(chan struct{})
 	var wg sync.WaitGroup
 	for worker := range 4 {
 		wg.Go(func() {
+			<-start
 			for range 10 {
 				if code, _ := e.Get("/a/x", "Authorization", "Bearer "+tokens[worker%2]); code != 200 {
 					t.Errorf("worker %d saw partial trust: %d", worker, code)
@@ -182,11 +185,15 @@ func TestFetchConcurrentKeyReload(t *testing.T) {
 			}
 		})
 	}
-	for range 5 {
-		code, body, _ := e.As(s, http.MethodPost, "/admin/keys/reload", "", "Idempotency-Key", "keys-concurrent-"+session.NewToken()[:16])
-		if code != 200 {
-			t.Errorf("reload: %d %s", code, body)
+	wg.Go(func() {
+		<-start
+		for range 5 {
+			code, body, _ := e.As(s, http.MethodPost, "/admin/keys/reload", "", "Idempotency-Key", "keys-concurrent-"+session.NewToken()[:16])
+			if code != 200 {
+				t.Errorf("reload: %d %s", code, body)
+			}
 		}
-	}
+	})
+	close(start)
 	wg.Wait()
 }

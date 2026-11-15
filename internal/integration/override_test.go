@@ -30,7 +30,13 @@ func revokeOverride(e *gatewaytest.Env, s gatewaytest.AdminSession, id int64, ke
 	e.T.Helper()
 	code, data, _ := e.As(s, http.MethodDelete, fmt.Sprintf("/admin/overrides/%d", id), "", "Idempotency-Key", key)
 	var outcome controller.Outcome
-	json.Unmarshal([]byte(data), &outcome)
+	// Status 0 is a transport failure, which the crash tests expect.
+	if code == 0 {
+		return code, outcome, data
+	}
+	if err := json.Unmarshal([]byte(data), &outcome); err != nil {
+		e.T.Fatalf("revocation answer %d is not JSON: %v %s", code, err, data)
+	}
 	return code, outcome, data
 }
 

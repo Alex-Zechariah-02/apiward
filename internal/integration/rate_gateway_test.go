@@ -134,8 +134,9 @@ func TestRateLimitThroughGateway(t *testing.T) {
 		t.Fatalf("carol: %v", got)
 	}
 	for _, r := range e.A.Receipts() {
-		if r.Headers.Get("X-Gateway-Subject") != "carol" {
-			t.Fatalf("upstream saw subject %q", r.Headers.Get("X-Gateway-Subject"))
+		// Every value counts: a forged second header line must not survive.
+		if subjects := r.Headers.Values("X-Gateway-Subject"); !slices.Equal(subjects, []string{"carol"}) {
+			t.Fatalf("upstream saw subjects %q", subjects)
 		}
 	}
 	e.AssertReceipts(3, 0, 0)

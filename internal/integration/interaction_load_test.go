@@ -203,6 +203,12 @@ func TestOverridesUnderLoad(t *testing.T) {
 
 	stop := make(chan struct{})
 	var wg sync.WaitGroup
+	// halt ends the clients once, also when an assertion ends the test early.
+	halt := sync.OnceFunc(func() {
+		close(stop)
+		wg.Wait()
+	})
+	t.Cleanup(halt)
 	var unexpected sync.Map
 	var forwarded atomic.Int64
 	bobToken := "Bearer " + gatewaytest.Issuer.TokenFor(t, "bob")
@@ -240,20 +246,21 @@ func TestOverridesUnderLoad(t *testing.T) {
 			}
 		})
 	}
+	served := e.Status().Generation
 	for round := range 6 {
-		time.Sleep(100 * time.Millisecond)
+		awaitGeneration(e, served)
 		created := e.MustOverride(harness, permitOverride(store.OverrideException, "READER", "write-a", 600), `"r1"`, fmt.Sprintf("load-create-%02d-xxxx", round))
 		withGrant[created.Generation] = true
-		time.Sleep(100 * time.Millisecond)
+		awaitGeneration(e, created.Generation)
 		code, revoked, body := revokeOverride(e, harness, created.Override, fmt.Sprintf("load-revoke-%02d-xxxx", round))
 		if code != http.StatusOK {
 			t.Fatalf("revocation: %d %s", code, body)
 		}
 		withoutGrant[revoked.Generation] = true
+		served = revoked.Generation
 	}
-	time.Sleep(100 * time.Millisecond)
-	close(stop)
-	wg.Wait()
+	awaitGeneration(e, served)
+	halt()
 	unexpected.Range(func(key, _ any) bool {
 		t.Errorf("unexpected answer: %v", key)
 		return true

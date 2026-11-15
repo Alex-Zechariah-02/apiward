@@ -15,6 +15,7 @@ import (
 // refused input never reaches a reply or an event unescaped.
 func TestAdminInputBounds(t *testing.T) {
 	e := gatewaytest.NewEnv(t)
+	e.Interruptible = true // assertAbsent stops it gracefully
 	gatewaytest.Seed(t, e.Database, e.ProtectedPolicy(), gatewaytest.SeedOptions{})
 	e.Start(gatewaytest.Binaries.Plain)
 	before := e.Status()
@@ -64,7 +65,11 @@ func TestAdminInputBounds(t *testing.T) {
 		t.Errorf("unknown field holding a key: %d", code)
 	}
 	e.Login(gatewaytest.HarnessAdmin, token)
-	e.AdminSend(http.MethodGet, "/admin/blocked-accounts/x%0A%7B%22kind%22%3A%22forged%22%7D", "")
+	// The forged subject goes in a valid session to a route that exists, so
+	// the handler reads it and refuses it as an invalid subject.
+	if code := put("/admin/blocked-accounts/x%0A%7B%22kind%22%3A%22forged%22%7D", `{"reason":"forged record"}`); code != http.StatusBadRequest {
+		t.Fatalf("forged subject: %d, want 400 from the handler", code)
+	}
 	if after := e.Status(); after.Revision != before.Revision || after.Generation != before.Generation {
 		t.Fatalf("refused input changed the state: %+v", after)
 	}

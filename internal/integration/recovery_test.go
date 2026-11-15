@@ -73,8 +73,11 @@ func TestCrashDuringPublication(t *testing.T) {
 			if tc.committed {
 				var by string
 				db := gatewaytest.Inspect(t, e.Database)
-				db.QueryRow(`SELECT published_by FROM transition WHERE id = 'add-b'`).Scan(&by)
+				err := db.QueryRow(`SELECT published_by FROM transition WHERE id = 'add-b'`).Scan(&by)
 				db.Close()
+				if err != nil {
+					t.Fatal(err)
+				}
 				if by != tc.receipt {
 					t.Fatalf("published_by %q, want %q", by, tc.receipt)
 				}

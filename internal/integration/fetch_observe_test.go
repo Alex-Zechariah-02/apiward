@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Alex-Zechariah-02/apiward/internal/controller"
 	"github.com/Alex-Zechariah-02/apiward/internal/gatewaytest"
 )
 
@@ -189,6 +190,7 @@ func TestFetchEventsAndTraffic(t *testing.T) {
 
 func TestFetchEventStreams(t *testing.T) {
 	e := gatewaytest.NewEnv(t)
+	e.Interruptible = true // the streams must not hold a graceful stop
 	gatewaytest.Seed(t, e.Database, e.Policy(e.A, true), gatewaytest.SeedOptions{})
 	e.Start(gatewaytest.Binaries.Plain)
 	admin := e.MustLogin(gatewaytest.HarnessAdmin, gatewaytest.HarnessPassword)
@@ -241,9 +243,11 @@ func TestFetchEventStreams(t *testing.T) {
 	if !found {
 		t.Fatalf("no request event: %v", scanner.Err())
 	}
-	for _, response := range streams {
-		response.Body.Close()
+	// Open streams must not hold a graceful stop until its grace runs out:
+	// the stop completes well within the default grace.
+	stopping := time.Now()
+	e.Shutdown()
+	if took := time.Since(stopping); took >= controller.ShutdownWait {
+		t.Fatalf("graceful stop with open streams took %s", took)
 	}
-	// An open stream must not hold graceful shutdown until its timeout.
-	e.Stop()
 }

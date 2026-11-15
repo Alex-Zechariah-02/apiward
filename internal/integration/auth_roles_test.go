@@ -66,6 +66,9 @@ func TestRoleMatrixAgainstCatalogue(t *testing.T) {
 			if intended {
 				allowed++
 				receipts := target.Receipts()
+				if len(receipts) == 0 {
+					t.Fatalf("%s: allowed, but %s holds no receipt", name, op.API)
+				}
 				last := receipts[len(receipts)-1]
 				wantSubject, wantRoles := s.ID, roles[s.ID]
 				if op.Auth == "none" {
