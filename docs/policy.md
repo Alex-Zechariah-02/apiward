@@ -29,6 +29,8 @@ Every request goes through these checks in this order; the first that refuses an
 | Record | none: the request record must be written first | `503 gateway_unavailable` |
 
 - The target that matches most exactly wins (an exact path before the longest `/*` prefix); then only that target's methods count.
+- A `/x/*` target matches only paths below `/x/`; `/x` and `/x/` need a target of their own. The gateway logs a `policy warning` line for a `/*` target without its exact path, at start and at each activation.
+- Methods match as declared: an operation for `GET` does not answer `HEAD`, which is refused `405` unless the target has a `HEAD` operation (as in Kong and Traefik routes).
 - A `/*` target matches paths beneath the prefix, never the prefix itself.
 - A path with encoded slashes, backslashes, dot segments or empty segments is refused before routing; it is never normalised.
 - Among operations sharing a target and method, the one with the most `when` conditions that hold wins; a header condition holds only for exactly one header with exactly that value.
@@ -141,6 +143,7 @@ An API's `"response_headers": {"hsts": true, "nosniff": true, "frame": "deny", "
 
 - An upstream is either `{"id": "orders", "dial": "127.0.0.1:9502"}` (plain HTTP to an address on the gateway's host) or, in schema version 5, `{"id": "orders", "url": "https://orders.internal:8443", "tls": "fetch", "host": "upstream"}`.
 - A `url` is `http://` with a literal IP address, or `https://` with a literal IP address or a lower-case DNS name, with an optional port and nothing after it.
+- An `http://` URL to an address other than loopback carries requests, identity assertions and bodies unencrypted across the network; the gateway names each such upstream in a `policy warning` log line at start and at each activation. Prefer `https://` with a TLS profile that holds a client certificate, so each side proves who it is.
 - `tls` names a TLS profile of the gateway's settings (https only); `host` chooses the `Host` header the upstream receives: `inbound` keeps the client's (the default for http), `upstream` sends the URL's host (the default for https).
 
 ### Allowed addresses
@@ -156,6 +159,8 @@ An API's `"response_headers": {"hsts": true, "nosniff": true, "frame": "deny", "
 ### Connection reuse
 
 - Upstream connections are kept and reused: up to `upstream.max_idle_per_upstream` idle connections per upstream (default 16; 0 opens a new connection for every request and closes it after the response), each closed after `upstream.idle_conn_timeout` idle (default `30s`, `1s` to `5m`; keep it below the upstream server's own idle timeout).
+- After a reload of the TLS profiles, the next request closes the idle connections made under the earlier settings, so the idle limit is never doubled.
+- A response body has no size limit, as in Caddy, nginx and Traefik: it streams to the client as it arrives, and `upstream.read_idle_timeout` ends a response that stops sending, while the data listener's `write_timeout` bounds the whole answer.
 - A request is sent once: one that fails on a reused connection is never sent again, and is answered like any exchange that may have reached the upstream (security log reason `outcome_unknown`).
 - TLS sessions to https upstreams are resumed for at most `upstream.tls_session_lifetime` (default `1h`, `1m` to `24h`), with one session cache per TLS profile that a reload replaces; on a resumed session the upstream relies on the client certificate it verified in the first handshake.
 

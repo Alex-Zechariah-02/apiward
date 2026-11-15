@@ -116,7 +116,9 @@ type Controller struct {
 	sessions *session.Table
 
 	// mu serialises every mutation, including timer-driven ones, and the
-	// lifecycle changes of Start and Stop.
+	// lifecycle changes of Start and Stop: one order of changes is what keeps
+	// the activation and override races decidable; AdminWriteTimeout bounds
+	// a waiting admin request.
 	mu sync.Mutex
 	// state holds a string: a deployment mode, or the reason no authority
 	// is served. Written under mu, read without it (see State).
@@ -178,8 +180,15 @@ func Prepare(cfg Config, logger *slog.Logger) (*Controller, error) {
 // errors are store errors (store.ErrHeld when another process holds the
 // deployment); on one, nothing it opened is left open. A database without
 // usable authority is not an error: the controller serves no protected
-// request, and its health and audit log say why.
+// request, and its health and audit log say why. Open after a stop has begun
+// is refused, so a stopped controller never publishes again.
 func (c *Controller) Open() error {
+	c.mu.Lock()
+	stopped := c.stopping
+	c.mu.Unlock()
+	if stopped {
+		return errors.New("controller stopped")
+	}
 	cfg := c.config
 	// The database's exclusive lock is taken before the audit log is opened,
 	// so a second gateway for the same deployment stops here and never
@@ -199,19 +208,19 @@ func (c *Controller) Open() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if err != nil {
-		c.unavailable(err.Error())
+		c.unavailable("store_unavailable", err.Error())
 		return nil
 	}
 	c.store = st
 	blocked, err := st.BlockedAccounts(context.Background())
 	if err != nil {
-		c.unavailable("reading blocked accounts: " + err.Error())
+		c.unavailable("store_unavailable", "reading blocked accounts: "+err.Error())
 		return nil
 	}
 	c.blocked.Store(&blocked)
 	addresses, err := st.BlockedAddresses(context.Background())
 	if err != nil {
-		c.unavailable("reading blocked addresses: " + err.Error())
+		c.unavailable("store_unavailable", "reading blocked addresses: "+err.Error())
 		return nil
 	}
 	c.addresses.Store(&addresses)

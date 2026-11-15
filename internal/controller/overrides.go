@@ -61,10 +61,10 @@ func (c *Controller) ValidateOverride(ctx context.Context, actor string, expecte
 	defer c.mu.Unlock()
 	now := compile.TrustedNow()
 	if !c.ready() {
-		return unavailableOutcome("")
+		return c.unavailableOutcome("")
 	}
 	if c.mode() == store.ModeNormal && !c.settle(ctx, now, false) {
-		return unavailableOutcome("")
+		return c.unavailableOutcome("")
 	}
 	a, err := c.store.Load(ctx)
 	if err != nil {
@@ -92,14 +92,14 @@ func (c *Controller) CreateOverride(ctx context.Context, t store.TransitionRecor
 	defer c.mu.Unlock()
 	now := compile.DeadlineNow()
 	if !c.ready() {
-		return unavailableOutcome(t.ID)
+		return c.unavailableOutcome(t.ID)
 	}
 	if result, status, done := c.replay(ctx, t); done {
 		return result, status
 	}
 	// Overrides that have expired by now no longer hold their targets.
 	if c.mode() == store.ModeNormal && !c.settle(ctx, now, false) {
-		return unavailableOutcome(t.ID)
+		return c.unavailableOutcome(t.ID)
 	}
 
 	a, err := c.store.Load(ctx)
@@ -129,7 +129,7 @@ func (c *Controller) RevokeOverride(ctx context.Context, t store.TransitionRecor
 	defer c.mu.Unlock()
 	now := compile.TrustedNow()
 	if !c.ready() {
-		return unavailableOutcome(t.ID)
+		return c.unavailableOutcome(t.ID)
 	}
 	if result, status, done := c.replay(ctx, t); done {
 		return result, status
@@ -137,7 +137,7 @@ func (c *Controller) RevokeOverride(ctx context.Context, t store.TransitionRecor
 	// An override whose expiry time has passed expires first, so a late
 	// revocation cannot replace its expiry.
 	if c.mode() == store.ModeNormal && !c.settle(ctx, now, false) {
-		return unavailableOutcome(t.ID)
+		return c.unavailableOutcome(t.ID)
 	}
 
 	a, err := c.store.Load(ctx)
@@ -175,7 +175,7 @@ func (c *Controller) publishOverrides(ctx context.Context, t store.TransitionRec
 	stage := strings.ReplaceAll(t.Kind, ".", "-")
 	failed := func(reason string, result Outcome, code int) (Outcome, int) {
 		if status != store.OverrideActive {
-			c.unavailable(fmt.Sprintf("%s (%s of override %d) not completed: %s", t.ID, stage, o.ID, reason))
+			c.unavailable("transition_incomplete", fmt.Sprintf("%s (%s of override %d) not completed: %s", t.ID, stage, o.ID, reason))
 		}
 		return result, code
 	}
@@ -208,7 +208,7 @@ func (c *Controller) publishOverrides(ctx context.Context, t store.TransitionRec
 		err = c.store.CommitOverrideEnd(ctx, t, o.ID, status, now)
 	}
 	if err != nil {
-		result, code := c.storeFailure(t.ID, err)
+		result, code := c.commitFailure(ctx, t.ID, err)
 		return failed("commit failed", result, code)
 	}
 	fault.CrashPoint(stage + "-after-commit")

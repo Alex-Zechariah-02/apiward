@@ -6,5 +6,5 @@
 // exposes it only through read-only methods; nothing outside may change one.
 // Compiling has no side effects: it never reads storage or the network, and
 // it takes time only from the trusted clock it also owns. It imports only
-// policy and fault. Any gateway package may call it.
+// policy, fault and the public module interface. Any gateway package may call it.
 package compile

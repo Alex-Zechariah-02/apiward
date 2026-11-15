@@ -4,12 +4,16 @@
 package controller
 
 import (
-	"strings"
+	"bytes"
+	"net/http"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/compile"
 	"github.com/Alex-Zechariah-02/apiward/internal/policy"
+	"github.com/Alex-Zechariah-02/apiward/internal/store"
 	"github.com/Alex-Zechariah-02/apiward/internal/storetest"
 )
 
@@ -91,7 +95,7 @@ func TestExpiredGenerationWithoutDeadlineIsWithdrawn(t *testing.T) {
 	if c.Current() != nil {
 		t.Fatal("the expired generation is still published")
 	}
-	if reason := c.State(); !strings.Contains(reason, "expired but no stored deadline has passed") {
+	if reason := c.State(); reason != "deadline_mismatch" {
 		t.Fatalf("reason %q", reason)
 	}
 }
@@ -113,5 +117,29 @@ func TestStateWithoutMutex(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("State waited for the controller's mutex")
+	}
+}
+
+// A stopped controller refuses to open again, so it never re-reads its
+// database or publishes; a mutation refused while it stops is recorded in
+// the security log.
+func TestStoppedControllerRefuses(t *testing.T) {
+	e := newEnv(t)
+	storetest.Seed(t, e.database, storetest.Policy(false), storetest.Options{})
+	c := e.own(e.controllerConfig())
+	c.BeginStop()
+	refused := store.TransitionRecord{ID: "withdraw-during-stop", Kind: "candidate.withdraw", Actor: "admin"}
+	if _, status := c.WithdrawCandidate(t.Context(), refused, 1); status != http.StatusServiceUnavailable {
+		t.Fatalf("a mutation during the stop answered %d, want 503", status)
+	}
+	if err := c.Stop(); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Open(); err == nil || c.Current() != nil {
+		t.Fatalf("Open after Stop: %v, generation %v", err, c.Current())
+	}
+	data, err := os.ReadFile(filepath.Join(e.dir, "audit.log"))
+	if err != nil || !bytes.Contains(data, []byte(`"transition":"withdraw-during-stop","reason":"UNAVAILABLE"`)) {
+		t.Fatalf("no record of the refused mutation (%v)", err)
 	}
 }

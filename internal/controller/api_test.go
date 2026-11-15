@@ -119,11 +119,11 @@ func TestPublishOnlyInTests(t *testing.T) {
 		if err != nil || !production(file) {
 			return err
 		}
+		// Any reference counts, so a method value passed on and called later
+		// is found as well as a direct call.
 		ast.Inspect(file, func(n ast.Node) bool {
-			if call, ok := n.(*ast.CallExpr); ok {
-				if sel, ok := call.Fun.(*ast.SelectorExpr); ok && sel.Sel.Name == "Publish" {
-					t.Errorf("%s calls Publish outside a test or faultinject build", path)
-				}
+			if sel, ok := n.(*ast.SelectorExpr); ok && sel.Sel.Name == "Publish" {
+				t.Errorf("%s refers to Publish outside a test or faultinject build", path)
 			}
 			return true
 		})

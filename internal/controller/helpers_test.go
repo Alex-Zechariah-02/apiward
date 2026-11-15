@@ -56,7 +56,11 @@ func (e *env) own(cfg Config) *Controller {
 	if err != nil {
 		e.t.Fatalf("opening the controller: %v", err)
 	}
-	e.t.Cleanup(func() { c.Stop() })
+	e.t.Cleanup(func() {
+		if err := c.Stop(); err != nil {
+			e.t.Errorf("stopping the controller: %v", err)
+		}
+	})
 	return c
 }
 

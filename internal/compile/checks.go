@@ -1,9 +1,13 @@
-// Policy count, permit and upstream address checks.
+// Policy count, permit, deny-all and upstream address checks, and the
+// warnings a generation is published with.
 
 package compile
 
 import (
+	"fmt"
 	"net/netip"
+	"slices"
+	"strings"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/policy"
 )
@@ -76,4 +80,45 @@ func checkPermits(p policy.Policy, rules map[string]*Rule) (map[string]bool, err
 func isLoopbackDial(dial string) bool {
 	addr, err := netip.ParseAddrPort(dial)
 	return err == nil && addr.Port() != 0 && addr.Addr().IsLoopback()
+}
+
+// DenyAll reports whether the policy can admit no request at all: no
+// operation is both allowed and public, and no permit names an allowed
+// operation, so no authenticated request can pass RBAC either; a permit on
+// an operation whose access is deny admits nothing. Only such a policy may
+// become the first base of an installation or the base that ends a recovery.
+func DenyAll(p policy.Policy) bool {
+	allowed := map[string]bool{}
+	for _, op := range p.Operations {
+		if op.Access != "allow" {
+			continue
+		}
+		if op.Auth == "none" {
+			return false
+		}
+		allowed[op.ID] = true
+	}
+	return !slices.ContainsFunc(p.Permits, func(permit policy.Permit) bool { return allowed[permit.Operation] })
+}
+
+// Warnings names what in the generation is valid but likely unintended, for
+// the log line of each publication: a prefix target "/x/*" without the exact
+// target "/x", which it does not match, and an upstream reached over plain
+// http at an address other than loopback, where requests, identity
+// assertions and bodies cross the network unencrypted.
+func (g *Generation) Warnings() []string {
+	items := []string{}
+	for _, t := range g.prefixes {
+		base := strings.TrimSuffix(t.prefix, "/")
+		if base != "" && g.exact[base] == nil {
+			items = append(items, fmt.Sprintf("target %s does not match %s or %s/; declare %s as well if it should be served", t.pattern, base, base, base))
+		}
+	}
+	for _, e := range g.endpoints {
+		if e.scheme == "http" && !e.ip.IsLoopback() {
+			items = append(items, fmt.Sprintf("%s (%s) is plain http to a non-loopback address: requests, identity assertions and bodies cross the network unencrypted; use https with a client certificate", e.field, e.address))
+		}
+	}
+	slices.Sort(items)
+	return items
 }

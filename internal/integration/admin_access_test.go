@@ -62,7 +62,7 @@ func TestAdminAccessCheck(t *testing.T) {
 			t.Errorf("%s: %+v", tc.body, got)
 		}
 	}
-	if got := ask(`{"method":"POST","path":"/a/item","roles":["WRITER","GHOST"]}`); !slices.Equal(got.IgnoredRoles, []string{"GHOST"}) || !slices.Equal(got.NotChecked, []string{"token", "rate", "body"}) {
+	if got := ask(`{"method":"POST","path":"/a/item","roles":["WRITER","GHOST"]}`); !slices.Equal(got.IgnoredRoles, []string{"GHOST"}) || !slices.Equal(got.NotChecked, []string{"address", "token", "rate", "body"}) {
 		t.Errorf("ignored roles and unchecked steps: %+v", got)
 	}
 

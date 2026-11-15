@@ -21,9 +21,11 @@ func (c *Controller) Enrol(ctx context.Context, e store.Enrolment, passwordHash 
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	now := compile.TrustedNow()
+	// 32 hex characters (128 bits) of the secret's hash name the enrolment
+	// uniquely and fit the transition ID cap.
 	t := store.TransitionRecord{ID: "enrol:" + e.Secret[:32], Kind: "admin.enrol", Actor: e.Name, Target: e.Name, Digest: e.Secret}
 	if !c.ready() {
-		return unavailableOutcome(t.ID)
+		return c.unavailableOutcome(t.ID)
 	}
 	if err := c.commitAudit(ctx, audit.Event{Kind: "transition.intent", Transition: t.ID, Actor: e.Name}); err != nil {
 		return auditUnavailable(t.ID)
@@ -36,7 +38,7 @@ func (c *Controller) Enrol(ctx context.Context, e store.Enrolment, passwordHash 
 		return Outcome{Transition: t.ID, Outcome: "rejected", Reason: "ENROLMENT_CONSUMED"}, http.StatusUnauthorized
 	}
 	if err != nil {
-		return c.storeFailure(t.ID, err)
+		return c.commitFailure(ctx, t.ID, err)
 	}
 	c.sessions.RevokeAdmin(e.Name)
 	fault.CrashPoint("enrol-after-commit")
@@ -58,7 +60,7 @@ func (c *Controller) ChangePassword(ctx context.Context, admin store.Administrat
 		Digest: "password",
 	}
 	if !c.ready() {
-		return unavailableOutcome(t.ID)
+		return c.unavailableOutcome(t.ID)
 	}
 	if err := c.commitAudit(ctx, audit.Event{Kind: "transition.intent", Transition: t.ID, Actor: admin.Name}); err != nil {
 		return auditUnavailable(t.ID)
@@ -69,7 +71,7 @@ func (c *Controller) ChangePassword(ctx context.Context, admin store.Administrat
 		return Outcome{Transition: t.ID, Outcome: "rejected", Reason: "CREDENTIAL_CHANGED"}, http.StatusConflict
 	}
 	if err != nil {
-		return c.storeFailure(t.ID, err)
+		return c.commitFailure(ctx, t.ID, err)
 	}
 	c.sessions.RevokeAdmin(admin.Name)
 	return c.finish(ctx, Outcome{Transition: t.ID, Outcome: "committed"}, audit.Event{Kind: "transition.committed", Transition: t.ID, Actor: admin.Name})

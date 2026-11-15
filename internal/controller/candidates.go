@@ -22,7 +22,7 @@ func (c *Controller) StageCandidate(ctx context.Context, t store.TransitionRecor
 	defer c.mu.Unlock()
 	now := compile.TrustedNow()
 	if !c.ready() {
-		return unavailableOutcome(t.ID)
+		return c.unavailableOutcome(t.ID)
 	}
 	if result, status, done := c.replay(ctx, t); done {
 		return result, status
@@ -58,7 +58,7 @@ func (c *Controller) StageCandidate(ctx context.Context, t store.TransitionRecor
 	record := store.CandidateRecord{Parent: parent, Document: canonical, Checksum: store.DocumentChecksum(canonical), DenyAll: compile.DenyAll(policy), Actor: t.Actor}
 	id, err := c.store.CommitCandidate(ctx, t, record, now)
 	if err != nil {
-		return c.storeFailure(t.ID, err)
+		return c.commitFailure(ctx, t.ID, err)
 	}
 	fault.CrashPoint("candidate-after-commit")
 	result := Outcome{Transition: t.ID, Outcome: "committed", Candidate: id}
@@ -71,7 +71,7 @@ func (c *Controller) WithdrawCandidate(ctx context.Context, t store.TransitionRe
 	defer c.mu.Unlock()
 	now := compile.TrustedNow()
 	if !c.ready() {
-		return unavailableOutcome(t.ID)
+		return c.unavailableOutcome(t.ID)
 	}
 	if result, status, done := c.replay(ctx, t); done {
 		return result, status
@@ -90,7 +90,7 @@ func (c *Controller) WithdrawCandidate(ctx context.Context, t store.TransitionRe
 		return auditUnavailable(t.ID)
 	}
 	if err := c.store.CommitWithdrawal(ctx, t, id, now); err != nil {
-		return c.storeFailure(t.ID, err)
+		return c.commitFailure(ctx, t.ID, err)
 	}
 	result := Outcome{Transition: t.ID, Outcome: "committed", Candidate: id}
 	return c.finish(ctx, result, audit.Event{Kind: "transition.committed", Transition: t.ID, Actor: t.Actor})

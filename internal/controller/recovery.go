@@ -17,22 +17,24 @@ import (
 // falls back to an older revision: anything it cannot establish leaves the
 // gateway serving no protected request.
 func (c *Controller) reconcile(now time.Time) {
+	// No deadline: nothing is served until reconciliation ends, and the work
+	// is bounded by the history the database keeps.
 	ctx := context.Background()
 	a, err := c.store.Load(ctx)
 	if err != nil {
-		c.unavailable(err.Error())
+		c.unavailable("store_unavailable", err.Error())
 		return
 	}
 	if err := c.reconcileAudit(ctx, now); err != nil {
-		c.unavailable(fmt.Sprintf("recording missing outcome events: %v", err))
+		c.unavailable("audit_reconcile_failed", fmt.Sprintf("recording missing outcome events: %v", err))
 		return
 	}
 	if a.Mode != store.ModeNormal {
-		c.unavailable(a.Mode)
+		c.unavailable(a.Mode, "")
 		return
 	}
 	if now.Before(a.HighWater.Add(-clockTolerance)) {
-		c.unavailable("clock_regression")
+		c.unavailable("clock_regression", "")
 		return
 	}
 	// A provisional base or an override whose time ran out while the gateway
@@ -43,14 +45,14 @@ func (c *Controller) reconcile(now time.Time) {
 	}
 	a, err = c.store.Load(ctx)
 	if err != nil {
-		c.unavailable(err.Error())
+		c.unavailable("store_unavailable", err.Error())
 		return
 	}
 	// A provisional base is served only while the base it returns to can
 	// still be restored with the active overrides.
 	if a.Provisional != 0 {
 		if _, err := c.compileEffective(ctx, a.Confirmed, time.Time{}, a.Overrides); err != nil {
-			c.unavailable(fmt.Sprintf("rollback target revision %d: %v", a.Confirmed, err))
+			c.unavailable("rollback_target_invalid", fmt.Sprintf("rollback target revision %d: %v", a.Confirmed, err))
 			return
 		}
 	}
@@ -60,17 +62,17 @@ func (c *Controller) reconcile(now time.Time) {
 	}
 	ids, err := c.store.Unpublished(ctx)
 	if err != nil {
-		c.unavailable(fmt.Sprintf("reading publication receipts: %v", err))
+		c.unavailable("store_unavailable", fmt.Sprintf("reading publication receipts: %v", err))
 		return
 	}
 	for _, id := range ids {
 		if err := c.store.MarkPublished(ctx, id, "reconciliation", now); err != nil {
-			c.unavailable(fmt.Sprintf("recording publication receipt: %v", err))
+			c.unavailable("store_unavailable", fmt.Sprintf("recording publication receipt: %v", err))
 			return
 		}
 	}
 	if err := c.store.RaiseHighWater(ctx, now); err != nil {
-		c.unavailable(fmt.Sprintf("recording clock high-water mark: %v", err))
+		c.unavailable("store_unavailable", fmt.Sprintf("recording clock high-water mark: %v", err))
 		return
 	}
 	g := c.current.Load()

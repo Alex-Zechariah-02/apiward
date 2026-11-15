@@ -134,11 +134,14 @@ func (c *Controller) Admission() string {
 	return "ready"
 }
 
-func (c *Controller) unavailable(reason string) {
+// unavailable withdraws the published generation. code, a fixed word, becomes
+// the state the Admin API reports; detail, which may hold driver text, goes
+// only to the log and the security record.
+func (c *Controller) unavailable(code, detail string) {
 	c.current.Store(nil)
-	c.state.Store(reason)
-	c.logger.Error("protected admission unavailable", "reason", reason)
-	c.audit.Record(audit.Event{Kind: "controller.unavailable", Reason: reason})
+	c.state.Store(code)
+	c.logger.Error("protected admission unavailable", "reason", code, "detail", detail)
+	c.audit.Record(audit.Event{Kind: "controller.unavailable", Reason: code, Error: detail})
 }
 
 // ready reports whether mutations can be processed: the database is open and

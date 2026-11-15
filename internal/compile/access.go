@@ -55,7 +55,10 @@ func NewQuestion(method, path, host string, headers map[string]string, roles []s
 	}
 	header := http.Header{}
 	for name, value := range headers {
-		if name == "" || len(name) > policy.MaxHeaderName || len(value) > maxQuestionValue {
+		// Names that differ only in letter case are one header; keeping either
+		// would make the same question answer differently.
+		_, repeated := header[http.CanonicalHeaderKey(name)]
+		if name == "" || len(name) > policy.MaxHeaderName || len(value) > maxQuestionValue || repeated {
 			return q, "headers"
 		}
 		header.Set(name, value)
@@ -96,7 +99,7 @@ type Answer struct {
 // Decide answers q with g. blocked reports whether the account asked about
 // is on the blocked list; it is asked only for a protected operation.
 func (g *Generation) Decide(q Question, blocked func() bool) Answer {
-	answer := Answer{Roles: []string{}, Ignored: []string{}, NotChecked: []string{"rate", "body"}}
+	answer := Answer{Roles: []string{}, Ignored: []string{}, NotChecked: []string{"address", "rate", "body"}}
 	refuse := func(check, code string) Answer {
 		answer.Check, answer.Code = check, code
 		return answer
@@ -115,7 +118,7 @@ func (g *Generation) Decide(q Question, blocked func() bool) Answer {
 	if !rule.Public() {
 		// A real request also needs a valid token from the trusted issuer;
 		// the roles asked about stand for its verified roles.
-		answer.NotChecked = []string{"token", "rate", "body"}
+		answer.NotChecked = []string{"address", "token", "rate", "body"}
 		roles, ignored, reason := g.Authorise(q.roles, rule)
 		answer.Roles, answer.Ignored = nonNil(roles), nonNil(ignored)
 		if blocked() {

@@ -22,7 +22,7 @@ func (c *Controller) EstablishBase(ctx context.Context, kind, actor string, cand
 	defer c.mu.Unlock()
 	now := compile.TrustedNow()
 	if !c.ready() {
-		return unavailableOutcome(kind)
+		return c.unavailableOutcome(kind)
 	}
 	a, err := c.store.Load(ctx)
 	if err != nil {
@@ -79,14 +79,14 @@ func (c *Controller) Activate(ctx context.Context, t store.TransitionRecord, can
 	defer c.mu.Unlock()
 	now := compile.DeadlineNow()
 	if !c.ready() {
-		return unavailableOutcome(t.ID)
+		return c.unavailableOutcome(t.ID)
 	}
 	if result, status, done := c.replay(ctx, t); done {
 		return result, status
 	}
 	// Overrides that have expired by now must not block the candidate.
 	if c.mode() == store.ModeNormal && !c.settle(ctx, now, false) {
-		return unavailableOutcome(t.ID)
+		return c.unavailableOutcome(t.ID)
 	}
 
 	a, err := c.store.Load(ctx)
@@ -149,14 +149,14 @@ func (c *Controller) Resolve(ctx context.Context, t store.TransitionRecord, prov
 	defer c.mu.Unlock()
 	now := compile.TrustedNow()
 	if !c.ready() {
-		return unavailableOutcome(t.ID)
+		return c.unavailableOutcome(t.ID)
 	}
 	if result, status, done := c.replay(ctx, t); done {
 		return result, status
 	}
 	// The base that follows is compiled with the overrides still active now.
 	if c.mode() == store.ModeNormal && !c.settle(ctx, now, false) {
-		return unavailableOutcome(t.ID)
+		return c.unavailableOutcome(t.ID)
 	}
 
 	a, err := c.store.Load(ctx)

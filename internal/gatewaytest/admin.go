@@ -53,6 +53,8 @@ func (e *Env) AdminSend(method, path, body string, header ...string) (int, strin
 		}
 		req.Header.Set(header[i], header[i+1])
 	}
+	// 30 s matches the gateway's write limit for admin changes, the longest
+	// an admin request may take.
 	resp, err := (&http.Client{Timeout: 30 * time.Second}).Do(req)
 	if err != nil {
 		return 0, err.Error(), nil
@@ -188,15 +190,18 @@ func (e *Env) Health() string {
 	return h.State
 }
 
-// UnavailableReason returns the reason of the last controller.unavailable
-// event, for states in which no administrator can log in to read the status.
+// UnavailableReason returns the state code and detail of the last
+// controller.unavailable event ("code: detail", or the code alone), for
+// states in which no administrator can log in to read the status.
 func (e *Env) UnavailableReason() string {
 	e.T.Helper()
 	events := e.EventsWhen(func(events []map[string]any) bool { return CountKind(events, "controller.unavailable") > 0 })
 	reason := ""
 	for _, ev := range events {
 		if ev["kind"] == "controller.unavailable" {
-			reason, _ = ev["reason"].(string)
+			code, _ := ev["reason"].(string)
+			detail, _ := ev["error"].(string)
+			reason = strings.TrimSuffix(code+": "+detail, ": ")
 		}
 	}
 	return reason
@@ -210,6 +215,8 @@ func (e *Env) RunOperator(binary string, extraEnv []string, command string, args
 	cmd := exec.Command(binary, append([]string{command, "--config", e.Config}, args...)...)
 	cmd.Env = append(os.Environ(), "GATEWAY_FAULT=")
 	cmd.Env = append(cmd.Env, extraEnv...)
+	// Unbounded: the operator commands end by themselves, and the test's own
+	// timeout stops a hung one.
 	output, err := cmd.CombinedOutput()
 	code := 0
 	if exit, ok := err.(*exec.ExitError); ok {

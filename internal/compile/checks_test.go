@@ -1,10 +1,12 @@
-// Policy count checks against the deployment's capacity limits.
+// Policy count checks against the deployment's capacity limits, the deny-all
+// test, publication warnings and repeated question headers.
 
 package compile
 
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -26,5 +28,52 @@ func TestCountLimits(t *testing.T) {
 	}
 	if _, err := Compile(p, 1, time.Time{}, policy.Limits{Operations: policy.DefaultOperations + 1}); err != nil {
 		t.Fatalf("with the raised ceiling: %v", err)
+	}
+}
+
+// A permit on an operation whose access is deny admits nothing, so the policy
+// stays deny-all; a permit on an allowed operation does not.
+func TestDenyAllCountsAllowedPermits(t *testing.T) {
+	p := policy.Policy{
+		Operations: []policy.Operation{{ID: "x", Access: "deny"}, {ID: "y", Access: "deny"}},
+		Permits:    []policy.Permit{{Role: "R", Operation: "x"}},
+	}
+	if !DenyAll(p) {
+		t.Fatal("a permit on a denied operation made the policy admit traffic")
+	}
+	p.Operations[0].Access = "allow"
+	if DenyAll(p) {
+		t.Fatal("a permit on an allowed operation was not counted")
+	}
+}
+
+// The compiler warns of a prefix target without its exact path and of plain
+// http to an address other than loopback, and of nothing else.
+func TestWarnings(t *testing.T) {
+	g, err := Compile(policy.Policy{
+		SchemaVersion: policy.LatestSchemaVersion, Profile: policy.ProfileCore,
+		Upstreams: []policy.Upstream{{ID: "near", Dial: "127.0.0.1:9"}, {ID: "far", URL: "http://192.0.2.10:9"}},
+		APIs:      []policy.API{{ID: "a", Upstream: "near"}, {ID: "b", Upstream: "far"}},
+		Operations: []policy.Operation{
+			{ID: "alone", API: "a", Method: "GET", Target: "/a/*", Access: "deny", Auth: "none"},
+			{ID: "paired", API: "a", Method: "GET", Target: "/p/*", Access: "deny", Auth: "none"},
+			{ID: "pair", API: "a", Method: "GET", Target: "/p", Access: "deny", Auth: "none"},
+			{ID: "far", API: "b", Method: "GET", Target: "/b", Access: "deny", Auth: "none"},
+		},
+	}, 1, time.Time{}, policy.Limits{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	warnings := g.Warnings()
+	if len(warnings) != 2 || !strings.HasPrefix(warnings[0], "target /a/* ") || !strings.HasPrefix(warnings[1], "upstreams[1].url ") {
+		t.Fatalf("warnings %q", warnings)
+	}
+}
+
+// Header names that differ only in letter case are one header, so a question
+// naming both is refused rather than answered from either.
+func TestQuestionRepeatedHeader(t *testing.T) {
+	if _, field := NewQuestion("GET", "/a", "", map[string]string{"X-Tenant": "a", "x-tenant": "b"}, nil); field != "headers" {
+		t.Fatalf("refused field %q, want headers", field)
 	}
 }

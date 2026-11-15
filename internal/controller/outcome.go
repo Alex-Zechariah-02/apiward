@@ -73,7 +73,11 @@ type Outcome struct {
 	Expires  time.Time `json:"expires_at,omitzero"`
 }
 
-func unavailableOutcome(id string) (Outcome, int) {
+// unavailableOutcome refuses a mutation the controller cannot process now (no
+// database, or a stop has begun) and records the refusal; once the security
+// log has closed, the record is counted as lost.
+func (c *Controller) unavailableOutcome(id string) (Outcome, int) {
+	c.audit.Record(audit.Event{Kind: "transition.rejected", Transition: id, Reason: "UNAVAILABLE"})
 	return Outcome{Transition: id, Outcome: "rejected", Reason: "UNAVAILABLE"}, http.StatusServiceUnavailable
 }
 
@@ -142,8 +146,24 @@ func policyRejection(err error) (string, string) {
 // identity gets a transition.failed record and the failure is counted, so it is
 // visible beyond the log line.
 func (c *Controller) storeFailure(id string, err error) (Outcome, int) {
+	c.audit.Record(audit.Event{Kind: "transition.failed", Transition: id, Reason: "STORE_ERROR"})
+	return c.countFailure(id, err)
+}
+
+// commitFailure ends a change whose commit failed after its intent event was
+// acknowledged. Its transition.failed event is acknowledged too, so the
+// security log never holds that intent without an outcome while it accepts
+// records.
+func (c *Controller) commitFailure(ctx context.Context, id string, err error) (Outcome, int) {
+	if auditErr := c.commitAudit(ctx, audit.Event{Kind: "transition.failed", Transition: id, Reason: "STORE_ERROR"}); auditErr != nil {
+		c.logger.Error("failure event not recorded", "transition", id, "error", auditErr)
+	}
+	return c.countFailure(id, err)
+}
+
+// countFailure logs and counts a database failure and returns its refusal.
+func (c *Controller) countFailure(id string, err error) (Outcome, int) {
 	c.logger.Error("control-plane database failure", "error", err)
 	c.failures.Add(1)
-	c.audit.Record(audit.Event{Kind: "transition.failed", Transition: id, Reason: "STORE_ERROR"})
 	return Outcome{Transition: id, Outcome: "rejected", Reason: "STORE_ERROR"}, http.StatusServiceUnavailable
 }

@@ -66,7 +66,7 @@ func (c *Controller) expire(g *compile.Generation) {
 	// The generation expired, so a stored deadline must have passed and been
 	// ended above. If none had, runtime and stored state disagree.
 	if c.current.Load() == g {
-		c.unavailable(fmt.Sprintf("generation %s expired but no stored deadline has passed", g.ID))
+		c.unavailable("deadline_mismatch", fmt.Sprintf("generation %s expired but no stored deadline has passed", g.ID))
 	}
 }
 
@@ -81,7 +81,7 @@ func (c *Controller) settle(ctx context.Context, now time.Time, withProvisional 
 	for {
 		a, err := c.store.Load(ctx)
 		if err != nil {
-			c.unavailable(err.Error())
+			c.unavailable("store_unavailable", err.Error())
 			return false
 		}
 		var due *store.Override
@@ -147,7 +147,7 @@ func (c *Controller) endProvisional(ctx context.Context, t store.TransitionRecor
 	stage := strings.TrimPrefix(t.Kind, "cpa.")
 	failed := func(reason string, result Outcome, status int) (Outcome, int) {
 		if disposition != store.DispositionConfirmed {
-			c.unavailable(fmt.Sprintf("%s (%s of revision %d) not completed: %s", t.ID, stage, a.Provisional, reason))
+			c.unavailable("transition_incomplete", fmt.Sprintf("%s (%s of revision %d) not completed: %s", t.ID, stage, a.Provisional, reason))
 		}
 		return result, status
 	}
@@ -172,7 +172,7 @@ func (c *Controller) endProvisional(ctx context.Context, t store.TransitionRecor
 	fault.CrashPoint(stage + "-before-commit")
 	t.Revision = target
 	if err := c.store.CommitResolution(ctx, t, a, disposition, now); err != nil {
-		result, status := c.storeFailure(t.ID, err)
+		result, status := c.commitFailure(ctx, t.ID, err)
 		return failed("commit failed", result, status)
 	}
 	fault.CrashPoint(stage + "-after-commit")
@@ -180,6 +180,7 @@ func (c *Controller) endProvisional(ctx context.Context, t store.TransitionRecor
 	c.current.Store(g)
 	c.state.Store(store.ModeNormal)
 	c.scheduleDeadline(g)
+	c.warn(g)
 	fault.CrashPoint(stage + "-after-swap")
 	if err := c.store.MarkPublished(ctx, t.ID, "publisher", now); err != nil {
 		c.logger.Error("recording publication receipt", "error", err)

@@ -10,13 +10,17 @@ import (
 )
 
 const (
-	RateAlgorithm    = "sliding-window"
-	RateKeySubject   = "subject"
-	RateKeyAddress   = "client_address"
-	MaxRateCount     = 1_000_000
+	RateAlgorithm  = "sliding-window"
+	RateKeySubject = "subject"
+	RateKeyAddress = "client_address"
+	// MaxRateCount is far above any per-account rate a small team's API
+	// serves, so it refuses only a mistyped count, not a real limit.
+	MaxRateCount = 1_000_000
+	// MaxRateWindowSec is one day: a longer window is a quota, which the
+	// sliding-window limiter does not keep across restarts.
 	MaxRateWindowSec = 86_400
 	// SweepInterval is how many admissions pass between removals of expired
-	// counters.
+	// counters: often enough to bound memory, rarely enough to cost little.
 	SweepInterval = 1024
 )
 

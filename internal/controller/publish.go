@@ -25,13 +25,22 @@ import (
 func (c *Controller) publishAuthority(a store.Authority) bool {
 	g, err := authorityGeneration(c.network.Load(), a, a.Overrides, c.config.Limits)
 	if err != nil {
-		c.unavailable(fmt.Sprintf("stored revision %d with overrides %v: %v", a.Revision, overrideIDs(a.Overrides), err))
+		c.unavailable("policy_invalid", fmt.Sprintf("stored revision %d with overrides %v: %v", a.Revision, overrideIDs(a.Overrides), err))
 		return false
 	}
 	c.current.Store(g)
 	c.state.Store(store.ModeNormal)
 	c.scheduleDeadline(g)
+	c.warn(g)
 	return true
+}
+
+// warn logs the compiler's warnings for a newly published base, so the start
+// log and each activation name them.
+func (c *Controller) warn(g *compile.Generation) {
+	for _, warning := range g.Warnings() {
+		c.logger.Warn("policy warning", "revision", g.Revision, "warning", warning)
+	}
 }
 
 // authorityGeneration compiles the active base of a with the given overrides,
@@ -93,7 +102,7 @@ func (c *Controller) publish(ctx context.Context, t store.TransitionRecord, poli
 	change.Keep = c.config.HistoryKeep
 	revision, err := c.store.CommitRevision(ctx, t, change, now)
 	if err != nil {
-		return c.storeFailure(t.ID, err)
+		return c.commitFailure(ctx, t.ID, err)
 	}
 	fault.CrashPoint("after-commit")
 
@@ -101,6 +110,7 @@ func (c *Controller) publish(ctx context.Context, t store.TransitionRecord, poli
 	c.current.Store(g)
 	c.state.Store(store.ModeNormal)
 	c.scheduleDeadline(g)
+	c.warn(g)
 	fault.CrashPoint("after-swap")
 
 	if err := c.store.MarkPublished(ctx, t.ID, "publisher", now); err != nil {
@@ -163,7 +173,7 @@ func (c *Controller) Publish(ctx context.Context, actor string, change Change) (
 	defer c.mu.Unlock()
 	now := compile.TrustedNow()
 	if c.store == nil || c.mode() != store.ModeNormal {
-		return unavailableOutcome(change.ID)
+		return c.unavailableOutcome(change.ID)
 	}
 	t := store.TransitionRecord{
 		ID:       change.ID,
@@ -177,7 +187,7 @@ func (c *Controller) Publish(ctx context.Context, actor string, change Change) (
 		return result, status
 	}
 	if !c.settle(ctx, now, false) {
-		return unavailableOutcome(t.ID)
+		return c.unavailableOutcome(t.ID)
 	}
 
 	a, err := c.store.Load(ctx)

@@ -45,13 +45,15 @@ What the gateway records, when a record is waited for, and how to read the log. 
 | `cpa.activated`, `cpa.confirmed`, `cpa.rolled_back`, `cpa.timed_out` | A policy went on trial, was kept, was undone, or its trial ended | Waited for |
 | `tpo.created`, `tpo.revoked`, `tpo.expired` | A temporary rule began, was revoked or ended | Waited for |
 | `account.block`, `account.unblock`, `address.block`, `address.unblock`, `keys.reload` | A blocked-list change or a key reload took effect | Waited for |
-| `transition.rejected`, `cpa.rejected`, `tpo.rejected` | A change was refused | Queued |
+| `transition.rejected`, `cpa.rejected`, `tpo.rejected` | A change was refused (reason `UNAVAILABLE` while the gateway stops or has no database) | Queued |
 | `tpo.validated` | A temporary rule passed its check without being created | Queued |
-| `transition.failed` | The database could not complete a change | Queued |
+| `transition.failed` | The database could not complete a change | Waited for after an intent, else queued |
 | `controller.reconciled` | The gateway reconciled its stored state at start | Queued |
-| `controller.unavailable` | The gateway stopped accepting protected requests | Queued |
+| `controller.unavailable` | The gateway stopped accepting protected requests; `reason` is the state code, `error` the detail | Queued |
 
 - At start, an outcome whose record is missing is written again under its own kind with reason `reconciled`.
+- So a `transition.intent` without an outcome record means the change was not committed: every committed change has its outcome record once the gateway has started again.
+- The state codes of `controller.unavailable`, also the `state` of `GET /admin/status`: `store_unavailable`, `audit_reconcile_failed`, `clock_regression`, `rollback_target_invalid`, `deadline_mismatch`, `transition_incomplete`, `policy_invalid`, or the stored mode that serves no policy. The detail stays in the log and the gateway's own output.
 
 ## Gateway and operator records
 

@@ -218,22 +218,6 @@ func Compile(p policy.Policy, revision int64, notAfter time.Time, limits policy.
 	return g, nil
 }
 
-// DenyAll reports whether the policy can admit no request at all: it holds no
-// permits, so no authenticated request can pass RBAC, and no
-// operation is both allowed and public. Only such a policy may become the
-// first base of an installation or the base that ends a recovery.
-func DenyAll(p policy.Policy) bool {
-	if len(p.Permits) > 0 {
-		return false
-	}
-	for _, op := range p.Operations {
-		if op.Access == "allow" && op.Auth == "none" {
-			return false
-		}
-	}
-	return true
-}
-
 // compileControls compiles an operation's body schema, header schema and rate
 // rule into its rule, sharing schemas compiled for the same policy. A rule
 // that cannot be compiled rejects the whole policy.
@@ -301,5 +285,7 @@ func GenerationID(p policy.Policy, revision int64, notAfter time.Time, overrides
 		fmt.Fprintf(sum, "o%d|", id)
 	}
 	sum.Write(document)
+	// 48 bits tell apart the generations one deployment ever publishes; the
+	// label already names the revision and overrides.
 	return fmt.Sprintf("%s-%s", label.String(), hex.EncodeToString(sum.Sum(nil))[:12])
 }

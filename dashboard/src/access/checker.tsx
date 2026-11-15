@@ -41,6 +41,7 @@ function conditionsOf(operation: Operation): { host: string; headers: Record<str
 }
 
 const uncheckedWords: Record<string, string> = {
+  address: 'the client address allow list, which depends on where the request comes from',
   token: 'a valid sign-in token',
   rate: 'the rate limit, which depends on live traffic',
   body: 'the request body rules, which depend on the real body',
