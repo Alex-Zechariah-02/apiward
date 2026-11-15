@@ -12,6 +12,64 @@ The policy document and how it changes. Back to the [README](../README.md).
 - A separate blocked-account list refuses a verified account immediately and survives policy rollback.
 - Public keys can be reloaded from operator files; an invalid reload keeps the current key set.
 
+## How a request is decided
+
+Every request goes through these checks in this order; the first that refuses answers, and nothing is allowed by default.
+
+| Check | Policy fields | Refusal |
+|---|---|---|
+| Ingress | none: blocked addresses (Admin API), overload, malformed requests | `403 address_blocked`, `503 overloaded`, `400` |
+| Route | `operations[].target`, `.method`, `.when`, then `apis[].allow_addresses` | `404 not_found`, `405 method_not_allowed`, `403 address_not_allowed` |
+| Access | `operations[].access`: `allow` or `deny` | `403 forbidden` |
+| Token | `operations[].auth`: `required` or `none` (public: no token, no role check) | `401 unauthenticated` |
+| Roles | `roles[].id`, `permits[].role` and `.operation`; blocked accounts (Admin API) | `403 account_blocked`, `403 forbidden` |
+| Rate | `operations[].rate`: `sliding-window`, key `subject` or `client_address`, `count` 1 to 1,000,000 per `window_seconds` 1 to 86,400 | `429 rate_limited` |
+| Body | `operations[].body.max_bytes` (1 to 1 MiB), one `Content-Type: application/json` | `400 bad_request`, `413`, `415` |
+| Validation | `operations[].headers` and `operations[].body.schema` | `400 bad_request` |
+| Record | none: the request record must be written first | `503 gateway_unavailable` |
+
+- The target that matches most exactly wins (an exact path before the longest `/*` prefix); then only that target's methods count.
+- A `/*` target matches paths beneath the prefix, never the prefix itself.
+- A path with encoded slashes, backslashes, dot segments or empty segments is refused before routing; it is never normalised.
+- Among operations sharing a target and method, the one with the most `when` conditions that hold wins; a header condition holds only for exactly one header with exactly that value.
+- Roles come only from a verified token and count only when the policy declares them; a protected request passes when one kept role has a permit for the operation.
+- A permit for a public operation, an unknown role or operation, or a duplicate permit is refused when the policy is saved.
+- An operation without `body` accepts no request body.
+- Temporary rules change permits, rate counts or access of the confirmed policy, which is then compiled again; they are not part of the policy document.
+- A policy that admits nothing is the only kind allowed as the first policy and after a restore.
+
+## Request validation
+
+- A body is read only up to `max_bytes`, then checked: one JSON document, valid UTF-8, no repeated member names, at most 16 levels and 4,096 values.
+- Each property declared in `properties` is checked against its own schema: type, `enum`, lengths, bounds, items and nested objects.
+- `required` checks that a property is present.
+- A property not declared is refused only where its object says `"additionalProperties": false`; with `true` it passes unchecked.
+- Formats, patterns, constants, references, combinations and conditions are never checked: the schema cannot express them.
+- Only declared request headers are checked, each a string; a repeated declared header is refused. `Authorization`, `Host`, hop-by-hop and forwarding headers cannot be declared.
+- Query strings, path segments, multipart bodies and responses are never validated.
+- A body or header that fails its schema is answered `400 bad_request`; the security log records the reason (`schema_mismatch`, `malformed_json`, `duplicate_member` and others).
+
+## JSON Schema subset
+
+- Schemas are JSON Schema 2020-12; nothing is fetched and no reference resolves.
+- The root is `"type": "object"`, or `"array"` for a body. Every node states a `type`.
+- A policy using any keyword outside the list below is refused with `UNSUPPORTED_FEATURE` and the keyword's path; nothing is silently ignored.
+
+| Keyword | Allowed on | Rule |
+|---|---|---|
+| `type` | every node | `object`, `array`, `string`, `integer`, `number`, `boolean`, `null`, or a list of them |
+| `enum` | every node | 1 to 64 strings, numbers, booleans or `null` |
+| `properties` | `object` | at most 64, each a schema |
+| `required` | `object` | names declared in `properties` |
+| `additionalProperties` | `object` | required on every object; `true` or `false` |
+| `minLength`, `maxLength` | `string` | 0 to 1,048,576 |
+| `minimum`, `maximum` | `integer`, `number` | numbers, minimum not above maximum |
+| `items` | `array` | required on every array; one schema |
+| `minItems`, `maxItems` | `array` | 0 to 4,096 |
+
+- A keyword on a type it does not apply to is refused with `INVALID_VALUE`.
+- Annotations (`title`, `description`, `default`, `examples`, `$comment`) are refused too, so a typo cannot pass unnoticed.
+
 ## Schema versions
 
 - Policy documents use schema version 4 or 5 and contain roles and permits without per-user membership.
