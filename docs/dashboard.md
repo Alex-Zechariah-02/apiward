@@ -55,13 +55,16 @@ The administrator Dashboard: a React and TypeScript single-page application that
 - A notice stays until dismissed or another page opens; a problem stays on every page until dismissed.
 - Every change is confirmed in a dialog that states its consequence.
 - A change whose answer is lost is reported as an unknown outcome and never resent by itself; an explicit resend reuses its idempotency key, so the gateway applies it at most once.
-- Every refusal, warning and unknown outcome has a plain title, what to do next, and a collapsed **More Details** with the exact error code, HTTP status, field and IDs, each copyable.
+- Every refusal, warning and unknown outcome has a plain title, what to do next, and a collapsed **More Details** with the exact error code, HTTP status, field and IDs, each copyable; a copy the browser refuses says **Copy Failed**.
 - "Refused", "Applied, but …" and "No answer from the gateway" stay distinct.
 
 ## Sign-in and storage
 
 - Sign-in uses a password; first sign-in uses an operator-issued enrolment secret.
 - The session is an HttpOnly, `Secure`, `SameSite=Strict`, host-only cookie that page scripts cannot read.
+- A call answered `401` makes the Dashboard ask whether the session is still live; only a `401` to that question signs the page out, so a gateway briefly out of reach keeps the session.
+- A call with no answer within 35 seconds is shown as "No answer from the gateway"; the Admin API itself ends a request after 30 seconds.
+- Passwords and sign-in limits: [keys.md](keys.md#sign-in-rules).
 - Browser storage holds only display choices: the appearance (`gateway.theme`), the sidebar (`gateway.sidebar`) and the time zone (`gateway.timezone`).
 
 ## Policy Designer

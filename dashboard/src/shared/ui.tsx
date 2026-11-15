@@ -43,21 +43,27 @@ export function Arrowed({ text }: { text: string }) {
   )
 }
 
-// CopyButton copies one exact value, such as a code or an ID, and says so.
+// CopyButton copies one exact value, such as a code or an ID, and says whether
+// it worked: a browser may refuse clipboard access or not offer it at all.
 export function CopyButton(props: { value: string; label: string }) {
-  const [copied, setCopied] = useState(false)
+  const [state, setState] = useState<'idle' | 'copied' | 'failed'>('idle')
+  const copy = () => {
+    if (!navigator.clipboard) {
+      setState('failed')
+      return
+    }
+    navigator.clipboard.writeText(props.value).then(
+      () => setState('copied'),
+      () => setState('failed'),
+    )
+  }
   return (
     <button
       type="button"
       className="btn btn-small btn-copy"
-      onClick={() =>
-        navigator.clipboard.writeText(props.value).then(
-          () => setCopied(true),
-          () => setCopied(false),
-        )
-      }
+      onClick={copy}
     >
-      {copied ? 'Copied' : 'Copy'}
+      {state === 'copied' ? 'Copied' : state === 'failed' ? 'Copy Failed' : 'Copy'}
       <span className="visually-hidden"> {props.label}</span>
     </button>
   )
@@ -172,6 +178,7 @@ export function ListToolbar(props: {
           placeholder="Filter"
           value={props.query}
           onChange={(event) => props.onQuery(event.target.value)}
+          // The longest ID or name a list shows is 64 characters.
           maxLength={64}
           spellCheck={false}
           autoComplete="off"

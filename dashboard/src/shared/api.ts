@@ -240,7 +240,13 @@ const unknownCode: Message = {
 // message words a code, or says that this Dashboard has no description for
 // it, so a code is never shown without any explanation.
 export function message(code: string): Message {
-  return messages[code] ?? messages[code.toUpperCase()] ?? messages[code.toLowerCase()] ?? unknownCode
+  return known(code) ?? known(code.toUpperCase()) ?? known(code.toLowerCase()) ?? unknownCode
+}
+
+// known reads only the table's own entries, so a code such as "constructor"
+// cannot return an inherited member.
+function known(code: string): Message | undefined {
+  return Object.hasOwn(messages, code) ? messages[code] : undefined
 }
 
 // committedMessage words a change the gateway recorded although its answer
@@ -271,6 +277,7 @@ export function committedAnyway(reply: { error: string; outcome?: Outcome }): bo
 // changes whose outcome is unknown.
 export function describe(request: MutationRequest): string {
   const body = (request.body ?? {}) as { revision?: number; candidate?: number }
+  // Admin API paths are /admin/<resource>/<id>/<action>.
   const [, , resource, id, action] = request.path.split('/')
   const name = id === undefined ? '' : decodeURIComponent(id)
   if (resource === 'candidates') return request.method === 'DELETE' ? `Withdraw draft change ${name}` : 'Save a draft change'
@@ -281,6 +288,7 @@ export function describe(request: MutationRequest): string {
   }
   if (resource === 'overrides') return request.method === 'DELETE' ? `Revoke temporary rule ${name}` : 'Add a temporary rule'
   if (resource === 'blocked-accounts') return request.method === 'DELETE' ? `Unblock ${name}` : `Block ${name}`
+  if (resource === 'blocked-addresses') return request.method === 'DELETE' ? `Unblock address ${name}` : `Block address ${name}`
   if (resource === 'keys' && id === 'reload' && action === undefined) return 'Reload the signing keys'
   return `${request.method} ${request.path}`
 }

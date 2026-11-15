@@ -53,7 +53,7 @@ export const stages: Check[] = [
     id: 'validation',
     name: 'Body',
     plain: 'The gateway makes sure the request has the expected form: a JSON body of the permitted size, with the required fields and no unknown fields.',
-    technical: 'Bounded JSON Schema validation, Content-Type and size limits, duplicate members; malformed requests are refused before routing. Refusals: 400 bad_request, 413, 415.',
+    technical: 'Bounded JSON Schema validation, Content-Type and size limits, duplicate members; checked after the route, the sign-in, the roles and the rate limit, before the request is recorded. Refusals: 400 bad_request, 413, 415.',
   },
   {
     id: 'record',

@@ -5,7 +5,9 @@ import type { MutationRequest, Outcome, Reply, SessionInfo } from './api'
 // HttpOnly session cookie and the Origin header, and this module adds the
 // CSRF token to state-changing calls.
 
-const timeoutMs = 20_000
+// Outlasts the Admin API's 30-second write limit, so an answer the gateway can
+// still send is never reported as missing.
+const timeoutMs = 35_000
 
 export interface Admin {
   get<T>(path: string, signal?: AbortSignal): Promise<Reply<T>>
@@ -20,8 +22,9 @@ export function newKey(): string {
 // adminClient makes calls with one session's CSRF token. A 401 usually means
 // the session has ended, but a password change also answers 401 for a wrong
 // current password while the session goes on. So after a 401 the gateway is
-// asked whether the session is still live; unless it says so, signedOut is
-// called and the dashboard drops everything it shows. Several calls in flight
+// asked whether the session is still live; only a 401 to that question calls
+// signedOut, and the dashboard drops everything it shows. A re-read that gets
+// no answer leaves the session alone: the gateway may be briefly unreachable. Several calls in flight
 // can all meet the end of one session; it ends once, so the notice made from
 // what the dashboard knew at that moment is not replaced by a later, emptier one.
 export function adminClient(csrf: string, signedOut: () => void): Admin {
@@ -30,7 +33,7 @@ export function adminClient(csrf: string, signedOut: () => void): Admin {
     const reply = await request<T>(method, path, init, signal)
     if (reply.kind === 'refused' && reply.status === 401) {
       const session = await request<SessionInfo>('GET', '/admin/session')
-      if (session.kind !== 'ok' && !ended) {
+      if (session.kind === 'refused' && session.status === 401 && !ended) {
         ended = true
         signedOut()
       }
@@ -63,6 +66,8 @@ export async function request<T>(method: string, path: string, init: RequestInit
     response = await fetch(path, {
       ...init,
       method,
+      // Only this origin's cookie, never a stored answer, never a redirect:
+      // the Admin API answers every call itself.
       credentials: 'same-origin',
       cache: 'no-store',
       redirect: 'error',
@@ -70,7 +75,7 @@ export async function request<T>(method: string, path: string, init: RequestInit
     })
   } catch {
     if (signal?.aborted) return { kind: 'aborted' }
-    const reason = limit.aborted ? 'no answer within 20 seconds' : 'the server could not be reached'
+    const reason = limit.aborted ? `no answer within ${timeoutMs / 1000} seconds` : 'the server could not be reached'
     return { kind: 'unknown', message: reason }
   }
 
