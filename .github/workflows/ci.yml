@@ -114,8 +114,8 @@ jobs:
 
   dashboard:
     # The browser tests run one at a time against one stack per spec file, so
-    # three machines each take a third of the files; the checks that need run
-    # only once go with the first.
+    # three machines share the files, balanced by their recorded run times;
+    # the checks that need run only once go with the first.
     name: dashboard (${{ matrix.shard }}/3)
     strategy:
       fail-fast: false
@@ -125,6 +125,11 @@ jobs:
     timeout-minutes: 45
     env:
       EAT_PORT_OFFSET: "2000"
+      SHARD: ${{ matrix.shard }}
+      # The third shard runs every spec file not listed here, so a new file
+      # always runs.
+      SHARD1_FILES: e2e/sessions.spec.ts e2e/changes.spec.ts e2e/connect-entry.spec.ts e2e/trial.spec.ts e2e/rules.spec.ts e2e/start.spec.ts e2e/dev.spec.ts
+      SHARD2_FILES: e2e/canvas.spec.ts e2e/overview.spec.ts e2e/views.spec.ts e2e/accounts.spec.ts e2e/traffic.spec.ts e2e/upstreams.spec.ts e2e/motion.spec.ts e2e/permissions.spec.ts e2e/environment.spec.ts e2e/explanations.spec.ts
     defaults:
       run:
         working-directory: apiward/dashboard
@@ -170,7 +175,14 @@ jobs:
       # The tests run in the runner image's Chrome (playwright.config.ts).
       # Failure traces hold page contents and test credentials, so they stay
       # on the machine that ran the tests and are not uploaded.
-      - run: npx playwright test --shard=${{ matrix.shard }}/3
+      - run: |
+          files=()
+          for file in e2e/*.spec.ts; do
+            case " $SHARD1_FILES " in *" $file "*) listed=1 ;; *) listed= ;; esac
+            case " $SHARD2_FILES " in *" $file "*) listed=2 ;; esac
+            if [ "${listed:-3}" = "$SHARD" ]; then files+=("$file"); fi
+          done
+          npx playwright test "${files[@]}"
 
   deps:
     if: github.event_name == 'pull_request'
