@@ -170,7 +170,7 @@ func ReadPEM(path string, check func(os.FileInfo) error) ([]byte, error) {
 }
 
 func loadRoots(path string) (*x509.CertPool, error) {
-	data, err := ReadPEM(path, checkTrusted)
+	data, err := ReadPEM(path, CheckTrusted)
 	if err != nil {
 		return nil, err
 	}
@@ -236,11 +236,12 @@ func CheckKeyMode(info os.FileInfo) error {
 	return nil
 }
 
-// checkTrusted refuses a CA pin file another local account could rewrite to
-// make the gateway trust its certificates: on Unix it must not be writable
-// by the group or others and must belong to the gateway's user or root.
-// Windows grants access by ACL, which the operator sets (docs/keys.md).
-func checkTrusted(info os.FileInfo) error {
+// CheckTrusted refuses a trust anchor (a CA pin or a token verification key)
+// another local account could rewrite to make the gateway trust what it
+// signs: on Unix it must not be writable by the group or others and must
+// belong to the gateway's user or root. Windows grants access by ACL, which
+// the operator sets (docs/keys.md).
+func CheckTrusted(info os.FileInfo) error {
 	if runtime.GOOS == "windows" {
 		return nil
 	}

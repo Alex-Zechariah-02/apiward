@@ -18,6 +18,7 @@ Every key, certificate and secret the gateway uses: what it protects, its algori
 ## File protection
 
 - The gateway refuses a private key file (identity key, listener key, client key) that its group or other users can read; use mode `0600`.
+- On Unix it also refuses a trust anchor (a CA pin file or a token verification key) that its group or other users can write, or that belongs to another user than the gateway's or root.
 - A CA file of an upstream TLS profile decides which servers the gateway trusts: it must be a regular file and, on Unix, must not be writable by the group or others and must belong to the gateway's user or root.
 - Windows has no such modes: there these checks are skipped, so restrict the key and CA files with NTFS permissions (for example `icacls <file> /inheritance:r /grant:r "<gateway account>:R"`).
 - Token verification keys and certificate chains are checked for format and size, not for their mode.

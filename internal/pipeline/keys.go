@@ -164,7 +164,7 @@ func (c TrustConfig) bounds() (time.Duration, int, error) {
 }
 
 func readVerificationKey(path string, minBits int) (*rsa.PublicKey, string, error) {
-	data, err := forward.ReadPEM(path, nil)
+	data, err := forward.ReadPEM(path, forward.CheckTrusted)
 	if err != nil {
 		return nil, "", fmt.Errorf("reading public key: %w", err)
 	}
