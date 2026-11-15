@@ -35,6 +35,7 @@ func legacyCaddyFile(e *gatewaytest.Env) []byte {
 // left free for another owner. The controller's own checks (the admin
 // address, the trust key, the dashboard directory) are refused the same way.
 func TestNativeStartupRefusesConfiguration(t *testing.T) {
+	t.Parallel()
 	privateKey := filepath.Join(t.TempDir(), "private.pem")
 	der, _ := x509.MarshalPKCS8PrivateKey(issuertest.New(2048).Key())
 	if err := os.WriteFile(privateKey, pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der}), 0o600); err != nil {

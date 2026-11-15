@@ -19,6 +19,7 @@ import (
 // one holding a provisional base the new schema could not describe; an
 // interrupted migration leaves the earlier version intact.
 func TestMigrateFromVersionOne(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.ProtectedPolicy(), gatewaytest.SeedOptions{Version: 1})
 	e.Start(gatewaytest.Binaries.Plain)

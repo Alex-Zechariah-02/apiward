@@ -33,6 +33,7 @@ import (
 // request's method and its path as the upstream receives it: after the API's
 // forward rule, without the query.
 func TestGatewaySignsIdentityAssertion(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {

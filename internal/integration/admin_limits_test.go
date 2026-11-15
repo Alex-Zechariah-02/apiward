@@ -17,6 +17,7 @@ import (
 // from the component that owns it (configured ceilings included), and needs
 // a signed-in administrator.
 func TestAdminLimits(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.ProtectedPolicy(), gatewaytest.SeedOptions{})
 	settings := e.NativeSettings()

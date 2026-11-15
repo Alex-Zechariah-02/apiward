@@ -20,6 +20,7 @@ import (
 // provisional base on its own. A timer that fires after a confirmation or an
 // explicit rollback changes nothing.
 func TestTimeoutWithoutTraffic(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.ProtectedPolicy(), gatewaytest.SeedOptions{})
 	e.Start(gatewaytest.Binaries.Plain)
@@ -88,6 +89,7 @@ func TestTimeoutWithoutTraffic(t *testing.T) {
 // the clock then set back, still rolls back after its own two seconds rather
 // than an hour later.
 func TestDeadlineSetWhileClockAhead(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.ProtectedPolicy(), gatewaytest.SeedOptions{})
 	offset := filepath.Join(t.TempDir(), "wall-offset")

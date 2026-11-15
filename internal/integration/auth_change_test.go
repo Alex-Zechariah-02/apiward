@@ -25,6 +25,7 @@ import (
 // request is paused right after capture, before authentication and
 // authorisation run, so both run after the new generation is published.
 func TestRoleChangeAppliesToNewRequestsOnly(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.ProtectedPolicy(), gatewaytest.SeedOptions{})
 	holdFile, release := filepath.Join(e.Dir, "hold"), filepath.Join(e.Dir, "release")
@@ -90,6 +91,7 @@ func TestRoleChangeAppliesToNewRequestsOnly(t *testing.T) {
 // only under a generation in which the caller holds a permitted role, and a
 // refusal happens only under one in which it does not.
 func TestRoleSwapsUnderLoad(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.ProtectedPolicy(), gatewaytest.SeedOptions{})
 	e.Start(gatewaytest.Binaries.Fault)
@@ -104,9 +106,12 @@ func TestRoleSwapsUnderLoad(t *testing.T) {
 	completed := make(chan struct{}, workers)
 	var unexpected atomic.Int64
 	var wg sync.WaitGroup
+	// One kept connection per worker, as in TestRepeatedSwapsUnderLoad.
+	transport := &http.Transport{MaxIdleConnsPerHost: workers}
+	t.Cleanup(transport.CloseIdleConnections)
 	for range workers {
 		wg.Go(func() {
-			client := &http.Client{Timeout: 10 * time.Second}
+			client := &http.Client{Transport: transport, Timeout: 10 * time.Second}
 			for range requests {
 				req, _ := http.NewRequest(http.MethodGet, "http://"+e.DataAddr+"/a/x", nil)
 				req.Header.Set("Authorization", "Bearer "+bobToken)
@@ -193,6 +198,7 @@ func TestRoleSwapsUnderLoad(t *testing.T) {
 // A membership change that is invalid or based on a stale revision is
 // refused as a whole; the previous membership keeps applying.
 func TestRejectedRoleChangeKeepsMembership(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.ProtectedPolicy(), gatewaytest.SeedOptions{})
 	e.Start(gatewaytest.Binaries.Fault)
@@ -240,6 +246,7 @@ func TestRejectedRoleChangeKeepsMembership(t *testing.T) {
 // membership in force after restart, never a mixture, and the transition is
 // applied exactly once.
 func TestRoleChangeSurvivesCrash(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		point     string
 		committed bool

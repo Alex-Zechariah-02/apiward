@@ -15,6 +15,7 @@ import (
 // outcome record does not stop the gateway: the change finishes, its outcome
 // is recorded and protected requests are still admitted.
 func TestDisconnectDuringOutcomeKeepsAudit(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.ProtectedPolicy(), gatewaytest.SeedOptions{})
 	e.Start(gatewaytest.Binaries.Fault, "GATEWAY_FAULT=cancel-before-outcome")

@@ -19,6 +19,7 @@ import (
 )
 
 func TestAdmittedRequestReachesOnlyBoundUpstream(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.Policy(e.A, false), gatewaytest.SeedOptions{})
 	e.Start(gatewaytest.Binaries.Plain)
@@ -50,6 +51,7 @@ func TestAdmittedRequestReachesOnlyBoundUpstream(t *testing.T) {
 }
 
 func TestPublicationAddsOperationWithoutReload(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.Policy(e.A, false), gatewaytest.SeedOptions{})
 	configHash := gatewaytest.FileSHA256(t, e.Config)
@@ -107,6 +109,7 @@ func holdRequest(t *testing.T, e *gatewaytest.Env, holdFile, token string) (net.
 }
 
 func TestInFlightRequestKeepsCapturedGeneration(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.Policy(e.A, false), gatewaytest.SeedOptions{})
 	holdFile, release := filepath.Join(e.Dir, "hold"), filepath.Join(e.Dir, "release")
@@ -159,6 +162,7 @@ func TestInFlightRequestKeepsCapturedGeneration(t *testing.T) {
 // another upstream is answered 502 and was sent once, to the destination of
 // the generation it captured; it is never sent again, there or elsewhere.
 func TestFailedAttemptStaysOnCapturedDestination(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.Policy(e.A, false), gatewaytest.SeedOptions{})
 	e.Start(gatewaytest.Binaries.Fault)

@@ -24,6 +24,7 @@ import (
 // stays open and the database is free for its next owner. A database that
 // another gateway holds is never shared.
 func TestNativeStartupResourceFailures(t *testing.T) {
+	t.Parallel()
 	occupy := func(t *testing.T, addr string) {
 		l, err := net.Listen("tcp", addr)
 		if err != nil {
@@ -114,6 +115,7 @@ func TestNativeStartupResourceFailures(t *testing.T) {
 // the process exits with status 0 and the next start serves the same
 // generation. A second signal forces the exit with status 2.
 func TestNativeGracefulStop(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.Policy(e.A, false), gatewaytest.SeedOptions{})
 	e.Interruptible = true

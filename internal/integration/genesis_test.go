@@ -58,6 +58,7 @@ func publishedEvents(events []map[string]any, transition string) []map[string]an
 // candidate whose checksum the administrator confirms, exactly once, and
 // leaves the gateway serving a policy that admits nothing.
 func TestGenesisEstablishesDenyAllBase(t *testing.T) {
+	t.Parallel()
 	e, password, denyAll := bootstrapped(t, gatewaytest.Binaries.Plain)
 	root := e.MustLogin("root", password)
 
@@ -178,6 +179,7 @@ func TestGenesisEstablishesDenyAllBase(t *testing.T) {
 // event, ends with one genesis revision and one published event, and the
 // administrator's retry returns the recorded result.
 func TestGenesisSurvivesCrash(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		point       string
 		publishedBy string

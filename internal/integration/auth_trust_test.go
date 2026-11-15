@@ -19,6 +19,7 @@ import (
 // The gateway does not start without valid trust material, and changing a
 // key file alone changes nothing: keys are replaced by a reload or restart.
 func TestTrustMaterialAtStartup(t *testing.T) {
+	t.Parallel()
 	other := issuertest.New(2048)
 	privateKey := filepath.Join(t.TempDir(), "private.pem")
 	der, _ := x509.MarshalPKCS8PrivateKey(other.Key())

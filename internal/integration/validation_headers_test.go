@@ -24,6 +24,7 @@ func bulk(values int) string {
 // forwarded: the upstream would not receive what was checked. The same
 // request without the nomination is forwarded with the header.
 func TestConnectionCannotRemoveValidatedHeaders(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.KeywordPolicy(), gatewaytest.SeedOptions{})
 	e.Start(gatewaytest.Binaries.Plain)

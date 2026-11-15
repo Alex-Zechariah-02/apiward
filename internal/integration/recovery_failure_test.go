@@ -19,6 +19,7 @@ import (
 // keep serving the provisional policy. A restart reconciles from the
 // database. The same holds for the automatic rollback.
 func TestFailedRollbackStopsAdmission(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.ProtectedPolicy(), gatewaytest.SeedOptions{})
 	e.Start(gatewaytest.Binaries.Fault, "GATEWAY_FAULT=rollback-target-invalid")
@@ -88,6 +89,7 @@ func TestFailedRollbackStopsAdmission(t *testing.T) {
 // Request fields never reach the audit log, so they cannot leak or forge
 // records.
 func TestLifecycleAuditFailure(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.ProtectedPolicy(), gatewaytest.SeedOptions{})
 	e.Start(gatewaytest.Binaries.Plain)

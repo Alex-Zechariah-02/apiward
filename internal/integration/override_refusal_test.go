@@ -20,6 +20,7 @@ import (
 // generation, no receipt. Refusals with an identity are recorded once;
 // malformed requests are answered 400 without reaching the controller.
 func TestOverrideRefusals(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	e.Interruptible = true // assertAbsent stops it gracefully
 	p := e.ProtectedPolicy()

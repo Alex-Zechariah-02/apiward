@@ -17,6 +17,7 @@ import (
 // Every sensitive read needs a session, every operation
 // its own permission, and no response carries a secret.
 func TestPermissionsAreServerSide(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.ProtectedPolicy(), gatewaytest.SeedOptions{})
 	e.Start(gatewaytest.Binaries.Plain)
@@ -106,6 +107,7 @@ func TestPermissionsAreServerSide(t *testing.T) {
 
 // Reads return the authoritative state with bounded pages.
 func TestProtectedReads(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	seeded := e.ProtectedPolicy()
 	gatewaytest.Seed(t, e.Database, seeded, gatewaytest.SeedOptions{})

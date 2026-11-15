@@ -14,6 +14,7 @@ import (
 // Bodies are bounded and strictly decoded, and
 // refused input never reaches a reply or an event unescaped.
 func TestAdminInputBounds(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	e.Interruptible = true // assertAbsent stops it gracefully
 	gatewaytest.Seed(t, e.Database, e.ProtectedPolicy(), gatewaytest.SeedOptions{})
@@ -86,6 +87,7 @@ func TestAdminInputBounds(t *testing.T) {
 // override route takes typed override requests only, and refuses a whole
 // policy. No recommendation route answers as if it worked.
 func TestOnlyVersionOperationsExist(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.ProtectedPolicy(), gatewaytest.SeedOptions{})
 	e.Start(gatewaytest.Binaries.Plain)

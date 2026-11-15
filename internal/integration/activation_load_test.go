@@ -24,6 +24,7 @@ import (
 // stable state for subsequent requests: one confirmed base, no provisional
 // base, every activation resolved, fixtures back at their seeds.
 func TestLifecycleWithFixtures(t *testing.T) {
+	t.Parallel()
 	e, fixtures := newFixtureEnv(t)
 	harness := e.MustLogin(gatewaytest.HarnessAdmin, gatewaytest.HarnessPassword)
 	seedHash := map[string]string{}
@@ -99,6 +100,7 @@ func TestLifecycleWithFixtures(t *testing.T) {
 // published: a receiver only ever sees generations of the policy that sends
 // requests to it, and every answer is one that policy gives.
 func TestLifecycleUnderLoad(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.ProtectedPolicy(), gatewaytest.SeedOptions{})
 	e.Start(gatewaytest.Binaries.Plain)

@@ -17,6 +17,7 @@ import (
 // permission bits as Windows access control. This is current-user evidence;
 // it does not impersonate another account or claim cross-account isolation.
 func TestNativeOperatorWindowsAccess(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	if _, code := e.RunOperator(gatewaytest.Binaries.Plain, nil, "install", "--admin", "root"); code != 0 {
 		t.Fatalf("install exit %d", code)

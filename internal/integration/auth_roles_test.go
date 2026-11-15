@@ -20,6 +20,7 @@ import (
 // is public, or the subject is active and holds a role the operation is
 // intended for. Each decision is checked at the fixtures.
 func TestRoleMatrixAgainstCatalogue(t *testing.T) {
+	t.Parallel()
 	e, fixtures := newFixtureEnv(t)
 	c := gatewaytest.LoadCatalogue(t)
 	roles := gatewaytest.CatalogueRoles(c)
@@ -117,6 +118,7 @@ func TestRoleMatrixAgainstCatalogue(t *testing.T) {
 // call and records RBAC as passed; the fixture refuses another customer's
 // order and records that it did.
 func TestObjectOwnershipStaysWithFixture(t *testing.T) {
+	t.Parallel()
 	e, fixtures := newFixtureEnv(t)
 	orders := fixtures["orders"]
 

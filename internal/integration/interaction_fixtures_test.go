@@ -18,6 +18,7 @@ import (
 // subsequent requests: one confirmed base, no provisional base, no active
 // override, empty rate counters and fixtures at their seeds.
 func TestOverridesWithFixtures(t *testing.T) {
+	t.Parallel()
 	e, fixtures := newFixtureEnv(t)
 	harness := e.MustLogin(gatewaytest.HarnessAdmin, gatewaytest.HarnessPassword)
 	initial := e.Status()
@@ -113,6 +114,7 @@ func TestOverridesWithFixtures(t *testing.T) {
 // method is not allowed, a contained operation reaches nothing, and a failed
 // upstream is reported without any other destination being tried.
 func TestOverridesKeepRoutingAndUpstreams(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.ProtectedPolicy(), gatewaytest.SeedOptions{})
 	e.Start(gatewaytest.Binaries.Plain)

@@ -14,6 +14,7 @@ import (
 const crashExit = 86
 
 func TestCrashDuringPublication(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		point     string
 		committed bool   // whether the transition survives the crash
@@ -92,6 +93,7 @@ func TestCrashDuringPublication(t *testing.T) {
 // completes the receipts, records the outcome event exactly once, and the
 // retried request returns the recorded receipt.
 func TestLifecycleSurvivesCrash(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		action    string // activate, confirm or rollback
 		point     string
@@ -215,6 +217,7 @@ func TestLifecycleSurvivesCrash(t *testing.T) {
 // A crash while the running gateway times out a provisional base is
 // recovered at the next start, before anything is served, with one timeout.
 func TestTimeoutSurvivesCrash(t *testing.T) {
+	t.Parallel()
 	for _, point := range []string{"timeout-before-commit", "timeout-after-commit", "timeout-after-swap", "timeout-after-receipt"} {
 		t.Run(point, func(t *testing.T) {
 			e := gatewaytest.NewEnv(t)

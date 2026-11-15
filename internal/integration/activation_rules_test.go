@@ -21,6 +21,7 @@ import (
 // administrator credential. Another administrator's idempotency key never
 // returns someone else's receipt.
 func TestLifecycleNeedsAuthorisedAdministrator(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	e.Interruptible = true // assertAbsent stops it gracefully
 	gatewaytest.Seed(t, e.Database, e.ProtectedPolicy(), gatewaytest.SeedOptions{})
@@ -110,6 +111,7 @@ func TestLifecycleNeedsAuthorisedAdministrator(t *testing.T) {
 // key, confirmation against rollback and confirmation against confirmation
 // each have exactly one winner, and every loser is told what happened.
 func TestOneProvisionalAndOneDisposition(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.ProtectedPolicy(), gatewaytest.SeedOptions{})
 	e.Start(gatewaytest.Binaries.Plain)

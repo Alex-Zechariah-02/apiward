@@ -4,6 +4,7 @@ package integration
 
 import (
 	"fmt"
+	"io"
 	"net/http"
 	"os/exec"
 	"strconv"
@@ -18,6 +19,7 @@ import (
 )
 
 func TestRepeatedSwapsUnderLoad(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.Policy(e.A, false), gatewaytest.SeedOptions{})
 	e.Start(gatewaytest.Binaries.Fault)
@@ -28,9 +30,13 @@ func TestRepeatedSwapsUnderLoad(t *testing.T) {
 	stop := make(chan struct{})
 	var requests, failures atomic.Int64
 	var wg sync.WaitGroup
+	// One kept connection per worker: the default pool keeps two, so the rest
+	// would each open a connection per request and use up the client ports.
+	transport := &http.Transport{MaxIdleConnsPerHost: 16}
+	t.Cleanup(transport.CloseIdleConnections)
 	for range 16 {
 		wg.Go(func() {
-			client := &http.Client{Timeout: 10 * time.Second}
+			client := &http.Client{Transport: transport, Timeout: 10 * time.Second}
 			for {
 				select {
 				case <-stop:
@@ -42,6 +48,7 @@ func TestRepeatedSwapsUnderLoad(t *testing.T) {
 					failures.Add(1)
 					continue
 				}
+				io.Copy(io.Discard, resp.Body)
 				resp.Body.Close()
 				requests.Add(1)
 				if resp.StatusCode != http.StatusOK {

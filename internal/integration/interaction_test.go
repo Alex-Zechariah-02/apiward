@@ -36,6 +36,7 @@ func upstreamCandidate(e *gatewaytest.Env) policy.Policy {
 // A candidate that touches no override's targets becomes provisional and then
 // confirmed with the overrides still applied.
 func TestCandidateAgainstActiveOverrides(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	basePolicy := e.ProtectedPolicy()
 	basePolicy.Operations[0].Rate = gatewaytest.Rate(4, 60) // read-a
@@ -169,6 +170,7 @@ func TestCandidateAgainstActiveOverrides(t *testing.T) {
 // base with the overrides still active at that moment, never an earlier
 // effective policy, and an override that ended stays ended.
 func TestProvisionalRestrictsOverrides(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.ProtectedPolicy(), gatewaytest.SeedOptions{})
 	e.Start(gatewaytest.Binaries.Plain)

@@ -11,6 +11,7 @@ import (
 )
 
 func TestFetchStoredVersion3IsNotMigrated(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	policy := e.ProtectedPolicy()
 	gatewaytest.Seed(t, e.Database, policy, gatewaytest.SeedOptions{})

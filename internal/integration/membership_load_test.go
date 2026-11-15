@@ -21,6 +21,7 @@ import (
 )
 
 func TestMembershipRemovalDuringRequest(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.ProtectedPolicy(), gatewaytest.SeedOptions{})
 	holdFile, release := filepath.Join(e.Dir, "hold"), filepath.Join(e.Dir, "release")
@@ -63,6 +64,7 @@ func TestMembershipRemovalDuringRequest(t *testing.T) {
 }
 
 func TestMembershipChangesUnderLoad(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.ProtectedPolicy(), gatewaytest.SeedOptions{})
 	e.Start(gatewaytest.Binaries.Plain)
@@ -72,9 +74,12 @@ func TestMembershipChangesUnderLoad(t *testing.T) {
 	stop := make(chan struct{})
 	var unexpected, reads atomic.Int64
 	var wg sync.WaitGroup
+	// One kept connection per worker, as in TestRepeatedSwapsUnderLoad.
+	transport := &http.Transport{MaxIdleConnsPerHost: 8}
+	t.Cleanup(transport.CloseIdleConnections)
 	for range 8 {
 		wg.Go(func() {
-			client := &http.Client{Timeout: 10 * time.Second}
+			client := &http.Client{Transport: transport, Timeout: 10 * time.Second}
 			for {
 				select {
 				case <-stop:
@@ -88,6 +93,7 @@ func TestMembershipChangesUnderLoad(t *testing.T) {
 					unexpected.Add(1)
 					continue
 				}
+				io.Copy(io.Discard, response.Body)
 				response.Body.Close()
 				if response.StatusCode != 200 && response.StatusCode != 403 {
 					unexpected.Add(1)

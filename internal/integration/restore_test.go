@@ -19,6 +19,7 @@ import (
 // aside, nothing restored is trusted, and nothing is admitted until an
 // enrolled administrator confirms a deny-all recovery base.
 func TestHistoricalRestore(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.ProtectedPolicy(), gatewaytest.SeedOptions{})
 	e.Start(gatewaytest.Binaries.Plain)
@@ -106,6 +107,7 @@ func TestHistoricalRestore(t *testing.T) {
 // Invalid backups and unsafe restores are refused and the live
 // database is left exactly as it was.
 func TestRestoreRefusals(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.ProtectedPolicy(), gatewaytest.SeedOptions{})
 	good := filepath.Join(e.Dir, "good.db")

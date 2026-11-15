@@ -32,6 +32,7 @@ func openEventStream(t *testing.T, e *gatewaytest.Env, admin gatewaytest.AdminSe
 }
 
 func TestFetchStreamHeartbeat(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.Policy(e.A, true), gatewaytest.SeedOptions{})
 	e.Start(gatewaytest.Binaries.Plain)

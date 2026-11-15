@@ -15,6 +15,7 @@ import (
 // Observe an actual committed fixture mutation independently of a lost
 // acknowledgement, and prove that neither build silently replays it.
 func TestNativeFixtureWriteThenDisconnect(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name   string
 		binary string

@@ -32,6 +32,7 @@ func unblockAccount(e *gatewaytest.Env, s gatewaytest.AdminSession, id, key stri
 }
 
 func TestMembershipChangePublishes(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.ProtectedPolicy(), gatewaytest.SeedOptions{})
 	e.Start(gatewaytest.Binaries.Plain)
@@ -80,6 +81,7 @@ func TestMembershipChangePublishes(t *testing.T) {
 }
 
 func TestMembershipRefusals(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.ProtectedPolicy(), gatewaytest.SeedOptions{})
 	e.Start(gatewaytest.Binaries.Plain)
@@ -124,6 +126,7 @@ func TestMembershipRefusals(t *testing.T) {
 }
 
 func TestConcurrentMembershipEdits(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.ProtectedPolicy(), gatewaytest.SeedOptions{})
 	e.Start(gatewaytest.Binaries.Plain)
@@ -160,6 +163,7 @@ func TestConcurrentMembershipEdits(t *testing.T) {
 }
 
 func TestMembershipRetryIsIdempotent(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.ProtectedPolicy(), gatewaytest.SeedOptions{})
 	e.Start(gatewaytest.Binaries.Plain)

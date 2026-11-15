@@ -88,6 +88,7 @@ func times(n, status int) []int {
 // operations separately. Forged identity, forwarding and rate-key headers
 // change nothing.
 func TestRateLimitThroughGateway(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, ratePolicy(e, gatewaytest.Rate(3, compile.MaxRateWindowSec), gatewaytest.Rate(2, compile.MaxRateWindowSec)), gatewaytest.SeedOptions{})
 	e.Start(gatewaytest.Binaries.Plain)
@@ -158,6 +159,7 @@ const base = int64(1_800_000_000_000)
 // The weighted estimate across a bucket boundary matches the reference
 // vectors on the real gateway, with receipts counted at the upstream.
 func TestWeightedWindowThroughGateway(t *testing.T) {
+	t.Parallel()
 	e, clock := newRateEnv(t, func(e *gatewaytest.Env) policy.Policy { return ratePolicy(e, gatewaytest.Rate(4, 10), nil) }, base+1000)
 
 	if got := sendAs(e, "alice", http.MethodGet, "/a/x", "", 6); !statusesAre(got, 200, 200, 200, 200, 429, 429) {
@@ -192,6 +194,7 @@ func TestWeightedWindowThroughGateway(t *testing.T) {
 // Requests refused by JWT or RBAC never reach the limiter, so they consume
 // nothing.
 func TestEarlierRejectionsConsumeNoQuota(t *testing.T) {
+	t.Parallel()
 	e, _ := newRateEnv(t, func(e *gatewaytest.Env) policy.Policy {
 		return ratePolicy(e, gatewaytest.Rate(2, 60), gatewaytest.Rate(2, 60))
 	}, base)

@@ -19,6 +19,7 @@ import (
 // or after the expiry time finds the override expired, and a revocation
 // racing the expiry produces one final disposition.
 func TestOverrideExpiry(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.ProtectedPolicy(), gatewaytest.SeedOptions{})
 	e.Start(gatewaytest.Binaries.Plain)
@@ -102,6 +103,7 @@ func TestOverrideExpiry(t *testing.T) {
 // before the expiry time revokes; one decided at or after it finds the
 // override expired.
 func TestExpiredOverrideAdmitsNothing(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.ProtectedPolicy(), gatewaytest.SeedOptions{})
 	e.Start(gatewaytest.Binaries.Fault, "GATEWAY_FAULT=no-deadline-timer")

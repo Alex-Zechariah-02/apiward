@@ -20,6 +20,7 @@ import (
 // and no later request uses it. A wall clock behind the latest recorded time
 // at startup keeps the gateway unavailable.
 func TestOverrideExpiryUnderClockChanges(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.ProtectedPolicy(), gatewaytest.SeedOptions{})
 	offset := filepath.Join(t.TempDir(), "wall-offset")

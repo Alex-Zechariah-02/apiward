@@ -17,6 +17,7 @@ import (
 // override change never report success that was not durable, and never keep
 // serving an override whose revocation could not be completed.
 func TestDamagedOverrideStateAndAuditFailures(t *testing.T) {
+	t.Parallel()
 	damaged := []struct {
 		name   string
 		insert string

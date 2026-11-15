@@ -17,6 +17,7 @@ import (
 )
 
 func TestFetchStreamSessionLifetime(t *testing.T) {
+	t.Parallel()
 	for _, logout := range []bool{true, false} {
 		t.Run(fmt.Sprintf("logout_%t", logout), func(t *testing.T) {
 			e := gatewaytest.NewEnv(t)
@@ -61,6 +62,7 @@ func TestFetchStreamSessionLifetime(t *testing.T) {
 }
 
 func TestFetchEventsAndTraffic(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.ProtectedPolicy(), gatewaytest.SeedOptions{})
 	e.Start(gatewaytest.Binaries.Plain)
@@ -189,6 +191,7 @@ func TestFetchEventsAndTraffic(t *testing.T) {
 }
 
 func TestFetchEventStreams(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	e.Interruptible = true // the streams must not hold a graceful stop
 	gatewaytest.Seed(t, e.Database, e.Policy(e.A, true), gatewaytest.SeedOptions{})

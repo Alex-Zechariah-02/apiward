@@ -19,6 +19,7 @@ import (
 // permission code, for the generation in force or a stored draft, checks the
 // blocked accounts for a subject, and says what it could not check.
 func TestAdminAccessCheck(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.ProtectedPolicy(), gatewaytest.SeedOptions{})
 	e.Start(gatewaytest.Binaries.Plain)

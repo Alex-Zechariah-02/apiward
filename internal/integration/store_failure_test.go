@@ -16,6 +16,7 @@ import (
 // Startup refuses a database it must not trust, admits
 // nothing, and accepts no mutation.
 func TestStartupRefusesUntrustedDatabase(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name   string
 		change []string
@@ -78,6 +79,7 @@ func TestStartupRefusesUntrustedDatabase(t *testing.T) {
 // A crash between the two halves of the commit transaction
 // leaves neither half; the retried change then applies once.
 func TestCrashInsideCommit(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.ProtectedPolicy(), gatewaytest.SeedOptions{})
 	e.Start(gatewaytest.Binaries.Fault, "GATEWAY_FAULT=commit-partway")
@@ -116,6 +118,7 @@ func TestCrashInsideCommit(t *testing.T) {
 // the reply says the change is committed with its outcome event pending,
 // admission stops, and the next startup records the event from the database.
 func TestOutcomeEventFailure(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.ProtectedPolicy(), gatewaytest.SeedOptions{})
 	e.Start(gatewaytest.Binaries.Fault, "GATEWAY_FAULT=audit-fail-published")
@@ -171,6 +174,7 @@ func TestOutcomeEventFailure(t *testing.T) {
 // after restart, in either the old or the new blocked state, and the
 // administrator's retry with the same key settles it exactly once.
 func TestMembershipChangeSurvivesCrash(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		point       string
 		committed   bool

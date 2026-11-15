@@ -14,6 +14,7 @@ import (
 )
 
 func TestNativeOperatorArguments(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	e.WriteNative(e.NativeSettings())
 	legacy := filepath.Join(e.Dir, "caddy.json")
@@ -47,6 +48,7 @@ func TestNativeOperatorArguments(t *testing.T) {
 }
 
 func TestNativeOperatorPaths(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.ProtectedPolicy(), gatewaytest.SeedOptions{})
 	before := gatewaytest.FileSHA256(t, e.Database)
@@ -85,6 +87,7 @@ func TestNativeOperatorPaths(t *testing.T) {
 }
 
 func TestNativeOperatorOwnership(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.ProtectedPolicy(), gatewaytest.SeedOptions{})
 	lock, err := store.LockDeployment(e.Database)

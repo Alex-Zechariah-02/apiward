@@ -13,6 +13,7 @@ import (
 )
 
 func TestOperatorLiteralDatabaseAndBackupPaths(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	e.Database = filepath.Join(e.Dir, "state%20#literal.db")
 	e.WriteConfig(gatewaytest.ConfigOptions{})

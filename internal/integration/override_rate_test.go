@@ -20,6 +20,7 @@ import (
 // expected decisions are worked out by hand from the admission rule
 // (admit when C + P*(W-d)/W + 1 <= N), not taken from the implementation.
 func TestRateOverrideKeepsCounters(t *testing.T) {
+	t.Parallel()
 	ratePolicy := func(e *gatewaytest.Env) policy.Policy {
 		p := e.ProtectedPolicy()
 		p.Roles = append(p.Roles, policy.Role{ID: "TRIAL"})

@@ -15,6 +15,7 @@ import (
 )
 
 func TestExpiredProvisionalNeverServes(t *testing.T) {
+	t.Parallel()
 	t.Run("expired while stopped", func(t *testing.T) {
 		e := gatewaytest.NewEnv(t)
 		provisional := e.Policy(e.A, true)
@@ -123,6 +124,7 @@ func TestExpiredProvisionalNeverServes(t *testing.T) {
 }
 
 func TestUnavailableAuthorityAdmitsNothing(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name    string
 		prepare func(e *gatewaytest.Env)

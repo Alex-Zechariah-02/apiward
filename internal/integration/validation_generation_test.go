@@ -21,6 +21,7 @@ import (
 // repeated schema publications every decision matches the schema of the
 // generation it reports.
 func TestSchemaFollowsCapturedGeneration(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	textSchema := `{"type":"object","additionalProperties":false,"required":["v"],"properties":{"v":{"type":"string"}}}`
 	numberSchema := `{"type":"object","additionalProperties":false,"required":["v"],"properties":{"v":{"type":"integer"}}}`

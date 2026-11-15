@@ -17,6 +17,7 @@ import (
 )
 
 func TestInvalidCandidateLeavesStateUnchanged(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.Policy(e.A, false), gatewaytest.SeedOptions{})
 	e.Start(gatewaytest.Binaries.Fault)
@@ -135,6 +136,7 @@ func withPermit(p policy.Policy, permit policy.Permit) json.RawMessage {
 }
 
 func TestConcurrentAndStalePublications(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.Policy(e.A, false), gatewaytest.SeedOptions{})
 	e.Start(gatewaytest.Binaries.Fault)

@@ -12,6 +12,7 @@ import (
 // through the real gateway and proxy on the intended fixture, with the
 // expected business outcome and state change.
 func TestCatalogueThroughGateway(t *testing.T) {
+	t.Parallel()
 	e, fixtures := newFixtureEnv(t)
 	c := gatewaytest.LoadCatalogue(t)
 

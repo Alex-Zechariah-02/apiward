@@ -15,6 +15,7 @@ import (
 // The endpoint needs the history permission, reads the real audit files and
 // says what it searched.
 func TestAdminSecurityLog(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.ProtectedPolicy(), gatewaytest.SeedOptions{})
 	e.Start(gatewaytest.Binaries.Plain)

@@ -18,6 +18,7 @@ import (
 // Authentication and authorisation events record what actually ran, with the
 // verified subject only after verification, and never a credential.
 func TestAuthenticationEvents(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.ProtectedPolicy(), gatewaytest.SeedOptions{})
 	e.Start(gatewaytest.Binaries.Plain)
@@ -109,6 +110,7 @@ func TestAuthenticationEvents(t *testing.T) {
 // No credential, key or token reaches the audit log, the gateway's own
 // output or a client error, whatever the request carries.
 func TestCredentialsNeverRecorded(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	e.Interruptible = true // stopped gracefully before its records are read
 	gatewaytest.Seed(t, e.Database, e.ProtectedPolicy(), gatewaytest.SeedOptions{})

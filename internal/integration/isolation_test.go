@@ -20,6 +20,7 @@ import (
 var nativeAdminPaths = []string{"/config/", "/load", "/stop", "/id/x", "/debug/pprof/", "/reverse_proxy/upstreams", "/adapt", "/pki/ca/local", "/metrics"}
 
 func TestNativeAdministrationIsAbsent(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.Policy(e.A, false), gatewaytest.SeedOptions{})
 	overrideAdmin := gatewaytest.FreeAddr(t)
@@ -95,6 +96,7 @@ func TestNativeAdministrationIsAbsent(t *testing.T) {
 // variable names that select them; the fault binaries hold every one, so the
 // check cannot pass merely because the names are spelt differently.
 func TestFaultInjectionOnlyInFaultBuild(t *testing.T) {
+	t.Parallel()
 	plain, err := os.ReadFile(gatewaytest.Binaries.Plain)
 	if err != nil {
 		t.Fatal(err)
@@ -120,6 +122,7 @@ func TestFaultInjectionOnlyInFaultBuild(t *testing.T) {
 // WSL with curl and the host firewall rule, so it runs only when
 // GATEWAY_TEST_WSL is set.
 func TestBypassFromSeparateNetwork(t *testing.T) {
+	// Serial: a fixed port and a fixed copy of the gateway program.
 	if os.Getenv("GATEWAY_TEST_WSL") == "" {
 		t.Skip("set GATEWAY_TEST_WSL=1 to probe from WSL")
 	}

@@ -15,6 +15,7 @@ import (
 )
 
 func TestFetchClientAddressQuota(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	p := e.Policy(e.A, false)
 	p.Operations[0].Rate = &policy.RateRule{Algorithm: "sliding-window", Count: 2, WindowSeconds: 60, Key: "client_address"}

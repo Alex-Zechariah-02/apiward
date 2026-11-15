@@ -24,6 +24,7 @@ import (
 // client received has its record, and nothing is recorded twice. The process
 // exits with status 0.
 func TestNativeStopUnderLoad(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	provisional := e.ProtectedPolicy()
 	provisional.Roles = append(provisional.Roles, policy.Role{ID: "TRIAL"})
@@ -129,6 +130,7 @@ func TestNativeStopUnderLoad(t *testing.T) {
 // committed transition is audited; the audit files, rotated many times,
 // hold complete records only.
 func TestNativeRestartAfterGracefulStop(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.ProtectedPolicy(), gatewaytest.SeedOptions{})
 	settings := e.NativeSettings()
@@ -203,6 +205,7 @@ func TestNativeRestartAfterGracefulStop(t *testing.T) {
 // is invented for them, and no record is incomplete, because every write is
 // whole.
 func TestNativeKillMakesNoDrainClaim(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.Policy(e.A, false), gatewaytest.SeedOptions{})
 	e.Start(gatewaytest.Binaries.Fault, "GATEWAY_AUDIT_HOLD="+filepath.Join(e.Dir, "audit-hold"))
@@ -235,6 +238,7 @@ func TestNativeKillMakesNoDrainClaim(t *testing.T) {
 // durable record, is in the file, and so is every outcome and refusal event,
 // queued without acknowledgement, because the stop drains the queue.
 func TestInterruptStopsGatewayGracefully(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.Policy(e.A, false), gatewaytest.SeedOptions{})
 	e.Interruptible = true

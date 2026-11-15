@@ -23,6 +23,7 @@ import (
 // validated-header agreement and the gateway's own identity headers. Every
 // refusal is recorded at its stage and reaches no upstream.
 func TestNativeGatewayEnforcesControls(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	p := e.ProtectedPolicy()
 	for i := range p.Operations {
@@ -113,6 +114,7 @@ func TestNativeGatewayEnforcesControls(t *testing.T) {
 // deny-all base is ready, though it admits nothing. The unauthenticated
 // health check stays a liveness and mode report.
 func TestNativeAdmissionStatus(t *testing.T) {
+	t.Parallel()
 	// unavailableAtCapture checks that a protected request is refused before
 	// any policy decision and reaches no upstream.
 	unavailableAtCapture := func(e *gatewaytest.Env) {

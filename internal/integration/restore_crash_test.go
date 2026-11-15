@@ -21,6 +21,7 @@ import (
 // quarantined (not confirmed, not rolled back), nothing is served until a new
 // deny-all recovery base is confirmed, and that base has no provisional base.
 func TestHistoricalRestoreQuarantinesProvisional(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name    string
 		seconds int64
@@ -105,6 +106,7 @@ func expectNothingServed(e *gatewaytest.Env) {
 // the original database, no database or the marked copy, never an unmarked
 // historical one, and running the restore again completes it.
 func TestRestoreSurvivesCrash(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		point  string
 		health string // after the crash, before the restore is repeated

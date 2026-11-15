@@ -25,6 +25,7 @@ import (
 // the operation's, for every framing. Neither the token nor any body content
 // is recorded in the audit log.
 func TestBodyCeilingAtFixtures(t *testing.T) {
+	t.Parallel()
 	fixtures := gatewaytest.StartFixtures(t)
 	orders := fixtures["orders"]
 	token := gatewaytest.Issuer.TokenFor(t, "cust-001")
@@ -117,6 +118,7 @@ func TestBodyCeilingAtFixtures(t *testing.T) {
 // 100 Continue is passed back, so the client receives two before the final
 // response.
 func TestRequestTrailersAndExpectContinue(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.Policy(e.A, false), gatewaytest.SeedOptions{})
 	e.Start(gatewaytest.Binaries.Plain)
@@ -165,6 +167,7 @@ func TestRequestTrailersAndExpectContinue(t *testing.T) {
 // A client that stops sending part-way, or disconnects, never causes any
 // part of its body to be forwarded.
 func TestInterruptedBodiesAreNeverForwarded(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.Policy(e.A, false), gatewaytest.SeedOptions{})
 	e.Interruptible = true

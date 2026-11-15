@@ -25,6 +25,7 @@ import (
 // change applies, every other is refused as stale without waiting, and an
 // operator command against the running gateway's database fails at once.
 func TestConcurrencyAndLockContention(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.ProtectedPolicy(), gatewaytest.SeedOptions{})
 	e.Start(gatewaytest.Binaries.Plain)
@@ -130,6 +131,7 @@ func TestConcurrencyAndLockContention(t *testing.T) {
 // A refused mutation is recorded as rejected with its reason and
 // actor, and nothing it asked for is stored.
 func TestRejectedMutationsAreRecorded(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.ProtectedPolicy(), gatewaytest.SeedOptions{})
 	e.Start(gatewaytest.Binaries.Plain)

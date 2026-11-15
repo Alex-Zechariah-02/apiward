@@ -16,6 +16,7 @@ import (
 // the committed administrator, never a partial one. An interrupted install
 // leaves a database that neither startup nor install accepts.
 func TestInterruptedBootstrap(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		point     string
 		committed bool
@@ -95,6 +96,7 @@ func TestInterruptedBootstrap(t *testing.T) {
 // A password change and a local recovery enrolment replace the
 // credential and end every session based on the old one.
 func TestCredentialRotationAndRecovery(t *testing.T) {
+	t.Parallel()
 	e, secret := installEnv(t, gatewaytest.Binaries.Plain)
 	password := testPassword()
 	if code, body := enrol(e, "root", secret, password); code != http.StatusCreated {

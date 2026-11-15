@@ -22,6 +22,7 @@ import (
 // with the gateway's own correlation headers; the upstream response returns
 // to the client unchanged.
 func TestForwardedRequestAndResponseRoundTrip(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.Policy(e.A, false), gatewaytest.SeedOptions{})
 	e.A.Handle = func(w http.ResponseWriter, r *http.Request) bool {
@@ -69,6 +70,7 @@ func TestForwardedRequestAndResponseRoundTrip(t *testing.T) {
 // the upstream is told to close its one-request connection. The response
 // keeps the upstream's Server field, loses hop-by-hop fields and gains Via.
 func TestForwardedRequestMetadata(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.Policy(e.A, false), gatewaytest.SeedOptions{})
 	e.A.Handle = func(w http.ResponseWriter, r *http.Request) bool {
@@ -117,6 +119,7 @@ func TestForwardedRequestMetadata(t *testing.T) {
 
 // Nothing in the request can choose the destination.
 func TestClientCannotSelectUpstream(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.Policy(e.A, false), gatewaytest.SeedOptions{})
 	e.Start(gatewaytest.Binaries.Plain)
@@ -155,6 +158,7 @@ func TestClientCannotSelectUpstream(t *testing.T) {
 // Upstream failures produce bounded, safe errors and never another
 // destination.
 func TestUpstreamFailuresAreContained(t *testing.T) {
+	t.Parallel()
 	t.Run("connection refused", func(t *testing.T) {
 		e := gatewaytest.NewEnv(t)
 		closed := gatewaytest.FreeAddr(t)
@@ -262,6 +266,7 @@ func TestUpstreamFailuresAreContained(t *testing.T) {
 // A request that may have changed state upstream is not replayed: the
 // gateway sends every request once, a read as well as a write.
 func TestRetriesNeverReplayWrites(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.Policy(e.A, false), gatewaytest.SeedOptions{})
 	e.A.Handle = func(w http.ResponseWriter, r *http.Request) bool {

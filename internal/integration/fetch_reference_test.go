@@ -13,6 +13,7 @@ import (
 // A reference must correlate the response with both audit and upstream receipt,
 // even when either the client or an upstream tries to supply its own reference.
 func TestFetchResponseReferences(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.Policy(e.A, false), gatewaytest.SeedOptions{})
 	e.A.Handle = func(w http.ResponseWriter, r *http.Request) bool {

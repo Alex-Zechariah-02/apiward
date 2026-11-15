@@ -21,6 +21,7 @@ import (
 // restart keeps it so, and recovery ends under a deny-all base with no
 // override. An ordinary restart of the current database keeps the override.
 func TestHistoricalRestoreQuarantinesOverrides(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.ProtectedPolicy(), gatewaytest.SeedOptions{})
 	e.Start(gatewaytest.Binaries.Plain)
@@ -99,6 +100,7 @@ func TestHistoricalRestoreQuarantinesOverrides(t *testing.T) {
 // repeating the restore completes it. Recovery ends under a deny-all base with
 // no override, and a quarantined override can never be revoked or resumed.
 func TestHistoricalRestoreQuarantinesSeveralOverrides(t *testing.T) {
+	t.Parallel()
 	for _, withProvisional := range []bool{false, true} {
 		name := "overrides"
 		if withProvisional {

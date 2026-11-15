@@ -20,6 +20,7 @@ import (
 // Simultaneous requests near the quota never admit more than the rule
 // allows, for one subject and for many at once.
 func TestConcurrentRequestsThroughGateway(t *testing.T) {
+	t.Parallel()
 	e, _ := newRateEnv(t, func(e *gatewaytest.Env) policy.Policy {
 		p := ratePolicy(e, gatewaytest.Rate(10, 60), nil)
 		return p
@@ -82,6 +83,7 @@ func TestConcurrentRequestsThroughGateway(t *testing.T) {
 // rollback and temporary-override publications never grant a fresh quota.
 // Each request uses the rule of the generation it captured.
 func TestRateCountersAcrossPublication(t *testing.T) {
+	t.Parallel()
 	e, clock := newRateEnv(t, func(e *gatewaytest.Env) policy.Policy { return ratePolicy(e, gatewaytest.Rate(3, 60), nil) }, base)
 	revision := int64(1)
 	publish := func(id string, read *policy.RateRule) {
@@ -130,6 +132,7 @@ func TestRateCountersAcrossPublication(t *testing.T) {
 // A request paused after capture keeps the rate rule of its generation even
 // when a generation with another rule is published meanwhile.
 func TestInFlightRequestKeepsCapturedRateRule(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, ratePolicy(e, gatewaytest.Rate(1, 60), nil), gatewaytest.SeedOptions{})
 	clock := newControlledClock(t, base)
@@ -174,6 +177,7 @@ func waitForFile(t *testing.T, path string) {
 // Counters live in the gateway process: a restart starts them empty, and no
 // endpoint on either listener resets them.
 func TestRateCountersAndRestart(t *testing.T) {
+	t.Parallel()
 	e, _ := newRateEnv(t, func(e *gatewaytest.Env) policy.Policy { return ratePolicy(e, gatewaytest.Rate(2, 60), nil) }, base)
 	if got := sendAs(e, "alice", http.MethodGet, "/a/x", "", 3); !statusesAre(got, 200, 200, 429) {
 		t.Fatalf("before reset attempts: %v", got)

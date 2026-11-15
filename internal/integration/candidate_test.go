@@ -19,6 +19,7 @@ import (
 // A committed stage whose metadata cannot be read is answered as saved, with
 // its receipt. An identical retry never creates another candidate.
 func TestCandidateReceiptSurvivesMetadataReadFailure(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	policy := e.ProtectedPolicy()
 	gatewaytest.Seed(t, e.Database, policy, gatewaytest.SeedOptions{})
@@ -71,6 +72,7 @@ func candidateList(e *gatewaytest.Env, s gatewaytest.AdminSession) []store.Candi
 // inspectable, and changes nothing that is enforced, including a staged
 // change of an API's destination.
 func TestCandidateStagingChangesNothingEnforced(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.ProtectedPolicy(), gatewaytest.SeedOptions{})
 	e.Start(gatewaytest.Binaries.Plain)
@@ -143,6 +145,7 @@ func TestCandidateStagingChangesNothingEnforced(t *testing.T) {
 // Stale or missing preconditions and invalid
 // candidates are refused, nothing is stored, and the refusal is recorded.
 func TestCandidateRefusals(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.ProtectedPolicy(), gatewaytest.SeedOptions{})
 	e.Start(gatewaytest.Binaries.Plain)
@@ -240,6 +243,7 @@ func TestCandidateRefusals(t *testing.T) {
 // A candidate is immutable; it can only be
 // withdrawn, once, and a retried submission returns the same candidate.
 func TestCandidateLifecycle(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.ProtectedPolicy(), gatewaytest.SeedOptions{})
 	e.Start(gatewaytest.Binaries.Plain)

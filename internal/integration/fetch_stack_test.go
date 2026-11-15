@@ -23,6 +23,7 @@ import (
 // This test shares the gateway integration package's serial process harness so
 // its fixed offset ports cannot collide with TestNativeDemoCommands.
 func TestFetchStackScenarios(t *testing.T) {
+	// Serial: the demo stack listens on fixed ports.
 	s := startFetchStack(t)
 	e, dir, root, baseline, revision, password := s.e, s.dir, s.root, s.baseline, s.revision, s.password
 	parent := filepath.Dir(dir) // holds the stack's state and web directories

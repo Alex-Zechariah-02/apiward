@@ -114,6 +114,7 @@ func fromJSON[T any](t *testing.T, body string) T {
 // The first administrator can only be created with the
 // one-time secret of the local install command, exactly once.
 func TestBootstrapIsLocalAndOneTime(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	e.Interruptible = true // assertAbsent stops it gracefully
 	out, code := e.RunOperator(gatewaytest.Binaries.Plain, nil, "install", "--admin", "root")

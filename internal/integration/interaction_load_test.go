@@ -23,6 +23,7 @@ import (
 // refused. Confirmation, rollback and an override's expiry racing at a
 // provisional deadline give each its single final disposition.
 func TestConcurrentOverridesAndActivation(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.ProtectedPolicy(), gatewaytest.SeedOptions{})
 	e.Start(gatewaytest.Binaries.Plain)
@@ -133,6 +134,7 @@ func TestConcurrentOverridesAndActivation(t *testing.T) {
 // the base was provisional is not restored by the rollback. Decisions are
 // worked out by hand from the admission rule at a controlled limiter time.
 func TestRateOverrideAcrossActivation(t *testing.T) {
+	t.Parallel()
 	ratePolicy := func(e *gatewaytest.Env) policy.Policy {
 		p := e.ProtectedPolicy()
 		p.Operations[0].Rate = gatewaytest.Rate(3, 60) // read-a: 3 per minute per subject
@@ -194,6 +196,7 @@ func TestRateOverrideAcrossActivation(t *testing.T) {
 // the grant permits reaches the upstream only under a generation that has
 // the grant.
 func TestOverridesUnderLoad(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.ProtectedPolicy(), gatewaytest.SeedOptions{})
 	e.Start(gatewaytest.Binaries.Plain)

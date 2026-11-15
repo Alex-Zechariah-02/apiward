@@ -17,6 +17,7 @@ import (
 )
 
 func TestFetchImpactPreservesRequestTarget(t *testing.T) {
+	t.Parallel()
 	truncated := "/a/" + strings.Repeat("x", audit.MaxLoggedPath-3)
 	for _, tc := range []struct {
 		name, path string
@@ -69,6 +70,7 @@ func TestFetchImpactPreservesRequestTarget(t *testing.T) {
 }
 
 func TestFetchImpactPreservesIndependentControls(t *testing.T) {
+	t.Parallel()
 	for _, blocked := range []bool{false, true} {
 		t.Run(fmt.Sprintf("blocked_%t", blocked), func(t *testing.T) {
 			e := gatewaytest.NewEnv(t)
@@ -124,6 +126,7 @@ func TestFetchImpactPreservesIndependentControls(t *testing.T) {
 }
 
 func TestFetchImpactAccessGrantHasKnownOutcome(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	p := e.ProtectedPolicy()
 	p.Operations[0].Access = "deny"
@@ -169,6 +172,7 @@ func TestFetchImpactAccessGrantHasKnownOutcome(t *testing.T) {
 }
 
 func TestFetchImpactIdentityCoverage(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name, auth, access, credential, afterAuth string
 		unknown, flips, actual                    int

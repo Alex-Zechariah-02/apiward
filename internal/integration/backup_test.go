@@ -76,6 +76,7 @@ func historyItems(e *gatewaytest.Env, s gatewaytest.AdminSession) []store.Histor
 // changes still in the write-ahead log, and restores in an isolated location
 // into a recovery that keeps the history and trusts nothing restored.
 func TestBackupIncludesWALAndRestoresElsewhere(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.ProtectedPolicy(), gatewaytest.SeedOptions{})
 	e.Start(gatewaytest.Binaries.Plain)
@@ -181,6 +182,7 @@ func TestBackupIncludesWALAndRestoresElsewhere(t *testing.T) {
 // An existing output is never replaced, and an interrupted or
 // failed backup leaves no file that looks complete.
 func TestBackupRefusalsAndInterruption(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.ProtectedPolicy(), gatewaytest.SeedOptions{})
 	liveRevisions := gatewaytest.QueryInt(t, e.Database, `SELECT COUNT(*) FROM revision`)

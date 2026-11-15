@@ -10,6 +10,7 @@ import (
 )
 
 func TestFetchArrayBodiesReachOnlyValidatedUpstream(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	p := e.ProtectedPolicy()
 	p.Operations[1].Body = gatewaytest.JSONBody(256, `{"type":"array","minItems":1,"maxItems":2,"items":{"type":"object","additionalProperties":false,"required":["item","quantity"],"properties":{"item":{"type":"string","minLength":7,"maxLength":7},"quantity":{"type":"integer","minimum":1,"maximum":50}}}}`)

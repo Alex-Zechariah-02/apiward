@@ -32,6 +32,7 @@ var bodyFramings = []string{"declared", "chunked"}
 // body. A body of exactly the ceiling reaches the upstream whole, with a
 // declared length; one byte more is refused with 413 and reaches no upstream.
 func TestBodyCeilingAppliesToActualBytes(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	p := e.Policy(e.A, false)
 	p.Operations = append(p.Operations,

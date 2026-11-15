@@ -35,6 +35,7 @@ func unvalidated(stages map[string]any) map[string]any {
 // are reported as not applicable once the operation is known; a stage after
 // the terminal one is never reported as passed.
 func TestEventEnvelopeReflectsStagesReached(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	e.Interruptible = true // the ingress summary is read after a graceful stop
 	gatewaytest.Seed(t, e.Database, e.PolicyWithUpstream(gatewaytest.FreeAddr(t)), gatewaytest.SeedOptions{})
@@ -174,6 +175,7 @@ func TestEventEnvelopeReflectsStagesReached(t *testing.T) {
 // Client-controlled values cannot inject records, leak credentials
 // or grow a record without bound.
 func TestEventsResistInjectionAndLeakage(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.Policy(e.A, false), gatewaytest.SeedOptions{})
 	e.Start(gatewaytest.Binaries.Plain)

@@ -14,6 +14,7 @@ import (
 )
 
 func TestCanonicalRoutingTable(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	policy := policy.Policy{
 		SchemaVersion: policy.SchemaVersion,
@@ -116,6 +117,7 @@ func TestCanonicalRoutingTable(t *testing.T) {
 }
 
 func TestForgedHeadersAndMalformedInput(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.Policy(e.A, false), gatewaytest.SeedOptions{})
 	e.Start(gatewaytest.Binaries.Plain)

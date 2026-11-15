@@ -17,6 +17,7 @@ import (
 // A provisional base whose lifecycle state is missing, damaged or
 // inconsistent is never served, and nothing else is either.
 func TestCorruptLifecycleStateAdmitsNothing(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name    string
 		prepare func(t *testing.T, db *sql.DB)

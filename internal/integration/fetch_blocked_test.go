@@ -15,6 +15,7 @@ import (
 )
 
 func TestFetchBlockedAccountBoundaries(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.ProtectedPolicy(), gatewaytest.SeedOptions{})
 	e.Start(gatewaytest.Binaries.Plain)
@@ -76,6 +77,7 @@ func TestFetchBlockedAccountBoundaries(t *testing.T) {
 }
 
 func TestFetchBlockedAccountSurvivesRollbackAndRestart(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.ProtectedPolicy(), gatewaytest.SeedOptions{})
 	e.Start(gatewaytest.Binaries.Plain)
@@ -137,6 +139,7 @@ func TestFetchBlockedAccountSurvivesRollbackAndRestart(t *testing.T) {
 // A block committed and put in force before its outcome event could be
 // written is not reported as a change the gateway could not make.
 func TestFetchCommittedBlockWithPendingOutcome(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.ProtectedPolicy(), gatewaytest.SeedOptions{})
 	e.Start(gatewaytest.Binaries.Fault, "GATEWAY_FAULT=audit-fail-published")
@@ -154,6 +157,7 @@ func TestFetchCommittedBlockWithPendingOutcome(t *testing.T) {
 }
 
 func TestFetchAdministrators(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.ProtectedPolicy(), gatewaytest.SeedOptions{})
 	e.Start(gatewaytest.Binaries.Plain)
@@ -176,6 +180,7 @@ func TestFetchAdministrators(t *testing.T) {
 }
 
 func TestFetchMaximumAdministratorAndIdempotencyKey(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.ProtectedPolicy(), gatewaytest.SeedOptions{})
 	e.Start(gatewaytest.Binaries.Plain)
@@ -201,6 +206,7 @@ func TestFetchMaximumAdministratorAndIdempotencyKey(t *testing.T) {
 }
 
 func TestFetchInvalidStoredContainmentFailsClosed(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.ProtectedPolicy(), gatewaytest.SeedOptions{})
 	db := gatewaytest.Inspect(t, e.Database)

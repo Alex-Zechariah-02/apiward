@@ -18,6 +18,7 @@ import (
 // A schema version 2 database, including one with a provisional base, is
 // served only after the migrate command; afterwards overrides can be used.
 func TestMigrateFromVersionTwo(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	candidate := upstreamCandidate(e)
 	gatewaytest.Seed(t, e.Database, e.ProtectedPolicy(), gatewaytest.SeedOptions{Version: 2, Provisional: &candidate, Deadline: time.Now().Add(time.Hour)})
@@ -111,6 +112,7 @@ func writeVersion3Overrides(t *testing.T, path string) {
 // transitions recorded before the migration replay to their receipts, and the
 // active override is still enforced and can be revoked.
 func TestMigrateFromVersionThree(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.ProtectedPolicy(), gatewaytest.SeedOptions{Version: 3})
 	writeVersion3Overrides(t, e.Database)

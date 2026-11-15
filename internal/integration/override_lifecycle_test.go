@@ -21,6 +21,7 @@ import (
 // applies to a granted permit. Overrides survive an unrelated permanent
 // change, and revoking one removes that one only.
 func TestOverrideLifecycle(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	e.Interruptible = true // assertAbsent stops it gracefully
 	gatewaytest.Seed(t, e.Database, e.ProtectedPolicy(), gatewaytest.SeedOptions{})

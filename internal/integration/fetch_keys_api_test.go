@@ -20,6 +20,7 @@ import (
 )
 
 func TestFetchKeyReload(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.ProtectedPolicy(), gatewaytest.SeedOptions{})
 	e.Start(gatewaytest.Binaries.Plain)
@@ -131,6 +132,7 @@ func TestFetchKeyReload(t *testing.T) {
 }
 
 func TestFetchKeyReloadPermissionsAndHTTPMaterial(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.ProtectedPolicy(), gatewaytest.SeedOptions{})
 	_, password := addAdmin(e, gatewaytest.Binaries.Plain, "reader", "read")
@@ -157,6 +159,7 @@ func TestFetchKeyReloadPermissionsAndHTTPMaterial(t *testing.T) {
 // Repeated whole-set reloads while requests verify must not publish a
 // partial set or race. Both keys remain configured through this test.
 func TestFetchConcurrentKeyReload(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.ProtectedPolicy(), gatewaytest.SeedOptions{})
 	other := issuertest.New(2048)

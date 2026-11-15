@@ -14,6 +14,7 @@ import (
 // and triggers (with those that keep rows in use), WAL journaling and
 // user_version 7, and nothing else.
 func TestInstalledSchema(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	if out, code := e.RunOperator(gatewaytest.Binaries.Plain, nil, "install", "--admin", "root"); code != 0 {
 		t.Fatalf("install exited %d: %s", code, out)

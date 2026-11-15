@@ -20,6 +20,7 @@ import (
 // controls of one operation and permits of different roles on it. Targets
 // are policy identifiers, so another spelling is simply unknown.
 func TestOverrideConflicts(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	p := e.ProtectedPolicy()
 	p.Operations[0].Rate = gatewaytest.Rate(4, 60) // read-a

@@ -26,6 +26,7 @@ func sha256Hex(data string) string {
 // including boundary values, reach the intended fixture with the exact bytes
 // sent.
 func TestValidationThroughGateway(t *testing.T) {
+	t.Parallel()
 	e, fixtures := newFixtureEnv(t)
 	orders, inventory := fixtures["orders"], fixtures["inventory"]
 	customer := "Authorization: Bearer " + gatewaytest.Issuer.TokenFor(t, "cust-001") + "\r\n"
@@ -163,6 +164,7 @@ func TestValidationThroughGateway(t *testing.T) {
 // headers behave as the schema states, with the valid boundary admitted; the
 // decoder limits hold at their bounds.
 func TestSchemaKeywordsThroughGateway(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.KeywordPolicy(), gatewaytest.SeedOptions{})
 	e.Start(gatewaytest.Binaries.Plain)

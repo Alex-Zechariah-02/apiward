@@ -14,6 +14,7 @@ import (
 )
 
 func TestFetchImpactOfNewRole(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	p := e.ProtectedPolicy()
 	gatewaytest.Seed(t, e.Database, p, gatewaytest.SeedOptions{})
@@ -44,6 +45,7 @@ func TestFetchImpactOfNewRole(t *testing.T) {
 }
 
 func TestFetchImpact(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	p := e.ProtectedPolicy()
 	gatewaytest.Seed(t, e.Database, p, gatewaytest.SeedOptions{})

@@ -19,6 +19,7 @@ import (
 // Attempts still being checked count against the name, so a burst beyond its
 // limit is answered 429 until they settle.
 func TestLoginThrottling(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	e.Interruptible = true // assertAbsent stops it gracefully
 	gatewaytest.Seed(t, e.Database, e.Policy(e.A, false), gatewaytest.SeedOptions{})
@@ -106,6 +107,7 @@ func TestLoginThrottling(t *testing.T) {
 // session's CSRF token, every request needs the admin host, and no header
 // can claim an identity or permission.
 func TestBrowserRequestGuards(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.ProtectedPolicy(), gatewaytest.SeedOptions{})
 	e.Start(gatewaytest.Binaries.Plain)

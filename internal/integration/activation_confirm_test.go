@@ -21,6 +21,7 @@ import (
 // deadline do not confirm it. An explicit, matching, timely confirmation
 // makes it the confirmed base, once.
 func TestActivationAndConfirmation(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	e.Interruptible = true // assertAbsent stops it gracefully
 	gatewaytest.Seed(t, e.Database, e.ProtectedPolicy(), gatewaytest.SeedOptions{})

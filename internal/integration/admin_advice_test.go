@@ -14,6 +14,7 @@ import (
 
 // The advice and alerts reads answer through the Admin API.
 func TestAdminAdviceAndAlerts(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	p := e.ProtectedPolicy()
 	p.APIs[0].ResponseHeaders = &policy.ResponseHeaders{HSTS: true}

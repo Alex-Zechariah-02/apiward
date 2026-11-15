@@ -46,6 +46,7 @@ func sum(counts map[string]int) int {
 // only with a genuine RS256 signature from the trusted key and the profile's
 // claims.
 func TestAuthenticationThroughGateway(t *testing.T) {
+	t.Parallel()
 	e, fixtures := newFixtureEnv(t)
 	states := map[string]string{}
 	for name, f := range fixtures {
@@ -169,6 +170,7 @@ func TestAuthenticationThroughGateway(t *testing.T) {
 // else in the request, never add a role: only verified token roles that the
 // policy defines count.
 func TestForgedRolesGrantNothing(t *testing.T) {
+	t.Parallel()
 	e, fixtures := newFixtureEnv(t)
 
 	forgedClaims := issuertest.ValidClaims("cust-001")

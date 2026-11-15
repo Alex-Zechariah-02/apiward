@@ -22,6 +22,7 @@ import (
 // with its configured header, body and timeout limits. Every request it
 // refuses itself reaches no upstream.
 func TestNativeDataPlaneProtocol(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.Policy(e.A, false), gatewaytest.SeedOptions{})
 	settings := e.NativeSettings()
@@ -180,6 +181,7 @@ func newPriorKnowledgeClient(t *testing.T) *http.Client {
 // read-idle bound, and a client that leaves cancels its upstream request:
 // both through the native process, each recorded as what happened.
 func TestNativeResponseStallAndCancellation(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.Policy(e.A, true), gatewaytest.SeedOptions{})
 	settings := e.NativeSettings()

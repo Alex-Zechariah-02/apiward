@@ -19,6 +19,7 @@ import (
 // (crash after the commit), which a restart serves, completes and audits
 // once; a retried request is applied once.
 func TestOverrideTransitionsSurviveCrash(t *testing.T) {
+	t.Parallel()
 	type point struct {
 		name      string
 		committed bool
@@ -152,6 +153,7 @@ func TestOverrideTransitionsSurviveCrash(t *testing.T) {
 // rollback while an override expires is reconciled to the confirmed base
 // with only the overrides still active.
 func TestRestartWithOverrides(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.ProtectedPolicy(), gatewaytest.SeedOptions{})
 	e.Start(gatewaytest.Binaries.Plain)

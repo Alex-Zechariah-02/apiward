@@ -22,6 +22,7 @@ import (
 // exactly its fixture or none. Its startup output tells listening apart from
 // protected admission.
 func TestNativeGatewayServesFixtures(t *testing.T) {
+	t.Parallel()
 	fixtures := gatewaytest.StartFixtures(t)
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, gatewaytest.FixturePolicy(fixtures), gatewaytest.SeedOptions{})
@@ -67,6 +68,7 @@ func TestNativeGatewayServesFixtures(t *testing.T) {
 // permission checks and its authority over the served policy, including the
 // confirmed-activation and temporary-override lifecycles.
 func TestNativeListenersAndAdministration(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.ProtectedPolicy(), gatewaytest.SeedOptions{})
 	e.Start(gatewaytest.Binaries.Plain, "CADDY_ADMIN="+gatewaytest.FreeAddr(t))

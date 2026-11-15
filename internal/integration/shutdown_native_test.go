@@ -85,6 +85,7 @@ func lossOf(events []map[string]any) int {
 // file holds each of them once. Events refused because the queue had no room
 // for them are counted in the file, exactly. The next start finds a complete file.
 func TestNativeStopDrainsQueuedEvents(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name   string
 		queued int
@@ -147,6 +148,7 @@ func TestNativeStopDrainsQueuedEvents(t *testing.T) {
 // are not confirmed written; it never reports a completed stop, and those
 // events are not in the file.
 func TestNativeStopReportsIncompleteDrain(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.Policy(e.A, false), gatewaytest.SeedOptions{})
 	e.Interruptible = true
@@ -179,6 +181,7 @@ func TestNativeStopReportsIncompleteDrain(t *testing.T) {
 // unwritten: the stop exits with status 3 and says so, and no credential
 // reaches the output.
 func TestNativeStopReportsAuditFailure(t *testing.T) {
+	t.Parallel()
 	for _, fault := range []string{"audit-sync", "audit-full"} {
 		t.Run(fault, func(t *testing.T) {
 			e := gatewaytest.NewEnv(t)
@@ -213,6 +216,7 @@ func TestNativeStopReportsAuditFailure(t *testing.T) {
 // the data plane still answers, so a load balancer can stop sending requests
 // before the listeners close; the stop then completes.
 func TestNativeStopDelayRefusesReadiness(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.Policy(e.A, false), gatewaytest.SeedOptions{})
 	settings := e.NativeSettings()

@@ -18,6 +18,7 @@ import (
 // rolls it back, and under traffic the first refused request makes the
 // controller roll back, once, however many requests see the expiry at once.
 func TestExpiredProvisionalAdmitsNothing(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.ProtectedPolicy(), gatewaytest.SeedOptions{})
 	e.Start(gatewaytest.Binaries.Fault, "GATEWAY_FAULT=no-deadline-timer")
@@ -123,6 +124,7 @@ func TestExpiredProvisionalAdmitsNothing(t *testing.T) {
 // after it times out instead. The timer is disabled so the decision instant
 // is the only arbiter.
 func TestDecisionAtDeadline(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.ProtectedPolicy(), gatewaytest.SeedOptions{})
 	e.Start(gatewaytest.Binaries.Fault, "GATEWAY_FAULT=no-deadline-timer")
@@ -170,6 +172,7 @@ func TestDecisionAtDeadline(t *testing.T) {
 // the same deadline; a gateway stopped across the deadline rolls back before
 // it admits its first request.
 func TestRestartAroundDeadline(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.ProtectedPolicy(), gatewaytest.SeedOptions{})
 	e.Start(gatewaytest.Binaries.Plain)

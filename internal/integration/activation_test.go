@@ -95,6 +95,7 @@ func expectEnforced(e *gatewaytest.Env, candidate bool, generation string) {
 // Rate counters carry over, so neither activation nor rollback grants a
 // fresh quota.
 func TestRollbackRestoresConfirmedBase(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	base := e.ProtectedPolicy()
 	base.Operations[0].Rate = gatewaytest.Rate(3, 60) // read-a: three per minute per subject

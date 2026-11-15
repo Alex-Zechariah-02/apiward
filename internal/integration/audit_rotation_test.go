@@ -23,6 +23,7 @@ import (
 // stops admitting rather than deleting evidence. An operator who archives
 // the files and restarts restores admission.
 func TestAuditRotationAndRetention(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	e.WriteConfig(gatewaytest.ConfigOptions{Audit: map[string]any{"audit_max_bytes": 8192, "audit_max_files": 3}})
 	gatewaytest.Seed(t, e.Database, e.Policy(e.A, false), gatewaytest.SeedOptions{})
@@ -121,6 +122,7 @@ func TestAuditRotationAndRetention(t *testing.T) {
 // A crash during rotation, after the rename, loses no acknowledged record:
 // the renamed file holds them and the restarted gateway continues.
 func TestCrashDuringRotation(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	e.Interruptible = true // stopped gracefully before its records are read
 	e.WriteConfig(gatewaytest.ConfigOptions{Audit: map[string]any{"audit_max_bytes": 4096, "audit_max_files": 4}})
@@ -169,6 +171,7 @@ func TestCrashDuringRotation(t *testing.T) {
 // Audit settings outside their bounds stop the gateway before any listener
 // opens, rather than running with an unbounded or unusable audit file.
 func TestAuditSettingsAtStartup(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name     string
 		settings map[string]any

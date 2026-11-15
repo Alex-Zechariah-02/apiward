@@ -16,6 +16,7 @@ import (
 // Without the setting the admin listener serves no page, and a setting that
 // names no dashboard stops startup instead of serving an empty origin.
 func TestDashboardSetting(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.Policy(e.A, false), gatewaytest.SeedOptions{})
 	e.Start(gatewaytest.Binaries.Plain)

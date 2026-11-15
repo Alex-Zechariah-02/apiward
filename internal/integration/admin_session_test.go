@@ -16,6 +16,7 @@ import (
 // Sessions are server-side, unpredictable,
 // bounded in time and never adopted from the client.
 func TestAdminSessions(t *testing.T) {
+	t.Parallel()
 	t.Run("issued session", func(t *testing.T) {
 		e := gatewaytest.NewEnv(t)
 		gatewaytest.Seed(t, e.Database, e.Policy(e.A, false), gatewaytest.SeedOptions{})
@@ -194,6 +195,7 @@ func TestAdminSessions(t *testing.T) {
 // A valid API-client token is never an administrator credential,
 // even when its subject has an administrator's name.
 func TestAPIClientTokenIsNotAdminCredential(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.ProtectedPolicy(), gatewaytest.SeedOptions{})
 	e.Start(gatewaytest.Binaries.Plain)
@@ -224,6 +226,7 @@ func TestAPIClientTokenIsNotAdminCredential(t *testing.T) {
 // The administrative events of a whole
 // session carry the trusted actor and never a secret.
 func TestAdminEventsAreSecretSafe(t *testing.T) {
+	t.Parallel()
 	e, secret := installEnv(t, gatewaytest.Binaries.Plain)
 	password := testPassword()
 	if code, _ := enrol(e, "root", secret, password); code != http.StatusCreated {

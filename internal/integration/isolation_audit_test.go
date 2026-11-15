@@ -28,6 +28,7 @@ func copyFile(t *testing.T, from, to string) {
 }
 
 func TestAuditGateAndSecretSafety(t *testing.T) {
+	t.Parallel()
 	t.Run("records outcomes without secrets", func(t *testing.T) {
 		e := gatewaytest.NewEnv(t)
 		gatewaytest.Seed(t, e.Database, e.Policy(e.A, false), gatewaytest.SeedOptions{})

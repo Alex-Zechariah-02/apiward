@@ -33,6 +33,7 @@ func allStages() map[string]any {
 // generation, and the intended fixture performs the operation: the event
 // chain, the receipt and the state change agree.
 func TestFiveControlsAdmitValidRequest(t *testing.T) {
+	t.Parallel()
 	e, fixtures := newFixtureEnv(t)
 	g := e.Status().Generation
 	orders, inventory := fixtures["orders"], fixtures["inventory"]
@@ -94,6 +95,7 @@ func fixtureWithRate(fixtures map[string]*gatewaytest.FixtureProcess, r *policy.
 // and evaluates no body, and a rate refusal of an otherwise valid request
 // evaluates no body; none reaches a fixture.
 func TestEarlyRefusalsStopThePath(t *testing.T) {
+	t.Parallel()
 	fixtures := gatewaytest.StartFixtures(t)
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, fixtureWithRate(fixtures, gatewaytest.Rate(2, 60), ""), gatewaytest.SeedOptions{})
@@ -140,6 +142,7 @@ func TestEarlyRefusalsStopThePath(t *testing.T) {
 // rate rule counted it, and the event names that generation. Nothing is
 // forwarded.
 func TestValidationRefusalDuringPublication(t *testing.T) {
+	t.Parallel()
 	fixtures := gatewaytest.StartFixtures(t)
 	e := gatewaytest.NewEnv(t)
 	strict := `{"type":"object","additionalProperties":false,"required":["customer","item","quantity"],"properties":{` +
@@ -193,6 +196,7 @@ func TestValidationRefusalDuringPublication(t *testing.T) {
 // The refused invalid body still counts against the quota of 2, since it was
 // admitted by the rate stage.
 func TestForgedControlHeadersSkipNothing(t *testing.T) {
+	t.Parallel()
 	fixtures := gatewaytest.StartFixtures(t)
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, fixtureWithRate(fixtures, gatewaytest.Rate(2, 60), ""), gatewaytest.SeedOptions{})
@@ -228,6 +232,7 @@ func TestForgedControlHeadersSkipNothing(t *testing.T) {
 // for concurrent valid requests, reaches no other destination, and records
 // each outcome; rate and validation still apply.
 func TestUpstreamFailureUnderFiveControls(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	p := ratePolicy(e, gatewaytest.Rate(30, 60), nil)
 	p.Upstreams = append(p.Upstreams, policy.Upstream{ID: "Z", Dial: gatewaytest.FreeAddr(t)})

@@ -18,6 +18,7 @@ import (
 // request or the stored candidate is invalid, stale or not eligible; the
 // refusal is recorded and enforcement is unchanged.
 func TestActivationRefusals(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.ProtectedPolicy(), gatewaytest.SeedOptions{})
 	e.Start(gatewaytest.Binaries.Plain)

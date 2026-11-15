@@ -32,6 +32,7 @@ func newFixtureEnv(t *testing.T) (*gatewaytest.Env, map[string]*gatewaytest.Fixt
 // Reset restores the seed exactly, and replaying the
 // catalogue from it reproduces the same outcomes and final state.
 func TestResetAndReplayAreReproducible(t *testing.T) {
+	t.Parallel()
 	e, fixtures := newFixtureEnv(t)
 	c := gatewaytest.LoadCatalogue(t)
 	seedHash := map[string]string{}

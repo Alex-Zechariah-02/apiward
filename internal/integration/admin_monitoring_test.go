@@ -69,6 +69,7 @@ func historySeqs(items []historyItem) []int64 {
 // an entry while new ones are recorded, and refuses malformed parameters.
 // The default order is unchanged.
 func TestHistoryOrderAndFilters(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.ProtectedPolicy(), gatewaytest.SeedOptions{})
 	e.Start(gatewaytest.Binaries.Plain)
@@ -177,6 +178,7 @@ func TestHistoryOrderAndFilters(t *testing.T) {
 // resolved without sending it again. A key never sent is not found, and the
 // lookup itself records nothing.
 func TestHistoryEntryByIdempotencyKey(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.ProtectedPolicy(), gatewaytest.SeedOptions{})
 	e.Start(gatewaytest.Binaries.Plain)

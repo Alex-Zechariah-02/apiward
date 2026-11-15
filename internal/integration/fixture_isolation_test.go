@@ -18,6 +18,7 @@ import (
 // Requests the gateway rejects leave no receipt at any
 // fixture and no state change.
 func TestRejectedRequestsNeverReachFixtures(t *testing.T) {
+	t.Parallel()
 	e, fixtures := newFixtureEnv(t)
 	states := map[string]string{}
 	for name, f := range fixtures {
@@ -76,6 +77,7 @@ func TestRejectedRequestsNeverReachFixtures(t *testing.T) {
 // The deny-all form of the fixture policy, published through the controller,
 // admits nothing: every catalogue step is refused and no fixture is reached.
 func TestDenyAllPolicyForwardsNothing(t *testing.T) {
+	t.Parallel()
 	e, fixtures := newFixtureEnv(t)
 	e.Start(gatewaytest.Binaries.Fault) // publication below uses the test publication hook
 	c := gatewaytest.LoadCatalogue(t)
@@ -107,6 +109,7 @@ func TestDenyAllPolicyForwardsNothing(t *testing.T) {
 // The control functions need the fixture's own secret, and the
 // gateway's data plane cannot reach them.
 func TestFixtureControlIsPrivileged(t *testing.T) {
+	t.Parallel()
 	e, fixtures := newFixtureEnv(t)
 	orders := fixtures["orders"]
 	if code, _ := e.Request(http.MethodPost, "/orders", "application/json", `{"customer":"cust-001","item":"ITM-001","quantity":1}`, gatewaytest.Bearer(t, "cust-001")...); code != http.StatusCreated {
@@ -142,6 +145,7 @@ func TestFixtureControlIsPrivileged(t *testing.T) {
 // start on any other address, and cannot be reached through the host's other
 // interfaces. The separate-network half is TestBypassFromSeparateNetwork.
 func TestFixturesListenOnlyOnLoopback(t *testing.T) {
+	t.Parallel()
 	fixtures := gatewaytest.StartFixtures(t)
 
 	addrs, err := net.InterfaceAddrs()

@@ -60,6 +60,7 @@ func auditRecords(e *gatewaytest.Env) []map[string]any {
 // Publication events carry the transition and revision, and no event kind
 // of an unimplemented component appears.
 func TestEventsCoverEveryDecisionClass(t *testing.T) {
+	t.Parallel()
 	e, fixtures := newFixtureEnv(t)
 	e.Start(gatewaytest.Binaries.Fault) // publication below uses the test publication hook
 	started := time.Now().UTC()
@@ -186,6 +187,7 @@ func findTransition(events []map[string]any, kind, id string) map[string]any {
 // Request bodies, header values and validator messages never reach the
 // audit log, whether the request was refused or forwarded.
 func TestBodiesAndHeaderValuesNeverRecorded(t *testing.T) {
+	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.KeywordPolicy(), gatewaytest.SeedOptions{})
 	e.Start(gatewaytest.Binaries.Plain)
