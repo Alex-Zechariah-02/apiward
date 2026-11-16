@@ -18,7 +18,7 @@ concurrency:
 
 env:
   # The Fetch commit these tests are known to pass with; move it on purpose.
-  FETCH_REF: 5ff5c3d27e14b6b0751e4fa4256dcfed2afadf4c
+  FETCH_REF: cde2ae667d01eb791967a3d9020a27e58cd555dd
 
 jobs:
   go:
