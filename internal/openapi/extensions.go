@@ -101,6 +101,7 @@ func settingsOf(root map[string]any) (policy.API, error) {
 			return policy.API{}, refused
 		}
 		data, err := json.Marshal(value)
+		// A setting nests at most two levels, so three refuses any deeper value.
 		if err != nil || policy.CheckMembers(data, 3) != nil || policy.DecodeStrict(data, member.into) != nil {
 			return policy.API{}, refused
 		}
@@ -116,6 +117,7 @@ func rateOf(value any) (*policy.RateRule, *refusal) {
 		return nil, refused
 	}
 	data, err := json.Marshal(value)
+	// A rate rule is a flat object, so one level is all it needs.
 	if err != nil || policy.CheckMembers(data, 1) != nil {
 		return nil, refused
 	}
@@ -138,6 +140,7 @@ func whenOf(value any) (*policy.When, *refusal) {
 	var holder struct {
 		When policy.When `json:"when"`
 	}
+	// A condition nests three levels, so four counts the holder object.
 	if err != nil || policy.CheckMembers(data, 4) != nil || policy.DecodeStrict(data, &holder) != nil {
 		return nil, refused
 	}

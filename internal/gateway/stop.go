@@ -31,6 +31,7 @@ func (g *nativeGateway) shutdown() error {
 	ctx, cancel := context.WithTimeout(context.Background(), g.grace)
 	defer cancel()
 	var errs []error
+	// The controller stops last: no listener answers after the database and audit log close.
 	if g.redirect != nil {
 		if err := g.redirect.Shutdown(ctx); err != nil {
 			errs = append(errs, fmt.Errorf("redirect listener shutdown: %w", err), g.redirect.Close())

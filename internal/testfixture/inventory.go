@@ -8,6 +8,7 @@ import (
 // inventoryVersion identifies the inventory seed data and business rules.
 const inventoryVersion = "inventory-v1"
 
+// One change moves stock by at most 100 either way: a small fixture bound, easy to state in a test.
 const maxStockAdjustment = 100
 
 type item struct {

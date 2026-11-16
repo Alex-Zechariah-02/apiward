@@ -25,6 +25,7 @@ type HeaderCondition struct {
 // WhenExtension is the OpenAPI operation member that carries a When.
 const WhenExtension = "x-apiward-when"
 
+// MaxWhenHosts and MaxWhenHeaders: every request tests each list, so both stay short.
 const (
 	MaxWhenHosts   = 16
 	MaxWhenHeaders = 8

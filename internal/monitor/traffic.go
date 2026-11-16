@@ -58,4 +58,5 @@ func TrafficTop[T any](items []T, count func(T) int, name func(T) string, limit 
 	return items[:min(len(items), limit)]
 }
 
+// TopLimit keeps a top list short; ten rows is a length a reader can scan.
 const TopLimit = 10

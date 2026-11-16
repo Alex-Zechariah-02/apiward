@@ -184,6 +184,7 @@ func SignalCapture(path, generation string) {
 	if path == "" || path != os.Getenv("GATEWAY_HOLD_PATH") {
 		return
 	}
+	// Owner-only mode, so other users of the host cannot read the capture points.
 	file, err := os.OpenFile(os.Getenv("GATEWAY_HOLD_FILE"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
 	if err != nil {
 		return

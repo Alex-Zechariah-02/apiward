@@ -93,6 +93,7 @@ func (m *mapper) refuse(method, path string, r *refusal) {
 func (m *mapper) operation(method, path string, item map[string]any, itemPointer string) (*candidate, *refusal) {
 	pointer := itemPointer + "/" + method
 	upper := strings.ToUpper(method)
+	// A policy allows no TRACE, which echoes a request, so it is refused.
 	if method == "trace" {
 		return nil, refuse(CodeMethod, "", "TRACE is never forwarded.")
 	}
@@ -157,6 +158,7 @@ func targetOf(path string) (string, bool, *refusal) {
 		if i != len(segments)-1 {
 			return "", false, refuse(CodePathTemplate, "", "A templated segment followed by more segments cannot be expressed.")
 		}
+		// A target is exact or one trailing /* prefix, so only the last segment can widen.
 		return strings.Join(segments[:i], "/") + "/*", true, nil
 	}
 	return path, false, nil
@@ -230,6 +232,7 @@ func (m *mapper) noticeLinks(object map[string]any) {
 
 // follow resolves a chain of internal references of a non-schema object.
 func follow(root map[string]any, node any, pointer string) (any, *refusal) {
+	// A reference chain can loop, so it stops after MaxJSONDepth hops.
 	for range policy.MaxJSONDepth {
 		object, ok := node.(map[string]any)
 		if !ok {

@@ -34,6 +34,7 @@ func RunScenarios(t *testing.T, e *Env, fixtures map[string]*FixtureProcess, c f
 	generation := e.Status().Generation
 
 	var results []StepResult
+	// One step at a time: the receipt counts taken around a step belong to that step.
 	for _, sc := range c.Scenarios {
 		target := fixtures[apiOf[sc.Operation]]
 		before := ReceiptCounts(fixtures)

@@ -14,6 +14,7 @@ import (
 
 // NewToken returns 32 random bytes in URL-safe base64.
 func NewToken() string {
+	// 32 bytes (256 bits) of crypto/rand output: enough that a token cannot be guessed.
 	token := make([]byte, 32)
 	rand.Read(token)
 	return base64.RawURLEncoding.EncodeToString(token)

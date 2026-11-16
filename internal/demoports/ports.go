@@ -14,6 +14,7 @@ func Offset(address string) (string, error) {
 	if err != nil || base.Port() == 0 || !base.Addr().IsLoopback() {
 		return "", errors.New("demo address must be a literal loopback address with a nonzero port")
 	}
+	// One process-wide offset, so a run on a shared host moves every demo port alike.
 	value := os.Getenv("EAT_PORT_OFFSET")
 	var offset uint64
 	if value != "" {

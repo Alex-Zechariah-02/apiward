@@ -2,6 +2,7 @@
 import { useId, useRef, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 
+// A pointer passing over a term opens nothing; a short pause lets it reach the explanation.
 const openDelay = 350
 const closeDelay = 200
 

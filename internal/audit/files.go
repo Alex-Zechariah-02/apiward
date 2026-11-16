@@ -91,6 +91,7 @@ func (a *AuditLog) open() (int64, error) {
 		return -1, err
 	}
 	a.rotated, a.next, a.rotatedBytes = set.count, set.next, set.bytes
+	// 0600 keeps a new audit file readable and writable only by the gateway's user.
 	file, err := os.OpenFile(a.path, os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
 		return -1, err
@@ -154,6 +155,7 @@ func (a *AuditLog) rotate() (string, error) {
 		return "", err
 	}
 	fault.CrashPoint("audit-after-rename")
+	// 0600 keeps a new audit file readable and writable only by the gateway's user.
 	file, err := os.OpenFile(a.path, os.O_CREATE|os.O_EXCL|os.O_RDWR, 0o600)
 	if err != nil {
 		return "", err

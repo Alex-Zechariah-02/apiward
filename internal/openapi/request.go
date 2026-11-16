@@ -125,7 +125,9 @@ func (m *mapper) parameters(item, object map[string]any, itemPointer, pointer st
 		name, _ := p.value["name"].(string)
 		in, _ := p.value["in"].(string)
 		canonical := http.CanonicalHeaderKey(name)
+		// OpenAPI ignores header parameters named Accept, Content-Type and Authorization.
 		ignored := canonical == "Accept" || canonical == "Content-Type" || canonical == "Authorization"
+		// The gateway validates headers and bodies only, so the other locations are listed.
 		if in != "header" || ignored {
 			c.notEnforced = append(c.notEnforced, NotEnforced{Operation: c.op.ID, Parameter: policy.Clip(name), In: policy.Clip(in)})
 			continue
@@ -149,6 +151,7 @@ func (m *mapper) parameters(item, object map[string]any, itemPointer, pointer st
 	if len(properties) == 0 {
 		return nil
 	}
+	// The compiler requires this keyword; the gateway checks only the headers the rule names.
 	headers := map[string]any{"type": "object", "properties": properties, "additionalProperties": true}
 	if len(required) > 0 {
 		headers["required"] = required

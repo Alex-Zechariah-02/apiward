@@ -10,7 +10,9 @@ export default defineConfig({
   globalSetup: './e2e/prepare.ts',
   workers: 1,
   fullyParallel: false,
+  // Tests drive a real gateway through several policy steps; 3 minutes bounds a hung one.
   timeout: 180_000,
+  // An answer the page waits for arrives within seconds; 15 s allows a busy runner.
   expect: { timeout: 15_000 },
   reporter: [['list']],
   use: {

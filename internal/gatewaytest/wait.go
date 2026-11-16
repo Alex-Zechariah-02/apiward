@@ -17,11 +17,13 @@ func WaitFor(t *testing.T, limit time.Time, what string, cond func() bool) {
 		if time.Now().After(limit) {
 			t.Fatalf("timed out waiting for %s", what)
 		}
+		// Poll every 25 ms: prompt for a test without spinning a CPU core.
 		time.Sleep(25 * time.Millisecond)
 	}
 }
 
 // LogBuffer collects a controller's log output.
+// No limit: the whole output is kept so a failing test can print it.
 type LogBuffer struct {
 	mu  sync.Mutex
 	buf bytes.Buffer

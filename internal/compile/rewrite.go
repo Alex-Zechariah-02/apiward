@@ -42,6 +42,7 @@ func compileForward(f *policy.Forward, i int) (*rewrite, error) {
 		if p.value == "" {
 			continue
 		}
+		// A prefix shares the target bound: no admitted path is longer than a target.
 		if len(p.value) > policy.MaxTargetLength || !IsCanonical(p.value) || strings.HasSuffix(p.value, "/") || strings.Contains(p.value, "*") {
 			return nil, policy.Invalid("REWRITE_INVALID", "apis[%d].forward.%s", i, p.name)
 		}

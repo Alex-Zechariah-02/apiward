@@ -96,6 +96,7 @@ func (h *Handler) runModules(q *request, r *http.Request, phase module.Phase, v 
 	}
 	stage := phaseStage[phase]
 	for _, c := range checks {
+		// Checks run one at a time in order; no deadline is added, so a slow check holds the request.
 		result := runCheck(r.Context(), c.Check, moduleRequest(q, r, v))
 		switch {
 		case result.Passed():

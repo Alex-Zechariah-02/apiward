@@ -79,6 +79,7 @@ export function PolicyView({ admin, can, open }: ViewProps) {
                     <Time value={r.created_at} />
                   </td>
                   <td>
+                    {/* 16 characters tell versions apart; the title holds the whole checksum. */}
                     <code className="muted" title={r.checksum}>
                       {r.checksum.slice(0, 16)}…
                     </code>

@@ -266,6 +266,7 @@ func writeNew(files map[string][]byte) error {
 	opened := map[string]*os.File{}
 	var failure error
 	for path := range files {
+		// 0o600 keeps other local users from reading the policy or report written here.
 		file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 		if errors.Is(err, fs.ErrExist) {
 			failure = fmt.Errorf("%s already exists; choose a new file", path)

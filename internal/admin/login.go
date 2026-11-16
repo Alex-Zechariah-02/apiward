@@ -52,6 +52,7 @@ func (s *Server) handleEnrol(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	now := time.Now()
+	// Enrolment and password change share the sign-in counters, so guesses there are throttled too.
 	try, reason := s.throttle.begin(body.Name, r, now)
 	if reason != "" {
 		s.refuse(w, r, http.StatusTooManyRequests, "too_many_attempts", reason, nil)

@@ -89,6 +89,7 @@ func (s *schemas) convert(node any, pointer, field string, depth int, refs []str
 		out[keyword] = value
 	}
 	if _, stated := out["additionalProperties"]; !stated && hasType(out["type"], "object") {
+		// The description does not forbid unknown members; record the assumption.
 		out["additionalProperties"] = true
 		s.assumed = append(s.assumed, Assumed{Operation: s.operation, Field: field + ".additionalProperties",
 			Value: true, Note: "set false to refuse unknown fields"})
@@ -129,6 +130,7 @@ func (s *schemas) reference(object map[string]any, ref any, pointer, field strin
 		return nil, refused
 	}
 	name := ref.(string)
+	// One name twice on the chain is a cycle, refused here instead of by the value budget.
 	if slices.Contains(refs, name) {
 		return nil, refuse(CodeCycle, pointer, "The schema refers to itself through %s.", policy.Clip(name))
 	}
@@ -154,6 +156,7 @@ func resolve(root map[string]any, ref any, pointer string) (any, *refusal) {
 			node, ok = container[part]
 		case []any:
 			index, err := strconv.Atoi(part)
+			// An index outside the array would panic; a non-number part names no node.
 			ok = err == nil && index >= 0 && index < len(container)
 			if ok {
 				node = container[index]
@@ -204,6 +207,7 @@ func sortedKeys(m map[string]any) []string {
 	for k := range m {
 		keys = append(keys, k)
 	}
+	// One fixed order gives the same first refusal and report on every import.
 	slices.Sort(keys)
 	return keys
 }

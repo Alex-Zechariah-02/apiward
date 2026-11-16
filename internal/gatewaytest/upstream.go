@@ -52,8 +52,10 @@ func NewReceiver(t *testing.T, name string) *Receiver {
 }
 
 func (rc *Receiver) serve(w http.ResponseWriter, r *http.Request) {
+	// The whole body, so a test can compare what arrived with what it sent.
 	body, _ := io.ReadAll(r.Body)
 	rc.mu.Lock()
+	// Every receipt is kept, and read back by position, so none may be dropped.
 	rc.got = append(rc.got, Receipt{
 		Method:        r.Method,
 		Target:        r.RequestURI,

@@ -19,6 +19,7 @@ import (
 const (
 	maxHostLength  = 253
 	maxLabelLength = 63
+	// 256 keeps a condition value within the length an access question may use.
 	maxHeaderValue = 256
 )
 
@@ -43,6 +44,7 @@ func compileWhen(w *policy.When, i int) (*condition, error) {
 	if len(w.Hosts) == 0 && len(w.Headers) == 0 {
 		return nil, policy.Invalid("INVALID_VALUE", "operations[%d].when", i)
 	}
+	// Every request walks every host pattern and header condition, so both stay short.
 	if len(w.Hosts) > policy.MaxWhenHosts || len(w.Headers) > policy.MaxWhenHeaders {
 		return nil, policy.Invalid("LIMIT_EXCEEDED", "operations[%d].when", i)
 	}

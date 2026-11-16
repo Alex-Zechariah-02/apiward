@@ -138,6 +138,7 @@ function listed(policy: Policy, kind: BoxKind): { item: Policy[(typeof sections)
 export function FormView(
   props: FormProps & { actions: (kind: BoxKind) => GroupAction[]; selection: BoxKey | null; onSelect: (key: BoxKey) => void },
 ) {
+  // The canvas's column order, left to right, so both views list the boxes alike.
   const kinds: BoxKind[] = ['role', 'operation', 'api', 'upstream']
   const first = kinds.flatMap((kind) => props.policy[sections[kind]].map((item) => `${kind}:${item.id}` as BoxKey))[0]
   const [picked, setPicked] = useState<BoxKey | 'permits' | undefined>(() =>

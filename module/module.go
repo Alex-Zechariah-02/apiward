@@ -108,6 +108,7 @@ type Result struct {
 	code    string
 }
 
+// The refusal code is answered and recorded, so it stays a short token without request data.
 var codeFormat = regexp.MustCompile(`^[a-z][a-z0-9_]{0,63}$`)
 
 // Pass lets the request continue.
@@ -157,6 +158,7 @@ func (r Result) Reason() string {
 	return r.code
 }
 
+// The ID is a policy operation member and appears in status and records, so it stays plain.
 var idFormat = regexp.MustCompile(`^[a-z0-9_]{1,32}$`)
 
 // Builtins are the IDs of the gateway's own controls.

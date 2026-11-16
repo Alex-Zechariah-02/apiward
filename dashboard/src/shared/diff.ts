@@ -46,6 +46,7 @@ function shown(value: unknown): string {
   if (value === undefined) return 'none'
   if (Array.isArray(value) && value.every((v) => typeof v === 'string')) return value.length > 0 ? value.join(', ') : 'none'
   const text = canonical(value)
+  // 80 characters keep a change on one line; a longer value is cut with an ellipsis.
   return text.length > 80 ? `${text.slice(0, 77)}…` : text
 }
 
@@ -59,6 +60,7 @@ function members(before: Item, after: Item, path = '', depth = 0): string[] {
     const now = after[name]
     if (canonical(old) === canonical(now)) continue
     const where = `${path}${name}`
+    // Four levels reach a schema's members; deeper changes show as one changed value.
     if (isObject(old) && isObject(now) && depth < 4) {
       lines.push(...members(old, now, `${where}.`, depth + 1))
     } else if (old === undefined) {

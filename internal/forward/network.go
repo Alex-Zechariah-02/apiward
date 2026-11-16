@@ -248,6 +248,7 @@ func (n *Network) Profiles() []ProfileInfo {
 // profile's CA pin or the system roots, the profile's client certificate if
 // it has one, and the profile's session cache when resumption is on.
 func (n *Network) clientConfig(e *compile.Endpoint) (*tls.Config, error) {
+	// TLS 1.2 or later, Go's client floor; ALPN offers only the HTTP/1.1 the pool models.
 	config := &tls.Config{MinVersion: tls.VersionTLS12, ServerName: e.ServerName(), NextProtos: []string{"http/1.1"}}
 	if cache := n.sessions[e.Profile()]; cache != nil {
 		config.ClientSessionCache = cache

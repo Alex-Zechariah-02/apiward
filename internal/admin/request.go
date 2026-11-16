@@ -31,6 +31,7 @@ func decodeBody(w http.ResponseWriter, r *http.Request, limit int64, value any) 
 		adminError(w, http.StatusRequestEntityTooLarge, "payload_too_large", "")
 		return false
 	}
+	// A body may nest two levels deeper than a policy; deeper is refused before decoding.
 	if err != nil || policy.CheckMembers(body, policy.MaxPolicyDepth+2) != nil || policy.DecodeStrict(body, value) != nil {
 		adminError(w, http.StatusBadRequest, "bad_request", "")
 		return false

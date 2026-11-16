@@ -30,6 +30,7 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request, who caller
 		adminError(w, http.StatusBadRequest, "bad_request", "")
 		return
 	}
+	// A default page of 20 keeps one read's copy from the live ring and the answer small.
 	limit := 20
 	if text := query.Get("limit"); text != "" {
 		limit, err = strconv.Atoi(text)
@@ -39,6 +40,7 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request, who caller
 	}
 	ref, subject, operation, decision := query.Get("ref"), query.Get("subject"), query.Get("operation"), query.Get("decision")
 	validDecision := decision == "" || decision == "allowed" || decision == "refused"
+	// A page above 100 events is refused, so one read copies only a bounded part of the ring.
 	if err != nil || !knownQuery(query, "ref", "subject", "operation", "decision", "limit", "after") || limit < 1 || limit > 100 || !validDecision {
 		adminError(w, http.StatusBadRequest, "bad_request", "")
 		return
@@ -86,6 +88,7 @@ func (s *Server) handleEventStream(w http.ResponseWriter, r *http.Request, who c
 	w.Header().Set("Cache-Control", "no-store")
 	controller := http.NewResponseController(w)
 	write := func(data string) bool {
+		// Each frame has a 5 s write deadline, so a stalled viewer ends the stream instead of holding it.
 		if controller.SetWriteDeadline(time.Now().Add(5*time.Second)) != nil {
 			return false
 		}
@@ -100,6 +103,7 @@ func (s *Server) handleEventStream(w http.ResponseWriter, r *http.Request, who c
 	if !write(": connected\n\n") {
 		return
 	}
+	// An idle stream is kept alive every 15 s, and each beat re-checks the session.
 	heartbeat := time.NewTicker(15 * time.Second)
 	defer heartbeat.Stop()
 	expiry := time.NewTimer(time.Until(who.session.Expires))

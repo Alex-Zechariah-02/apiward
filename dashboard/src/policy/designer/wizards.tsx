@@ -15,6 +15,7 @@ export type GuidedTask = 'access' | 'rate' | 'endpoint' | 'connect'
 // endpoint starts there, and a rate limit is chosen among its endpoints.
 export type WizardProps = { policy: Policy; api?: string; apply: (document: Policy, summary: string) => void; close: () => void }
 
+// The seven methods a policy may name; a body rule is offered for the three that usually carry a body.
 export const methods = ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS']
 export const withBody = new Set(['POST', 'PUT', 'PATCH'])
 
@@ -78,6 +79,7 @@ export function Whole(props: { id: string; label: string; value: string; onChang
 }
 
 export function wholeNumber(text: string): number | null {
+  // At least 1, as a count or window of 0 makes no limit; the gateway checks the upper bounds on save.
   const value = Number(text)
   return text.trim() !== '' && Number.isInteger(value) && value >= 1 ? value : null
 }
@@ -165,6 +167,7 @@ function RateWizard({ policy, api, apply, close }: WizardProps) {
   const offered = api && policy.operations.some((item) => item.api === api) ? policy.operations.filter((item) => item.api === api) : policy.operations
   const [endpoint, setEndpoint] = useState(offered[0]?.id ?? '')
   const operation = offered.find((item) => item.id === endpoint)
+  // The endpoint's current limit, or 100 a minute as for a new endpoint.
   const [count, setCount] = useState(String(operation?.rate?.count ?? 100))
   const [seconds, setSeconds] = useState(String(operation?.rate?.window_seconds ?? 60))
   const requests = wholeNumber(count)

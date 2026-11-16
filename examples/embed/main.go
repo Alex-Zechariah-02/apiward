@@ -27,6 +27,7 @@ const stopWait = 30 * time.Second
 
 func main() {
 	config := flag.String("config", "", "gateway configuration file")
+	// Loopback by default: the example host and its gateway routes stay off the network.
 	listen := flag.String("listen", "127.0.0.1:8080", "address of the host's server")
 	flag.Parse()
 	logger := slog.New(slog.NewJSONHandler(os.Stderr, nil))
@@ -68,6 +69,7 @@ func run(ctx context.Context, config string, listener net.Listener, logger *slog
 	server := &http.Server{Handler: mux} // #nosec G112 -- Apply below sets the header and other timeouts
 	gw.ServerSettings().Apply(server)
 
+	// Buffered: the serve goroutine sends once, so it never blocks when run stops receiving.
 	served := make(chan error, 1)
 	go func() { served <- server.Serve(listener) }()
 	var failed error

@@ -21,6 +21,7 @@ func ListeningPorts(t *testing.T, pid int) []string {
 	var ports []string
 	for line := range strings.SplitSeq(string(out), "\n") {
 		fields := strings.Fields(line)
+		// ss -H prints six fields: state, two queues, local and peer addresses, then the owner.
 		if len(fields) >= 6 && fields[0] == "LISTEN" && strings.Contains(fields[5], owner) {
 			ports = append(ports, Port(fields[3]))
 		}

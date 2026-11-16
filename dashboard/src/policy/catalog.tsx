@@ -42,6 +42,7 @@ export function ApisView({ admin, can, open }: ViewProps) {
   const memory = useContext(ViewMemory)
   const [query, setQuery] = useState('')
   const policy = useResource<Revision>((signal) => admin.get('/admin/policy', signal), [])
+  // Five minutes give each API's figures enough requests to mean something while staying current.
   const traffic = useResource<Traffic>((signal) => admin.get('/admin/traffic?window=300', signal), [])
   usePoll(traffic.refresh, liveMs, state.critical)
   // The last figures read stay shown when a refresh fails; the problem

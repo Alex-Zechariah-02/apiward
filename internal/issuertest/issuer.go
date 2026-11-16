@@ -71,6 +71,7 @@ func Changed(base, changes map[string]any) map[string]any {
 // minutes from now.
 func ValidClaims(subject string) map[string]any {
 	now := time.Now()
+	// Ten minutes keep a slow test's token from expiring while it runs.
 	return map[string]any{
 		"sub":   subject,
 		"iss":   Name,
@@ -115,6 +116,7 @@ type Subject struct {
 // Token signs claims with go-jose's own signer, as an ordinary issuer would.
 func (i *Issuer) Token(t testing.TB, claims map[string]any) string {
 	t.Helper()
+	// RS256 with key id test-a: the harness trust names that one key id.
 	signer, err := jose.NewSigner(jose.SigningKey{Algorithm: jose.RS256, Key: i.key}, (&jose.SignerOptions{}).WithType("JWT").WithHeader("kid", "test-a"))
 	if err != nil {
 		t.Fatal(err)

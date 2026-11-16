@@ -183,6 +183,7 @@ export function useMutation<T = Outcome>(admin: Admin, onSettled: () => void) {
   }, [])
 
   async function run(request: MutationRequest): Promise<Reply<T> | undefined> {
+    // One change at a time per view: a double click never sends the same change twice.
     if (busy.current) return undefined
     busy.current = true
     setPhase({ state: 'pending', request })

@@ -32,7 +32,9 @@ const ProfileCore = "core"
 
 // MaxTokenRoles bounds the roles one token may carry, whatever the policy's
 // role ceiling: it is part of the token size bound.
+// MaxTargetLength and MaxUpstreamURL: a policy's path and URL strings stay short to match and parse.
 const (
+	// MaxPolicyDepth: deeper than any policy document needs, so the member scan's stack stays small.
 	MaxPolicyDepth   = 16
 	MaxTokenRoles    = 64
 	MaxIDLength      = 64
@@ -130,6 +132,7 @@ func Invalid(code, field string, args ...any) *PolicyError {
 	return &PolicyError{Code: code, Field: fmt.Sprintf(field, args...)}
 }
 
+// AllowedMethods: methods an operation may bind; the gateway routes and forwards exactly these.
 var AllowedMethods = map[string]bool{
 	http.MethodGet: true, http.MethodHead: true, http.MethodPost: true, http.MethodPut: true,
 	http.MethodPatch: true, http.MethodDelete: true, http.MethodOptions: true,

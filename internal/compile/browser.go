@@ -16,6 +16,7 @@ import (
 )
 
 // hstsValue is the Strict-Transport-Security value: one year.
+// A year is the common lifetime for it; the header only goes out over TLS.
 const hstsValue = "max-age=31536000"
 
 // CORS is an API's compiled browser access.

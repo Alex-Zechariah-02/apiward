@@ -202,6 +202,7 @@ func RecentRecord(path string, span int64) (int64, time.Time, error) {
 	start := max(end-span-1, 0)
 	section := io.NewSectionReader(file, start, end-start)
 	// Room for the partial record skipped first and one whole record after.
+	// Two records find the next start, so the read stays small whatever the file size.
 	reader := bufio.NewReader(io.LimitReader(section, 2*(audit.MaxRecordBytes+1)))
 	if end > span {
 		skipped, err := reader.ReadBytes('\n')
@@ -242,6 +243,7 @@ func firstRecord(path string) (headRecord, error) {
 		return headRecord{}, err
 	}
 	defer file.Close()
+	// Only the first record's ID and time are needed, so the read stops at the first line.
 	line, err := bufio.NewReader(io.LimitReader(file, audit.MaxRecordBytes+1)).ReadBytes('\n')
 	if err != nil && !errors.Is(err, io.EOF) {
 		return headRecord{}, err
@@ -263,6 +265,7 @@ func DecodeCursor(text string) *Cursor {
 	var c Cursor
 	// A cursor (file name, record ID, offset) is under 200 bytes; a larger
 	// one is refused before it is decoded.
+	// The checks below keep the file a bare name, so a cursor cannot point outside the directory.
 	if err != nil || len(data) > 512 || policy.DecodeStrict(data, &c) != nil {
 		return nil
 	}

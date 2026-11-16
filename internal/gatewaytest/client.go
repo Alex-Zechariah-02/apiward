@@ -49,6 +49,8 @@ func (e *Env) Exchange(method, path, contentType, body string, header ...string)
 	for i := 0; i+1 < len(header); i += 2 {
 		req.Header.Set(header[i], header[i+1])
 	}
+	// A new connection per request keeps pooled connection state out of a test.
+	// Thirty seconds for the whole exchange stops a gateway that never answers.
 	client := &http.Client{Transport: &http.Transport{DisableKeepAlives: true}, Timeout: 30 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
@@ -70,11 +72,13 @@ func (e *Env) Raw(request string) (int, string) {
 // into the returned string.
 func (e *Env) RawResponse(request string) (*http.Response, string) {
 	e.T.Helper()
+	// A gateway that is not listening is given 5 s, so the test does not hang on the dial.
 	conn, err := net.DialTimeout("tcp", e.DataAddr, 5*time.Second)
 	if err != nil {
 		e.T.Fatal(err)
 	}
 	defer conn.Close()
+	// A gateway that stalls mid-request cannot hold the test past 30 s.
 	conn.SetDeadline(time.Now().Add(30 * time.Second))
 	if _, err := io.WriteString(conn, request); err != nil {
 		e.T.Fatal(err)
@@ -120,11 +124,13 @@ func FileSHA256(t *testing.T, path string) string {
 // leaving the body to the caller. The connection closes when the test ends.
 func (e *Env) OpenResponse(request string) (*http.Response, net.Conn) {
 	e.T.Helper()
+	// A gateway that is not listening is given 5 s, so the test does not hang on the dial.
 	conn, err := net.DialTimeout("tcp", e.DataAddr, 5*time.Second)
 	if err != nil {
 		e.T.Fatal(err)
 	}
 	e.T.Cleanup(func() { conn.Close() })
+	// A gateway that stalls mid-request cannot hold the test past 30 s.
 	conn.SetDeadline(time.Now().Add(30 * time.Second))
 	if _, err := io.WriteString(conn, request); err != nil {
 		e.T.Fatal(err)
@@ -168,6 +174,7 @@ func (e *Env) SendBody(framing, path, body string, header ...string) (int, strin
 	if framing == "declared" {
 		return e.RawExchange(fmt.Sprintf("%sContent-Length: %d\r\n\r\n%s", head, len(body), body), false)
 	}
+	// Chunks of 4096 split a larger body into several frames rather than one.
 	return e.RawExchange(head+"Transfer-Encoding: chunked\r\n\r\n"+ChunkedBody(body, 4096), false)
 }
 
@@ -187,11 +194,13 @@ func SizeRefusal(size, global int) (string, string) {
 // so a body shorter than its declared length ends early.
 func (e *Env) RawExchange(request string, halfClose bool) (int, string) {
 	e.T.Helper()
+	// A gateway that is not listening is given 5 s, so the test does not hang on the dial.
 	conn, err := net.DialTimeout("tcp", e.DataAddr, 5*time.Second)
 	if err != nil {
 		e.T.Fatal(err)
 	}
 	defer conn.Close()
+	// A gateway that stalls mid-request cannot hold the test past 30 s.
 	conn.SetDeadline(time.Now().Add(30 * time.Second))
 	if _, err := io.WriteString(conn, request); err != nil {
 		e.T.Fatal(err)

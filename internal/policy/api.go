@@ -53,6 +53,11 @@ type ResponseHeaders struct {
 }
 
 // Limits of the per-API settings.
+// MaxCORSOrigins bounds one API's origin list; a browser rule names a few sites.
+// MaxCORSHeaders bounds the allow-headers value one preflight answer carries.
+// MaxCORSExpose bounds the expose-headers value the gateway builds and sends.
+// MaxRemoveHeaders bounds the names deleted from an API's response headers.
+// MaxAllowAddresses bounds the ranges checked against each client address.
 const (
 	DefaultCORSMaxAge = 600
 	MaxCORSMaxAge     = 86_400

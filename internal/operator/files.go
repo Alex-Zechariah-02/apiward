@@ -109,6 +109,7 @@ func syncDir(dir string) error {
 
 // writeNewFile writes value as JSON to a file that must not exist yet.
 func writeNewFile(path string, value any) error {
+	// 0600 keeps the manifest owner-only where mode bits apply; O_EXCL never replaces.
 	file, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
 	if err != nil {
 		return err

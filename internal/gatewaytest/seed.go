@@ -44,6 +44,7 @@ type SeedOptions struct {
 func Seed(t testing.TB, path string, policy policy.Policy, opts SeedOptions) {
 	t.Helper()
 	if opts.Mode == "" {
+		// The deployment row requires one of the three modes; a seed starts normal.
 		opts.Mode = store.ModeNormal
 	}
 	if opts.HighWater.IsZero() {
@@ -70,6 +71,7 @@ func Seed(t testing.TB, path string, policy policy.Policy, opts SeedOptions) {
 	}
 	defer tx.Rollback()
 	if opts.Version == 0 {
+		// The current schema, so a seed has every table the gateway and the tests read.
 		opts.Version = store.DatabaseVersion
 	}
 	if err := store.ApplyMigrations(ctx, tx, 0, opts.Version); err != nil {
@@ -82,6 +84,7 @@ func Seed(t testing.TB, path string, policy policy.Policy, opts SeedOptions) {
 	}
 	statements := []statement{
 		{`INSERT INTO deployment (id, installation, mode, recovery_episode, high_water) VALUES (1, ?, ?, ?, ?)`,
+			// Sixteen bytes fill the 32 characters the installation and episode columns require.
 			[]any{randomID(16), opts.Mode, episode, opts.HighWater.UnixMilli()}},
 		{`INSERT INTO revision VALUES (1, NULL, 'genesis', ?, ?, 'seed', ?)`, revisionArgs(policy)},
 		{`INSERT INTO base VALUES (1, 1, NULL, NULL)`, nil},

@@ -181,6 +181,7 @@ function Reasons({ traffic }: { traffic: Traffic }) {
   )
 }
 
+// The three windows the gateway's traffic read accepts.
 const windows = [
   { seconds: 60, label: '1 min' },
   { seconds: 300, label: '5 min' },

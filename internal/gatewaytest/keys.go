@@ -21,6 +21,7 @@ const IdentityFile = "identity.pem"
 // writeKeys writes e's issuer public key and a new identity key.
 func writeKeys(t *testing.T, e *Env) {
 	t.Helper()
+	// Owner-only, as an operator's trust files should be; the gateway reads it as the same user.
 	if err := os.WriteFile(e.PublicKey, Issuer.PublicPEM(), 0o600); err != nil {
 		t.Fatal(err)
 	}

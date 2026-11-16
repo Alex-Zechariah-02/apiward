@@ -181,6 +181,7 @@ export function RuleTarget(props: {
             className="input input-number"
             type="number"
             inputMode="numeric"
+            // The gateway's own range for a request count; it refuses anything outside it.
             min={1}
             max={1000000}
             step={1}

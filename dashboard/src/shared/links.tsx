@@ -31,6 +31,7 @@ export function useFocus(name: string): string | null {
 export function useTarget(ready: boolean, key: string | null) {
   useEffect(() => {
     if (!ready || !key) return
+    // A short wait lets the page finish laying out, so the scroll lands on the item's final place.
     const timer = window.setTimeout(() => {
       const element = document.querySelector('[data-target="true"]')
       element?.scrollIntoView({ block: 'center', behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' })

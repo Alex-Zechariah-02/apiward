@@ -67,6 +67,7 @@ export function Notifications(props: { status: Status | undefined; view: View })
     previous.current = props.status
     if (!before || !props.status) return
     const fresh = statusNotices(before, props.status).map((notice) => ({ ...notice, id: ++next.current, view: props.view }))
+    // The 5 newest stay: a burst of changes cannot stack notices over the whole page.
     if (fresh.length > 0) setShown((list) => [...list, ...fresh].slice(-5))
   }, [props.status])
 

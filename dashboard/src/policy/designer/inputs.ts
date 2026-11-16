@@ -20,8 +20,10 @@ export interface Row {
   schema: string
 }
 
+// A body schema starts closed: an empty object, so nothing is accepted until members are declared.
 const starter = '{\n  "type": "object",\n  "properties": {},\n  "additionalProperties": false\n}'
 
+// A new row starts like an endpoint added elsewhere: GET, sign-in required, 100 a minute; 4 KiB for a body.
 export function blank(key: number): Row {
   return { key, method: 'GET', target: '', id: null, open: false, roles: [], count: '100', seconds: '60', checked: false, bytes: '4096', schema: starter }
 }
@@ -50,6 +52,7 @@ const idForm = /^[A-Za-z0-9][A-Za-z0-9._-]*$/
 
 export function idProblem(id: string, taken: string | undefined): string | undefined {
   if (!id) return 'Enter an ID.'
+  // 64 characters is the gateway's own ID limit; checking it here saves a refused save.
   if (id.length > 64) return 'Use at most 64 characters.'
   if (!idForm.test(id)) return 'Use letters, digits, dots, hyphens and underscores, starting with a letter or digit.'
   return taken
@@ -75,6 +78,7 @@ export function upstreamFrom(id: string, address: string, transport: Pick<Upstre
 }
 
 export function pathProblem(target: string): string | undefined {
+  // Two quick mistakes caught before saving; the gateway's compiler checks the full path form.
   if (!target.startsWith('/')) return 'Enter a path starting with /.'
   if (/\s/.test(target)) return 'A path cannot contain spaces.'
   return undefined

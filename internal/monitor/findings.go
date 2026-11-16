@@ -27,12 +27,16 @@ const (
 	// NearlyFullTime (critical). The rate is read over the file's last
 	// RateMinBytes and counts once the file holds that much, so a few early
 	// records cannot predict a fill and a slow start does not dilute it.
+	// An hour of warning leaves time to move earlier files before the log fills.
+	// A quarter hour is the last warning before it fills and requests are refused.
 	FillingTime    = time.Hour
 	NearlyFullTime = 15 * time.Minute
 	RateMinBytes   = 1 << 20
 
 	// Unused permissions are withheld until the request records read from
 	// the security log span this long and number this many.
+	// An hour of records keeps a quiet spell from making a permission look unused.
+	// Five hundred requests keep too little traffic from doing the same.
 	unusedMinSpan     = 60 * time.Minute
 	unusedMinRequests = 500
 
@@ -40,6 +44,11 @@ const (
 	// a refused share at least spikeFactor times that of the spikeBaseline
 	// before it, or at least spikeLowTrafficShare when that period had fewer
 	// than spikeMinRefusals requests.
+	// The window is the minute the alert names.
+	// The quarter hour before gives the refusal share to compare with.
+	// Below twenty refusals in the minute nothing is raised, so a handful stays quiet.
+	// Three times the baseline share marks a jump rather than ordinary drift.
+	// With a thin baseline, half the minute refused raises the finding.
 	spikeWindow          = time.Minute
 	spikeBaseline        = 15 * time.Minute
 	spikeMinRefusals     = 20
@@ -48,6 +57,8 @@ const (
 
 	// NearlyFull is the share of a store that raises an alert; Filling, the
 	// share of the security log budget that raises an earlier one.
+	// Nine tenths is the last warning before the security log or the counters fill.
+	// Seven tenths of the security log leaves time to move earlier files away.
 	NearlyFull = 0.9
 	Filling    = 0.7
 )

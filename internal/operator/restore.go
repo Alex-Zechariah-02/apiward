@@ -145,6 +145,7 @@ func checkBackupDatabase(backup string, manifest backupManifest) error {
 		return err
 	}
 	defer db.Close()
+	// One connection at a time, so no two checks touch the backup file together.
 	db.SetMaxOpenConns(1)
 	var check string
 	if err := db.QueryRow("PRAGMA integrity_check").Scan(&check); err != nil || check != "ok" {

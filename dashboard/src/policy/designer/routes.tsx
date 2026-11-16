@@ -55,6 +55,7 @@ export function EndpointStep(props: { id: string; api: string; rows: Row[]; erro
               <Entry id={`${base}-target`} label="Path" value={row.target} placeholder="/billing/invoices" onChange={(target) => props.change(row.key, { target })} error={error.target} />
               <Entry id={`${base}-id`} label="Endpoint ID" value={rowId(props.api, row)} onChange={(id) => props.change(row.key, { id })} error={error.id} />
             </div>
+            {/* The last row stays: connecting an API adds at least one endpoint. */}
             {props.rows.length > 1 ? (
               <button type="button" className="btn btn-small" onClick={() => props.remove(row.key)}>
                 Remove Endpoint {index + 1}
@@ -156,6 +157,7 @@ export function BodyStep(props: { id: string; named: Named; errors: Marks; chang
             </label>
             {row.checked ? (
               <>
+                {/* At least 1 byte here; the gateway refuses a body limit above its 1 MiB ceiling on save. */}
                 <Whole
                   id={`${base}-bytes`}
                   label="Maximum Size (Bytes)"
@@ -163,6 +165,7 @@ export function BodyStep(props: { id: string; named: Named; errors: Marks; chang
                   onChange={(bytes) => props.change(row.key, { bytes })}
                   error={error.bytes}
                 />
+                {/* No size or depth check here: the gateway's compiler bounds a schema when the draft is saved. */}
                 <Field id={`${base}-schema`} label="JSON Schema" error={error.schema}>
                   <textarea
                     id={`${base}-schema`}

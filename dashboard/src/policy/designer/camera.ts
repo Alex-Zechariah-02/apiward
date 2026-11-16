@@ -21,6 +21,7 @@ export function fitTo(flow: ReactFlowInstance, canvas: HTMLDivElement | null) {
   const covered = panel && panel.getBoundingClientRect().top < canvas.getBoundingClientRect().bottom - 1
   const room: NonNullable<FitViewOptions['padding']> = covered ? { top: `${toolbar}px`, bottom: '24px', left: '24px', right: `${panel.getBoundingClientRect().width + 36}px` } : padding
   const bounds = flow.getNodesBounds(flow.getNodes())
+  // Zoom 0.1 to 1: small enough to fit a large policy, never larger than full size.
   const view = getViewportForBounds(bounds, canvas.clientWidth, canvas.clientHeight, 0.1, 1, room)
   void flow.setViewport({ ...view, y: toolbar - bounds.y * view.zoom })
 }
@@ -69,6 +70,7 @@ export function useCanvasHeight(area: RefObject<HTMLDivElement | null>, expanded
       )
       const end = Math.max(box.bottom, ...inFlow.map((child) => child.getBoundingClientRect().bottom))
       const below = end - box.bottom + parseFloat(getComputedStyle(page).paddingBottom)
+      // At least 420 px, so a short window still shows a few cards; the page then scrolls.
       setHeight(Math.max(420, Math.floor(window.innerHeight - (box.top + window.scrollY) - below)))
     }
     measure()

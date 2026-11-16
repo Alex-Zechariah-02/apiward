@@ -46,6 +46,7 @@ func StartFixtureSet(t *testing.T, binary string, extraEnv ...string) map[string
 	dir := t.TempDir()
 	fixtures := map[string]*FixtureProcess{}
 	for _, name := range fixtureNames {
+		// 32 random bytes meet the fixture's 256-bit minimum, so the control token cannot be guessed.
 		secret := make([]byte, 32)
 		rand.Read(secret)
 		f := &FixtureProcess{
@@ -57,6 +58,7 @@ func StartFixtureSet(t *testing.T, binary string, extraEnv ...string) map[string
 			output:  &bytes.Buffer{},
 		}
 		secretFile := filepath.Join(dir, name+".secret")
+		// Owner-readable only: the secret authorises receipts, state and reset on the control listener.
 		if err := os.WriteFile(secretFile, []byte(f.Secret), 0o600); err != nil {
 			t.Fatal(err)
 		}
@@ -80,6 +82,7 @@ func StartFixtureSet(t *testing.T, binary string, extraEnv ...string) map[string
 				if err != nil {
 					t.Errorf("fixture %s did not stop cleanly: %v\n%s", name, err, f.output)
 				}
+			// Six seconds after the interrupt, then killed: a wedged fixture cannot hang the run.
 			case <-time.After(6 * time.Second):
 				cmd.Process.Kill()
 				<-exited
@@ -89,11 +92,13 @@ func StartFixtureSet(t *testing.T, binary string, extraEnv ...string) map[string
 				t.Errorf("race detected in fixture %s:\n%s", name, f.output)
 			}
 		})
+		// A fixture that never listens fails the test after 10 s instead of hanging it.
 		deadline := time.Now().Add(10 * time.Second)
 		for !Dialable(f.Addr) || !Dialable(f.Control) {
 			if time.Now().After(deadline) {
 				t.Fatalf("fixture %s not ready\n%s", name, f.output)
 			}
+			// Polling every 20 ms notices a new listener promptly without dialling in a tight loop.
 			time.Sleep(20 * time.Millisecond)
 		}
 		fixtures[name] = f
@@ -109,6 +114,7 @@ func (f *FixtureProcess) Call(method, path, secret string) (int, []byte) {
 	if secret != "" {
 		req.Header.Set("Authorization", "Bearer "+secret)
 	}
+	// A control listener that stalls fails the test after 10 s instead of holding it up.
 	resp, err := (&http.Client{Timeout: 10 * time.Second}).Do(req)
 	if err != nil {
 		f.T.Fatalf("fixture %s control %s: %v", f.Name, path, err)

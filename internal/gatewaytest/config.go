@@ -81,7 +81,9 @@ func (e *Env) WriteNative(settings map[string]any) {
 // file.
 func (e *Env) WriteNativeFile(content []byte) {
 	e.T.Helper()
+	// The one file a started gateway and the admin commands read; each write replaces it whole.
 	e.Config = filepath.Join(e.Dir, "gateway.json")
+	// Created owner-only: it names the database, audit log, admin listener and token issuer.
 	if err := os.WriteFile(e.Config, content, 0o600); err != nil {
 		e.T.Fatal(err)
 	}
@@ -98,6 +100,7 @@ func (e *Env) Policy(aTarget *Receiver, withB bool) policy.Policy {
 		APIs:          []policy.API{{ID: "a", Upstream: aTarget.Name}, {ID: "b", Upstream: "B"}, {ID: "d", Upstream: "A"}},
 		Operations: []policy.Operation{
 			{ID: "read-a", API: "a", Method: "GET", Target: "/a/*", Access: "allow", Auth: "none"},
+			// Under the 16384-byte global default, so an over-size body is refused by this operation's ceiling.
 			{ID: "write-a", API: "a", Method: "POST", Target: "/a/item", Access: "allow", Auth: "none", Body: JSONBody(1024, AnyObject)},
 			{ID: "denied", API: "d", Method: "GET", Target: "/d", Access: "deny", Auth: "none"},
 		},

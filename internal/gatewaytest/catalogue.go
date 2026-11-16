@@ -17,10 +17,12 @@ import (
 // quantity range stay with the fixtures.
 const (
 	OrdersCreateSchema = `{"type":"object","additionalProperties":false,"required":["customer","item","quantity"],"properties":{` +
+		// 64 characters is a test convention: the values are short identifiers.
 		`"customer":{"type":"string","minLength":1,"maxLength":64},` +
 		`"item":{"type":"string","minLength":1,"maxLength":64},` +
 		`"quantity":{"type":"integer"}}}`
 	InventoryAdjustSchema = `{"type":"object","additionalProperties":false,"required":["delta"],"properties":{` +
+		// The fixture refuses a delta beyond 100 either way, so the schema stops there too.
 		`"delta":{"type":"integer","minimum":-100,"maximum":100}}}`
 )
 
@@ -52,6 +54,7 @@ func FixturePolicy(fixtures map[string]*FixtureProcess) policy.Policy {
 			{ID: "orders.list", API: "orders", Method: "GET", Target: "/orders", Access: "allow", Auth: "required", Rate: fixtureRate()},
 			{ID: "orders.get", API: "orders", Method: "GET", Target: "/orders/*", Access: "allow", Auth: "required", Rate: fixtureRate()},
 			{ID: "orders.create", API: "orders", Method: "POST", Target: "/orders", Access: "allow", Auth: "required",
+				// 1024 bytes bounds both fixture writes; their bodies hold a few short fields.
 				Body: JSONBody(1024, OrdersCreateSchema), Rate: fixtureRate()},
 			{ID: "inventory.health", API: "inventory", Method: "GET", Target: "/inventory/health", Access: "allow", Auth: "none"},
 			{ID: "inventory.get", API: "inventory", Method: "GET", Target: "/inventory/items/*", Access: "allow", Auth: "required", Rate: fixtureRate()},

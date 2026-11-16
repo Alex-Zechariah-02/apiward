@@ -15,11 +15,13 @@ import { type Traffic, TrafficCards } from './summary'
 // The page keeps more requests than it draws, so a filter can still find
 // writes made minutes ago between the boards' frequent reads.
 const keptEvents = 1000
+// Drawing 200 rows keeps each update of a busy stream quick; filters search all kept requests.
 const shownEvents = 200
 const reads = new Set(['GET', 'HEAD', 'OPTIONS'])
 
 export function LiveTraffic({ admin }: ViewProps) {
   const state = useGatewayState()
+  // Opens on the last minute, the gateway's default window and the closest to live.
   const [span, setSpan] = useState(60)
   const traffic = useResource<Traffic>((signal) => admin.get(`/admin/traffic?window=${span}`, signal), [span])
   usePoll(traffic.refresh, liveMs, state.critical)
@@ -60,7 +62,7 @@ export function LiveTraffic({ admin }: ViewProps) {
   }, [])
 
   // The list starts with the latest recorded requests; the stream adds newer
-  // ones on top. A request in both appears once.
+  // ones on top. A request in both appears once. 50 fill the first screen in one short read.
   const recent = useResource<Page<RequestEvent>>((signal) => admin.get('/admin/events?limit=50', signal), [])
   const recentItems = recent.reply?.kind === 'ok' ? recent.reply.body.items : undefined
   const all = useMemo(() => {

@@ -48,6 +48,7 @@ export function trace(policy: Policy, who: string, operation: Operation): TraceS
   step(
     'Blocked List',
     isPublic ? 'Public endpoint: no account to check.' : 'An account on the blocked list is refused (403 account_blocked). The list is kept apart from the policy.',
+    // Never refused here: the trace reads only the policy, not the blocked list.
     false,
     !isPublic,
   )

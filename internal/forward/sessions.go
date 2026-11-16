@@ -13,6 +13,7 @@ import (
 
 // maxSessions bounds one profile's cache: one session per server name and
 // address the profile's endpoints use.
+// A full cache drops its oldest entry, so 64 keeps one profile's map small.
 const maxSessions = 64
 
 // sessionCache is a tls.ClientSessionCache whose entries expire.

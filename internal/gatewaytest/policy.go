@@ -67,11 +67,13 @@ func (e *Env) KeywordPolicy() policy.Policy {
 	p := e.Policy(e.A, false)
 	for i := range p.Operations {
 		if p.Operations[i].ID == "write-a" {
+			// 1 KiB is room for the schema cases below; the gateway refuses more.
 			p.Operations[i].Body = JSONBody(1024, `{"type":"object","additionalProperties":false,"required":["kind","count"],"properties":{`+
 				`"kind":{"type":"string","enum":["alpha","beta"]},`+
 				`"count":{"type":"integer","minimum":1,"maximum":5},`+
 				`"note":{"type":["string","null"],"maxLength":8},`+
 				`"meta":{"type":"object","additionalProperties":false,"properties":{"tag":{"type":"boolean"}}}}}`)
+			// 8 to 64 characters is a typical key's range; a test sends 5 to be refused.
 			p.Operations[i].Headers = json.RawMessage(`{"type":"object","additionalProperties":true,"required":["Idempotency-Key"],"properties":{` +
 				`"Idempotency-Key":{"type":"string","minLength":8,"maxLength":64},"X-Mode":{"type":"string","enum":["safe","fast"]}}}`)
 		}

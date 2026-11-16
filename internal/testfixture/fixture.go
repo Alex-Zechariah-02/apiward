@@ -89,6 +89,7 @@ type Service struct {
 
 // New returns the named fixture with its seed data loaded.
 func New(name string) (*Service, error) {
+	// Eight random bytes, so each fixture process is told apart in receipts.
 	instance := make([]byte, 8)
 	rand.Read(instance)
 	s := &Service{name: name, instance: hex.EncodeToString(instance)}
@@ -194,8 +195,11 @@ func Run(ctx context.Context, s *Service, listen, control string, secret []byte)
 			return err
 		}
 		listeners = append(listeners, listener)
+		// A client that dribbles headers is cut off before a request reaches the handler.
 		server.ReadHeaderTimeout = 5 * time.Second
+		// A client that stalls mid-body has its read cut off and is answered as too large.
 		server.ReadTimeout = 10 * time.Second
+		// A client that stops reading is cut off, and the mutex it held is released.
 		server.WriteTimeout = 30 * time.Second
 	}
 
@@ -211,6 +215,7 @@ func Run(ctx context.Context, s *Service, listen, control string, secret []byte)
 	if errors.Is(err, http.ErrServerClosed) {
 		err = nil
 	}
+	// An open connection delays the stop no longer than this before it is closed.
 	shutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	for _, server := range servers {

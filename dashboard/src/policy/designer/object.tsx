@@ -55,6 +55,7 @@ export function ObjectForm({ selection, inPanel = false, ...props }: FormProps &
   const signedIn = policy.operations.filter((entry) => entry.auth !== 'none')
   const blockedDelete = deleteReason(policy, selection)
   function idProblem(value: string): string | null {
+    // Only what the page alone knows; the gateway's compiler checks an ID's length and form on save.
     if (!value) return 'Enter an ID.'
     if (value !== id && policy[sections[kind]].some((entry) => entry.id === value)) return `Another ${kindNames[kind].one} already uses the ID ${value}.`
     return null

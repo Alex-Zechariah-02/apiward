@@ -177,6 +177,7 @@ func compileUpstream(u policy.Upstream, i, version int) (*Endpoint, error) {
 // https://<literal IP or DNS name>[:port] with nothing after the origin
 // but an optional "/". Literal IPs must not be refused addresses.
 func parseUpstreamURL(raw string) (*Endpoint, bool) {
+	// Far beyond the longest origin accepted here: scheme, 253-byte name, port.
 	if len(raw) > policy.MaxUpstreamURL || strings.ContainsAny(raw, "?#\\ ") {
 		return nil, false
 	}

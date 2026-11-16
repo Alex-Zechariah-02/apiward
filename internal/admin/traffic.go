@@ -28,6 +28,7 @@ func (s *Server) handleTraffic(w http.ResponseWriter, r *http.Request, who calle
 			err = fmt.Errorf("invalid window")
 		}
 	}
+	// Only these spans are accepted; an answer reads the current and previous window.
 	if err != nil || !knownQuery(query, "window") || (window != 60 && window != 300 && window != 3600) {
 		adminError(w, http.StatusBadRequest, "bad_request", "")
 		return

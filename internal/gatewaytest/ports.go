@@ -33,6 +33,7 @@ func FreeAddr(t testing.TB) string {
 	if first == 0 {
 		t.Fatal("no port block: the package's TestMain must call Main")
 	}
+	// 1000 draws: enough to find a free port in practice, and quick to end a full block.
 	for range 1000 {
 		port := first + rand.IntN(last-first+1)
 		if issuedPorts.seen[port] {

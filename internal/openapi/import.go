@@ -18,6 +18,7 @@ import (
 // the caller sets one; it is reported as assumed.
 const DefaultBodyBytes = 16384
 
+// Only 3.0.x and 3.1.x are mapped, the versions whose rules the import applies.
 var supportedVersion = regexp.MustCompile(`^3\.[01]\.[0-9]+$`)
 
 // Options are the administrator's choices for one import.

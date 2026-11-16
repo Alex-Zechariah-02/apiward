@@ -38,6 +38,7 @@ func Connect(path, journal string) (*sql.DB, error) {
 	if err != nil {
 		return nil, err
 	}
+	// One connection: the store is the single writer, so no second one competes for the database lock.
 	db.SetMaxOpenConns(1)
 
 	if _, err := db.Exec("BEGIN IMMEDIATE; COMMIT"); err != nil {
@@ -187,6 +188,7 @@ func Adopt(db *sql.DB) *DB { return &DB{db: db} }
 // Snapshot writes a consistent copy of the database to path, which must not
 // exist yet; cancelling ctx interrupts the copy.
 func (s *DB) Snapshot(ctx context.Context, path string) error {
+	// No deadline of its own: the caller's context ends the copy, so a large backup is not cut off.
 	_, err := s.db.ExecContext(ctx, "VACUUM INTO ?", path)
 	return err
 }

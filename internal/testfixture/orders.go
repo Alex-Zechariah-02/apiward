@@ -10,6 +10,7 @@ import (
 // ordersVersion identifies the orders seed data and business rules.
 const ordersVersion = "orders-v2"
 
+// An order carries at most 50 units: a small fixture bound, easy to state in a test.
 const maxOrderQuantity = 50
 
 type order struct {

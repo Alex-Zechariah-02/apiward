@@ -68,6 +68,7 @@ function rules(schema: unknown, place: Rule['place'], prefix = ''): Rule[] {
 
 // within lists what a member's own schema declares: its object members and,
 // when it may be an array, its elements, which may be arrays in turn.
+// No depth cap: the schema comes from the gateway, which refuses JSON nested more than 16 levels.
 function within(node: Schema, place: Rule['place'], field: string): Rule[] {
   const list = rules(node, place, `${field}.`)
   if (hasType(node, 'array') && isSchema(node.items)) {

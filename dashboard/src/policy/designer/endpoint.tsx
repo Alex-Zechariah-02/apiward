@@ -10,11 +10,13 @@ import { Choice, methods, Review, Whole, wholeNumber, withBody, type WizardProps
 export function EndpointWizard({ policy, api: start, apply, close }: WizardProps) {
   const id = useId()
   const [api, setApi] = useState(start && policy.apis.some((item) => item.id === start) ? start : (policy.apis[0]?.id ?? ''))
+  // Starts closed: a read that needs a sign-in and has no role, so no account can call it by accident.
   const [method, setMethod] = useState('GET')
   const [target, setTarget] = useState('')
   const [name, setName] = useState<string | null>(null)
   const [open, setOpen] = useState(false)
   const [roles, setRoles] = useState<string[]>([])
+  // 100 a minute, the same start as an endpoint added from the canvas or the form.
   const [count, setCount] = useState('100')
   const [seconds, setSeconds] = useState('60')
   // shown lists the steps whose Next was pressed early; their fields say what to fix.

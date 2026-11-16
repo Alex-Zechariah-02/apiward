@@ -98,6 +98,7 @@ export class ShortSessions {
       },
       data: {
         listen: `127.0.0.2:${offsetPort(9481)}`,
+        // Ordinary request limits: these tests exercise administrator sessions, not request handling.
         max_body_bytes: 16384,
         read_header_timeout: '5s',
         read_timeout: '10s',
@@ -113,6 +114,7 @@ export class ShortSessions {
 
   async start(): Promise<void> {
     this.child = spawn(join(this.bin, 'apiward' + exe), ['run', '--config', this.config()], { stdio: 'ignore' })
+    // Room for a cold start on a busy runner; a gateway that exits fails at once below.
     const deadline = Date.now() + 30_000
     for (;;) {
       try {

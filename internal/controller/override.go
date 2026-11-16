@@ -71,6 +71,7 @@ func (r OverrideRequest) check() (store.Override, error) {
 		return store.Override{}, policy.Invalid("INVALID_VALUE", "count")
 	}
 	if r.Count != nil {
+		// The same count range a policy rate rule accepts.
 		if *r.Count < 1 || *r.Count > compile.MaxRateCount {
 			return store.Override{}, policy.Invalid("INVALID_VALUE", "count")
 		}

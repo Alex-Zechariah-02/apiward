@@ -26,6 +26,7 @@ export async function expectLayoutOnlyStorage(page: Page, secrets: string[] = []
     }
     if (key === 'gateway.timezone') {
       try {
+        // The same 64-character cap the Dashboard's own zone check applies (src/shared/zone.ts).
         if (text.length > 64) throw new RangeError('long')
         new Intl.DateTimeFormat('en-US', { timeZone: text })
       } catch {

@@ -105,6 +105,7 @@ func NewUpstreamProxy(timeouts UpstreamTimeouts, pool PoolSettings, network func
 		return nil, errors.New("a logger and the network settings are required")
 	}
 	protocols := new(http.Protocols)
+	// HTTP/1.1 only: the pool reuses a connection for one request at a time.
 	protocols.SetHTTP1(true)
 	p := &upstreamProxy{
 		network:   network,

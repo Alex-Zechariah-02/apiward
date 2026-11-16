@@ -1,4 +1,5 @@
 # syntax=docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
+# The frontend is pinned by digest, so the build syntax the cache mounts need cannot change.
 
 # The gateway image: the Dashboard is built and embedded in one static gateway
 # binary, which runs as a non-root user and needs a writable filesystem only at

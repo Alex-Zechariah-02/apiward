@@ -14,6 +14,7 @@ import (
 type Permission int
 
 const (
+	// One bit per right, so a set of rights is one integer; the table below names each bit.
 	PermRead Permission = 1 << iota
 	PermReadHistory
 	PermManageSubjects
