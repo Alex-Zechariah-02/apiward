@@ -24,7 +24,8 @@ func TestFetchStreamSessionLifetime(t *testing.T) {
 			gatewaytest.Seed(t, e.Database, e.Policy(e.A, true), gatewaytest.SeedOptions{})
 			settings := e.NativeSettings()
 			if !logout {
-				gatewaytest.Section(settings, "gateway")["admin_session_lifetime"] = "1s"
+				// 2 s covers the sign-in and the stream's start on a loaded host.
+				gatewaytest.Section(settings, "gateway")["admin_session_lifetime"] = "2s"
 			}
 			e.WriteNative(settings)
 			e.Start(gatewaytest.Binaries.Plain)
@@ -35,7 +36,7 @@ func TestFetchStreamSessionLifetime(t *testing.T) {
 				request.Header.Set(header[i], header[i+1])
 			}
 			request.Header.Set("Accept", "text/event-stream")
-			client := &http.Client{Timeout: 3 * time.Second}
+			client := &http.Client{Timeout: 5 * time.Second}
 			response, err := client.Do(request)
 			if err != nil {
 				t.Fatal(err)

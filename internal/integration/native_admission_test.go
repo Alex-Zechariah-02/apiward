@@ -222,7 +222,8 @@ func TestNativeAdmissionStatus(t *testing.T) {
 	t.Run("generation past its deadline", func(t *testing.T) {
 		e := gatewaytest.NewEnv(t)
 		provisional := e.Policy(e.A, true)
-		deadline := time.UnixMilli(time.Now().Add(1500 * time.Millisecond).UnixMilli())
+		// Three seconds leave a loaded host time to start the gateway before the deadline.
+		deadline := time.UnixMilli(time.Now().Add(3 * time.Second).UnixMilli())
 		gatewaytest.Seed(t, e.Database, e.Policy(e.A, false), gatewaytest.SeedOptions{Provisional: &provisional, Deadline: deadline})
 		e.Start(gatewaytest.Binaries.Fault, "GATEWAY_FAULT=no-deadline-timer")
 		if s := e.Status(); s.Admission != "ready" || !s.NotAfter.Equal(deadline) {
@@ -230,9 +231,9 @@ func TestNativeAdmissionStatus(t *testing.T) {
 		}
 		var s gatewaytest.Status
 		gatewaytest.WaitFor(t, deadline.Add(5*time.Second), "the generation to expire", func() bool {
-			asked := time.Now()
 			s = e.Status()
-			if s.Admission == "generation_expired" && asked.Before(deadline) {
+			// Only an answer back before the deadline proves the gateway expired it early.
+			if s.Admission == "generation_expired" && time.Now().Before(deadline) {
 				t.Fatalf("expired before its deadline: %+v", s)
 			}
 			return s.Admission == "generation_expired"

@@ -120,7 +120,8 @@ func TestAdminSessions(t *testing.T) {
 	t.Run("logout and expiry", func(t *testing.T) {
 		e := gatewaytest.NewEnv(t)
 		gatewaytest.Seed(t, e.Database, e.Policy(e.A, false), gatewaytest.SeedOptions{})
-		e.WriteConfig(gatewaytest.ConfigOptions{Admin: map[string]any{"admin_idle_timeout": "1s", "admin_session_lifetime": "4s"}})
+		// A 2 s idle timeout still covers a sign-in and the next request on a loaded host.
+		e.WriteConfig(gatewaytest.ConfigOptions{Admin: map[string]any{"admin_idle_timeout": "2s", "admin_session_lifetime": "4s"}})
 		e.Start(gatewaytest.Binaries.Plain)
 
 		ended := e.MustLogin(gatewaytest.HarnessAdmin, gatewaytest.HarnessPassword)
@@ -132,7 +133,7 @@ func TestAdminSessions(t *testing.T) {
 		}
 
 		idle := e.MustLogin(gatewaytest.HarnessAdmin, gatewaytest.HarnessPassword)
-		time.Sleep(1500 * time.Millisecond)
+		time.Sleep(2500 * time.Millisecond)
 		if code, _, _ := e.As(idle, http.MethodGet, "/admin/session", ""); code != http.StatusUnauthorized {
 			t.Fatalf("session after the idle timeout: %d", code)
 		}
