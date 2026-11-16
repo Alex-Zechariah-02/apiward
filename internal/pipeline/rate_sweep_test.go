@@ -27,22 +27,27 @@ func TestFullTableRefusalIsBounded(t *testing.T) {
 				t.Fatalf("filling the table: counter %d refused", i)
 			}
 		}
-		const refusals = 2_000
+		// Each round runs at least 50 ms, far above a coarse clock's tick
+		// (about 1 to 16 ms on Windows), and yields the cost of one refusal.
+		const batch, span = 1_000, 50 * time.Millisecond
 		fastest := time.Duration(1<<63 - 1)
 		for range 3 {
-			start := time.Now()
-			for i := range refusals {
-				if got := l.admit(counterKey{"search", compile.RateKeyAddress, "2001:db8:1::" + strconv.Itoa(i)}, rule, now); got != rateNoCapacity {
-					t.Fatalf("new key with a full table: %v, want no capacity", got)
+			start, count := time.Now(), 0
+			for time.Since(start) < span {
+				for i := range batch {
+					if got := l.admit(counterKey{"search", compile.RateKeyAddress, "2001:db8:1::" + strconv.Itoa(i)}, rule, now); got != rateNoCapacity {
+						t.Fatalf("new key with a full table: %v, want no capacity", got)
+					}
 				}
+				count += batch
 			}
-			fastest = min(fastest, time.Since(start))
+			fastest = min(fastest, time.Since(start)/time.Duration(count))
 		}
 		return fastest
 	}
 	small, large := refusal(policy.DefaultRateCounters/256), refusal(policy.DefaultRateCounters)
-	if large > 8*small+time.Millisecond {
-		t.Fatalf("refusals took %v with %d counters and %v with %d", large, policy.DefaultRateCounters, small, policy.DefaultRateCounters/256)
+	if large > 8*small {
+		t.Fatalf("a refusal took %v with %d counters and %v with %d", large, policy.DefaultRateCounters, small, policy.DefaultRateCounters/256)
 	}
 }
 
