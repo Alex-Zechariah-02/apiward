@@ -49,7 +49,11 @@ jobs:
             apiward/go.sum
             fetch/go.sum
       - run: go mod verify
-      - run: test -z "$(gofmt -l $(git ls-files '*.go'))"
+      # pipefail stops the step when git or gofmt fails; every file name reaches gofmt intact.
+      - shell: bash
+        run: |
+          git ls-files -z '*.go' | xargs -0 -r gofmt -l > "$RUNNER_TEMP/unformatted.txt"
+          if [ -s "$RUNNER_TEMP/unformatted.txt" ]; then cat "$RUNNER_TEMP/unformatted.txt"; exit 1; fi
       - run: go vet ./...
       - run: go vet -tags faultinject ./...
       - run: go test ./... -count=1
@@ -57,7 +61,13 @@ jobs:
       # drive separately built gateway programs it does not instrument and
       # which the run above has already made.
       # The test binary's own limit ends a deadlock with a goroutine dump before the job limit cuts it off.
-      - run: go test -race $(go list ./... | grep -v '/internal/integration$') -count=1 -timeout 30m
+      # A failing go list stops the step instead of leaving the race run without packages.
+      - shell: bash
+        run: |
+          go list ./... > "$RUNNER_TEMP/packages.txt"
+          grep -v '/internal/integration$' "$RUNNER_TEMP/packages.txt" > "$RUNNER_TEMP/race.txt"
+          mapfile -t packages < "$RUNNER_TEMP/race.txt"
+          go test -race "${packages[@]}" -count=1 -timeout 30m
 
   vuln:
     runs-on: ubuntu-24.04
