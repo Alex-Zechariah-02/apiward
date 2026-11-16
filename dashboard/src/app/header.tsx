@@ -50,7 +50,7 @@ function GlobalSearch() {
     else if (/^(?:temporary\s+)?rule\s*#?\d+$/i.test(value)) navigate?.('temporary-rules')
     else if (/^version\s*#?\d+$/i.test(value)) navigate?.('versions')
     else if (/^[a-z][a-z0-9_-]*(\.[a-z0-9_-]+)+$/i.test(value)) return log({ operation: value })
-    else if (/^[A-Za-z0-9][A-Za-z0-9_.:@-]{0,63}$/.test(value)) return log({ subject: value })
+    else if (/^[A-Za-z0-9][A-Za-z0-9_.:@-]{0,127}$/.test(value)) return log({ subject: value })
     else return 'Search finds a full Ref, an account ID, an endpoint ID, “change 12”, “rule 3” or “version 4”.'
     return ''
   }
@@ -76,7 +76,8 @@ function GlobalSearch() {
           setText(event.target.value)
           setHint('')
         }}
-        maxLength={64}
+        // The longest form find() accepts is a 128-character account ID.
+        maxLength={128}
         spellCheck={false}
         autoComplete="off"
       />

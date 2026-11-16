@@ -56,7 +56,8 @@ func (s *Server) handleAccessCheck(w http.ResponseWriter, r *http.Request, who c
 		adminError(w, http.StatusBadRequest, "bad_request", field)
 		return
 	}
-	if check.Subject != nil && (*check.Subject == "" || len(*check.Subject) > policy.MaxIDLength) {
+	// A subject has the form of a token's "sub" claim, as on the blocked list.
+	if check.Subject != nil && !policy.IsSubjectID(*check.Subject) {
 		adminError(w, http.StatusBadRequest, "bad_request", "subject")
 		return
 	}

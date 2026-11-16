@@ -75,6 +75,14 @@ func TestAdminAccessCheck(t *testing.T) {
 	if got := ask(`{"method":"GET","path":"/a/x","roles":["WRITER"],"subject":"alice"}`); got.Decision != "refused" || text(got.Check) != "blocked" || text(got.Code) != "account_blocked" {
 		t.Errorf("blocked subject: %+v", got)
 	}
+	// An account ID may be as long as a token's subject, 128 characters.
+	long := strings.Repeat("a", policy.MaxSubjectLength)
+	if code, _, body := blockAccount(e, admin, long, "access check", "access-check-block-2"); code != http.StatusOK {
+		t.Fatalf("block long subject: %d %s", code, body)
+	}
+	if got := ask(`{"method":"GET","path":"/a/x","roles":["WRITER"],"subject":"` + long + `"}`); got.Decision != "refused" || text(got.Check) != "blocked" {
+		t.Errorf("blocked long subject: %+v", got)
+	}
 
 	// A draft is compiled and checked without being activated.
 	widened := e.ProtectedPolicy()

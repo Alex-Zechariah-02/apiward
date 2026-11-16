@@ -61,7 +61,11 @@ func TestAdminSecurityLog(t *testing.T) {
 	if strings.Contains(csvBody, "Bearer") {
 		t.Fatalf("credential in the csv export: %s", csvBody)
 	}
-	for _, query := range []string{"limit=0", "limit=101", "decision=maybe", "from=yesterday", "after=!!", "format=xml"} {
+	// An account ID may be as long as a token's subject, so 128 characters search and 129 do not.
+	if code, body, _ := e.As(admin, "GET", "/admin/security-log?subject="+strings.Repeat("a", 128), ""); code != 200 {
+		t.Errorf("128-character subject: %d %s", code, body)
+	}
+	for _, query := range []string{"limit=0", "limit=101", "decision=maybe", "from=yesterday", "after=!!", "format=xml", "subject=" + strings.Repeat("a", 129)} {
 		if code, body, _ := e.As(admin, "GET", "/admin/security-log?"+query, ""); code != 400 {
 			t.Errorf("%s: %d %s", query, code, body)
 		}

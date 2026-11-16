@@ -80,10 +80,14 @@ func ParseQuery(values map[string][]string) (Query, string) {
 		return ""
 	}
 	q := Query{ref: strings.ToLower(get("ref")), subject: get("subject"), operation: get("operation"), decision: get("decision")}
-	for name, value := range map[string]string{"ref": q.ref, "subject": q.subject, "operation": q.operation} {
+	// No record holds a longer value, so a longer filter could match nothing.
+	for name, value := range map[string]string{"ref": q.ref, "operation": q.operation} {
 		if len(value) > policy.MaxIDLength {
 			return q, name
 		}
+	}
+	if len(q.subject) > policy.MaxSubjectLength {
+		return q, "subject"
 	}
 	if q.decision != "" && q.decision != "allowed" && q.decision != "refused" && q.decision != "failed" {
 		return q, "decision"

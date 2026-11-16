@@ -46,6 +46,7 @@ export function Arrowed({ text }: { text: string }) {
 // CopyButton copies one exact value, such as a code or an ID, and says whether
 // it worked: a browser may refuse clipboard access or not offer it at all.
 export function CopyButton(props: { value: string; label: string }) {
+  // The result stays shown: it describes the last copy, and the next press replaces it.
   const [state, setState] = useState<'idle' | 'copied' | 'failed'>('idle')
   const copy = () => {
     if (!navigator.clipboard) {
@@ -178,8 +179,8 @@ export function ListToolbar(props: {
           placeholder="Filter"
           value={props.query}
           onChange={(event) => props.onQuery(event.target.value)}
-          // The longest ID or name a list shows is 64 characters.
-          maxLength={64}
+          // The longest value a list shows is an account ID, 128 characters.
+          maxLength={128}
           spellCheck={false}
           autoComplete="off"
         />
