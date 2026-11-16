@@ -36,6 +36,7 @@ func TestRepeatedSwapsUnderLoad(t *testing.T) {
 	t.Cleanup(transport.CloseIdleConnections)
 	for range 16 {
 		wg.Go(func() {
+			// A stuck answer fails the run after 10 s instead of hanging it.
 			client := &http.Client{Transport: transport, Timeout: 10 * time.Second}
 			for {
 				select {
@@ -58,8 +59,11 @@ func TestRepeatedSwapsUnderLoad(t *testing.T) {
 		})
 	}
 
+	// Swaps start only once traffic flows, so they happen under load.
+	gatewaytest.WaitFor(t, time.Now().Add(10*time.Second), "the first answers", func() bool { return requests.Load() >= 16 })
 	before := workingSet(t, e.Process.Process.Pid)
 	revision := int64(1)
+	// 200 swaps keep a few seconds of load while a leak shows in the working set.
 	const swaps = 200
 	for i := range swaps {
 		target := e.A
@@ -79,7 +83,12 @@ func TestRepeatedSwapsUnderLoad(t *testing.T) {
 
 	checked := 0
 	for _, rc := range []*gatewaytest.Receiver{e.A, e.B} {
-		for _, r := range rc.Receipts() {
+		receipts := rc.Receipts()
+		// Receipts at both receivers mean traffic crossed at least one swap.
+		if len(receipts) == 0 {
+			t.Fatalf("no request reached %s during the swaps", rc.Name)
+		}
+		for _, r := range receipts {
 			if destination[r.Generation] != rc.Name {
 				t.Fatalf("receipt at %s under generation %s, which binds /a/* to %q", rc.Name, r.Generation, destination[r.Generation])
 			}
@@ -112,6 +121,10 @@ func TestRepeatedSwapsUnderLoad(t *testing.T) {
 		swaps, requests.Load(), failures.Load(), checked, before, after)
 	if failures.Load() != 0 {
 		t.Fatalf("%d requests failed during swaps", failures.Load())
+	}
+	// Every answered request was forwarded, so each has a checked receipt.
+	if int64(checked) != requests.Load() {
+		t.Fatalf("%d receipts checked for %d answered requests", checked, requests.Load())
 	}
 }
 
