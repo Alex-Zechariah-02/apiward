@@ -4,8 +4,10 @@ package pipeline
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"mime"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -21,6 +23,19 @@ type rejection struct {
 	reason string
 }
 
+// turnKey is the context key of a connection's body turn.
+type turnKey struct{}
+
+// ConnContext gives a connection one turn at reading a request body, for
+// http.Server.ConnContext. Bodies are read before an in-flight place is
+// taken, so without it the up to 100 HTTP/2 streams of one connection could
+// each hold a body of up to data.max_body_bytes at once; with it a
+// connection holds at most one, as over HTTP/1.1, and a slow upload delays
+// only its own connection's other uploads.
+func ConnContext(ctx context.Context, _ net.Conn) context.Context {
+	return context.WithValue(ctx, turnKey{}, make(chan struct{}, 1))
+}
+
 // bufferBody reads a declared request body completely, within the global
 // ceiling, and replaces r.Body with the bytes read. It returns nil when the
 // request declares no body, and a non-nil slice (possibly empty) when it
@@ -30,6 +45,16 @@ type rejection struct {
 func bufferBody(r *http.Request, maxBytes int64) ([]byte, *rejection) {
 	if r.ContentLength == 0 && len(r.TransferEncoding) == 0 {
 		return nil, nil
+	}
+	// The connection's turn bounds what its HTTP/2 streams buffer together
+	// to one body; a stream whose client goes away while waiting is refused.
+	if turn, ok := r.Context().Value(turnKey{}).(chan struct{}); ok {
+		select {
+		case turn <- struct{}{}:
+			defer func() { <-turn }()
+		case <-r.Context().Done():
+			return nil, &rejection{http.StatusBadRequest, "bad_request", "read_failed"}
+		}
 	}
 	body, err := readLimited(r.Body, r.ContentLength, maxBytes)
 	if err != nil {

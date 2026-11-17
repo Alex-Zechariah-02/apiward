@@ -4,8 +4,12 @@
 package gateway
 
 import (
+	"context"
+	"net"
 	"net/http"
 	"time"
+
+	"github.com/Alex-Zechariah-02/apiward/internal/pipeline"
 )
 
 // ServerSettings are the configured limits of the server that runs the data
@@ -52,6 +56,15 @@ func (s ServerSettings) Apply(server *http.Server) {
 		MaxReceiveBufferPerStream:     receiveBuffer,
 		WriteByteTimeout:              s.WriteTimeout,
 		CountError:                    s.countError,
+	}
+	// Each connection reads one request body at a time (pipeline.ConnContext),
+	// after the host's own connection context.
+	host := server.ConnContext
+	server.ConnContext = func(ctx context.Context, c net.Conn) context.Context {
+		if host != nil {
+			ctx = host(ctx, c)
+		}
+		return pipeline.ConnContext(ctx, c)
 	}
 }
 

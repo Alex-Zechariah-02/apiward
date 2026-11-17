@@ -21,6 +21,7 @@ err = gw.Stop(ctx)                             // waits for requests in progress
 - Before `Start` and from `Stop` on, every request is refused with `503 gateway_unavailable` and recorded. `Start` and `Stop` each run once.
 - Errors from `LoadConfig`, `New`, `Start` and `Stop` match exactly one of `ErrConfig`, `ErrLocked`, `ErrStorage`, `ErrListen`, `ErrStarted`, `ErrStopped` or `ErrIncomplete` with `errors.Is`. Refused requests are HTTP responses, never Go errors.
 - Apply `ServerSettings` to your server: the gateway cannot enforce header size or timeouts on a server it does not own. Its HTTP/2 protocol errors are then counted in `gateway_http2_errors_total`.
+- `Apply` also sets the server's `ConnContext` (after any you set), so each connection reads one request body at a time; without it an HTTP/2 connection could hold a body per stream.
 - `New` refuses the settings only the gateway's own listener applies, naming them: `data.tls`, `data.redirect_http`, `data.max_connections` and `data.listen_all_interfaces`. Your server owns its TLS, connection limit and addresses.
   - Body limits and every other check stay in the handler.
   - Do not rewrite `RemoteAddr` from client headers before the gateway: address lists and per-address rate limits read it.
