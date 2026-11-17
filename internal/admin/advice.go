@@ -30,7 +30,7 @@ func (s *Server) handleAdvice(w http.ResponseWriter, r *http.Request, who caller
 			return
 		}
 		var ok bool
-		if _, g, ok = s.candidateGeneration(w, r, id); !ok {
+		if _, g, ok = s.candidateGeneration(w, r, who, id); !ok {
 			return
 		}
 		candidate = &id

@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"sync"
 	"time"
+
+	"github.com/Alex-Zechariah-02/apiward/internal/store"
 )
 
 // Failed-attempt limits for sign-ins, enrolments and password changes.
@@ -39,10 +41,13 @@ type throttle struct {
 	sources map[string]*counter
 }
 
-// counter holds failures since start. An attempt counts as a failure from
-// begin until it settles, so concurrent attempts cannot all pass the check.
+// counter holds the failures settled since start and the attempts still
+// being checked. An attempt in progress counts against the limit, so
+// concurrent attempts cannot all pass the check; a new window clears only
+// settled failures, so attempts begun in the old one still count.
 type counter struct {
 	failures    int
+	pending     int
 	start       time.Time
 	lockedUntil time.Time
 }
@@ -56,17 +61,19 @@ func (c *counter) open(now time.Time, limit int) bool {
 	if now.Sub(c.start) >= failureWindow {
 		c.failures, c.start = 0, now
 	}
-	return c.failures < limit
+	return c.failures+c.pending < limit
 }
 
-// settle ends one counted attempt: a failure locks the counter at its limit,
-// anything else takes the attempt back.
+// settle ends one attempt in progress: a failure is counted and locks the
+// counter at its limit; anything else leaves no trace.
 func (c *counter) settle(failed bool, limit int, now time.Time) {
-	switch {
-	case failed && c.failures >= limit:
+	c.pending = max(c.pending-1, 0)
+	if !failed {
+		return
+	}
+	c.failures++
+	if c.failures+c.pending >= limit {
 		c.failures, c.lockedUntil = 0, now.Add(lockoutPeriod)
-	case !failed:
-		c.failures = max(c.failures-1, 0)
 	}
 }
 
@@ -93,16 +100,25 @@ func (t *throttle) begin(name string, r *http.Request, now time.Time) (attempt, 
 	if len(t.names)+len(t.sources) >= maxEntries-1 {
 		return attempt{}, "throttled"
 	}
-	byName, bySource := t.entry(t.names, name), t.entry(t.sources, source)
+	byName, bySource := t.entry(t.names, nameKey(name)), t.entry(t.sources, source)
 	if !bySource.open(now, maxSourceFailures) {
 		return attempt{}, "throttled"
 	}
 	if !byName.open(now, maxNameFailures) {
 		return attempt{}, "locked"
 	}
-	byName.failures++
-	bySource.failures++
-	return attempt{throttle: t, name: name, source: source}, ""
+	byName.pending++
+	bySource.pending++
+	return attempt{throttle: t, name: nameKey(name), source: source}, ""
+}
+
+// nameKey is the counter key for a name. Names no administrator can hold
+// share one counter, so a sign-in body cannot store kilobytes per entry.
+func nameKey(name string) string {
+	if store.IsAdminName(name) {
+		return name
+	}
+	return ""
 }
 
 func (t *throttle) entry(table map[string]*counter, key string) *counter {
@@ -114,11 +130,12 @@ func (t *throttle) entry(table map[string]*counter, key string) *counter {
 	return c
 }
 
-// prune drops counters that are neither locked nor inside a window.
+// prune drops counters that are not locked, not inside a window and have
+// no attempt in progress.
 func (t *throttle) prune(now time.Time) {
 	for _, table := range []map[string]*counter{t.names, t.sources} {
 		for key, c := range table {
-			if !now.Before(c.lockedUntil) && now.Sub(c.start) >= failureWindow {
+			if c.pending == 0 && !now.Before(c.lockedUntil) && now.Sub(c.start) >= failureWindow {
 				delete(table, key)
 			}
 		}

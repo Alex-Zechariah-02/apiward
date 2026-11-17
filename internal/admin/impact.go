@@ -19,10 +19,10 @@ import (
 // candidateGeneration compiles a stored draft with the active overrides,
 // as an activation would, beside the generation in force. It settles no
 // deadline and publishes nothing. On failure it has answered the request.
-func (s *Server) candidateGeneration(w http.ResponseWriter, r *http.Request, id int64) (current, candidate *compile.Generation, ok bool) {
+func (s *Server) candidateGeneration(w http.ResponseWriter, r *http.Request, who caller, id int64) (current, candidate *compile.Generation, ok bool) {
 	stored, found, err := s.store.Candidate(r.Context(), id)
 	if err != nil {
-		s.fail(w, r, nil, "gateway_unavailable", monitor.FailStore, err)
+		s.fail(w, r, &who, "gateway_unavailable", monitor.FailStore, err)
 		return nil, nil, false
 	}
 	if !found {
@@ -37,8 +37,12 @@ func (s *Server) candidateGeneration(w http.ResponseWriter, r *http.Request, id 
 	// Both use the same complete-policy resolver as an activation, including
 	// independent temporary controls.
 	current, authority, err := s.control.Capture(r.Context())
-	if current == nil || err != nil {
-		adminError(w, 503, "gateway_unavailable", "")
+	if err != nil {
+		s.fail(w, r, &who, "gateway_unavailable", monitor.FailStore, err)
+		return nil, nil, false
+	}
+	if current == nil {
+		adminError(w, http.StatusServiceUnavailable, "gateway_unavailable", "")
 		return nil, nil, false
 	}
 	candidate, err = controller.CandidateGeneration(s.control.Network(), policy, stored.Parent, authority.Overrides, s.config.Limits)
@@ -57,7 +61,7 @@ func (s *Server) handleImpact(w http.ResponseWriter, r *http.Request, who caller
 	if !ok {
 		return
 	}
-	before, after, ok := s.candidateGeneration(w, r, id)
+	before, after, ok := s.candidateGeneration(w, r, who, id)
 	if !ok {
 		return
 	}

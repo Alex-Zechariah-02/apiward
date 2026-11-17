@@ -52,10 +52,10 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request, who caller
 
 // confirmedPolicy reads the confirmed base. It answers the request itself and
 // returns false when no confirmed base is serving.
-func (s *Server) confirmedPolicy(w http.ResponseWriter, r *http.Request) (store.RevisionInfo, policy.Policy, bool) {
+func (s *Server) confirmedPolicy(w http.ResponseWriter, r *http.Request, who caller) (store.RevisionInfo, policy.Policy, bool) {
 	a, err := s.store.Load(r.Context())
 	if err != nil {
-		s.fail(w, r, nil, "unavailable", monitor.FailStore, err)
+		s.fail(w, r, &who, "unavailable", monitor.FailStore, err)
 		return store.RevisionInfo{}, policy.Policy{}, false
 	}
 	if a.Mode != store.ModeNormal {
@@ -71,14 +71,14 @@ func (s *Server) confirmedPolicy(w http.ResponseWriter, r *http.Request) (store.
 		p, err = policy.DecodePolicy(revision.Document, s.config.Limits)
 	}
 	if err != nil {
-		s.fail(w, r, nil, "unavailable", monitor.FailStore, err)
+		s.fail(w, r, &who, "unavailable", monitor.FailStore, err)
 		return store.RevisionInfo{}, policy.Policy{}, false
 	}
 	return revision, p, true
 }
 
 func (s *Server) handlePolicy(w http.ResponseWriter, r *http.Request, who caller) {
-	revision, _, ok := s.confirmedPolicy(w, r)
+	revision, _, ok := s.confirmedPolicy(w, r, who)
 	if !ok {
 		return
 	}

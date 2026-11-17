@@ -94,4 +94,45 @@ func TestThrottle(t *testing.T) {
 			t.Fatalf("another address: %q", reason)
 		}
 	})
+
+	// A new window clears settled failures only: attempts begun before the
+	// boundary still count, so a name gets maxNameFailures tries, not twice.
+	t.Run("window boundary keeps attempts in progress", func(t *testing.T) {
+		th := newThrottle()
+		var open []attempt
+		for range maxNameFailures {
+			try, reason := th.begin("alice", local, now)
+			if reason != "" {
+				t.Fatalf("attempt refused early: %s", reason)
+			}
+			open = append(open, try)
+		}
+		later := now.Add(failureWindow)
+		if _, reason := th.begin("alice", local, later); reason != "locked" {
+			t.Fatalf("attempt in the next window while %d are in progress: %q", len(open), reason)
+		}
+		for _, try := range open {
+			try.failed(later)
+		}
+		if _, reason := th.begin("alice", local, later); reason != "locked" {
+			t.Fatalf("after %d failures across the boundary: %q", len(open), reason)
+		}
+	})
+
+	// A name no administrator can hold adds no entry of its own, so long
+	// names cannot grow the table by kilobytes each.
+	t.Run("invalid names share one counter", func(t *testing.T) {
+		th := newThrottle()
+		for i := range 3 {
+			fail(t, th, fmt.Sprintf("%0*d", 4000, i), from(fmt.Sprintf("10.0.0.%d", i+1)), 1)
+		}
+		if len(th.names) != 1 {
+			t.Fatalf("invalid names hold %d entries, want 1", len(th.names))
+		}
+		for key := range th.names {
+			if len(key) > 0 {
+				t.Fatalf("invalid name stored as a %d-byte key", len(key))
+			}
+		}
+	})
 }

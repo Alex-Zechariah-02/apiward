@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/controller"
+	"github.com/Alex-Zechariah-02/apiward/internal/store"
 	"github.com/Alex-Zechariah-02/apiward/internal/storetest"
 )
 
@@ -38,17 +39,31 @@ func TestAdminRecords(t *testing.T) {
 		return w
 	}
 	send(t.Context(), http.MethodPost, "/admin/access-check", `{}`)
-	// A cancelled request makes the store read fail without touching the
+	// An expired deadline makes the store read fail without touching the
 	// database.
-	cancelled, cancel := context.WithCancel(t.Context())
-	cancel()
-	if w := send(cancelled, http.MethodGet, "/admin/status", ""); w.Code != http.StatusServiceUnavailable {
+	expired, stop := context.WithDeadline(t.Context(), time.Now().Add(-time.Second))
+	defer stop()
+	if w := send(expired, http.MethodGet, "/admin/status", ""); w.Code != http.StatusServiceUnavailable {
 		t.Fatalf("status with a failed store read: %d %s", w.Code, w.Body)
 	}
 	if got := failures(t, c, "store"); got != "1" {
 		t.Fatalf("store failures counted: %s", got)
 	}
-	want := []string{`"kind":"admin.read","method":"POST","path":"/admin/access-check"`, `"kind":"admin.rejected","status":503,"method":"GET","path":"/admin/status","reason":"store"`}
+	// A client that left is not a gateway failure: nothing more is counted.
+	cancelled, cancel := context.WithCancel(t.Context())
+	cancel()
+	send(cancelled, http.MethodGet, "/admin/status", "")
+	if got := failures(t, c, "store"); got != "1" {
+		t.Fatalf("a request whose client left was counted as a store failure: %s", got)
+	}
+	// A signed-in read the database cannot serve names its administrator.
+	who := caller{admin: store.Administrator{Name: "alice"}, session: created}
+	s.handlePolicy(httptest.NewRecorder(), httptest.NewRequestWithContext(expired, http.MethodGet, "/admin/policy", nil), who)
+	want := []string{
+		`"kind":"admin.read","method":"POST","path":"/admin/access-check"`,
+		`"kind":"admin.rejected","status":503,"method":"GET","path":"/admin/status","reason":"store"`,
+		`"kind":"admin.denied","status":503,"method":"GET","path":"/admin/policy","actor":"alice"`,
+	}
 	deadline := time.Now().Add(5 * time.Second)
 	for {
 		data, _ := os.ReadFile(c.Audit().Path())

@@ -65,7 +65,7 @@ func (s *Server) handleAccessCheck(w http.ResponseWriter, r *http.Request, who c
 	g := s.control.Current()
 	if check.Candidate != nil {
 		var ok bool
-		if _, g, ok = s.candidateGeneration(w, r, *check.Candidate); !ok {
+		if _, g, ok = s.candidateGeneration(w, r, who, *check.Candidate); !ok {
 			return
 		}
 	} else if g == nil || g.Expired(compile.TrustedNow()) {

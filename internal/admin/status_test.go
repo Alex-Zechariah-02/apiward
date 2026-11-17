@@ -1,15 +1,19 @@
-// The status reply: its build information and an unreadable stored
-// authority.
+// The status and limits replies: build information, an unreadable stored
+// authority and the confirmed size during recovery.
 
 package admin
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/Alex-Zechariah-02/apiward/internal/store"
+	"github.com/Alex-Zechariah-02/apiward/internal/storetest"
 )
 
 // A status read whose stored authority cannot be read says so, instead of
@@ -59,5 +63,24 @@ func TestStatusBuild(t *testing.T) {
 	if got := strings.Join(listed, " "); got != "jwt:identity rbac:authorise rate:traffic body:validate validation:validate" ||
 		status.Build.Version == "" || !strings.HasPrefix(status.Build.Go, "go") {
 		t.Fatalf("build: %+v", status.Build)
+	}
+}
+
+// The limits report the confirmed document's size also while a restore's
+// quarantine waits for recovery, which keeps the confirmed revision.
+func TestLimitsConfirmedBytes(t *testing.T) {
+	c := openSeeded(t, storetest.Options{}, func(database string) {
+		db, err := sql.Open("sqlite", store.DatabaseURI(database))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer db.Close()
+		if _, err := db.Exec(`UPDATE deployment SET mode = 'recovery_required', recovery_episode = ?`, strings.Repeat("ab", 16)); err != nil {
+			t.Fatal(err)
+		}
+	})
+	used, err := testServer(c).confirmedBytes(t.Context())
+	if err != nil || used == 0 {
+		t.Fatalf("confirmed bytes in recovery: %d, %v", used, err)
 	}
 }

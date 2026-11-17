@@ -43,7 +43,9 @@ func (s *Server) handleLimits(w http.ResponseWriter, r *http.Request, who caller
 // no policy is confirmed.
 func (s *Server) confirmedBytes(ctx context.Context) (int64, error) {
 	a, err := s.store.Load(ctx)
-	if err != nil || a.Mode != store.ModeNormal {
+	// A quarantine after a restore keeps the confirmed document, so only
+	// a deployment that never confirmed one reports 0.
+	if err != nil || a.Confirmed == 0 {
 		return 0, err
 	}
 	revision, _, err := s.store.Revision(ctx, a.Confirmed)

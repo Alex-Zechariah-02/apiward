@@ -4,6 +4,8 @@
 package admin
 
 import (
+	"context"
+	"errors"
 	"net/http"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/audit"
@@ -26,6 +28,11 @@ func (s *Server) refuse(w http.ResponseWriter, r *http.Request, status int, code
 // (the database, the security log, the password-hashing slots): it logs the
 // cause, counts it in the metrics and records the refusal.
 func (s *Server) fail(w http.ResponseWriter, r *http.Request, who *caller, code string, f monitor.AdminFailure, err error) {
+	// A read whose client left ended for that reason, not a failure: nothing
+	// is logged, counted or recorded, and nobody reads an answer.
+	if errors.Is(r.Context().Err(), context.Canceled) {
+		return
+	}
 	if err != nil {
 		s.logger.Error("admin request failed", "reason", f.String(), "method", r.Method, "path", r.URL.Path, "error", err)
 	}
