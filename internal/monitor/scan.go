@@ -63,8 +63,11 @@ func Search(ctx context.Context, dir string, files []string, start *Cursor, quer
 			result.Next = &Cursor{File: name, First: first, Offset: offset}
 			return result, nil
 		}
-		result.Searched = append(result.Searched, name)
 		done, err := scanSecurityLogFile(ctx, filepath.Join(dir, name), name, first, offset, query, limit, &budget, &result)
+		if errors.Is(err, os.ErrNotExist) {
+			continue // archived between the first record's read and the scan
+		}
+		result.Searched = append(result.Searched, name)
 		if err != nil || done {
 			return result, err
 		}

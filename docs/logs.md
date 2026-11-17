@@ -62,7 +62,7 @@ What the gateway records, when a record is waited for, and how to read the log. 
 
 | Kind | Written when | Record |
 |---|---|---|
-| `gateway.started` | The gateway started: `file` names the settings file, `sha256` its digest | Queued |
+| `gateway.started` | The gateway opened its deployment with these settings, before any listener binds (a bind that then fails is reported on stderr, with no further record): `file` names the settings file, `sha256` its digest | Queued |
 | `gateway.key` | At start, once per key in force: `target` the key ID, `reason` `verification` (a token key, `sha256` its fingerprint) or `assertion` (the identity key, whose ID is its thumbprint) | Queued |
 | `tls.reloaded` | A listener certificate reload succeeded; `expires_at` is the new certificate's expiry | Queued |
 | `tls.reload_failed` | A listener certificate reload failed; the old certificate stays | Queued |

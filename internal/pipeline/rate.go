@@ -220,9 +220,10 @@ func (c Clock) now() int64 {
 
 // limit runs the rate stage. The counter is the rule's (a conditioned
 // operation shares its unconditioned sibling's), keyed by the verified
-// subject or the direct socket peer; client forwarding headers never choose
-// an address counter. It answers a refusal itself and reports whether the
-// request may continue.
+// subject or the client address: the socket peer, or the address a peer in
+// data.trusted_proxies forwards; an untrusted peer's forwarding headers never
+// choose an address counter. It answers a refusal itself and reports whether
+// the request may continue.
 func (h *Handler) limit(q *request, rule *compile.Rule) bool {
 	if rule.Rate() == nil {
 		q.event.Stages[audit.StageRate] = audit.StageNotApplicable

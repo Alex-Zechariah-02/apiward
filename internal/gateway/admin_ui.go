@@ -87,8 +87,9 @@ func dashboard(files fs.FS) http.Handler {
 			header.Set("Content-Length", strconv.FormatInt(size, 10))
 		}
 		// #nosec G705 -- a file of the operator's own Dashboard build, sent with its content policy
-		if _, err := io.Copy(w, body); err != nil {
-			// A copy that broke off must not end as a complete response.
+		// A copy that broke off, or a file that shrank after its size was
+		// declared, must not end as a complete response.
+		if sent, err := io.Copy(w, body); err != nil || size >= 0 && sent != size {
 			panic(http.ErrAbortHandler)
 		}
 	})
