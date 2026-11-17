@@ -22,7 +22,8 @@ Every key, certificate and secret the gateway uses: what it protects, its algori
 - A CA file of an upstream TLS profile decides which servers the gateway trusts: it must be a regular file and, on Unix, must not be writable by the group or others and must belong to the gateway's user or root.
 - On Unix the database, its `-wal`, `-shm` and `-journal` files and its `.lock` file must not be readable or writable by the group or others and must belong to the gateway's user or root; the gateway and its operator commands create them with mode `0600`.
 - Windows has no such modes: there these checks are skipped, so restrict the key and CA files with NTFS permissions (for example `icacls <file> /inheritance:r /grant:r "<gateway account>:R"`).
-- Token verification keys and certificate chains are checked for format and size, not for their mode.
+- Certificate chains are public: they are checked for format and size, not for their mode.
+- The identity key, the token verification keys and the database files must be regular files, not links: the start, a keys reload and every operator command refuse a link there, naming the file. Point the setting at the file itself.
 - No setting or environment variable holds a secret: settings name files, and the files hold the material.
 - Keys are not encrypted at rest and no key service or hardware module is used; protect the host and its backups.
 

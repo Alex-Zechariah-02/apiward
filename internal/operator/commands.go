@@ -8,7 +8,9 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
+	"os"
 	"os/user"
 	"strings"
 	"time"
@@ -109,8 +111,16 @@ func runInstall(o *operatorContext, flags map[string]string) (int, error) {
 	if !store.IsAdminName(name) {
 		return 1, fmt.Errorf("administrator name %q is not valid", name)
 	}
-	// The key comes first: an install that fails here leaves no database, so
-	// it can be run again.
+	// An installed deployment is refused before the key: a new key there
+	// would replace the identity its upstreams trust. CreateStore's
+	// exclusive create still refuses one that appears after this check.
+	if _, err := os.Lstat(o.config.Database); err == nil {
+		return 1, fmt.Errorf("installing: %s already exists; install creates a new deployment only", o.config.Database)
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return 1, fmt.Errorf("installing: %w", err)
+	}
+	// The key comes before the database: an install that fails here leaves
+	// no database, so it can be run again.
 	if created, err := createIdentityKey(o.config.IdentityKey); err != nil {
 		return 1, fmt.Errorf("creating the identity key: %w", err)
 	} else if created {

@@ -85,6 +85,7 @@ The JSON settings file that `apiward run --config <file>` reads. Upstream TLS pr
 - Upstreams can verify that a request passed the gateway; the gateway signs by default.
 - The key is `upstream.identity_key`, or `identity.pem` beside `gateway.database` when that setting is absent: an ECDSA P-256 private key as one PKCS #8 `PRIVATE KEY` PEM block, readable only by its owner.
 - `apiward install` creates the key when the file is missing and keeps a key already there; `openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256` makes one by hand.
+- `install` refuses an existing database before it writes any key. An installed deployment whose key file is lost needs that file restored: a new key has a new key ID, which its upstreams do not trust.
 - Without the key file the gateway refuses to start, naming the file.
 - `"upstream": {"unsigned_identity": true}` turns signing off: upstreams then receive only the plain headers, and the start log says so. It cannot be combined with `identity_key`.
 - Signed or not, an upstream must accept requests only from the gateway (client certificates or a firewall), as NIST SP 800-207 requires of a policy enforcement point.

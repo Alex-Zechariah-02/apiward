@@ -4,6 +4,8 @@ package integration
 
 import (
 	"encoding/json"
+	"errors"
+	"io/fs"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -133,13 +135,28 @@ func TestBootstrapIsLocalAndOneTime(t *testing.T) {
 		t.Fatalf("installed mode %q", mode)
 	}
 
-	// A second install never replaces the database.
+	// A second install never replaces the database, and refuses before it
+	// writes a key: with the key file gone it still creates none.
 	before := gatewaytest.FileSHA256(t, e.Database)
-	if out, code := e.RunOperator(gatewaytest.Binaries.Plain, nil, "install", "--admin", "other"); code == 0 {
-		t.Fatalf("second install succeeded: %s", out)
+	identity := filepath.Join(filepath.Dir(e.Database), gatewaytest.IdentityFile)
+	key, err := os.ReadFile(identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(identity); err != nil {
+		t.Fatal(err)
+	}
+	if out, code := e.RunOperator(gatewaytest.Binaries.Plain, nil, "install", "--admin", "other"); code == 0 || !strings.Contains(out, "already exists") {
+		t.Fatalf("second install exited %d: %s", code, out)
 	}
 	if gatewaytest.FileSHA256(t, e.Database) != before {
 		t.Fatal("second install changed the database")
+	}
+	if _, err := os.Lstat(identity); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("second install wrote an identity key: %v", err)
+	}
+	if err := os.WriteFile(identity, key, 0o600); err != nil {
+		t.Fatal(err)
 	}
 
 	e.Start(gatewaytest.Binaries.Plain)

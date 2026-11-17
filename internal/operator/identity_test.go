@@ -37,4 +37,8 @@ func TestInstallIdentityKey(t *testing.T) {
 	if again, _ := os.ReadFile(path); !bytes.Equal(again, data) {
 		t.Fatal("an existing key was replaced")
 	}
+	// The key is written beside its place and linked in; nothing else stays.
+	if entries, err := os.ReadDir(filepath.Dir(path)); err != nil || len(entries) != 1 {
+		t.Fatalf("files beside the key: %v %v", entries, err)
+	}
 }

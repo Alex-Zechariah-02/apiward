@@ -46,5 +46,5 @@ func (cfg nativeConfig) requireIdentity() error {
 	if cfg.unsigned || cfg.signer != nil {
 		return nil
 	}
-	return fmt.Errorf("the identity key %s does not exist: run apiward install to create it, or set upstream.unsigned_identity to forward unsigned identity headers", cfg.identityKey)
+	return fmt.Errorf("the identity key %s does not exist: apiward install creates it for a new deployment; an installed one needs its key file restored (upstreams trust its key ID), or set upstream.unsigned_identity to forward unsigned identity headers", cfg.identityKey)
 }

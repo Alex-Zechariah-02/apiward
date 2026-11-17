@@ -12,6 +12,7 @@ import (
 	"errors"
 	"io/fs"
 	"os"
+	"path/filepath"
 )
 
 // createIdentityKey writes a new ECDSA P-256 key as one PKCS #8 PEM block,
@@ -33,15 +34,30 @@ func createIdentityKey(path string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	file, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	// The key is written whole beside path and linked into place, so a
+	// command killed while writing leaves no partial key that every later
+	// command would refuse; the link never replaces a key already there.
+	dir := filepath.Dir(path)
+	file, err := os.CreateTemp(dir, ".identity-*.tmp")
 	if err != nil {
 		return false, err
 	}
+	temporary := file.Name()
+	defer os.Remove(temporary)
+	if err := file.Chmod(0o600); err != nil {
+		return false, errors.Join(err, file.Close())
+	}
 	if err := pem.Encode(file, &pem.Block{Type: "PRIVATE KEY", Bytes: der}); err != nil {
-		return false, errors.Join(err, file.Close(), os.Remove(path))
+		return false, errors.Join(err, file.Close())
 	}
 	if err := file.Sync(); err != nil {
-		return false, errors.Join(err, file.Close(), os.Remove(path))
+		return false, errors.Join(err, file.Close())
 	}
-	return true, file.Close()
+	if err := file.Close(); err != nil {
+		return false, err
+	}
+	if err := os.Link(temporary, path); err != nil {
+		return false, err
+	}
+	return true, syncDir(dir)
 }

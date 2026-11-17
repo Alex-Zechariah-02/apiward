@@ -54,6 +54,11 @@ func runRestore(o *operatorContext, flags map[string]string) (int, error) {
 	if err := samePath(backup, checked); err != nil {
 		return 1, err
 	}
+	// A rewrite in place keeps the file's identity, so the staged copy's own
+	// authority must still be the one the manifest describes.
+	if err := checkBackupDatabase(staging, manifest); err != nil {
+		return 1, fmt.Errorf("the staged copy does not match the backup manifest: %w", err)
+	}
 
 	now := time.Now()
 	episode := randomHex(16)
