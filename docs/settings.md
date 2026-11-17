@@ -12,7 +12,7 @@ The JSON settings file that `apiward run --config <file>` reads. Upstream TLS pr
 ## Start log
 
 - The `listening` line names the data, admin and metrics addresses, the data listener's transport (`http` or `https`) and whether HTTP/2 is on; the `identity assertion` line names the key ID an upstream's key set must hold.
-- Each setting that weakens protection is named in a warning: `data.listen_all_interfaces` in use, `gateway.metrics_listen_any` in use, `upstream.allow_public_addresses`, `upstream.unsigned_identity`, `gateway.audit_when_full: "evict_oldest"` and reads added to `gateway.audit_ignore_reads`.
+- Each setting that weakens protection is named in a warning: `data.listen_all_interfaces` in use, `gateway.metrics_listen_any` in use, `upstream.allow_public_addresses`, `upstream.unsigned_identity`, `gateway.audit_when_full: "evict_oldest"`, reads added to `gateway.audit_ignore_reads` and a `data.trusted_proxies` entry that covers every address (`0.0.0.0/0` or `::/0`).
 - Every diagnostic, of the gateway and of the operator commands, is one JSON line on standard error; after a command-line error the usage text follows as it is.
 
 ## Data listener
@@ -32,7 +32,7 @@ The JSON settings file that `apiward run --config <file>` reads. Upstream TLS pr
 
 ### Client addresses behind a proxy
 
-- `data.trusted_proxies` lists the load balancers or proxies in front of the gateway, as IP addresses or CIDR prefixes (up to 64; empty by default).
+- `data.trusted_proxies` lists the load balancers or proxies in front of the gateway, as IP addresses or CIDR prefixes (up to 64; empty by default); an IPv4-mapped prefix such as `::ffff:192.0.2.0/120` is read as the IPv4 prefix it names.
 - Only a request whose connection comes from one of them may name its client in `X-Forwarded-For`: the gateway reads the field from the right, skips every trusted proxy, and takes the first other address.
 - When every entry is a trusted proxy, the leftmost entry is the client; an entry that is not an IP address stops the reading, and the address read before it is used.
 - That client address is used for blocked addresses, `allow_addresses`, address rate keys and the security log; upstreams still receive the direct peer in `X-Forwarded-For`.

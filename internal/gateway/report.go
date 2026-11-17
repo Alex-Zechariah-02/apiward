@@ -28,6 +28,9 @@ func warnSettings(cfg nativeConfig, logger *slog.Logger) {
 	if metrics, err := netip.ParseAddrPort(cfg.metricsListen); err == nil && !metrics.Addr().IsLoopback() {
 		logger.Warn("metrics and health off loopback (gateway.metrics_listen_any): /metrics, /livez and /readyz answer anyone who reaches the address, without authentication or TLS; allow only the scraper and the load balancer by firewall")
 	}
+	if slices.ContainsFunc(cfg.limits.TrustedProxies, func(p netip.Prefix) bool { return p.Bits() == 0 }) {
+		logger.Warn("every peer is a trusted proxy (data.trusted_proxies holds 0.0.0.0/0 or ::/0): clients choose their own address through X-Forwarded-For, so address blocks, address rate limits and allow_addresses no longer bind them")
+	}
 	if cfg.file.Upstream.AllowPublicAddresses {
 		logger.Warn("upstreams may use public addresses (upstream.allow_public_addresses)")
 	}

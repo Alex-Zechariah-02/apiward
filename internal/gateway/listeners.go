@@ -200,11 +200,11 @@ func checkHealth(configPath string, logger *slog.Logger) int {
 // the gateway first runs.
 func printJWKS(configPath string, logger *slog.Logger) int {
 	cfg, err := readNativeConfig(configPath)
-	if err == nil && cfg.unsigned {
-		err = errors.New("upstream.unsigned_identity is set: no identity assertion is signed")
-	}
 	if err == nil {
 		err = cfg.identity(cfg.file.Upstream)
+	}
+	if err == nil && cfg.unsigned {
+		err = errors.New("upstream.unsigned_identity is set: no identity assertion is signed")
 	}
 	if err == nil {
 		err = cfg.requireIdentity()

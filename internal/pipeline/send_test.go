@@ -209,8 +209,8 @@ func TestTargetForms(t *testing.T) {
 // Only a trusted proxy names the client, as the rightmost untrusted entry of
 // X-Forwarded-For.
 func TestTrustedProxies(t *testing.T) {
-	proxies, err := ParseProxies([]string{"10.0.0.0/8", "::ffff:192.0.2.7"})
-	if err != nil || len(proxies) != 2 || proxies[1] != netip.MustParsePrefix("192.0.2.7/32") {
+	proxies, err := ParseProxies([]string{"10.0.0.0/8", "::ffff:192.0.2.7", "::ffff:192.0.2.128/121"})
+	if err != nil || len(proxies) != 3 || proxies[1] != netip.MustParsePrefix("192.0.2.7/32") || proxies[2] != netip.MustParsePrefix("192.0.2.128/25") {
 		t.Fatalf("parse: %v %v", proxies, err)
 	}
 	s := setup{ops: []policy.Operation{public("GET", "/a/x")}, limits: Limits{TrustedProxies: proxies}}
@@ -234,7 +234,7 @@ func TestTrustedProxies(t *testing.T) {
 	for i := range many {
 		many[i] = "192.0.2." + strconv.Itoa(i)
 	}
-	for _, refused := range [][]string{{"10.0.0.1/8"}, {"fe80::1%eth0"}, {"proxy.test"}, many} {
+	for _, refused := range [][]string{{"10.0.0.1/8"}, {"fe80::1%eth0"}, {"proxy.test"}, {"::ffff:0.0.0.0/95"}, many} {
 		if _, err := ParseProxies(refused); err == nil {
 			t.Errorf("%v accepted", refused[0])
 		}

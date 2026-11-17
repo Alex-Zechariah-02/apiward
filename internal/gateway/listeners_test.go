@@ -211,6 +211,7 @@ func TestListenAllInterfaces(t *testing.T) {
 		"redirect origin with a path":       {both(tlsFiles, set("data", "redirect_http", map[string]any{"listen": "127.0.0.2:9080", "origin": "https://api.example.com/x"})), false},
 		"redirect with TLS":                 {both(tlsFiles, set("data", "redirect_http", map[string]any{"listen": "127.0.0.2:9080", "origin": "https://api.example.com"})), true},
 		"ACME":                              {set("data", "tls", map[string]any{"acme": map[string]any{"domains": []string{"api.example.com"}}}), false},
+		"every peer a proxy":                {set("data", "trusted_proxies", []any{"10.0.0.0/8", "::/0"}), true},
 	} {
 		cfg, err := parseConfig(configDocument(t, dir, tc.change))
 		if (err == nil) != tc.ok {
@@ -219,7 +220,8 @@ func TestListenAllInterfaces(t *testing.T) {
 		// A switch that is on is named in a start warning.
 		var logs gatewaytest.LogBuffer
 		warnSettings(cfg, slog.New(slog.NewJSONHandler(&logs, nil)))
-		for setting, on := range map[string]bool{"data.listen_all_interfaces": cfg.listen == "0.0.0.0:9480", "gateway.metrics_listen_any": cfg.metricsListen == "0.0.0.0:9450"} {
+		for setting, on := range map[string]bool{"data.listen_all_interfaces": cfg.listen == "0.0.0.0:9480", "gateway.metrics_listen_any": cfg.metricsListen == "0.0.0.0:9450",
+			"data.trusted_proxies": name == "every peer a proxy"} {
 			if on != strings.Contains(logs.String(), setting) {
 				t.Errorf("%s: warning for %s %v, want %v", name, setting, !on, on)
 			}
@@ -228,7 +230,8 @@ func TestListenAllInterfaces(t *testing.T) {
 }
 
 // The health command reads the configuration file alone: an unreadable
-// identity key and a missing TLS profile file do not stop it asking.
+// identity key and a missing TLS profile file do not stop it asking. The
+// jwks command refuses when signing is turned off.
 func TestHealthCommand(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
@@ -248,5 +251,15 @@ func TestHealthCommand(t *testing.T) {
 	var logs gatewaytest.LogBuffer
 	if code := checkHealth(path, slog.New(slog.NewJSONHandler(&logs, nil))); code != exitFailed || !strings.Contains(logs.String(), `"msg":"not ready"`) {
 		t.Fatalf("exit %d: %s", code, logs.String())
+	}
+	// The jwks command reads the same file; with signing turned off it has
+	// no key set to print and refuses rather than print nothing.
+	unsigned := configDocument(t, dir, func(s map[string]any) { gatewaytest.Section(s, "upstream")["unsigned_identity"] = true })
+	if err := os.WriteFile(path, unsigned, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var refused gatewaytest.LogBuffer
+	if code := printJWKS(path, slog.New(slog.NewJSONHandler(&refused, nil))); code != exitFailed || !strings.Contains(refused.String(), "unsigned_identity is set") {
+		t.Fatalf("jwks with signing off: exit %d: %s", code, refused.String())
 	}
 }

@@ -38,6 +38,14 @@ func ParseProxies(entries []string) ([]netip.Prefix, error) {
 		if prefix != prefix.Masked() {
 			return nil, fmt.Errorf("%q has bits set past its prefix length", entry)
 		}
+		// Peers are compared unmapped, and an IPv4 address never matches an
+		// IPv6 prefix: an IPv4-mapped prefix becomes the IPv4 one it names.
+		if prefix.Addr().Is4In6() {
+			if prefix.Bits() < 96 {
+				return nil, fmt.Errorf("%q covers more than IPv4-mapped addresses", entry)
+			}
+			prefix = netip.PrefixFrom(prefix.Addr().Unmap(), prefix.Bits()-96)
+		}
 		prefixes = append(prefixes, prefix)
 	}
 	if len(prefixes) == 0 {
