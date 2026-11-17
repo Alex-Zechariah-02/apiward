@@ -1,4 +1,4 @@
-import { Fragment, useId, useState } from 'react'
+import { Fragment, useEffect, useId, useState } from 'react'
 import { explain, type HistoryEntry } from '../shared/api'
 import { usePaged, useRemembered, useResource } from '../shared/hooks'
 import { actorName, Problem, ShowMore } from '../shared/replies'
@@ -112,6 +112,11 @@ export function History({ admin }: ViewProps) {
   const [filters, setFilters] = useRemembered<HistoryFilters>('history', { area: 'all', outcome: 'all', actor: 'all', newestFirst: true })
   const path = historyPath(filters)
   const history = usePaged<HistoryEntry>(admin, path, [path])
+  // answered: the history was read once, so the filters exist to be used, also while another page is read or fails.
+  const [answered, setAnswered] = useState(false)
+  useEffect(() => {
+    if (history.reply?.kind === 'ok') setAnswered(true)
+  }, [history.reply])
   const team = useResource<{ items: { name: string }[] }>((signal) => admin.get('/admin/administrators', signal), [])
   const [selected, setSelected] = useState<string | null>(null)
   const { area, outcome, actor, newestFirst } = filters
@@ -135,8 +140,9 @@ export function History({ admin }: ViewProps) {
         {history.reply && history.reply.kind !== 'ok' ? <Problem reply={history.reply} /> : null}
         {history.current && history.items.length === 0 && !filtered ? <Empty title="No transition has been recorded yet." /> : null}
         {/* The filters stay while another filter's or order's first page is
-            read (not current), so the control just used keeps the focus. */}
-        {history.items.length > 0 || filtered || (!history.current && history.reply?.kind === 'ok') ? (
+            read or refused, so the control just used keeps the focus and can
+            be changed back; only a history known to be empty has none. */}
+        {answered && !(history.current && history.items.length === 0 && !filtered) ? (
           <>
             <div className="filters" role="group" aria-label="Filter the history">
               <div className="field">

@@ -1,5 +1,5 @@
 import { useCallback, useContext, useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from 'react'
-import type { Candidate, OverridesView, Page, Policy, ProvisionalView, Revision } from '../../shared/api'
+import { committedAnyway, type Candidate, type OverridesView, type Page, type Policy, type ProvisionalView, type Revision } from '../../shared/api'
 import { useGatewayState, useMutation, useResource, ViewMemory } from '../../shared/hooks'
 import { sizeProblem, usePolicyLimit } from '../../shared/limits'
 import { DesignerCanvas } from './canvas'
@@ -93,8 +93,17 @@ export function Designer({
   const editable = can('manage_policy') && mode === 'draft'
   // Changed means the canonical forms differ, so member order or spacing alone never counts as a change.
   const dirty = !!draft && canonical(draft.document) !== canonical(draft.base)
-  // saved: the draft differs from the active version but is exactly what was last saved as a draft change.
-  const saved = dirty && !!draft?.saved && canonical(draft.document) === canonical(draft.saved)
+  // The saved change is read back from the gateway: a withdrawal there, from any page or tab, ends the saved state.
+  const savedId = draft?.savedId
+  const savedChange = useResource<Candidate>(
+    (signal) => (savedId !== undefined ? admin.get(`/admin/candidates/${savedId}`, signal) : Promise.resolve({ kind: 'aborted' })),
+    [savedId],
+  )
+  const savedGone =
+    (savedChange.reply?.kind === 'ok' && savedChange.reply.body.status === 'withdrawn') ||
+    (savedChange.reply?.kind === 'refused' && savedChange.reply.status === 404)
+  // saved: the draft differs from the active version but is exactly what was last saved as a draft change that stands.
+  const saved = dirty && !!draft?.saved && !savedGone && canonical(draft.document) === canonical(draft.saved)
   const limit = usePolicyLimit(admin)
   const changed = useMemo(() => (draft ? changes(draft.base, draft.document) : []), [draft])
   // A schema text that is not a JSON object blocks saving like any other issue: the draft would otherwise be saved
@@ -114,6 +123,7 @@ export function Designer({
     overrides.refresh()
     provisional.refresh()
     if (pendingId !== undefined) provisionalDocument.refresh()
+    if (savedId !== undefined) savedChange.refresh()
     state.refresh()
   }
   const mutation = useMutation<Staged>(admin, refresh)
@@ -161,10 +171,18 @@ export function Designer({
     if (phase.state !== 'replied') return
     if (phase.reply.kind === 'ok') {
       const document = submitted.current
-      if (document) setDraft((previous) => (previous ? { ...previous, saved: document } : previous))
+      const id = phase.reply.body.candidate.id
+      if (document) setDraft((previous) => (previous ? { ...previous, saved: document, savedId: id } : previous))
       requestAnimationFrame(() => review.current?.focus())
     }
     if (phase.reply.kind !== 'refused') return
+    // Stored but not recorded: the change exists, so the same draft is saved as far as a second save is concerned.
+    const stored = phase.reply.outcome?.candidate
+    if (committedAnyway(phase.reply) && stored !== undefined && submitted.current) {
+      const document = submitted.current
+      setDraft((previous) => (previous ? { ...previous, saved: document, savedId: stored } : previous))
+      return
+    }
     const field = phase.reply.outcome?.field ?? phase.reply.field ?? ''
     const code = phase.reply.outcome?.reason ?? phase.reply.error
     if (phase.reply.status === 412) {

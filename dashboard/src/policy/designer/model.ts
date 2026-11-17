@@ -9,9 +9,11 @@ export interface DesignerDraft {
   document: Policy
   base: Policy
   baseRevision: number
-  // saved is the document as last saved as a draft change; saving the same
-  // document again would only store a duplicate.
+  // saved is the document as last saved as a draft change, savedId that
+  // change; saving the same document again would only store a duplicate
+  // while that change still stands.
   saved?: Policy
+  savedId?: number
 }
 export interface Issue {
   id: string

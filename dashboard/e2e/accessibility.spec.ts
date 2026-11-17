@@ -90,6 +90,12 @@ test.describe.serial('dashboard', () => {
     await page.getByLabel('Area').selectOption('policy')
     await page.getByLabel('Newest First').check()
     await scan(page, 'history filtered')
+    // Clearing the last filter while that read is refused keeps the filters, so the choice can be changed back.
+    await page.route('**/admin/history**', (route) => route.fulfill({ status: 503, contentType: 'application/json', body: '{"error":"gateway_unavailable"}' }))
+    await page.getByLabel('Area').selectOption('all')
+    await expect(page.getByLabel('Area')).toBeVisible()
+    await expect(page.getByLabel('Newest First')).toBeVisible()
+    await page.unroute('**/admin/history**')
     await go(page, 'My Account')
     await shot(page, '25-account')
 

@@ -178,6 +178,8 @@ export function OperationFields(props: {
             'number',
           )}
           <SchemaEditor
+            // One editor per endpoint: its unmount clears the issue it raised, never another endpoint's.
+            key={`${selection}.body`}
             label="Body Schema (JSON)"
             value={operation.body.schema}
             editable={editable}
@@ -209,6 +211,7 @@ export function OperationFields(props: {
       </div>
       {operation.headers !== undefined ? (
         <SchemaEditor
+          key={`${selection}.headers`}
           label="Header Schema (JSON)"
           value={operation.headers}
           editable={editable}
