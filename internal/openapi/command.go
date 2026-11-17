@@ -190,7 +190,7 @@ func runValidate(values map[string]string, stderr io.Writer) (int, error) {
 	}
 	g, err := compile.Compile(source, 0, time.Time{}, policy.Limits{})
 	if err != nil {
-		return ExitFailed, fmt.Errorf("policy refused: %w", err)
+		return ExitFailed, fmt.Errorf("policy refused: %w", defaultLimits(err))
 	}
 	for _, warning := range g.Warnings() {
 		fmt.Fprintln(stderr, "warning:", warning)

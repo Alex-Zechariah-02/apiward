@@ -55,7 +55,7 @@ func (r *ExportReport) Exit() int {
 // case nothing may be written. It has no side effects.
 func Export(p policy.Policy, options ExportOptions) (map[string]any, *ExportReport, error) {
 	if _, err := compile.Compile(p, 0, time.Time{}, policy.Limits{}); err != nil {
-		return nil, nil, fmt.Errorf("the policy is not valid: %w", err)
+		return nil, nil, fmt.Errorf("the policy is not valid: %w", defaultLimits(err))
 	}
 	encoded, err := policy.Encode(p)
 	if err != nil {
@@ -181,8 +181,9 @@ func describe(op policy.Operation, roles []any, report *ExportReport) (string, m
 var refusalSchema = map[string]any{"type": "object", "required": []any{"error", "request_id"},
 	"properties": map[string]any{"error": map[string]any{"type": "string"}, "request_id": map[string]any{"type": "string"}}}
 
-// responses lists the answers the gateway may give for op before the service
-// sees the request, and the service's own answer as the default.
+// responses lists the answers the gateway gives for op itself: its refusals
+// before the service sees the request, and its answers when the service
+// gives none; the service's own answer is the default.
 func responses(op policy.Operation) map[string]any {
 	refusal := func(text string) map[string]any {
 		return map[string]any{"description": text, "content": map[string]any{"application/json": map[string]any{"schema": refusalSchema}}}
@@ -192,7 +193,9 @@ func responses(op policy.Operation) map[string]any {
 		"400":     refusal("Refused by the gateway: the path (a control character in a segment included), a declared header or the body breaks the endpoint's rules."),
 		"403":     refusal("Refused by the gateway: the endpoint, the client address or the browser origin is not allowed, or the caller lacks the permission."),
 		"429":     refusal("Refused by the gateway: the endpoint's rate limit, or a temporary rule's, was reached."),
-		"503":     refusal("The gateway could not decide on or record the request."),
+		"502":     refusal("The gateway got no usable answer from the service."),
+		"503":     refusal("The gateway could not decide on or record the request, or the service is out of rotation or not configured."),
+		"504":     refusal("The service did not answer within the gateway's upstream timeout."),
 	}
 	if op.Auth == "required" {
 		out["401"] = refusal("Refused by the gateway: no valid bearer token.")

@@ -3,6 +3,7 @@
 package openapi
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"reflect"
@@ -82,8 +83,7 @@ func assemble(root map[string]any, format Format, options Options) (policy.Polic
 	report := newReport(format, options.API)
 	report.SpecVersion = version
 	info, _ := root["info"].(map[string]any)
-	described, _ := info["version"].(string)
-	report.DescriptionVersion = policy.Clip(described)
+	report.DescriptionVersion = policy.Clip(descriptionVersion(info["version"]))
 	m := &mapper{root: root, options: options, report: report, ignored: map[string]bool{}}
 	found := m.operations()
 
@@ -228,13 +228,31 @@ func compiles(result policy.Policy) error {
 			_, err = compile.Compile(decoded, 0, time.Time{}, policy.Limits{})
 		}
 	}
-	var invalid *policy.PolicyError
-	if errors.As(err, &invalid) && invalid.Code == "LIMIT_EXCEEDED" {
-		return fmt.Errorf("the result exceeds the default capacity limits the import checks against (policy %d bytes, %d APIs, %d operations, %d roles, %d permits), which a deployment may have raised: %w",
-			policy.DefaultPolicyBytes, policy.DefaultAPIs, policy.DefaultOperations, policy.DefaultRoles, policy.DefaultPermits, err)
-	}
 	if err != nil {
-		return fmt.Errorf("the result is not a valid policy: %w", err)
+		return fmt.Errorf("the result is not a valid policy: %w", defaultLimits(err))
 	}
 	return nil
+}
+
+// defaultLimits adds to a LIMIT_EXCEEDED refusal the default capacity limits
+// the policy was checked against: a deployment may have raised the counts,
+// but no deployment can raise the size ceiling.
+func defaultLimits(err error) error {
+	if invalid, ok := errors.AsType[*policy.PolicyError](err); !ok || invalid.Code != "LIMIT_EXCEEDED" {
+		return err
+	}
+	return fmt.Errorf("%w (checked against the default capacity limits: %d APIs, %d operations, %d roles, %d permits, which a deployment may have raised, and the policy size of %d bytes, which no deployment can raise)",
+		err, policy.DefaultAPIs, policy.DefaultOperations, policy.DefaultRoles, policy.DefaultPermits, policy.MaxPolicyBytes)
+}
+
+// descriptionVersion is info.version as written: a string, or a plain number
+// the YAML or JSON reader kept as a number.
+func descriptionVersion(value any) string {
+	switch version := value.(type) {
+	case string:
+		return version
+	case json.Number:
+		return version.String()
+	}
+	return ""
 }

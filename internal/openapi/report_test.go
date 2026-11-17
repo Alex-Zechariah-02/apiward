@@ -1,6 +1,7 @@
 // Import report members: permits added, settings replaced, operations that
-// need permissions, roles on public operations and the default limits named
-// in a refusal; the export's refusal answers.
+// need permissions, roles on public operations, the default limits named in
+// a refusal, a numeric description version and a null body schema; the
+// export's own answers.
 
 package openapi
 
@@ -51,8 +52,26 @@ func TestImportNamesDefaultLimits(t *testing.T) {
 	}
 	spec := `{"openapi":"3.1.0","info":{"title":"t","version":"1"},"paths":{` + strings.Join(paths, ",") + `}}`
 	_, _, err := Import([]byte(spec), JSON, testOptions())
-	if err == nil || !strings.Contains(err.Error(), "default capacity limits") || !strings.Contains(err.Error(), "256 operations") {
+	if err == nil || !strings.Contains(err.Error(), "default capacity limits") || !strings.Contains(err.Error(), "256 operations") ||
+		!strings.Contains(err.Error(), "which no deployment can raise") {
 		t.Fatalf("error %v", err)
+	}
+}
+
+// A plain YAML number as info.version is reported as written, and a JSON body
+// whose schema is null is refused as having no schema.
+func TestImportVersionAndNullSchema(t *testing.T) {
+	spec := "openapi: 3.1.0\ninfo:\n  title: t\n  version: 1.0\npaths:\n  /x:\n    post:\n      operationId: x\n      security: []\n" +
+		"      requestBody:\n        content:\n          application/json:\n            schema:\n"
+	_, report, err := Import([]byte(spec), YAML, testOptions())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.DescriptionVersion != "1.0" {
+		t.Errorf("description version %q, want 1.0", report.DescriptionVersion)
+	}
+	if len(report.Refused) != 1 || report.Refused[0].Code != CodeSchemaMissing {
+		t.Errorf("refused %+v, want one %s", report.Refused, CodeSchemaMissing)
 	}
 }
 
@@ -66,7 +85,7 @@ func TestExportResponses(t *testing.T) {
 		for method, raw := range item.(map[string]any) {
 			op, _ := raw.(map[string]any)
 			responses, _ := op["responses"].(map[string]any)
-			want := []string{"default", "400", "403", "429", "503"}
+			want := []string{"default", "400", "403", "429", "502", "503", "504"}
 			if security, _ := op["security"].([]any); len(security) > 0 {
 				want = append(want, "401")
 			}

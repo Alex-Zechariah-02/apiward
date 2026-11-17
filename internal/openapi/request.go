@@ -204,8 +204,9 @@ func (m *mapper) body(object map[string]any, pointer string, c *candidate, s *sc
 		c.maxBytes = m.options.MaxBodyBytes
 		c.assumed = append(c.assumed, Assumed{Operation: c.op.ID, Field: "body.max_bytes", Value: c.maxBytes})
 	}
-	schema, present := first["schema"]
-	if !present {
+	// A null schema ("schema:" with no value in YAML) is no schema either.
+	schema := first["schema"]
+	if schema == nil {
 		return refuse(CodeSchemaMissing, at+"/content/"+escape(types[0]), "The JSON request body has no schema; the gateway validates every JSON body against one.")
 	}
 	converted, refused := s.convert(schema, at+"/content/"+escape(types[0])+"/schema", "body.schema", 1, nil)
