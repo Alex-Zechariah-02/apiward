@@ -185,13 +185,18 @@ jobs:
       # The tests run in the runner image's Chrome (playwright.config.ts).
       # Failure traces hold page contents and test credentials, so they stay
       # on the machine that ran the tests and are not uploaded.
+      # Files are found by Playwright's own default pattern, nested folders
+      # too, so no test file falls outside every shard; a shard that selects
+      # nothing fails, since Playwright given no file would run them all.
       - run: |
           files=()
-          for file in e2e/*.spec.ts; do
+          mapfile -t found < <(find e2e -type f -regextype posix-extended -regex '.*\.(spec|test)\.[cm]?[jt]sx?' | sort)
+          for file in "${found[@]}"; do
             case " $SHARD1_FILES " in *" $file "*) listed=1 ;; *) listed= ;; esac
             case " $SHARD2_FILES " in *" $file "*) listed=2 ;; esac
             if [ "${listed:-3}" = "$SHARD" ]; then files+=("$file"); fi
           done
+          if [ "${#files[@]}" -eq 0 ]; then echo "shard $SHARD selected no test file" >&2; exit 1; fi
           npx playwright test "${files[@]}"
 
   deps:
