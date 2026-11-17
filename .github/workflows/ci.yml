@@ -180,8 +180,9 @@ jobs:
       - if: matrix.shard == 1
         run: go -C .. test -tags embedui ./internal/adminui -count=1
       # high: a high or critical advisory fails the job; lower ones go with the routine updates.
+      # audit.mjs lists each allowed advisory with its reason and end.
       - if: matrix.shard == 1
-        run: npm audit --audit-level=high
+        run: npm audit --json | node audit.mjs high
       # The tests run in the runner image's Chrome (playwright.config.ts).
       # Failure traces hold page contents and test credentials, so they stay
       # on the machine that ran the tests and are not uploaded.
