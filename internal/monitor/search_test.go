@@ -153,6 +153,18 @@ func TestSecurityLogSearch(t *testing.T) {
 		t.Errorf("damaged record: %+v", result)
 	}
 
+	// A path the writer cut is marked cut when read back, a whole one of
+	// the same length is not.
+	for _, cut := range []bool{true, false} {
+		line, _ := json.Marshal(audit.Event{ID: "e-cut", Kind: "request.rejected", RequestID: "cut", Stage: "ROUTE", Decision: "reject",
+			Status: 404, Method: "GET", Path: "/" + strings.Repeat("p", audit.MaxLoggedPath-1), Truncated: cut})
+		os.WriteFile(active, append(line, '\n'), 0o600)
+		result, err := Search(t.Context(), dir, []string{"audit.log"}, nil, Query{}, 100, PageScan)
+		if err != nil || len(result.Items) != 1 || result.Items[0].Truncated != cut {
+			t.Errorf("path cut %v read back as %+v (%v)", cut, result.Items, err)
+		}
+	}
+
 	for _, text := range []string{"", "!!", EncodeCursor(Cursor{File: "../audit.log"}), EncodeCursor(Cursor{File: "audit.log", Offset: -2})} {
 		if DecodeCursor(text) != nil {
 			t.Errorf("cursor %q accepted", text)

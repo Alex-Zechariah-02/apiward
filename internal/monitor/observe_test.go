@@ -65,6 +65,10 @@ func TestRecentObservationsMatchSnapshotFiltering(t *testing.T) {
 		{"one subject, one page", func(r *Observed) bool { return r.Subject != nil && *r.Subject == "user-3" }, 21},
 		{"refused before a cursor", func(r *Observed) bool { return r.Decision == "refused" && r.Sequence() < cursor }, 51},
 		{"nothing", func(r *Observed) bool { return r.RequestID == "absent" }, 5},
+		// With no limit, requests the filter skips before the first match
+		// end nothing: the newest one here is outside the window.
+		{"all but the newest, no limit", func(r *Observed) bool { return r.Sequence() != all[0].Sequence() }, 0},
+		{"older than a cursor, no limit", func(r *Observed) bool { return r.Sequence() < cursor }, 0},
 	} {
 		var want []Observed
 		for i := range all {

@@ -16,7 +16,7 @@ func (o *Observations) Recent(keep func(*Observed) bool, limit int) []Observed {
 		if keep(request) {
 			result = append(result, *request)
 		}
-		return len(result) != limit
+		return limit == 0 || len(result) < limit
 	})
 	return result
 }

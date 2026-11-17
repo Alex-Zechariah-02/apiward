@@ -46,6 +46,7 @@ type auditRequestRecord struct {
 	Error         string            `json:"error"`
 	Method        string            `json:"method"`
 	Path          string            `json:"path"`
+	Truncated     bool              `json:"path_truncated"`
 	Operation     string            `json:"operation"`
 	API           string            `json:"api"`
 	Subject       string            `json:"subject"`
