@@ -173,7 +173,7 @@ func (c *Controller) Publish(ctx context.Context, actor string, change Change) (
 	defer c.mu.Unlock()
 	now := compile.TrustedNow()
 	if c.store == nil || c.mode() != store.ModeNormal {
-		return c.unavailableOutcome(change.ID)
+		return c.unavailableOutcome(change.ID, actor)
 	}
 	t := store.TransitionRecord{
 		ID:       change.ID,
@@ -187,7 +187,7 @@ func (c *Controller) Publish(ctx context.Context, actor string, change Change) (
 		return result, status
 	}
 	if !c.settle(ctx, now, false) {
-		return c.unavailableOutcome(t.ID)
+		return c.unavailableOutcome(t.ID, t.Actor)
 	}
 
 	a, err := c.store.Load(ctx)

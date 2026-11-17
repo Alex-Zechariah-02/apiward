@@ -43,8 +43,6 @@ const (
 	maxSyncWindow        = 10 * time.Millisecond
 	minUpstreamTimeout   = time.Second
 	maxUpstreamTimeout   = 5 * time.Minute
-	minAuditTimeout      = 100 * time.Millisecond
-	maxAuditTimeout      = 30 * time.Second
 	defaultHeaderBytes   = 16 << 10
 	minHeaderBytes       = 8 << 10 // a token of maxTokenBytes and ordinary headers fit
 	maxHeaderBytes       = 1 << 20

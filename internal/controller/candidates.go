@@ -22,7 +22,7 @@ func (c *Controller) StageCandidate(ctx context.Context, t store.TransitionRecor
 	defer c.mu.Unlock()
 	now := compile.TrustedNow()
 	if !c.ready() {
-		return c.unavailableOutcome(t.ID)
+		return c.unavailableOutcome(t.ID, t.Actor)
 	}
 	if result, status, done := c.replay(ctx, t); done {
 		return result, status
@@ -71,7 +71,7 @@ func (c *Controller) WithdrawCandidate(ctx context.Context, t store.TransitionRe
 	defer c.mu.Unlock()
 	now := compile.TrustedNow()
 	if !c.ready() {
-		return c.unavailableOutcome(t.ID)
+		return c.unavailableOutcome(t.ID, t.Actor)
 	}
 	if result, status, done := c.replay(ctx, t); done {
 		return result, status

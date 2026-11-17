@@ -33,6 +33,7 @@ func controlError(code string) json.RawMessage {
 // The caller holds c.mu.
 func (c *Controller) replayControl(ctx context.Context, t store.TransitionRecord) (json.RawMessage, int, bool) {
 	if !c.ready() {
+		c.unavailableOutcome(t.ID, t.Actor)
 		return controlError("gateway_unavailable"), http.StatusServiceUnavailable, true
 	}
 	outcome, status, done := c.replay(ctx, t)
@@ -44,7 +45,7 @@ func (c *Controller) replayControl(ctx context.Context, t store.TransitionRecord
 	}
 	body, err := c.store.ControlResult(ctx, t.ID)
 	if err != nil {
-		c.logger.Error("reading control receipt", "error", err)
+		c.storeFailure(t.ID, err)
 		return controlError("gateway_unavailable"), http.StatusServiceUnavailable, true
 	}
 	return body, status, true

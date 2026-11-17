@@ -61,10 +61,10 @@ func (c *Controller) ValidateOverride(ctx context.Context, actor string, expecte
 	defer c.mu.Unlock()
 	now := compile.TrustedNow()
 	if !c.ready() {
-		return c.unavailableOutcome("")
+		return c.unavailableOutcome("", actor)
 	}
 	if c.mode() == store.ModeNormal && !c.settle(ctx, now, false) {
-		return c.unavailableOutcome("")
+		return c.unavailableOutcome("", actor)
 	}
 	a, err := c.store.Load(ctx)
 	if err != nil {
@@ -92,14 +92,14 @@ func (c *Controller) CreateOverride(ctx context.Context, t store.TransitionRecor
 	defer c.mu.Unlock()
 	now := compile.DeadlineNow()
 	if !c.ready() {
-		return c.unavailableOutcome(t.ID)
+		return c.unavailableOutcome(t.ID, t.Actor)
 	}
 	if result, status, done := c.replay(ctx, t); done {
 		return result, status
 	}
 	// Overrides that have expired by now no longer hold their targets.
 	if c.mode() == store.ModeNormal && !c.settle(ctx, now, false) {
-		return c.unavailableOutcome(t.ID)
+		return c.unavailableOutcome(t.ID, t.Actor)
 	}
 
 	a, err := c.store.Load(ctx)
@@ -129,7 +129,7 @@ func (c *Controller) RevokeOverride(ctx context.Context, t store.TransitionRecor
 	defer c.mu.Unlock()
 	now := compile.TrustedNow()
 	if !c.ready() {
-		return c.unavailableOutcome(t.ID)
+		return c.unavailableOutcome(t.ID, t.Actor)
 	}
 	if result, status, done := c.replay(ctx, t); done {
 		return result, status
@@ -137,7 +137,7 @@ func (c *Controller) RevokeOverride(ctx context.Context, t store.TransitionRecor
 	// An override whose expiry time has passed expires first, so a late
 	// revocation cannot replace its expiry.
 	if c.mode() == store.ModeNormal && !c.settle(ctx, now, false) {
-		return c.unavailableOutcome(t.ID)
+		return c.unavailableOutcome(t.ID, t.Actor)
 	}
 
 	a, err := c.store.Load(ctx)

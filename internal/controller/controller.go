@@ -200,16 +200,35 @@ func (c *Controller) Open() error {
 	if err != nil {
 		return err
 	}
-	c.ownership = ownership
 	st, err := store.OpenStore(cfg.Database)
 	if err != nil && !errors.Is(err, store.ErrUnavailable) {
 		ownership.Close()
 		return err
 	}
-	c.audit = audit.OpenAudit(cfg.AuditLog, audit.Settings{MaxBytes: cfg.AuditMaxBytes, MaxFiles: cfg.AuditMaxFiles, WhenFull: cfg.AuditWhenFull, Queue: cfg.AuditQueue, Window: cfg.AuditSyncWindow, Append: cfg.AuditAppend})
+	log := audit.OpenAudit(cfg.AuditLog, audit.Settings{MaxBytes: cfg.AuditMaxBytes, MaxFiles: cfg.AuditMaxFiles, WhenFull: cfg.AuditWhenFull, Queue: cfg.AuditQueue, Window: cfg.AuditSyncWindow, Append: cfg.AuditAppend})
 
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	// A stop that began while the files were opened wins: nothing is
+	// published. Its shutdown closes what Open opened, or Open closes it when
+	// that shutdown has already run.
+	if c.stopping {
+		if c.state.Load() != stateStopped {
+			c.ownership, c.audit = ownership, log
+			if err == nil {
+				c.store = st
+			}
+			return errors.New("controller stopped")
+		}
+		drain, cancel := context.WithTimeout(context.Background(), audit.AuditDrainWait)
+		defer cancel()
+		closed := []error{errors.New("controller stopped"), log.Close(drain), ownership.Close()}
+		if err == nil {
+			closed = append(closed, st.Close())
+		}
+		return errors.Join(closed...)
+	}
+	c.ownership, c.audit = ownership, log
 	if err != nil {
 		c.unavailable("store_unavailable", err.Error())
 		return nil

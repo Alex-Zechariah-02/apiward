@@ -16,9 +16,13 @@ import (
 // file check applies too.
 const (
 	DefaultAuditWait = 2 * time.Second
-	MinAuditBytes    = 4 << 10
-	MaxAuditBytes    = 1 << 30
-	MaxAuditFiles    = 1000
+	// The audit wait is taken under the controller's lock, so its maximum
+	// bounds how long one mutation can hold every other one and a stop.
+	MinAuditWait  = 100 * time.Millisecond
+	MaxAuditWait  = 30 * time.Second
+	MinAuditBytes = 4 << 10
+	MaxAuditBytes = 1 << 30
+	MaxAuditFiles = 1000
 	// History bounds: 100 revisions keep every rollback made by hand in
 	// reach; 100,000 at the 64 KiB policy ceiling is 6.5 GiB of documents.
 	DefaultHistory  = 1000
@@ -79,6 +83,9 @@ func (cfg *Config) applyDefaults() error {
 	var err error
 	if cfg.Limits, err = cfg.Limits.Resolve(); err != nil {
 		return err
+	}
+	if cfg.AuditTimeout < MinAuditWait || cfg.AuditTimeout > MaxAuditWait {
+		return fmt.Errorf("audit_timeout must be %s to %s", MinAuditWait, MaxAuditWait)
 	}
 	if cfg.AuditMaxBytes < MinAuditBytes || cfg.AuditMaxBytes > MaxAuditBytes {
 		return fmt.Errorf("audit_max_bytes must be %d to %d", MinAuditBytes, MaxAuditBytes)

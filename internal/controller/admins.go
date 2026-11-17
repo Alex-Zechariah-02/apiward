@@ -25,7 +25,7 @@ func (c *Controller) Enrol(ctx context.Context, e store.Enrolment, passwordHash 
 	// uniquely and fit the transition ID cap.
 	t := store.TransitionRecord{ID: "enrol:" + e.Secret[:32], Kind: "admin.enrol", Actor: e.Name, Target: e.Name, Digest: e.Secret}
 	if !c.ready() {
-		return c.unavailableOutcome(t.ID)
+		return c.unavailableOutcome(t.ID, t.Actor)
 	}
 	if err := c.commitAudit(ctx, audit.Event{Kind: "transition.intent", Transition: t.ID, Actor: e.Name}); err != nil {
 		return auditUnavailable(t.ID)
@@ -60,7 +60,7 @@ func (c *Controller) ChangePassword(ctx context.Context, admin store.Administrat
 		Digest: "password",
 	}
 	if !c.ready() {
-		return c.unavailableOutcome(t.ID)
+		return c.unavailableOutcome(t.ID, t.Actor)
 	}
 	if err := c.commitAudit(ctx, audit.Event{Kind: "transition.intent", Transition: t.ID, Actor: admin.Name}); err != nil {
 		return auditUnavailable(t.ID)

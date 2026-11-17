@@ -133,6 +133,10 @@ func TestStoppedControllerRefuses(t *testing.T) {
 	if _, status := c.WithdrawCandidate(t.Context(), refused, 1); status != http.StatusServiceUnavailable {
 		t.Fatalf("a mutation during the stop answered %d, want 503", status)
 	}
+	block := store.TransitionRecord{ID: "block-during-stop", Actor: "admin", Target: "cust-001"}
+	if _, status := c.Block(t.Context(), block, "test"); status != http.StatusServiceUnavailable {
+		t.Fatalf("a control change during the stop answered %d, want 503", status)
+	}
 	if err := c.Stop(); err != nil {
 		t.Fatal(err)
 	}
@@ -140,7 +144,10 @@ func TestStoppedControllerRefuses(t *testing.T) {
 		t.Fatalf("Open after Stop: %v, generation %v", err, c.Current())
 	}
 	data, err := os.ReadFile(filepath.Join(e.dir, "audit.log"))
-	if err != nil || !bytes.Contains(data, []byte(`"transition":"withdraw-during-stop","reason":"UNAVAILABLE"`)) {
-		t.Fatalf("no record of the refused mutation (%v)", err)
+	// Each refusal names the administrator who asked, control changes too.
+	for _, id := range []string{"withdraw-during-stop", "block-during-stop"} {
+		if err != nil || !bytes.Contains(data, []byte(`"actor":"admin","transition":"`+id+`","reason":"UNAVAILABLE"`)) {
+			t.Fatalf("no record of the refused mutation %s (%v):\n%s", id, err, data)
+		}
 	}
 }

@@ -32,7 +32,7 @@ var exported = []string{
 	"Controller.Stop", "Controller.StopWithin", "Controller.Unblock", "Controller.UnblockAddress",
 	"Controller.ValidateOverride", "Controller.Verifier", "Controller.WithdrawCandidate",
 	"DefaultAuditWait", "DefaultHistory", "DefaultIdle", "DefaultIgnoredReads", "DefaultLifetime", "MaxAuditBytes", "MaxAuditFiles",
-	"MaxHistory", "MaxSession", "MinAuditBytes", "MinHistory", "MinSession", "Outcome", "OverrideRequest", "Prepare", "ShutdownWait",
+	"MaxAuditWait", "MaxHistory", "MaxSession", "MinAuditBytes", "MinAuditWait", "MinHistory", "MinSession", "Outcome", "OverrideRequest", "Prepare", "ShutdownWait",
 }
 
 // A new exported name is a new way into the authority, so it is listed here

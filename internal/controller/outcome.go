@@ -74,10 +74,11 @@ type Outcome struct {
 }
 
 // unavailableOutcome refuses a mutation the controller cannot process now (no
-// database, or a stop has begun) and records the refusal; once the security
-// log has closed, the record is counted as lost.
-func (c *Controller) unavailableOutcome(id string) (Outcome, int) {
-	c.audit.Record(audit.Event{Kind: "transition.rejected", Transition: id, Reason: "UNAVAILABLE"})
+// database, or a stop has begun) and records the refusal with the
+// administrator who asked; once the security log has closed, the record is
+// counted as lost.
+func (c *Controller) unavailableOutcome(id, actor string) (Outcome, int) {
+	c.audit.Record(audit.Event{Kind: "transition.rejected", Transition: id, Actor: actor, Reason: "UNAVAILABLE"})
 	return Outcome{Transition: id, Outcome: "rejected", Reason: "UNAVAILABLE"}, http.StatusServiceUnavailable
 }
 
