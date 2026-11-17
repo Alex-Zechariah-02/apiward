@@ -30,6 +30,15 @@ paths:
       parameters:
         - name: X-A
           in: 1
+  /parameters-object:
+    get:
+      operationId: parametersObject
+      parameters:
+        name: X-A
+        in: header
+        required: true
+        schema:
+          type: string
   /a/{x}:
     get:
       operationId: collideA

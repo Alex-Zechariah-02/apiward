@@ -204,6 +204,19 @@
         ]
       }
     },
+    "/parameters-object": {
+      "get": {
+        "operationId": "parametersObject",
+        "parameters": {
+          "in": "header",
+          "name": "X-A",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      }
+    },
     "/a/{x}": {
       "get": {
         "operationId": "collideA"

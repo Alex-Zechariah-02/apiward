@@ -174,6 +174,7 @@ func TestImportOpenAPI(t *testing.T) {
 			"POST /no-schema":        {CodeSchemaMissing, "#/paths/~1no-schema/post/requestBody/content/application~1json"},
 			"GET /mistyped-required": {CodeKeyword, "#/paths/~1mistyped-required/get/parameters/0"},
 			"GET /mistyped-in":       {CodeKeyword, "#/paths/~1mistyped-in/get/parameters/0"},
+			"GET /parameters-object": {CodeKeyword, "#/paths/~1parameters-object/get/parameters"},
 		}
 		got := map[string][2]string{}
 		for _, r := range report.Refused {

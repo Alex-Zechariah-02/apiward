@@ -95,7 +95,11 @@ func (m *mapper) parameters(item, object map[string]any, itemPointer, pointer st
 		list    any
 		pointer string
 	}{{item["parameters"], itemPointer + "/parameters"}, {object["parameters"], pointer + "/parameters"}} {
-		list, _ := level.list.([]any)
+		list, isList := level.list.([]any)
+		// Any other value would read as no parameters, dropping their checks silently.
+		if level.list != nil && !isList {
+			return refuse(CodeKeyword, level.pointer, "parameters must be a list.")
+		}
 		for i, raw := range list {
 			at := located(raw, level.pointer+"/"+strconv.Itoa(i))
 			node, refused := follow(m.root, raw, at)
