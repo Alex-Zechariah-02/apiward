@@ -138,6 +138,9 @@ func TestAdminSessions(t *testing.T) {
 			t.Fatalf("session after the idle timeout: %d", code)
 		}
 
+		// The session starts while the sign-in is answered: its end lies
+		// between 4 s after the sign-in was sent and 4 s after it returned.
+		sent := time.Now()
 		active := e.MustLogin(gatewaytest.HarnessAdmin, gatewaytest.HarnessPassword)
 		started := time.Now()
 		for {
@@ -147,8 +150,8 @@ func TestAdminSessions(t *testing.T) {
 			if code == http.StatusOK && elapsed < 4*time.Second {
 				continue
 			}
-			if code != http.StatusUnauthorized || elapsed < 3800*time.Millisecond {
-				t.Fatalf("after %s of activity: %d", elapsed, code)
+			if code != http.StatusUnauthorized || time.Since(sent) < 3800*time.Millisecond {
+				t.Fatalf("after %s of activity (%s since the sign-in was sent): %d", elapsed, time.Since(sent), code)
 			}
 			break
 		}
