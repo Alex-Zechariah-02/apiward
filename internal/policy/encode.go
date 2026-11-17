@@ -14,15 +14,29 @@ import (
 // methodOrder is the order the OpenAPI Specification lists methods in.
 var methodOrder = []string{"GET", "PUT", "POST", "DELETE", "OPTIONS", "HEAD", "PATCH"}
 
-// Encode returns the canonical form of p: 2-space JSON with members in
-// struct order and a trailing newline; upstreams, APIs and roles sorted by
-// id; operations by API, target and method; permits by role and operation.
-// Schemas have their members sorted and each "required" list sorted;
-// condition hosts are sorted, header conditions sorted by canonical name;
-// an API's origins, methods and address ranges are sorted and its header
-// names sorted in canonical form. The
-// input is not changed. It fails only on a schema that is not valid JSON.
+// Encode returns the canonical form of p (Canonical) as 2-space JSON with
+// members in struct order and a trailing newline. The input is not changed.
+// It fails only on a schema that is not valid JSON.
 func Encode(p Policy) ([]byte, error) {
+	out, err := Canonical(p)
+	if err != nil {
+		return nil, err
+	}
+	document, err := json.MarshalIndent(out, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+	return append(document, '\n'), nil
+}
+
+// Canonical returns a copy of p in which an order that enforcement ignores is
+// fixed: upstreams, APIs and roles sorted by id; operations by API, target
+// and method; permits by role and operation. Schemas have their members
+// sorted and each "required" list sorted; condition hosts are sorted, header
+// conditions sorted by canonical name; an API's origins, methods and address
+// ranges are sorted and its header names sorted in canonical form. It fails
+// only on a schema that is not valid JSON.
+func Canonical(p Policy) (Policy, error) {
 	out := p
 	out.Upstreams = sorted(p.Upstreams, func(a, b Upstream) int { return strings.Compare(a.ID, b.ID) })
 	out.APIs = sorted(p.APIs, func(a, b API) int { return strings.Compare(a.ID, b.ID) })
@@ -37,12 +51,12 @@ func Encode(p Policy) ([]byte, error) {
 	for i, op := range p.Operations {
 		var err error
 		if op.Headers, err = canonicalSchema(op.Headers); err != nil {
-			return nil, err
+			return Policy{}, err
 		}
 		if op.Body != nil {
 			body := *op.Body
 			if body.Schema, err = canonicalSchema(body.Schema); err != nil {
-				return nil, err
+				return Policy{}, err
 			}
 			op.Body = &body
 		}
@@ -53,11 +67,7 @@ func Encode(p Policy) ([]byte, error) {
 		return cmp.Or(strings.Compare(a.API, b.API), strings.Compare(a.Target, b.Target),
 			cmp.Compare(methodRank(a.Method), methodRank(b.Method)), strings.Compare(a.ID, b.ID))
 	})
-	document, err := json.MarshalIndent(out, "", "  ")
-	if err != nil {
-		return nil, err
-	}
-	return append(document, '\n'), nil
+	return out, nil
 }
 
 // canonicalAPI returns a copy whose lists are sorted and header names

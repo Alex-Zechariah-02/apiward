@@ -84,15 +84,17 @@ func compileAddresses(ranges []string, i int) ([]netip.Prefix, error) {
 func checkAPIs(p policy.Policy, apis map[string]*apiRule, rules map[string]*Rule) error {
 	for i, a := range p.APIs {
 		api := apis[a.ID]
-		methods, public := map[string]bool{}, true
+		methods, public, chosen := map[string]bool{}, true, false
 		for _, op := range p.Operations {
 			if op.API != a.ID {
 				continue
 			}
 			methods[op.Method] = true
 			public = public && op.Auth == "none"
-			if api.preflight == nil && op.Auth == "none" {
-				api.preflight = rules[op.ID].rate
+			// The first public operation decides, also when it has no rate:
+			// a nil rule then means preflights are not counted.
+			if !chosen && op.Auth == "none" {
+				api.preflight, chosen = rules[op.ID].rate, true
 			}
 		}
 		if api.cors == nil {

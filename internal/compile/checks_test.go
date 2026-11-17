@@ -1,5 +1,6 @@
 // Policy count checks against the deployment's capacity limits, the deny-all
-// test, publication warnings and repeated question headers.
+// test, publication warnings, repeated question headers and the preflight
+// rate rule's choice.
 
 package compile
 
@@ -75,5 +76,28 @@ func TestWarnings(t *testing.T) {
 func TestQuestionRepeatedHeader(t *testing.T) {
 	if _, field := NewQuestion("GET", "/a", "", map[string]string{"X-Tenant": "a", "x-tenant": "b"}, nil); field != "headers" {
 		t.Fatalf("refused field %q, want headers", field)
+	}
+}
+
+// The first public operation decides an API's preflight rule: without a rate
+// of its own, preflights are not counted, even when a later one has a rate.
+func TestPreflightRateFirstPublic(t *testing.T) {
+	counted := &policy.RateRule{Algorithm: "sliding-window", Count: 4, WindowSeconds: 60, Key: "client_address"}
+	g, err := Compile(policy.Policy{
+		SchemaVersion: policy.LatestSchemaVersion, Profile: policy.ProfileCore,
+		Upstreams: []policy.Upstream{{ID: "u", Dial: "127.0.0.1:9"}},
+		APIs:      []policy.API{{ID: "a", Upstream: "u"}},
+		Operations: []policy.Operation{
+			{ID: "plain", API: "a", Method: "GET", Target: "/plain", Access: "allow", Auth: "none"},
+			{ID: "counted", API: "a", Method: "GET", Target: "/counted", Access: "allow", Auth: "none", Rate: counted},
+		},
+	}, 1, time.Time{}, policy.Limits{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, rule := range g.Rules() {
+		if limit := rule.PreflightRate(); limit != nil {
+			t.Fatalf("%s: preflight rule %+v, want none (the first public operation has no rate)", rule.Operation(), limit)
+		}
 	}
 }

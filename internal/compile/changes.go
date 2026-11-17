@@ -27,8 +27,15 @@ func PolicyChanges(before, after policy.Policy) []ControlChange {
 		data, _ := json.Marshal(value)
 		return string(data)
 	}
-	// collect maps each control to its targets and their definitions.
+	// collect maps each control to its targets and their definitions, in the
+	// canonical form, so an order enforcement ignores (a list inside an API,
+	// a schema's members) is not a change. Canonical fails only on a schema
+	// that is not JSON, which DecodePolicy never accepts; such a policy is
+	// compared as written.
 	collect := func(p policy.Policy) map[string]map[string]string {
+		if canonical, err := policy.Canonical(p); err == nil {
+			p = canonical
+		}
 		d := map[string]map[string]string{"upstream": {}, "api": {}, "operation": {}, "rate": {}, "role": {}, "permit": {}}
 		for _, u := range p.Upstreams {
 			d["upstream"][u.ID] = encode(u)
