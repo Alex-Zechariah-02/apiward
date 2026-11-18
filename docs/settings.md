@@ -23,7 +23,8 @@ The JSON settings file that `apiward run --config <file>` reads. Upstream TLS pr
 
 ### Overload limits
 
-- Overload is bounded on the data listener: at most `data.max_connections` open connections (default 1,024; one more is accepted and closed at once, counted in `gateway_connections_refused_total`) and `data.max_in_flight` requests inside enforcement (default 256; one more is answered `503 overloaded` with `Retry-After: 1` before any token check, and recorded at `INGRESS`).
+- Overload is bounded on the data listener: at most `data.max_connections` open connections (default 1,024; one more is accepted and closed at once, counted in `gateway_connections_refused_total`) and `data.max_in_flight` requests inside enforcement (default 1,024, as Envoy's per-upstream request limit; one more is answered `503 overloaded` with `Retry-After: 1` before any token check, and recorded at `INGRESS`).
+- Each request in flight holds about 140 KiB, so the default bounds overload memory to about 140 MiB (reached only when about a thousand requests wait at once, for example behind a stalled upstream); on a host with little memory lower `data.max_in_flight` and `upstream.max_idle_per_upstream` together. With 256 a one-core host refused requests from about 90 % CPU; with 1,024 only past its CPU limit.
 - A request body is read completely before the request takes an in-flight place, so a slow upload holds only its own connection: at most `data.max_body_bytes` (default 16 KiB, up to 1 MiB; a larger body is answered `413` at `INGRESS`) within `data.read_timeout`.
 - The 16 KiB default is four times the largest Fetch request body; nginx defaults to 1 MiB, Kong and Traefik set no ceiling. Raise it only for APIs whose bodies need it.
 - A connection reads one request body at a time, also across its HTTP/2 streams; another upload on the same connection waits its turn.

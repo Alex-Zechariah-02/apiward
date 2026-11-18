@@ -18,14 +18,16 @@ import (
 
 // DefaultMaxBody is the global request body ceiling when none is set: four
 // times the largest Fetch request body, and small enough that the in-flight
-// cap bounds buffered bodies to a few MiB. nginx defaults to 1 MiB; Kong and
+// cap bounds buffered bodies to 16 MiB. nginx defaults to 1 MiB; Kong and
 // Traefik set no ceiling. policy.MaxBodyLimit (1 MiB) bounds the setting.
 const DefaultMaxBody = 16 << 10
 
 // DefaultMaxInFlight bounds the requests inside enforcement at once. On one
 // vCPU, up to 500 requests in flight raised resident memory by about 70 MiB
-// (about 140 KiB each), so the default bounds overload to about 35 MiB.
-const DefaultMaxInFlight = 256
+// (about 140 KiB each), so the default bounds overload to about 140 MiB. With
+// 256 a one-core host refused from about 90 % CPU; with 1,024, as Envoy's
+// per-upstream request limit, only past the CPU's limit.
+const DefaultMaxInFlight = 1024
 
 // DefaultIPv6RatePrefix is the prefix an IPv6 client's rate key is masked
 // to: one /64 is what a single subscriber is usually given, so a client

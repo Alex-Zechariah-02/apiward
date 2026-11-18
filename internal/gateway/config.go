@@ -61,14 +61,17 @@ const (
 	defaultMaxConnections = 1024
 	maxConnectionsLimit   = 65536
 	maxInFlightLimit      = 65536
-	defaultMaxIdle        = 16
-	defaultEjectAfter     = 5 // Envoy outlier detection's consecutive_5xx default
-	maxEjectAfter         = 1000
-	maxIdlePerUpstream    = 1024
-	defaultIdleConn       = 30 * time.Second
-	defaultSessionLife    = time.Hour
-	minSessionLife        = time.Minute
-	maxSessionLife        = 24 * time.Hour
+	// Equal to data.max_in_flight's default, so while that cap holds a
+	// returned connection is never closed for lack of room: closing them
+	// made the gateway redial mutual TLS hundreds of times a second.
+	defaultMaxIdle     = 1024
+	defaultEjectAfter  = 5 // Envoy outlier detection's consecutive_5xx default
+	maxEjectAfter      = 1000
+	maxIdlePerUpstream = 1024
+	defaultIdleConn    = 30 * time.Second
+	defaultSessionLife = time.Hour
+	minSessionLife     = time.Minute
+	maxSessionLife     = 24 * time.Hour
 )
 
 // nativeFile is the configuration file as written. A setting that may be

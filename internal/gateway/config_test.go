@@ -87,7 +87,7 @@ func TestNativeConfigSettings(t *testing.T) {
 			AuditMaxBytes:        64 << 20,
 			AuditMaxFiles:        8,
 			HistoryKeep:          1000,
-			AuditQueue:           1024,
+			AuditQueue:           4096, // four places per in-flight request (audit.QueueSize)
 			JWT:                  gatewaytest.TestTrust("issuer", "gateway", filepath.Join(dir, "issuer.pem")),
 			Network:              closed,
 			Limits:               policy.Limits{PolicyBytes: 64 << 10, APIs: 64, Operations: 256, Roles: 64, Permits: 4096, RateCounters: 262144, Window: 10000},
@@ -95,7 +95,7 @@ func TestNativeConfigSettings(t *testing.T) {
 		listen:            "127.0.0.2:9480",
 		metricsListen:     "127.0.0.1:9450",
 		identityKey:       filepath.Join(dir, "identity.pem"),
-		limits:            pipeline.Limits{MaxBodyBytes: 16 << 10, MaxInFlight: 256, IPv6RatePrefix: 64},
+		limits:            pipeline.Limits{MaxBodyBytes: 16 << 10, MaxInFlight: 1024, IPv6RatePrefix: 64},
 		maxConnections:    1024,
 		http2:             true,
 		headerLimit:       16 << 10,
@@ -105,7 +105,7 @@ func TestNativeConfigSettings(t *testing.T) {
 		idleTimeout:       5 * time.Minute,
 		shutdownGrace:     5 * time.Second,
 		upstream:          forward.UpstreamTimeouts{Dial: 2 * time.Second, ResponseHeader: 5 * time.Second, ReadIdle: 5 * time.Second},
-		pool:              forward.PoolSettings{MaxIdle: 16, IdleTimeout: 30 * time.Second, EjectAfter: 5},
+		pool:              forward.PoolSettings{MaxIdle: 1024, IdleTimeout: 30 * time.Second, EjectAfter: 5},
 		file:              written,
 		sessionLife:       time.Hour,
 	}

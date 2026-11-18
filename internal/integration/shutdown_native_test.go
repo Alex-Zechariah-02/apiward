@@ -14,6 +14,7 @@ import (
 
 	"github.com/Alex-Zechariah-02/apiward/internal/audit"
 	"github.com/Alex-Zechariah-02/apiward/internal/gatewaytest"
+	"github.com/Alex-Zechariah-02/apiward/internal/pipeline"
 )
 
 // draining returns the pending count of the gateway's drain line, or -1.
@@ -92,7 +93,7 @@ func TestNativeStopDrainsQueuedEvents(t *testing.T) {
 		lost   int
 	}{
 		{"events behind a held writer", 300, 0},
-		{"more events than refusals may queue", audit.RecordRoom(audit.AuditQueueSize) + 10, 10},
+		{"more events than refusals may queue", audit.RecordRoom(audit.QueueSize(pipeline.DefaultMaxInFlight)) + 10, 10},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			e := gatewaytest.NewEnv(t)
