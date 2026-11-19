@@ -4,8 +4,7 @@ package operator
 
 import (
 	"bytes"
-	"crypto/ecdsa"
-	"crypto/elliptic"
+	"crypto/ed25519"
 	"crypto/x509"
 	"encoding/pem"
 	"os"
@@ -13,7 +12,7 @@ import (
 	"testing"
 )
 
-// Install writes a P-256 PKCS #8 key once and keeps a key already there.
+// Install writes an Ed25519 PKCS #8 key once and keeps a key already there.
 func TestInstallIdentityKey(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "identity.pem")
 	if created, err := createIdentityKey(path); !created || err != nil {
@@ -28,7 +27,7 @@ func TestInstallIdentityKey(t *testing.T) {
 		t.Fatalf("key file %q", data)
 	}
 	key, err := x509.ParsePKCS8PrivateKey(block.Bytes)
-	if ecdsa, ok := key.(*ecdsa.PrivateKey); err != nil || !ok || ecdsa.Curve != elliptic.P256() {
+	if _, ok := key.(ed25519.PrivateKey); err != nil || !ok {
 		t.Fatalf("key %T: %v", key, err)
 	}
 	if created, err := createIdentityKey(path); created || err != nil {

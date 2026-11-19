@@ -4,8 +4,7 @@
 package operator
 
 import (
-	"crypto/ecdsa"
-	"crypto/elliptic"
+	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/x509"
 	"encoding/pem"
@@ -17,7 +16,7 @@ import (
 	"github.com/Alex-Zechariah-02/apiward/internal/filecheck"
 )
 
-// createIdentityKey writes a new ECDSA P-256 key as one PKCS #8 PEM block,
+// createIdentityKey writes a new Ed25519 key as one PKCS #8 PEM block,
 // readable only by its owner, at path unless a file is already there (an
 // operator's own key is kept). It reports whether it wrote one; an empty
 // path (signing turned off) writes nothing.
@@ -28,7 +27,7 @@ func createIdentityKey(path string) (bool, error) {
 	if _, err := os.Lstat(path); !errors.Is(err, fs.ErrNotExist) {
 		return false, err
 	}
-	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	_, key, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		return false, err
 	}
