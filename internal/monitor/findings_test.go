@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Alex-Zechariah-02/apiward/internal/audit"
 	"github.com/Alex-Zechariah-02/apiward/internal/compile"
 	"github.com/Alex-Zechariah-02/apiward/internal/policy"
 )
@@ -57,10 +58,6 @@ func TestConfigurationWarnings(t *testing.T) {
 	if !slices.Equal(got, want) {
 		t.Errorf("host listener: warnings %v, want %v", got, want)
 	}
-}
-
-func observed(at time.Time, decision, operation string, roles ...string) Observed {
-	return Observed{RequestView: RequestView{Time: at, Decision: decision, Operation: &operation, Roles: roles}}
 }
 
 // Permission use is read from the security log files, newest first, within
@@ -127,28 +124,41 @@ func TestUnusedPermissions(t *testing.T) {
 }
 
 // A refusal spike needs enough refusals and a sharp rise over the period
-// before; steady refusals are not a spike.
+// before; steady refusals are not a spike. A window that has dropped
+// requests from inside the period before withholds the rule.
 func TestRefusalSpike(t *testing.T) {
 	now := time.Date(2026, 11, 2, 12, 0, 0, 0, time.UTC)
-	burst := func(count int, decision string, from, span time.Duration) []Observed {
-		var out []Observed
+	burst := func(count int, decision string, from, span time.Duration) []audit.Event {
+		var out []audit.Event
 		for n := range count {
-			out = append(out, observed(now.Add(-from+span*time.Duration(n)/time.Duration(count)), decision, "read"))
+			recorded := "forwarded"
+			if decision == "refused" {
+				recorded = "reject"
+			}
+			out = append(out, audit.Event{Time: now.Add(-from + span*time.Duration(n)/time.Duration(count)), Decision: recorded, Status: 200})
 		}
 		return out
 	}
 	for _, tc := range []struct {
 		name   string
-		events []Observed
+		window int
+		events []audit.Event
 		spike  bool
 	}{
-		{"quiet before, a burst now", burst(25, "refused", 50*time.Second, 40*time.Second), true},
-		{"below the minimum", burst(19, "refused", 50*time.Second, 40*time.Second), false},
-		{"steady refusals", append(burst(300, "refused", 15*time.Minute, 14*time.Minute), burst(25, "refused", 50*time.Second, 40*time.Second)...), false},
-		{"mostly allowed now", append(burst(25, "refused", 50*time.Second, 40*time.Second), burst(100, "allowed", 50*time.Second, 40*time.Second)...), false},
-		{"rise over allowed traffic", append(append(burst(300, "allowed", 15*time.Minute, 14*time.Minute), burst(5, "refused", 10*time.Minute, time.Minute)...), burst(30, "refused", 50*time.Second, 40*time.Second)...), true},
+		{"quiet before, a burst now", 1000, burst(25, "refused", 50*time.Second, 40*time.Second), true},
+		{"below the minimum", 1000, burst(19, "refused", 50*time.Second, 40*time.Second), false},
+		{"steady refusals", 1000, append(burst(300, "refused", 15*time.Minute, 14*time.Minute), burst(25, "refused", 50*time.Second, 40*time.Second)...), false},
+		{"mostly allowed now", 1000, append(burst(25, "refused", 50*time.Second, 40*time.Second), burst(100, "allowed", 50*time.Second, 40*time.Second)...), false},
+		{"rise over allowed traffic", 1000, append(append(burst(300, "allowed", 15*time.Minute, 14*time.Minute), burst(5, "refused", 10*time.Minute, time.Minute)...), burst(30, "refused", 50*time.Second, 40*time.Second)...), true},
+		{"a burst after the window dropped part of the period before", 100, append(burst(300, "refused", 15*time.Minute, 14*time.Minute), burst(25, "refused", 50*time.Second, 40*time.Second)...), false},
+		{"dropped requests older than the period before", 100, append(burst(300, "allowed", 30*time.Minute, time.Minute), burst(25, "refused", 50*time.Second, 40*time.Second)...), true},
 	} {
-		if got := RefusalSpike(tc.events, now) != nil; got != tc.spike {
+		o := New(tc.window, 1)
+		slices.SortFunc(tc.events, func(a, b audit.Event) int { return a.Time.Compare(b.Time) })
+		for _, event := range tc.events {
+			o.Record(event)
+		}
+		if got := RefusalSpike(o, now) != nil; got != tc.spike {
 			t.Errorf("%s: spike %t, want %t", tc.name, got, tc.spike)
 		}
 	}

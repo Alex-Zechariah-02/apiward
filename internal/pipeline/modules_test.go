@@ -81,11 +81,11 @@ func init() {
 
 type fixedAuthority struct{ g *compile.Generation }
 
-func (f fixedAuthority) Current() *compile.Generation     { return f.g }
-func (fixedAuthority) Expired(*compile.Generation)        {}
-func (fixedAuthority) Verifier() *Verifier                { return nil }
-func (fixedAuthority) Blocked() *store.BlockedAccounts    { return &store.BlockedAccounts{} }
-func (fixedAuthority) Addresses() *store.BlockedAddresses { return nil }
+func (f fixedAuthority) Current() *compile.Generation    { return f.g }
+func (fixedAuthority) Expired(*compile.Generation)       {}
+func (fixedAuthority) Verifier() *Verifier               { return nil }
+func (fixedAuthority) Blocked() *store.BlockedAccounts   { return &store.BlockedAccounts{} }
+func (fixedAuthority) AddressIndex() *store.AddressIndex { return nil }
 
 // serve compiles a policy whose public endpoint GET /a/x has the given module
 // members, sends one request and returns the answer, whether it was

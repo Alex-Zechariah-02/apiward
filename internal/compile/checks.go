@@ -17,7 +17,7 @@ import (
 func checkCounts(p policy.Policy, limits policy.Limits) error {
 	limits, err := limits.Resolve()
 	if err != nil {
-		return policy.Invalid("LIMIT_EXCEEDED", "")
+		return policy.Invalid("LIMITS_INVALID", "")
 	}
 	counts := []struct {
 		field string

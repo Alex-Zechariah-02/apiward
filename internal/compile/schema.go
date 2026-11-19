@@ -45,7 +45,9 @@ func CompileSchema(raw json.RawMessage, kind schemaKind, field string) (*jsonsch
 	if len(raw) == 0 {
 		return nil, nil, policy.Invalid("INVALID_VALUE", "%s", field)
 	}
-	document, reason := policy.DecodeJSON(raw)
+	// A schema has its own depth budget (policy.MaxSchemaDepth), as the
+	// policy's member scan gives it.
+	document, reason := policy.DecodeBounded(raw, policy.MaxSchemaDepth, policy.MaxJSONValues)
 	if reason != "" {
 		return nil, nil, policy.Invalid("SCHEMA_INVALID", "%s", field)
 	}
@@ -79,7 +81,13 @@ func CompileSchema(raw json.RawMessage, kind schemaKind, field string) (*jsonsch
 // result, which is read-only: OpenAPI imports repeat a shared component in
 // every operation that uses it, and compiling a schema costs about 37 KB and
 // 0.15 ms, most of it the library's metaschema check.
-type schemaSet map[string]compiledSchema
+type schemaSet map[schemaKey]compiledSchema
+
+// schemaKey is a schema's kind and compact JSON text.
+type schemaKey struct {
+	kind schemaKind
+	text string
+}
 
 type compiledSchema struct {
 	schema *jsonschema.Schema
@@ -89,16 +97,17 @@ type compiledSchema struct {
 // compile returns raw compiled as CompileSchema would, reusing an earlier
 // result for the same kind and the same compact JSON text.
 func (set schemaSet) compile(raw json.RawMessage, kind schemaKind, field string) (*jsonschema.Schema, map[string]any, error) {
-	key := bytes.NewBuffer([]byte{byte(kind)}) // #nosec G115 -- kind is one of a few small constants
-	if json.Compact(key, raw) != nil {
+	var compact bytes.Buffer
+	if json.Compact(&compact, raw) != nil {
 		return CompileSchema(raw, kind, field)
 	}
-	if c, ok := set[key.String()]; ok {
+	key := schemaKey{kind: kind, text: compact.String()}
+	if c, ok := set[key]; ok {
 		return c.schema, c.root, nil
 	}
 	schema, root, err := CompileSchema(raw, kind, field)
 	if err == nil {
-		set[key.String()] = compiledSchema{schema: schema, root: root}
+		set[key] = compiledSchema{schema: schema, root: root}
 	}
 	return schema, root, err
 }
@@ -197,7 +206,7 @@ func checkHeaderSchema(root map[string]any, field string) error {
 		if !isHeaderName(name) || IsGatewayHeader(name) || unforwardedHeaders[name] {
 			return policy.Invalid("INVALID_VALUE", "%s", path)
 		}
-		if value.(map[string]any)["type"] != "string" {
+		if property, ok := value.(map[string]any); !ok || property["type"] != "string" {
 			return policy.Invalid("INVALID_VALUE", "%s.type", path)
 		}
 	}

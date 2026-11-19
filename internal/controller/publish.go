@@ -87,12 +87,6 @@ func (c *Controller) publish(ctx context.Context, t store.TransitionRecord, poli
 		code, field := policyRejection(err)
 		return c.reject(ctx, t, code, field, now)
 	}
-	effective, err := applyOverrides(policy, overrides)
-	if err != nil {
-		code, field := policyRejection(err)
-		return c.reject(ctx, t, code, field, now)
-	}
-
 	if err := c.commitAudit(ctx, audit.Event{Kind: "transition.intent", Transition: t.ID, Actor: t.Actor}); err != nil {
 		return auditUnavailable(t.ID)
 	}
@@ -106,7 +100,7 @@ func (c *Controller) publish(ctx context.Context, t store.TransitionRecord, poli
 	}
 	fault.CrashPoint("after-commit")
 
-	g := unlabelled.Relabel(effective, revision)
+	g := unlabelled.Relabel(revision, unlabelled.Overrides)
 	c.current.Store(g)
 	c.state.Store(store.ModeNormal)
 	c.scheduleDeadline(g)
@@ -186,13 +180,9 @@ func (c *Controller) Publish(ctx context.Context, actor string, change Change) (
 	if result, status, done := c.replay(ctx, t); done {
 		return result, status
 	}
-	if !c.settle(ctx, now, false) {
+	a, settled := c.settle(ctx, now, false)
+	if !settled {
 		return c.unavailableOutcome(t.ID, t.Actor)
-	}
-
-	a, err := c.store.Load(ctx)
-	if err != nil {
-		return c.storeFailure(t.ID, err)
 	}
 	if a.Revision != change.Expected {
 		return c.reject(ctx, t, "STALE", "", now)

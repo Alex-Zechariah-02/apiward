@@ -11,17 +11,17 @@ cfg, err := apiward.LoadConfig("apiward.json") // the same file `apiward run` re
 gw, err := apiward.New(cfg, logger)            // takes the deployment lock; binds nothing
 err = gw.Start()                               // Admin API and metrics; requests admitted from now on
 mux.Handle("/api/", http.StripPrefix("/api", gw)) // policy targets are the paths below /api
-server := &http.Server{Addr: ":8080", Handler: mux}
-gw.ServerSettings().Apply(server)              // header size and timeouts from the configuration
+server := gw.Server(mux)                        // header size, timeouts and protocols from the configuration
+server.Addr = ":8080"
 // ... serve; on shutdown stop the server first, then:
 err = gw.Stop(ctx)                             // waits for requests in progress, then closes the audit log
 ```
 
 - Import `github.com/Alex-Zechariah-02/apiward`. The deployment is installed and its first policy published as for the binary (`apiward install`, then the Dashboard). The configuration's `data.listen` is still required and checked, but an embedded gateway never binds it.
-- Before `Start` and from `Stop` on, every request is refused with `503 gateway_unavailable` and recorded. `Start` and `Stop` each run once.
+- Before `Start`, every request is refused with `503 gateway_unavailable` and recorded; once `Stop` has waited for the requests in progress, later ones are refused `503` before the pipeline, since the audit log is closing. `Start` and `Stop` each run once.
 - Errors from `LoadConfig`, `New`, `Start` and `Stop` match exactly one of `ErrConfig`, `ErrLocked`, `ErrStorage`, `ErrListen`, `ErrStarted`, `ErrStopped` or `ErrIncomplete` with `errors.Is`. Refused requests are HTTP responses, never Go errors.
-- Apply `ServerSettings` to your server: the gateway cannot enforce header size or timeouts on a server it does not own. Its HTTP/2 protocol errors are then counted in `gateway_http2_errors_total`.
-- `Apply` also sets the server's `ConnContext` (after any you set), so each connection reads one request body at a time; without it an HTTP/2 connection could hold a body per stream.
+- Serve with the server `Server(handler)` returns (`nil` serves the gateway itself): it already carries the configured header size, timeouts and protocols, so set only its address or listener and TLS. Its HTTP/2 protocol errors are counted in `gateway_http2_errors_total`.
+- The server's `ConnContext` is also set, so each connection reads one request body at a time; without it an HTTP/2 connection could hold a body per stream. A `ConnContext` of your own must call the one already set.
 - `New` refuses the settings only the gateway's own listener applies, naming them: `data.tls`, `data.redirect_http`, `data.max_connections` and `data.listen_all_interfaces`. Your server owns its TLS, connection limit and addresses.
   - Body limits and every other check stay in the handler.
   - Do not rewrite `RemoteAddr` from client headers before the gateway: address lists and per-address rate limits read it.
@@ -41,10 +41,12 @@ err = gw.Stop(ctx)                             // waits for requests in progress
   - They are compiled once with the policy; a `Compile` error or panic refuses the draft with `MODULE_FAILED`.
   - A member no module in the build reads is refused with `UNKNOWN_FIELD` naming the member, so a policy written for another build never loses a check silently.
   - A setting must pass the policy's JSON bounds (nesting, value count); it is stored with its object members sorted, so one meaning has one form.
+  - Member names inside a setting may use any case and characters (`maxItems`, `$ref`), as inside a schema; repeated names are still refused.
   - Ingress modules take no settings.
 - A check sees a copy of the method, path, client address, headers (without the bearer token) and the verified subject and roles: no body and no connection.
   - `Refuse` ends the request with a 4xx status and code; `Fail`, a panic or a missing result ends it with `503 gateway_unavailable`.
   - A `Fail` reason is recorded when it is 1 to 128 bytes of printable ASCII, otherwise as `invalid failure reason`; it never holds request data.
-  - Per-key state goes into a bounded `module.Table`, which refuses new keys when full.
-  - `Table.Update` runs its change function under the table's lock: the function must not call the table.
+  - The header map is copied once per phase and shared by its checks: a check reads it and never changes it.
+  - A phase's checks together are bounded by `data.write_timeout`; a phase that runs past it fails the request.
+  - A module that keeps per-key state bounds it itself and fails closed when full; it never keeps mutable package-level state.
 - Each request record holds a `modules` member with every non-built-in module's result (`PASS`, `REJECT`, `FAIL`, `NA` for not configured, `NE` for not reached); a module refusal or failure is recorded at the stage of its phase. `apiward version` and `GET /admin/status` (`build`) list the version, the Go toolchain and every compiled-in control, the five built-ins (`jwt`, `rbac`, `rate`, `body`, `validation`) included; the Dashboard shows them on the Team page.

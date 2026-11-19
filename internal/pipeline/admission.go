@@ -21,17 +21,17 @@ import (
 // cannot be shown not to match. The list is unset only when the store could
 // not be opened; no policy is then published, so CAPTURE refuses the request.
 func (h *Handler) admitAddress(q *request) bool {
-	list := h.authority.Addresses()
-	if list == nil || len(*list) == 0 {
+	list := h.authority.AddressIndex()
+	if list == nil || list.Len() == 0 {
 		return true
 	}
-	addr, err := netip.ParseAddr(q.event.ClientAddress)
-	if err != nil {
+	// The address parsed once at the start; the zero value did not parse.
+	if !q.addr.IsValid() {
 		q.event.Reason = "invalid_peer_address"
 		q.reject(audit.StageIngress, http.StatusBadRequest, "bad_request")
 		return false
 	}
-	if list.Blocks(addr, compile.TrustedNow()) {
+	if list.Blocks(q.addr, compile.TrustedNow()) {
 		q.event.Reason = "address_blocked"
 		q.reject(audit.StageIngress, http.StatusForbidden, "address_blocked")
 		return false

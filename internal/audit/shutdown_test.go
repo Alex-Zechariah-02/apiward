@@ -32,7 +32,7 @@ func heldAudit(t *testing.T) (*AuditLog, func()) {
 		path:     filepath.Join(t.TempDir(), "audit.log"),
 		maxBytes: DefaultAuditBytes,
 		maxFiles: DefaultAuditFiles,
-		queue:    make(chan auditEntry, AuditQueueSize),
+		queue:    make(chan *auditEntry, AuditQueueSize),
 		done:     make(chan struct{}),
 	}
 	if _, err := a.open(); err != nil {
@@ -77,6 +77,10 @@ func fileEvents(t *testing.T, path string) []fileRecord {
 		var e fileRecord
 		if err := json.Unmarshal([]byte(line), &e); err != nil {
 			t.Fatalf("audit line is not one record: %q", line)
+		}
+		// The chain and a clean stop's last record have their own tests.
+		if e.Kind == closedKind || e.Kind == "audit.chain" {
+			continue
 		}
 		events = append(events, e)
 	}

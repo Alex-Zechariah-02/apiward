@@ -16,8 +16,10 @@ The administrator Dashboard: a React and TypeScript single-page application that
 - Every page warns at the top while the gateway is not accepting requests.
 - A Getting Started guide ticks off the first steps (a policy in force, a first trial, a trial kept or undone) from what the gateway reports, and hides itself once all are done; **Hide this guide** removes it sooner; My Account shows it again.
 - **Live Traffic:** every request as the gateway decides it, streamed; pause for inspection; filters for changes only (anything but reads) or refusals only; keeps the latest 1,000 requests and draws the newest 200 that match.
+- **Traffic chart:** seconds the gateway no longer holds every request for are drawn as No Data, never as quiet seconds.
+- Request outcomes read Allowed, Refused, Gateway Error (the gateway's own failure) or Outcome Unknown (the service gave no complete answer).
 - **Request details:** every request row on Overview, Live Traffic and the Security Log opens the request in a side panel at the page's own address plus `?ref=`; Back closes it.
-- The panel shows arrival time, method and path, response, policy version and account; each check passed, the deciding check and those never reached; the full reason; the Ref to copy.
+- The panel shows arrival time, method and path (with the service address and, when the endpoint rewrote it, the path sent), response, policy version and account; each check passed, the deciding check and those never reached; the full reason; the Ref to copy.
 - A path longer than 256 bytes is recorded cut; request lists and the panel end it with an ellipsis and say so. Exports carry `path_truncated`.
 - The **Search** box in every page header opens a full Ref the same way, opens the Security Log on an account or endpoint ID (never placed in the address), and finds a draft change ("change 12"), a temporary rule ("rule 3") or a version ("version 4").
 - **APIs:** each API's endpoints, who may call them, rate limits and bodies, traffic figures, and each endpoint's request rules in words with the exact schema under More Details.

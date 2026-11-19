@@ -45,6 +45,11 @@
   background: var(--chart-refused);
 }
 
+.key-unknown {
+  background: var(--well);
+  box-shadow: inset 0 0 0 1px var(--rule-strong);
+}
+
 .traffic-chart {
   margin: 0;
 }
@@ -76,6 +81,11 @@
 
 .chart-refused {
   fill: var(--chart-refused);
+}
+
+.chart-unknown {
+  fill: var(--well);
+  pointer-events: none;
 }
 
 .chart-axis {

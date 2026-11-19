@@ -29,6 +29,15 @@ const DefaultMaxBody = 16 << 10
 // per-upstream request limit, only past the CPU's limit.
 const DefaultMaxInFlight = 1024
 
+// DefaultModuleTimeout bounds a module phase when the host sets no write
+// limit: the data listener's default write_timeout.
+const DefaultModuleTimeout = 30 * time.Second
+
+// DefaultPerUpstream is the default in-flight bound of one upstream: three
+// quarters of maxInFlight (768 by default), so a slow upstream leaves a
+// quarter for the others.
+func DefaultPerUpstream(maxInFlight int64) int64 { return max(1, maxInFlight*3/4) }
+
 // DefaultIPv6RatePrefix is the prefix an IPv6 client's rate key is masked
 // to: one /64 is what a single subscriber is usually given, so a client
 // rotating addresses inside it shares one counter.
@@ -39,9 +48,15 @@ const MinIPv6RatePrefix = 48
 
 // Limits bound the handler's work; a zero member selects its default.
 type Limits struct {
-	MaxBodyBytes   int64
-	MaxInFlight    int64
-	IPv6RatePrefix int
+	MaxBodyBytes int64
+	MaxInFlight  int64
+	// MaxInFlightPerUpstream bounds the requests in flight to one upstream;
+	// zero is three quarters of MaxInFlight.
+	MaxInFlightPerUpstream int64
+	IPv6RatePrefix         int
+	// ModuleTimeout bounds each module phase: data.write_timeout. Zero is
+	// DefaultModuleTimeout.
+	ModuleTimeout time.Duration
 	// TrustedProxies are the peers that may name the client through
 	// X-Forwarded-For (ParseProxies); none trusts no peer.
 	TrustedProxies []netip.Prefix
@@ -66,6 +81,10 @@ type Handler struct {
 	// them.
 	maxInFlight int64
 	inFlight    atomic.Int64
+	// upstreams bounds the requests in flight to each upstream.
+	upstreams upstreamSlots
+	// moduleTimeout bounds each module phase.
+	moduleTimeout time.Duration
 	// ipv6Prefix masks an IPv6 client address for its rate key.
 	ipv6Prefix int
 	// proxies are the trusted proxies (Limits.TrustedProxies).
@@ -102,8 +121,9 @@ type Authority interface {
 	Expired(g *compile.Generation)
 	Verifier() *Verifier
 	Blocked() *store.BlockedAccounts
-	// Addresses returns the blocked address list; nil until it was read.
-	Addresses() *store.BlockedAddresses
+	// AddressIndex returns the lookup of the blocked address list; nil
+	// until the list was read.
+	AddressIndex() *store.AddressIndex
 }
 
 // Deps is everything the handler needs; New refuses a missing one.
@@ -138,6 +158,9 @@ func New(d Deps) (*Handler, error) {
 	if limits.MaxInFlight <= 0 {
 		limits.MaxInFlight = DefaultMaxInFlight
 	}
+	if limits.MaxInFlightPerUpstream <= 0 {
+		limits.MaxInFlightPerUpstream = DefaultPerUpstream(limits.MaxInFlight)
+	}
 	if limits.IPv6RatePrefix == 0 {
 		limits.IPv6RatePrefix = DefaultIPv6RatePrefix
 	}
@@ -154,6 +177,11 @@ func New(d Deps) (*Handler, error) {
 		limiter: d.Limiter, clock: d.Clock, auditTimeout: d.AuditTimeout,
 		maxBodyBytes: limits.MaxBodyBytes, maxInFlight: limits.MaxInFlight, ipv6Prefix: limits.IPv6RatePrefix, proxies: limits.TrustedProxies,
 		forward: d.Forward, signer: d.Signer, ingress: ingress,
+	}
+	h.upstreams.max = limits.MaxInFlightPerUpstream
+	h.moduleTimeout = limits.ModuleTimeout
+	if h.moduleTimeout <= 0 {
+		h.moduleTimeout = DefaultModuleTimeout
 	}
 	for _, c := range extensions {
 		h.extensions = append(h.extensions, c.Info())

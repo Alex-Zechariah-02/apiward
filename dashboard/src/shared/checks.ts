@@ -81,10 +81,16 @@ export const stepWords: Record<StepState, string> = {
   inapplicable: 'Not Applicable',
 }
 
-// The outcome of a whole request.
-type Decision = 'allowed' | 'refused' | 'failed'
+// The outcome of a whole request: failed is the gateway's own error,
+// upstream_failed a service address that gave no complete answer.
+export type Decision = 'allowed' | 'refused' | 'failed' | 'upstream_failed'
 
-export const decisionWords: Record<Decision, string> = { allowed: 'Allowed', refused: 'Refused', failed: 'Outcome Unknown' }
+export const decisionWords: Record<Decision, string> = {
+  allowed: 'Allowed',
+  refused: 'Refused',
+  failed: 'Gateway Error',
+  upstream_failed: 'Outcome Unknown',
+}
 
 // The administrator permissions in plain words; the exact names stay beside them.
 export const permissionWords: Record<string, string> = {

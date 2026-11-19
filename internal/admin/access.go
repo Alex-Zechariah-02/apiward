@@ -68,7 +68,7 @@ func (s *Server) handleAccessCheck(w http.ResponseWriter, r *http.Request, who c
 		if _, g, ok = s.candidateGeneration(w, r, who, *check.Candidate); !ok {
 			return
 		}
-	} else if g == nil || g.Expired(compile.TrustedNow()) {
+	} else if g == nil || g.Lapsed() {
 		adminError(w, http.StatusServiceUnavailable, "gateway_unavailable", "")
 		return
 	}

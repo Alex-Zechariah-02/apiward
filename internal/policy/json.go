@@ -6,7 +6,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"io"
-	"strconv"
 	"strings"
 	"unicode/utf8"
 )
@@ -37,7 +36,9 @@ func DecodeBounded(data []byte, maxDepth, maxValues int) (any, string) {
 
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.UseNumber()
-	var stack []container
+	// Sized for the usual limit, so a body's nesting never grows the stack.
+	var buffer [MaxJSONDepth]container
+	stack := buffer[:0]
 	values := 0
 	for {
 		token, err := decoder.Token()
@@ -88,8 +89,11 @@ func DecodeBounded(data []byte, maxDepth, maxValues int) (any, string) {
 			}
 		case json.Number:
 			values++
-			if values > maxValues || !isBoundedNumber(t) {
+			if values > maxValues {
 				return nil, "limit_exceeded"
+			}
+			if !isBoundedNumber(t) {
+				return nil, "number_not_comparable"
 			}
 			value = t
 		default:
@@ -126,8 +130,8 @@ func hasLoneSurrogate(data []byte) bool {
 		if i+6 > len(data) || data[i] != '\\' || data[i+1] != 'u' {
 			return 0, false
 		}
-		code, err := strconv.ParseUint(string(data[i+2:i+6]), 16, 16)
-		return rune(code), err == nil && code >= 0xd800 && code <= 0xdfff
+		code, ok := hexCode(data[i+2 : i+6])
+		return code, ok && code >= 0xd800 && code <= 0xdfff
 	}
 	for i := 0; i < len(data); i++ {
 		next := bytes.IndexByte(data[i:], '\\')
@@ -152,16 +156,35 @@ func hasLoneSurrogate(data []byte) bool {
 	return false
 }
 
+// hexCode reads four hexadecimal digits.
+func hexCode(digits []byte) (rune, bool) {
+	var code rune
+	for _, c := range digits {
+		switch {
+		case c >= '0' && c <= '9':
+			c -= '0'
+		case c >= 'a' && c <= 'f':
+			c -= 'a' - 10
+		case c >= 'A' && c <= 'F':
+			c -= 'A' - 10
+		default:
+			return 0, false
+		}
+		code = code<<4 | rune(c)
+	}
+	return code, true
+}
+
 // isBoundedNumber limits a number literal's length and exponent.
 func isBoundedNumber(number json.Number) bool {
 	literal := string(number)
 	if len(literal) > MaxNumberLength {
 		return false
 	}
-	_, exponent, found := strings.Cut(strings.ToLower(literal), "e")
-	if !found {
+	mark := strings.IndexAny(literal, "eE")
+	if mark < 0 {
 		return true
 	}
-	exponent = strings.TrimLeft(exponent, "+-")
+	exponent := strings.TrimLeft(literal[mark+1:], "+-")
 	return len(exponent) <= maxExponentDigits
 }

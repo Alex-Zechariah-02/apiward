@@ -9,8 +9,8 @@ package forward
 
 import (
 	"net/http"
-	"net/http/httptrace"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -49,9 +49,13 @@ type pooledConn struct {
 // their exchange has ended. Connections are closed outside the lock, since
 // closing one may call its state hook, which takes the lock.
 type connPool struct {
-	settings  PoolSettings
-	transport *http.Transport // keep-alive; used only by NewClientConn
-	network   func() *Network
+	settings PoolSettings
+	// connected marks a request's binding as holding a connection.
+	connected func(*binding)
+	// dials and reuses count the connections made and taken from the pool.
+	dials, reuses atomic.Int64
+	transport     *http.Transport // keep-alive; used only by NewClientConn
+	network       func() *Network
 	// mu is one lock for the whole pool: each hold is a few map operations,
 	// so per-endpoint locks would add state without measurable gain.
 	mu   sync.Mutex
@@ -62,24 +66,26 @@ type connPool struct {
 	closed  bool
 }
 
-func newConnPool(settings PoolSettings, base *http.Transport, network func() *Network) *connPool {
+func newConnPool(settings PoolSettings, base *http.Transport, network func() *Network, connected func(*binding)) *connPool {
 	transport := base.Clone()
 	transport.DisableKeepAlives = false
-	return &connPool{settings: settings, transport: transport, network: network, idle: map[poolKey][]*pooledConn{}}
+	return &connPool{settings: settings, transport: transport, network: network, connected: connected, idle: map[poolKey][]*pooledConn{}}
 }
 
 // RoundTrip sends req once, on an idle connection to its bound endpoint or
-// a new one. Forward has checked the binding. The request's GotConn trace
-// hook is called once a connection is held, since ClientConn.RoundTrip does
-// not call it: from then on a failure may have reached the upstream.
+// a new one. Forward has checked the binding. Once a connection is held the
+// binding is marked connected: from then on a failure may have reached the
+// upstream.
 func (p *connPool) RoundTrip(req *http.Request) (*http.Response, error) {
-	d, _ := Bound(req.Context())
-	e := d.Endpoint()
+	b := bindingOf(req.Context())
+	e := b.destination.Endpoint()
 	key := poolKey{network: p.network(), scheme: e.Scheme(), address: e.Address(), profile: e.Profile()}
 	p.retire(key.network)
 	c := p.take(key)
-	reused := c != nil
-	if c == nil {
+	if c != nil {
+		p.reuses.Add(1)
+	} else {
+		p.dials.Add(1)
 		conn, err := p.transport.NewClientConn(req.Context(), key.scheme, key.address)
 		if err != nil {
 			return nil, err
@@ -99,9 +105,7 @@ func (p *connPool) RoundTrip(req *http.Request) (*http.Response, error) {
 		// or the connection fails.
 		conn.SetStateHook(func(*http.ClientConn) { p.changed(c) })
 	}
-	if trace := httptrace.ContextClientTrace(req.Context()); trace != nil && trace.GotConn != nil {
-		trace.GotConn(httptrace.GotConnInfo{Reused: reused, WasIdle: reused})
-	}
+	p.connected(b)
 	return c.conn.RoundTrip(req)
 }
 
@@ -185,8 +189,11 @@ func (p *connPool) unlist(c *pooledConn) bool {
 	return true
 }
 
-// retire makes n the current network and closes the idle connections made
-// under any other, which no request can reuse.
+// retire makes n the current network. Idle connections made under another
+// network whose profile n holds unchanged (the same CA pin and client
+// certificate, or no profile) move to n, so a reload that changes no TLS
+// material causes no redial burst; the others, which no request can reuse,
+// are closed.
 func (p *connPool) retire(n *Network) {
 	p.mu.Lock()
 	if p.current == n {
@@ -199,12 +206,21 @@ func (p *connPool) retire(n *Network) {
 		if key.network == n {
 			continue
 		}
+		delete(p.idle, key)
+		if key.network.sameProfile(n, key.profile) {
+			moved := key
+			moved.network = n
+			for _, c := range list {
+				c.key = moved
+			}
+			p.idle[moved] = append(p.idle[moved], list...)
+			continue
+		}
 		for _, c := range list {
 			c.idle = false
 			c.timer.Stop()
 		}
 		old = append(old, list...)
-		delete(p.idle, key)
 	}
 	p.mu.Unlock()
 	closeAll(old)
@@ -232,4 +248,19 @@ func closeAll(conns []*pooledConn) {
 	for _, c := range conns {
 		c.conn.Close()
 	}
+}
+
+// Stats are the pool's figures for the metrics: connections idle now, and
+// connections dialled and reused since the start.
+type Stats struct{ Idle, Dials, Reuses int64 }
+
+// Stats reads the pool's figures; the idle count takes the pool's lock.
+func (p *connPool) stats() Stats {
+	p.mu.Lock()
+	idle := 0
+	for _, list := range p.idle {
+		idle += len(list)
+	}
+	p.mu.Unlock()
+	return Stats{Idle: int64(idle), Dials: p.dials.Load(), Reuses: p.reuses.Load()}
 }

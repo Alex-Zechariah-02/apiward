@@ -92,15 +92,15 @@ func (e *ejector) result(address string, connected bool, now time.Time) {
 	s.until, s.probing = now.Add(s.wait), false
 }
 
-// settle records how a request admitted to address ended. A request whose
-// client went away before any connection was made says nothing about the
-// endpoint; it only passes a probe's turn to the next request.
-func (e *ejector) settle(address string, connected, clientGone bool) {
-	if !connected && clientGone {
+// settle records a request admitted to address that never connected. One
+// whose client went away first says nothing about the endpoint; it only
+// passes a probe's turn to the next request.
+func (e *ejector) settle(address string, clientGone bool) {
+	if clientGone {
 		e.release(address)
 		return
 	}
-	e.result(address, connected, time.Now())
+	e.result(address, false, time.Now())
 }
 
 // release passes a probe's turn on address to the next request.

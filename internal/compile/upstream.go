@@ -62,9 +62,20 @@ var metadata = []netip.Addr{
 // shared is the shared address space of carrier-grade NAT (RFC 6598).
 var shared = netip.MustParsePrefix("100.64.0.0/10")
 
+// special are IPv4 blocks no service is reachable on, refused whatever the
+// operator allows (IANA IPv4 Special-Purpose Address Registry): IETF
+// protocol assignments (RFC 6890), benchmarking (RFC 2544) and the reserved
+// former class E (RFC 1112).
+var special = []netip.Prefix{
+	netip.MustParsePrefix("192.0.0.0/24"),
+	netip.MustParsePrefix("198.18.0.0/15"),
+	netip.MustParsePrefix("240.0.0.0/4"),
+}
+
 // Refused reports an address no setting can allow: unspecified, link-local
-// (where most cloud metadata services answer), multicast, broadcast or a
-// named metadata address. IPv4-mapped IPv6 addresses are unmapped first.
+// (where most cloud metadata services answer), multicast, broadcast, a
+// special-purpose block or a named metadata address. IPv4-mapped IPv6
+// addresses are unmapped first.
 func Refused(a netip.Addr) bool {
 	a = a.Unmap()
 	switch {
@@ -75,6 +86,11 @@ func Refused(a netip.Addr) bool {
 	}
 	for _, m := range metadata {
 		if a == m {
+			return true
+		}
+	}
+	for _, p := range special {
+		if p.Contains(a) {
 			return true
 		}
 	}

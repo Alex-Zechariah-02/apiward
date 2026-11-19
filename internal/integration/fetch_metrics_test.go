@@ -39,7 +39,7 @@ func TestFetchMetrics(t *testing.T) {
 	if response.StatusCode != 200 || response.Header.Get("Content-Type") != "text/plain; version=0.0.4; charset=utf-8" {
 		t.Fatalf("metrics: %d %v", response.StatusCode, response.Header)
 	}
-	for _, text := range []string{`gateway_requests_total{api="a",operation="read-a",decision="allowed",code=""} 1`, `gateway_request_duration_seconds_count{api="a"} 2`, "gateway_policy_revision 1", "gateway_temporary_rules_active 0", "gateway_blocked_accounts 1", "gateway_event_stream_dropped_total 0"} {
+	for _, text := range []string{`gateway_requests_total{api="a",operation="read-a",decision="allowed"} 1`, `gateway_request_duration_seconds_count{api="a"} 2`, `apiward_gateway_overhead_seconds_count{api="a"} 1`, `apiward_upstream_seconds_count{api="a"} 1`, "gateway_policy_revision 1", "gateway_temporary_rules_active 0", "gateway_blocked_accounts 1", "gateway_event_stream_dropped_total 0"} {
 		if !strings.Contains(body, text) {
 			t.Errorf("missing %s in %s", text, body)
 		}

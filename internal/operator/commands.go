@@ -11,8 +11,10 @@ import (
 	"io/fs"
 	"log/slog"
 	"os"
+	"os/signal"
 	"os/user"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/audit"
@@ -227,9 +229,13 @@ func runMigrate(o *operatorContext) (int, error) {
 // replacement, and returns the exit code.
 func Run(command string, cfg Config, flags map[string]string) (int, error) {
 	// No deadline: a command runs in the foreground with the gateway
-	// stopped, its operator ends it with Ctrl+C, and SQLite recovers the
-	// database from its log; a fixed bound would fail a large backup.
-	o := &operatorContext{ctx: context.Background(), config: cfg, actor: operatorActor()}
+	// stopped and a fixed bound would fail a large backup. Ctrl+C or a stop
+	// signal cancels the context instead of killing the process, so the
+	// database work aborts and the deferred cleanup (lock, staged files, the
+	// audit log's drain) still runs; SQLite recovers from its log.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	o := &operatorContext{ctx: ctx, config: cfg, actor: operatorActor()}
 	if err := CheckPaths(flags["config"], o.config, command, flags); err != nil {
 		return 1, err
 	}

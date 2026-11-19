@@ -1,9 +1,8 @@
-// The audit writer: batching, syncing, rotation and summaries.
+// The audit writer: batching, numbering, syncing, rotation and summaries.
 
 package audit
 
 import (
-	"encoding/json"
 	"errors"
 	"time"
 )
@@ -11,62 +10,92 @@ import (
 // run is the writer. It writes the queued events in batches, in queue order,
 // until the queue is closed and empty, which only close does; receiving from
 // a closed channel yields every value still buffered first. Once per
-// SummaryInterval it writes the ingress refusals counted. At the end it
-// writes the last summary and the loss count still pending and closes the
-// file.
+// SummaryInterval it writes the ingress refusals counted, and while the file
+// system has no space it retries once per spaceRetry. At the end it writes
+// the last summary and the loss count still pending and closes the file.
 func (a *AuditLog) run() {
 	defer close(a.done)
 	tick := time.NewTicker(SummaryInterval)
 	defer tick.Stop()
+	checkpoints := time.NewTicker(CheckpointInterval)
+	defer checkpoints.Stop()
+	retry := time.NewTicker(spaceRetry)
+	defer retry.Stop()
 	window := time.NewTimer(0)
 	defer window.Stop()
-	batch := make([]auditEntry, 0, auditBatchSize)
+	batch := make([]*auditEntry, 0, auditBatchSize)
 	for {
 		select {
 		case entry, open := <-a.queue:
 			if !open {
 				a.writeSummary()
-				if a.lost.Load() > 0 {
-					a.write(nil)
-				}
+				// The last record of a clean stop; after it nothing is
+				// written, so a start that finds another reconciles.
+				a.write([]*auditEntry{{event: a.stamp(Event{Kind: closedKind}), done: make(chan error, 1)}})
 				if a.file != nil {
 					a.fileErr = a.closeFile()
 				}
 				return
 			}
-			batch = a.fill(append(batch[:0], entry))
+			batch = a.fill(a.take(batch[:0], entry))
 			if a.window > 0 && len(batch) > 1 {
 				batch = a.gather(batch, window)
 			}
-			err := a.write(batch)
-			switch {
-			case err == nil:
-				a.written.Add(uint64(len(batch)))
-			case errors.Is(err, errStorageFull):
-				// Refused, as at a full queue: no longer accepted, and those
-				// nobody waits for are counted as lost.
-				a.accepted.Add(-uint64(len(batch)))
+			if len(batch) > 0 {
+				a.settle(batch, a.write(batch))
 			}
-			for _, entry := range batch {
-				if entry.done != nil {
-					entry.done <- err
-				}
-			}
+			// Cleared, so finished events are not kept reachable.
+			clear(batch[:cap(batch)])
 		case <-tick.C:
 			a.writeSummary()
+		case <-checkpoints.C:
+			if e, ok := a.checkpoint(a.head); ok {
+				a.write([]*auditEntry{{event: e, done: make(chan error, 1)}})
+			}
+		case <-retry.C:
+			if a.noSpace.Load() {
+				a.retrySpace()
+			}
+		}
+	}
+}
+
+// take adds entry to batch unless its Commit withdrew it; a withdrawn entry
+// is no longer accepted and is never written.
+func (a *AuditLog) take(batch []*auditEntry, entry *auditEntry) []*auditEntry {
+	if entry.done != nil && !entry.state.CompareAndSwap(entryQueued, entryTaken) {
+		a.accepted.Add(^uint64(0))
+		return batch
+	}
+	return append(batch, entry)
+}
+
+// settle counts a written batch and acknowledges its waiting entries with
+// err. A batch refused for want of room (files or space) is no longer
+// accepted, as at a full queue; write counted those nobody waits for as lost.
+func (a *AuditLog) settle(batch []*auditEntry, err error) {
+	switch {
+	case err == nil:
+		a.written.Add(uint64(len(batch)))
+	case errors.Is(err, errStorageFull), errors.Is(err, errNoSpace):
+		a.accepted.Add(-uint64(len(batch)))
+	}
+	for _, entry := range batch {
+		if entry.done != nil {
+			entry.done <- err
 		}
 	}
 }
 
 // fill adds the events already queued to batch, up to auditBatchSize.
-func (a *AuditLog) fill(batch []auditEntry) []auditEntry {
+func (a *AuditLog) fill(batch []*auditEntry) []*auditEntry {
 	for len(batch) < auditBatchSize {
 		select {
 		case entry, open := <-a.queue:
 			if !open {
 				return batch
 			}
-			batch = append(batch, entry)
+			batch = a.take(batch, entry)
 		default:
 			return batch
 		}
@@ -79,7 +108,7 @@ func (a *AuditLog) fill(batch []auditEntry) []auditEntry {
 // one per arrival. Only a batch that already has siblings waits; a lone
 // event is synced at once (PostgreSQL's commit_siblings). No event is
 // acknowledged before the sync that covers it.
-func (a *AuditLog) gather(batch []auditEntry, window *time.Timer) []auditEntry {
+func (a *AuditLog) gather(batch []*auditEntry, window *time.Timer) []*auditEntry {
 	window.Reset(a.window)
 	for len(batch) < auditBatchSize {
 		select {
@@ -87,7 +116,7 @@ func (a *AuditLog) gather(batch []auditEntry, window *time.Timer) []auditEntry {
 			if !open {
 				return batch
 			}
-			batch = append(batch, entry)
+			batch = a.take(batch, entry)
 		case <-window.C:
 			return batch
 		}
@@ -97,30 +126,46 @@ func (a *AuditLog) gather(batch []auditEntry, window *time.Timer) []auditEntry {
 }
 
 // writeSummary writes the ingress refusals counted since the last summary.
+// When the log refuses it, its counts join the pending loss count, which a
+// later write or Close reports.
 func (a *AuditLog) writeSummary() {
-	if e, ok := a.takeSummary(); ok {
-		a.write([]auditEntry{{event: a.stamp(e)}})
+	e, ok := a.takeSummary()
+	if !ok {
+		return
+	}
+	summary := []*auditEntry{{event: a.stamp(e)}}
+	err := a.write(summary)
+	if err != nil && !errors.Is(err, errStorageFull) && !errors.Is(err, errNoSpace) {
+		a.lost.Add(unacknowledged(summary))
 	}
 }
 
-// write writes batch at the end of the log, after the pending loss count,
-// and syncs it. When a
-// rotation is due and every file is in use, the batch is refused, its
-// unacknowledged events are counted as lost and the log is full until a
-// later rotation succeeds.
-func (a *AuditLog) write(batch []auditEntry) error {
+// write writes batch at the end of the log, after a pending rotation marker
+// and the pending loss count, and syncs it. Records are numbered as they are
+// encoded, so seq rises by one in file order. When a rotation is due and
+// every file is in use, or the file system has no space, the batch is
+// refused and its unacknowledged events are counted as lost; any other
+// failure fails the log until a restart.
+func (a *AuditLog) write(batch []*auditEntry) error {
 	if a.failed.Load() {
 		return errAuditFailed
 	}
-	var buffer []byte
+	if a.noSpace.Load() {
+		a.lost.Add(unacknowledged(batch))
+		return errNoSpace
+	}
+	return a.writeBatch(batch)
+}
+
+// writeBatch is write without the refusal of a log that has no space, which
+// retrySpace uses to try again.
+func (a *AuditLog) writeBatch(batch []*auditEntry) error {
+	mark := a.seq
+	rotatedNow := false
 	lost := a.lost.Swap(0)
-	if lost > 0 {
-		buffer = appendEvent(buffer, a.stamp(Event{Kind: "audit.loss", Lost: lost}))
-	}
-	for _, entry := range batch {
-		buffer = appendEvent(buffer, entry.event)
-	}
+	buffer := a.encode(a.encoded[:0], lost, batch)
 	if a.size > 0 && a.size+int64(len(buffer)) > a.maxBytes {
+		a.seq = mark
 		if err := a.makeRoom(); errors.Is(err, errFull) {
 			a.lost.Add(lost + unacknowledged(batch))
 			a.markFull(err)
@@ -137,14 +182,37 @@ func (a *AuditLog) write(batch []auditEntry) error {
 			a.Fail(err)
 			return errAuditFailed
 		}
-		marker := appendEvent(nil, a.stamp(Event{Kind: "audit.rotated", File: rotated}))
-		buffer = append(marker, buffer...)
+		a.marker = rotated
+		rotatedNow = true
 		a.full.Store(false)
+		mark = a.seq
+		buffer = a.encode(buffer[:0], lost, batch)
 	}
+	if rotatedNow && a.marker != "" {
+		// The head of the file just closed, signed at rotation.
+		if e, ok := a.checkpoint(a.head); ok {
+			buffer = a.appendEvent(buffer, e)
+		}
+	}
+	buffer, head := a.chain(buffer, a.head)
 	if err := a.persist(buffer); err != nil {
+		a.seq = mark
 		a.lost.Add(lost)
+		if spaceError(err) {
+			a.lost.Add(unacknowledged(batch))
+			a.enterNoSpace(err)
+			return errNoSpace
+		}
 		a.Fail(err)
 		return errAuditFailed
+	}
+	a.marker = ""
+	a.lossTotal.Add(lost)
+	a.head = head
+	a.published.Store(&head)
+	// A rare huge batch is not kept: memory stays bounded by ordinary batches.
+	if cap(buffer) <= keptBatchBytes {
+		a.encoded = buffer
 	}
 	a.publishUsage()
 	return nil
@@ -159,7 +227,7 @@ func (a *AuditLog) publishUsage() {
 
 // unacknowledged counts the requests behind the events of batch nobody waits
 // for: one each, or every refusal an ingress summary counts.
-func unacknowledged(batch []auditEntry) uint64 {
+func unacknowledged(batch []*auditEntry) uint64 {
 	var n uint64
 	for _, entry := range batch {
 		if entry.done != nil {
@@ -172,9 +240,4 @@ func unacknowledged(batch []auditEntry) uint64 {
 		n += max(counted, 1)
 	}
 	return n
-}
-
-func appendEvent(buffer []byte, e Event) []byte {
-	line, _ := json.Marshal(e)
-	return append(append(buffer, line...), '\n')
 }

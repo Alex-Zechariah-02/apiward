@@ -1,72 +1,169 @@
-// Request counters and duration histograms, the listener counters, and the
-// metrics listener that exposes them with the published policy gauges.
+// Request counters and duration histograms, recorded per request under
+// their own lock, and the listener and Admin API counters.
 
 package monitor
 
 import (
-	"fmt"
-	"maps"
-	"net/http"
-	"slices"
-	"strconv"
 	"strings"
+	"sync"
+
+	"github.com/Alex-Zechariah-02/apiward/internal/audit"
 )
 
-// durationBuckets are the Prometheus client libraries' default buckets plus
-// 1 ms, as most gateway decisions take a few milliseconds.
-var durationBuckets = [...]float64{.001, .005, .01, .025, .05, .1, .25, .5, 1, 2.5, 5, 10}
+// requestBuckets are the Prometheus client libraries' default buckets with
+// a finer low end, as most gateway decisions take well under a millisecond.
+var requestBuckets = []float64{.0001, .00025, .0005, .001, .0025, .005, .01, .025, .05, .1, .25, .5, 1, 2.5, 5, 10}
 
-type metricLabels struct{ api, operation, decision, code string }
-type durationMetric struct {
+// splitBuckets resolve the gateway's own time and the upstream's from 0.1 ms
+// to 10 s.
+var splitBuckets = []float64{.0001, .00025, .0005, .001, .0025, .005, .01, .025, .1, 1, 10}
+
+// maxSeries bounds the request counter series: only compiler-defined
+// identifiers and gateway outcome codes reach labels, and the cap also
+// bounds policy churn over a run.
+const maxSeries = 4096
+
+type metricLabels struct{ api, operation, decision, code, module string }
+
+type series struct {
+	labels metricLabels
+	count  uint64
+}
+
+// histogram counts observations per bucket (not cumulative; the exposition
+// sums them) and beyond the last bucket.
+type histogram struct {
 	count   uint64
 	sum     float64
-	buckets [len(durationBuckets)]uint64
-}
-type requestMetrics struct {
-	counts    map[metricLabels]uint64
-	durations map[string]*durationMetric
-	apis      int // the policy's API ceiling, which bounds durations
+	buckets []uint64
 }
 
-// Called under observations.mu. Only compiler-defined identifiers and gateway
-// outcome codes reach labels; a hard cap also bounds policy churn over a run.
-// Past the cap a new series keeps only its decision: a module's failure
-// reason is free text in the code label, so the code collapses too.
-func (m *requestMetrics) Record(event RequestView) {
-	if m.counts == nil {
-		m.counts = map[metricLabels]uint64{}
-		m.durations = map[string]*durationMetric{}
+func (h *histogram) observe(bounds []float64, seconds float64) {
+	if h.buckets == nil {
+		h.buckets = make([]uint64, len(bounds))
 	}
-	api, operation, code := "unknown", "unknown", ""
-	if event.API != nil {
-		api = *event.API
-	}
-	if event.Operation != nil {
-		operation = *event.Operation
-	}
-	if event.Code != nil {
-		code = *event.Code
-	}
-	labels := metricLabels{api, operation, event.Decision, code}
-	if _, exists := m.counts[labels]; !exists && len(m.counts) >= 4096 {
-		labels.api, labels.operation, labels.code = "unknown", "unknown", "unknown"
-	}
-	m.counts[labels]++
-	if m.durations[api] == nil && len(m.durations) >= m.apis {
-		api = "unknown"
-	}
-	if m.durations[api] == nil {
-		m.durations[api] = new(durationMetric)
-	}
-	duration := m.durations[api]
-	duration.count++
-	seconds := event.DurationMS / 1000
-	duration.sum += seconds
-	for i, upper := range durationBuckets {
+	h.count++
+	h.sum += seconds
+	for i, upper := range bounds {
 		if seconds <= upper {
-			duration.buckets[i]++
+			h.buckets[i]++
+			return
 		}
 	}
+}
+
+// apiTimes are one API's request, gateway-overhead and upstream histograms.
+type apiTimes struct {
+	api                         string
+	request, overhead, upstream histogram
+}
+
+// requestMetrics keeps series in slices with a map index, so a scrape copies
+// them without hashing; its own lock keeps a scrape off the window's lock.
+type requestMetrics struct {
+	mu        sync.Mutex
+	index     map[metricLabels]int
+	series    []series
+	timeIndex map[string]int
+	times     []apiTimes
+	apis      int    // the policy's API ceiling, which bounds the histograms
+	collapsed uint64 // requests counted in a collapsed series past the cap
+}
+
+// Record counts one request's final event. Past the series cap a new series
+// keeps only its decision and code class.
+func (m *requestMetrics) Record(event audit.Event) {
+	api, operation := event.API, event.Operation
+	if api == "" {
+		api = "unknown"
+	}
+	if operation == "" {
+		operation = "unknown"
+	}
+	code, module := codeLabel(event.Error)
+	labels := metricLabels{api, operation, decision(event.Decision), code, module}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.index == nil {
+		m.index, m.timeIndex = map[metricLabels]int{}, map[string]int{}
+	}
+	i, exists := m.index[labels]
+	if !exists && len(m.series) >= maxSeries {
+		labels = metricLabels{"unknown", "unknown", labels.decision, "unknown", ""}
+		m.collapsed++
+		i, exists = m.index[labels]
+	}
+	if !exists {
+		i = len(m.series)
+		m.index[labels] = i
+		m.series = append(m.series, series{labels: labels})
+	}
+	m.series[i].count++
+	t, exists := m.timeIndex[api]
+	if !exists && len(m.times) >= m.apis {
+		api = "unknown"
+		t, exists = m.timeIndex[api]
+	}
+	if !exists {
+		t = len(m.times)
+		m.timeIndex[api] = t
+		m.times = append(m.times, apiTimes{api: api})
+	}
+	times := &m.times[t]
+	times.request.observe(requestBuckets, event.DurationMS/1000)
+	if event.UpstreamMS > 0 {
+		times.upstream.observe(splitBuckets, event.UpstreamMS/1000)
+		times.overhead.observe(splitBuckets, max(event.DurationMS-event.UpstreamMS, 0)/1000)
+	}
+}
+
+// codeLabel keeps the code label to the gateway's outcome codes and module
+// refusal codes, all short tokens. A module failure's free-text reason
+// becomes gateway_unavailable, the code its client was answered, with the
+// module named; any other text becomes unknown.
+func codeLabel(code string) (label, module string) {
+	if rest, ok := strings.CutPrefix(code, "module "); ok {
+		id, _, found := strings.Cut(rest, ": ")
+		if !found || !token(id) {
+			id = "unknown"
+		}
+		return "gateway_unavailable", id
+	}
+	if code == "" || token(code) {
+		return code, ""
+	}
+	return "unknown", ""
+}
+
+// token is the form of every outcome code: a lowercase letter, then at most
+// 63 lowercase letters, digits or underscores.
+func token(text string) bool {
+	if text == "" || len(text) > 64 || text[0] < 'a' || text[0] > 'z' {
+		return false
+	}
+	for i := range len(text) {
+		c := text[i]
+		if (c < 'a' || c > 'z') && (c < '0' || c > '9') && c != '_' {
+			return false
+		}
+	}
+	return true
+}
+
+// read copies the series for a scrape.
+func (m *requestMetrics) read() ([]series, []apiTimes, uint64) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	times := make([]apiTimes, len(m.times))
+	for i, t := range m.times {
+		times[i] = apiTimes{api: t.api, request: t.request.copy(), overhead: t.overhead.copy(), upstream: t.upstream.copy()}
+	}
+	return append([]series(nil), m.series...), times, m.collapsed
+}
+
+func (h histogram) copy() histogram {
+	h.buckets = append([]uint64(nil), h.buckets...)
+	return h
 }
 
 // Auxiliary names the listeners besides the data listener, in the order the
@@ -113,78 +210,3 @@ func (o *Observations) AdminFailed(f AdminFailure) { o.admin[f].Add(1) }
 
 // KeyReloadFailed counts one refused key reload.
 func (o *Observations) KeyReloadFailed() { o.keyReloads.Add(1) }
-
-// Metrics serves the metrics listener from the observations and the
-// published gauges, which published reads from the controller.
-func Metrics(o *Observations, gauges func() []Gauge) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		serveMetrics(w, r, o, gauges)
-	})
-}
-
-// Gauge is one sample the metrics listener reports as read; Counter marks a
-// value that only grows, reported with the counter type.
-type Gauge struct {
-	Name    string
-	Value   int64
-	Counter bool
-}
-
-func serveMetrics(w http.ResponseWriter, r *http.Request, o *Observations, gauges func() []Gauge) {
-	if r.Method != "GET" || r.RequestURI != "/metrics" {
-		http.NotFound(w, r)
-		return
-	}
-	w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
-	// Copy under the lock the request path records under; sort and format
-	// after releasing it, so a scrape holds the lock only for the copy.
-	o.mu.Lock()
-	counts := maps.Clone(o.metrics.counts)
-	durations := make(map[string]durationMetric, len(o.metrics.durations))
-	for api, duration := range o.metrics.durations {
-		durations[api] = *duration
-	}
-	dropped := o.dropped
-	o.mu.Unlock()
-	var body strings.Builder
-	fmt.Fprintln(&body, "# TYPE gateway_requests_total counter")
-	labels := slices.Collect(maps.Keys(counts))
-	slices.SortFunc(labels, func(a, b metricLabels) int {
-		return strings.Compare(a.api+"\x00"+a.operation+"\x00"+a.decision+"\x00"+a.code, b.api+"\x00"+b.operation+"\x00"+b.decision+"\x00"+b.code)
-	})
-	for _, label := range labels {
-		fmt.Fprintf(&body, "gateway_requests_total{api=%q,operation=%q,decision=%q,code=%q} %d\n", label.api, label.operation, label.decision, label.code, counts[label])
-	}
-	fmt.Fprintln(&body, "# TYPE gateway_request_duration_seconds histogram")
-	for _, api := range slices.Sorted(maps.Keys(durations)) {
-		duration := durations[api]
-		for i, upper := range durationBuckets {
-			fmt.Fprintf(&body, "gateway_request_duration_seconds_bucket{api=%q,le=%q} %d\n", api, strconv.FormatFloat(upper, 'f', -1, 64), duration.buckets[i])
-		}
-		fmt.Fprintf(&body, "gateway_request_duration_seconds_bucket{api=%q,le=\"+Inf\"} %d\n", api, duration.count)
-		fmt.Fprintf(&body, "gateway_request_duration_seconds_sum{api=%q} %g\n", api, duration.sum)
-		fmt.Fprintf(&body, "gateway_request_duration_seconds_count{api=%q} %d\n", api, duration.count)
-	}
-	for _, gauge := range gauges() {
-		kind := "gauge"
-		if gauge.Counter {
-			kind = "counter"
-		}
-		fmt.Fprintf(&body, "# TYPE %s %s\n%s %d\n", gauge.Name, kind, gauge.Name, gauge.Value)
-	}
-	fmt.Fprintf(&body, "# TYPE gateway_event_stream_dropped_total counter\ngateway_event_stream_dropped_total %d\n", dropped)
-	fmt.Fprintf(&body, "# TYPE gateway_redirects_total counter\ngateway_redirects_total %d\n", o.redirects.Load())
-	fmt.Fprintf(&body, "# TYPE gateway_connections_refused_total counter\ngateway_connections_refused_total %d\n", o.refused.Load())
-	fmt.Fprintf(&body, "# TYPE gateway_http2_errors_total counter\ngateway_http2_errors_total %d\n", o.http2.Load())
-	fmt.Fprintln(&body, "# TYPE gateway_listener_connections_refused_total counter")
-	for _, name := range Auxiliary {
-		fmt.Fprintf(&body, "gateway_listener_connections_refused_total{listener=%q} %d\n", name, o.auxiliary[name].Load())
-	}
-	fmt.Fprintln(&body, "# TYPE gateway_admin_failures_total counter")
-	for f := range adminFailures {
-		fmt.Fprintf(&body, "gateway_admin_failures_total{reason=%q} %d\n", f, o.admin[f].Load())
-	}
-	fmt.Fprintln(&body, "# TYPE gateway_key_reload_failures_total counter")
-	fmt.Fprintf(&body, "gateway_key_reload_failures_total %d\n", o.keyReloads.Load())
-	fmt.Fprint(w, body.String())
-}

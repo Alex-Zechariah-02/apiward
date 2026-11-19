@@ -66,7 +66,7 @@ func (s *Server) handleOverrideHistory(w http.ResponseWriter, r *http.Request, w
 	if !ok {
 		return
 	}
-	items, err := s.store.Overrides(r.Context(), `WHERE id > ? ORDER BY id LIMIT ?`, cursor, limit)
+	items, err := s.store.Overrides(r.Context(), cursor, limit)
 	if err != nil {
 		s.fail(w, r, &who, "unavailable", monitor.FailStore, err)
 		return

@@ -31,6 +31,13 @@ type RateRule struct {
 	window int64 // milliseconds
 }
 
+// stricter reports whether r allows fewer requests per unit of time than
+// other; at an equal rate the longer window is stricter.
+func (r *RateRule) stricter(other *RateRule) bool {
+	mine, theirs := r.count*other.window, other.count*r.window
+	return mine < theirs || mine == theirs && r.window > other.window
+}
+
 func CompileRate(rule policy.RateRule, field string) (*RateRule, error) {
 	if rule.Algorithm != RateAlgorithm {
 		return nil, policy.Invalid("UNSUPPORTED_FEATURE", "%s.algorithm", field)

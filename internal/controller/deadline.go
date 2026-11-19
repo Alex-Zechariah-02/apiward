@@ -1,10 +1,9 @@
-// Provisional deadlines, expiry and settlement.
+// Deadline timers, expiry checks and the end of a provisional base.
 
 package controller
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"strings"
 	"time"
@@ -60,7 +59,7 @@ func (c *Controller) expire(g *compile.Generation) {
 		c.scheduleDeadline(g)
 		return
 	}
-	if !c.settle(context.Background(), now, true) {
+	if _, settled := c.settle(context.Background(), now, true); !settled {
 		return
 	}
 	// The generation expired, so a stored deadline must have passed and been
@@ -70,65 +69,16 @@ func (c *Controller) expire(g *compile.Generation) {
 	}
 }
 
-// settle ends, one transition at a time in deadline order, every override
-// whose expiry time has passed at now and, when withProvisional is set, a
-// provisional base whose deadline has passed. Each ending publishes the
-// effective policy that follows it. Mutation requests settle overrides only,
-// so a request about a provisional base past its deadline is still answered
-// as such. settle reports false when an ending could not be completed;
-// protected admission has then stopped.
-func (c *Controller) settle(ctx context.Context, now time.Time, withProvisional bool) bool {
-	for {
-		a, err := c.store.Load(ctx)
-		if err != nil {
-			c.unavailable("store_unavailable", err.Error())
-			return false
-		}
-		var due *store.Override
-		for i, o := range a.Overrides {
-			if !now.Before(o.ExpiresAt) && (due == nil || o.ExpiresAt.Before(due.ExpiresAt)) {
-				due = &a.Overrides[i]
-			}
-		}
-		provisionalDue := withProvisional && a.Provisional != 0 && !now.Before(a.Deadline)
-		switch {
-		case provisionalDue && (due == nil || !due.ExpiresAt.Before(a.Deadline)):
-			if !c.timeout(ctx, a, now) {
-				return false
-			}
-		case due != nil:
-			t := store.TransitionRecord{
-				ID:       fmt.Sprintf("auto-expire:%d", due.ID),
-				Kind:     "tpo.expire",
-				Actor:    "controller",
-				Target:   fmt.Sprintf("override %d", due.ID),
-				Override: due.ID,
-			}
-			t.Digest = t.ID
-			if result, _ := c.publishOverrides(ctx, t, a, *due, store.OverrideExpired, now); result.Outcome != "committed" {
-				return false
-			}
-		default:
-			return true
-		}
+// prepare settles, in normal mode, the overrides due at now and returns
+// the stored authority that follows; settled is false when an ending could
+// not be completed or read, and err a failed read outside normal mode.
+func (c *Controller) prepare(ctx context.Context, now time.Time) (a store.Authority, settled bool, err error) {
+	if c.mode() == store.ModeNormal {
+		a, settled = c.settle(ctx, now, false)
+		return a, settled, nil
 	}
-}
-
-// timeout rolls back an expired provisional base under its deterministic
-// identity, so a repeated attempt can never apply twice. It reports whether
-// the restored base is now published; when it is not, nothing is served.
-func (c *Controller) timeout(ctx context.Context, a store.Authority, now time.Time) bool {
-	t := store.TransitionRecord{
-		ID:        fmt.Sprintf("auto-rollback:%d", a.Provisional),
-		Kind:      "cpa.timeout",
-		Actor:     "controller",
-		Target:    fmt.Sprintf("revision %d", a.Provisional),
-		Expected:  sql.NullInt64{Int64: a.Confirmed, Valid: true},
-		Candidate: a.Candidate,
-	}
-	t.Digest = t.ID
-	result, _ := c.endProvisional(ctx, t, a, store.DispositionTimedOut, now)
-	return result.Outcome == "committed"
+	a, err = c.store.Load(ctx)
+	return a, true, err
 }
 
 // endProvisional records the final disposition of the provisional base in a

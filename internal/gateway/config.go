@@ -3,8 +3,10 @@
 package gateway
 
 import (
+	"sync/atomic"
 	"time"
 
+	"github.com/Alex-Zechariah-02/apiward/internal/audit"
 	"github.com/Alex-Zechariah-02/apiward/internal/controller"
 	"github.com/Alex-Zechariah-02/apiward/internal/forward"
 	"github.com/Alex-Zechariah-02/apiward/internal/operator"
@@ -100,26 +102,32 @@ type limitSettings struct {
 // gatewaySettings are the controller's settings, under the names the legacy
 // Caddy "gateway" app used.
 type gatewaySettings struct {
-	Database             string               `json:"database"`
-	AuditLog             string               `json:"audit_log"`
-	AdminListen          string               `json:"admin_listen"`
-	MetricsListen        *string              `json:"metrics_listen"`
-	MetricsListenAny     bool                 `json:"metrics_listen_any"`
-	AdminIdleTimeout     *string              `json:"admin_idle_timeout"`
-	AdminSessionLifetime *string              `json:"admin_session_lifetime"`
-	AdminSessions        *int                 `json:"admin_sessions"`
-	AuditTimeout         *string              `json:"audit_timeout"`
-	AuditMaxBytes        *int64               `json:"audit_max_bytes"`
-	AuditMaxFiles        *int                 `json:"audit_max_files"`
-	AuditWhenFull        string               `json:"audit_when_full"`
-	AuditSyncWindow      *string              `json:"audit_sync_window"`
-	AuditPrefill         *bool                `json:"audit_prefill"`
-	AuditIgnoreReads     *[]string            `json:"audit_ignore_reads"`
-	HistoryKeep          *int                 `json:"history_keep"`
-	ShutdownGrace        *string              `json:"shutdown_grace"`
-	ShutdownDelay        *string              `json:"shutdown_delay"`
-	JWT                  pipeline.TrustConfig `json:"jwt"`
-	AdminUI              *string              `json:"admin_ui"`
+	Database             string  `json:"database"`
+	AuditLog             string  `json:"audit_log"`
+	AdminListen          string  `json:"admin_listen"`
+	MetricsListen        *string `json:"metrics_listen"`
+	MetricsListenAny     bool    `json:"metrics_listen_any"`
+	HealthListen         *string `json:"health_listen"`
+	HealthListenAny      bool    `json:"health_listen_any"`
+	AdminIdleTimeout     *string `json:"admin_idle_timeout"`
+	AdminSessionLifetime *string `json:"admin_session_lifetime"`
+	AdminSessions        *int    `json:"admin_sessions"`
+	AuditTimeout         *string `json:"audit_timeout"`
+	AuditMaxBytes        *int64  `json:"audit_max_bytes"`
+	AuditMaxFiles        *int    `json:"audit_max_files"`
+	AuditWhenFull        string  `json:"audit_when_full"`
+	AuditSyncWindow      *string `json:"audit_sync_window"`
+	AuditPrefill         *bool   `json:"audit_prefill"`
+	// AuditClientAddress is how the log records client addresses: "full"
+	// (default), "prefix" or "hash" with AuditAddressKey.
+	AuditClientAddress *string              `json:"audit_client_address"`
+	AuditAddressKey    *string              `json:"audit_address_key"`
+	AuditIgnoreReads   *[]string            `json:"audit_ignore_reads"`
+	HistoryKeep        *int                 `json:"history_keep"`
+	ShutdownGrace      *string              `json:"shutdown_grace"`
+	ShutdownDelay      *string              `json:"shutdown_delay"`
+	JWT                pipeline.TrustConfig `json:"jwt"`
+	AdminUI            *string              `json:"admin_ui"`
 }
 
 // dataSettings are the data-plane server's settings.
@@ -133,29 +141,33 @@ type dataSettings struct {
 	MaxBodyBytes        *int64            `json:"max_body_bytes"`
 	MaxHeaderBytes      *int              `json:"max_header_bytes"`
 	MaxConnections      *int              `json:"max_connections"`
-	MaxInFlight         *int64            `json:"max_in_flight"`
-	HTTP2               *bool             `json:"http2"`
-	IPv6RatePrefix      *int              `json:"ipv6_rate_prefix"`
-	TrustedProxies      []string          `json:"trusted_proxies"`
-	ReadHeaderTimeout   *string           `json:"read_header_timeout"`
-	ReadTimeout         *string           `json:"read_timeout"`
-	WriteTimeout        *string           `json:"write_timeout"`
-	IdleTimeout         *string           `json:"idle_timeout"`
+	// MaxConnectionsPerAddress bounds one client address's open data
+	// connections; 0 (the default) leaves only max_connections.
+	MaxConnectionsPerAddress *int     `json:"max_connections_per_address"`
+	MaxInFlight              *int64   `json:"max_in_flight"`
+	HTTP2                    *bool    `json:"http2"`
+	IPv6RatePrefix           *int     `json:"ipv6_rate_prefix"`
+	TrustedProxies           []string `json:"trusted_proxies"`
+	ReadHeaderTimeout        *string  `json:"read_header_timeout"`
+	ReadTimeout              *string  `json:"read_timeout"`
+	WriteTimeout             *string  `json:"write_timeout"`
+	IdleTimeout              *string  `json:"idle_timeout"`
 }
 
 // upstreamSettings bound each exchange with an upstream and say which
 // destinations upstreams may use: public addresses only when allowed, and
 // the TLS profiles policies name.
 type upstreamSettings struct {
-	DialTimeout           *string                   `json:"dial_timeout"`
-	ResponseHeaderTimeout *string                   `json:"response_header_timeout"`
-	ReadIdleTimeout       *string                   `json:"read_idle_timeout"`
-	MaxIdlePerUpstream    *int                      `json:"max_idle_per_upstream"`
-	EjectAfter            *int                      `json:"eject_after"`
-	IdleConnTimeout       *string                   `json:"idle_conn_timeout"`
-	TLSSessionLifetime    *string                   `json:"tls_session_lifetime"`
-	AllowPublicAddresses  bool                      `json:"allow_public_addresses"`
-	TLSProfiles           []forward.ProfileSettings `json:"tls_profiles"`
+	DialTimeout            *string                   `json:"dial_timeout"`
+	ResponseHeaderTimeout  *string                   `json:"response_header_timeout"`
+	ReadIdleTimeout        *string                   `json:"read_idle_timeout"`
+	MaxIdlePerUpstream     *int                      `json:"max_idle_per_upstream"`
+	MaxInFlightPerUpstream *int64                    `json:"max_in_flight_per_upstream"`
+	EjectAfter             *int                      `json:"eject_after"`
+	IdleConnTimeout        *string                   `json:"idle_conn_timeout"`
+	TLSSessionLifetime     *string                   `json:"tls_session_lifetime"`
+	AllowPublicAddresses   bool                      `json:"allow_public_addresses"`
+	TLSProfiles            []forward.ProfileSettings `json:"tls_profiles"`
 	// IdentityKey is the private key file the gateway signs an identity
 	// assertion with for each forwarded request; omitted, identity.pem
 	// beside the database, which apiward install creates.
@@ -170,11 +182,15 @@ type nativeConfig struct {
 	controller    controller.Config
 	listen        string
 	metricsListen string
+	// healthListen serves /livez and /readyz alone; empty when unset.
+	healthListen string
 	// limits bound enforcement: body ceiling, requests in flight, IPv6 rate
 	// key prefix.
 	limits pipeline.Limits
-	// maxConnections bounds the data listener's open connections.
+	// maxConnections bounds the data listener's open connections, and
+	// perAddress one client address's (0: no per-address bound).
 	maxConnections int
+	perAddress     int
 	// http2 allows HTTP/2 on a TLS data listener (the default).
 	http2             bool
 	headerLimit       int
@@ -191,6 +207,9 @@ type nativeConfig struct {
 	pool          forward.PoolSettings
 	// signer signs the identity assertion for upstreams; nil sends none.
 	signer *pipeline.Signer
+	// reloaded holds the gateway.reloaded record of the last keys reload's
+	// settings; shared by the copies of the configuration.
+	reloaded *atomic.Pointer[audit.Event]
 	// identityKey is the signing key's file (upstream.identity_key, else
 	// identity.pem beside the database); empty when unsigned is set.
 	identityKey string

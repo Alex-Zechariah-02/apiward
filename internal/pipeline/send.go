@@ -6,11 +6,13 @@ package pipeline
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"runtime/debug"
 	"strings"
+	"time"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/audit"
 	"github.com/Alex-Zechariah-02/apiward/internal/compile"
@@ -21,16 +23,27 @@ import (
 // forwards it to destination and records the outcome.
 func (h *Handler) send(q *request, r *http.Request, g *compile.Generation, rule *compile.Rule, roles []string, destination compile.Destination, assertion string) {
 	w := q.w
+	slot := h.takeUpstream(q, rule.Upstream())
+	if slot == nil {
+		return
+	}
+	defer slot.Add(-1)
 	// Admission requires a durable audit record before anything is forwarded.
+	// The record is written only when AUDIT passes, so it says so.
 	q.event.Kind, q.event.Stage, q.event.Decision = "request.admitted", audit.StageNames[audit.StageAudit], "admit"
+	q.pass(audit.StageAudit)
 	ctx, cancel := context.WithTimeout(r.Context(), h.auditTimeout)
 	err := q.audit.Commit(ctx, q.event)
 	cancel()
 	if err != nil {
+		// A timed-out admission was withdrawn, or is written and superseded
+		// by this refusal of the same request.
+		if errors.Is(err, audit.ErrTimedOut) {
+			q.event.Reason = "audit_timeout"
+		}
 		q.reject(audit.StageAudit, http.StatusServiceUnavailable, "gateway_unavailable")
 		return
 	}
-	q.pass(audit.StageAudit)
 
 	r.Header.Set("X-Request-Id", q.event.RequestID)
 	r.Header.Set("X-Gateway-Generation", g.ID)
@@ -55,6 +68,7 @@ func (h *Handler) send(q *request, r *http.Request, g *compile.Generation, rule 
 	}()
 	forwardErr := h.forward(recorder, r)
 	finished = true
+	q.event.UpstreamMS = float64(forward.UpstreamTime(r.Context())) / float64(time.Millisecond)
 	if forwardErr != nil {
 		status, code := forward.ForwardFailure(forwardErr)
 		if !recorder.wrote {

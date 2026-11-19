@@ -4,13 +4,14 @@ package policy
 
 import (
 	"bytes"
+	"cmp"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
-	"strings"
-	"unicode/utf8"
+	"reflect"
+	"slices"
 )
 
 // SchemaVersion is the policy document version written when nothing newer
@@ -132,57 +133,86 @@ func Invalid(code, field string, args ...any) *PolicyError {
 	return &PolicyError{Code: code, Field: fmt.Sprintf(field, args...)}
 }
 
-// AllowedMethods: methods an operation may bind; the gateway routes and forwards exactly these.
-var AllowedMethods = map[string]bool{
-	http.MethodGet: true, http.MethodHead: true, http.MethodPost: true, http.MethodPut: true,
-	http.MethodPatch: true, http.MethodDelete: true, http.MethodOptions: true,
+// methods: the methods an operation may bind; the gateway routes and
+// forwards exactly these. Unexported, so no package can change routing.
+var methods = [...]string{
+	http.MethodGet, http.MethodHead, http.MethodPost, http.MethodPut,
+	http.MethodPatch, http.MethodDelete, http.MethodOptions,
 }
+
+// MethodCount is how many methods an operation may bind.
+const MethodCount = len(methods)
+
+// IsMethod reports whether an operation may bind method.
+func IsMethod(method string) bool { return slices.Contains(methods[:], method) }
 
 // DecodePolicy parses a policy document. It rejects input larger than
 // limits.PolicyBytes (zero: the default) or deeply nested, repeated or
 // non-lowercase member names, unknown fields, unsupported schema versions and
-// trailing data. Limits out of range are refused as LIMIT_EXCEEDED.
+// trailing data. Limits out of range are refused as LIMITS_INVALID, a
+// document over limits.PolicyBytes as POLICY_TOO_LARGE.
 func DecodePolicy(document []byte, limits Limits) (Policy, error) {
 	limits, err := limits.Resolve()
-	if err != nil || len(document) > limits.PolicyBytes {
-		return Policy{}, Invalid("LIMIT_EXCEEDED", "")
-	}
-	if err := CheckMembers(document, MaxPolicyDepth); err != nil {
-		return Policy{}, err
-	}
-
-	// Read the version first, so a document written for another version is
-	// reported as such rather than as a set of unknown fields.
-	var header struct {
-		SchemaVersion int `json:"schema_version"`
-	}
-	if err := json.Unmarshal(document, &header); err != nil {
-		return Policy{}, Invalid("SCHEMA_INVALID", "")
-	}
-	if header.SchemaVersion != SchemaVersion && header.SchemaVersion != LatestSchemaVersion {
-		return Policy{}, Invalid("SCHEMA_VERSION_UNSUPPORTED", "schema_version")
-	}
-
-	document, modules, err := takeModules(document)
 	if err != nil {
+		return Policy{}, Invalid("LIMITS_INVALID", "")
+	}
+	if len(document) > limits.PolicyBytes {
+		return Policy{}, Invalid("POLICY_TOO_LARGE", "policy_bytes")
+	}
+	modules := moduleIDs()
+	if err := checkMembers(document, MaxPolicyDepth, modules); err != nil {
 		return Policy{}, err
+	}
+	// Module members are taken out first; the scan above has refused the
+	// repeated and case-folded names a map decoding would merge.
+	stripped, taken, err := takeModules(document, modules)
+	if err != nil {
+		return Policy{}, cmp.Or(versionError(document), err)
 	}
 	var p Policy
-	if err := DecodeStrict(document, &p); err != nil {
-		if name, found := strings.CutPrefix(err.Error(), "json: unknown field "); found {
-			return Policy{}, Invalid("UNKNOWN_FIELD", "%s", Clip(strings.Trim(name, "\"")))
-		}
-		if typeErr, ok := errors.AsType[*json.UnmarshalTypeError](err); ok {
-			return Policy{}, Invalid("SCHEMA_INVALID", "%s", typeErr.Field)
-		}
-		return Policy{}, Invalid("SCHEMA_INVALID", "")
+	if err := DecodeStrict(stripped, &p); err != nil {
+		return Policy{}, decodeError(stripped, err)
 	}
-	for i, members := range modules {
+	if p.SchemaVersion != SchemaVersion && p.SchemaVersion != LatestSchemaVersion {
+		return Policy{}, Invalid("SCHEMA_VERSION_UNSUPPORTED", "schema_version")
+	}
+	for i, members := range taken {
 		if len(members) > 0 && i < len(p.Operations) {
 			p.Operations[i].Modules = members
 		}
 	}
 	return p, nil
+}
+
+// decodeError explains a failed strict decoding of document. A document
+// written for another version is reported as such rather than as a set of
+// unknown fields; then an unknown member by name, a mistyped one by path.
+func decodeError(document []byte, err error) error {
+	if refused := versionError(document); refused != nil {
+		return refused
+	}
+	if typeErr, ok := errors.AsType[*json.UnmarshalTypeError](err); ok {
+		return Invalid("SCHEMA_INVALID", "%s", typeErr.Field)
+	}
+	if name, found := unknownMember(document, reflect.TypeFor[Policy]()); found {
+		return Invalid("UNKNOWN_FIELD", "%s", Clip(name))
+	}
+	return Invalid("SCHEMA_INVALID", "")
+}
+
+// versionError refuses a document whose version cannot be read or is not
+// supported; nil when the version is supported.
+func versionError(document []byte) error {
+	var header struct {
+		SchemaVersion int `json:"schema_version"`
+	}
+	if json.Unmarshal(document, &header) != nil {
+		return Invalid("SCHEMA_INVALID", "")
+	}
+	if header.SchemaVersion != SchemaVersion && header.SchemaVersion != LatestSchemaVersion {
+		return Invalid("SCHEMA_VERSION_UNSUPPORTED", "schema_version")
+	}
+	return nil
 }
 
 // DecodeStrict decodes exactly one JSON value, rejecting unknown fields and
@@ -197,103 +227,4 @@ func DecodeStrict(data []byte, value any) error {
 		return errors.New("data after the JSON value")
 	}
 	return nil
-}
-
-// CheckMembers rejects JSON nested deeper than maxDepth, and objects with a
-// repeated member name or a name outside [a-z0-9_]. encoding/json keeps the
-// last of repeated names and matches names case-insensitively, so without
-// this check two readers of the same document could disagree about it.
-//
-// Values of members named "schema" or "headers" are JSON Schemas, whose
-// keywords and property names are case-sensitive and not limited to
-// [a-z0-9_]; the "headers" lists of "when" and "cors" objects are not. They
-// are decoded as raw JSON, never into Go structs, so only the repeated-name
-// and depth rules apply inside them.
-func CheckMembers(data []byte, maxDepth int) error {
-	// encoding/json replaces malformed Unicode. Policy, operator and Admin
-	// inputs must retain the same unambiguous UTF-8 representation as bodies.
-	if !utf8.Valid(data) || hasLoneSurrogate(data) {
-		return Invalid("SCHEMA_INVALID", "")
-	}
-	type container struct {
-		object   bool
-		wantName bool
-		names    map[string]bool
-		lastName string
-		name     string // the member this container is the value of
-		schema   bool   // inside a schema value
-	}
-	decoder := json.NewDecoder(bytes.NewReader(data))
-	var stack []*container
-	for {
-		token, err := decoder.Token()
-		if err == io.EOF {
-			return nil
-		}
-		if err != nil {
-			return Invalid("SCHEMA_INVALID", "")
-		}
-
-		var parent *container
-		if len(stack) > 0 {
-			parent = stack[len(stack)-1]
-		}
-
-		if delim, ok := token.(json.Delim); ok && (delim == '}' || delim == ']') {
-			stack = stack[:len(stack)-1]
-			continue
-		}
-
-		if parent != nil && parent.object && parent.wantName {
-			name := token.(string)
-			if !parent.schema && !isMemberName(name) {
-				return Invalid("UNKNOWN_FIELD", "%s", Clip(name))
-			}
-			if parent.names[name] {
-				return Invalid("DUPLICATE_MEMBER", "%s", name)
-			}
-			parent.names[name] = true
-			parent.lastName = name
-			parent.wantName = false
-			continue
-		}
-
-		// A value: once it is complete, an enclosing object expects a name.
-		if parent != nil && parent.object {
-			parent.wantName = true
-		}
-		if delim, ok := token.(json.Delim); ok {
-			if len(stack) == maxDepth {
-				return Invalid("LIMIT_EXCEEDED", "")
-			}
-			inSchema := parent != nil &&
-				(parent.schema || (parent.object && (parent.lastName == "schema" || parent.lastName == "headers" && parent.name != "when" && parent.name != "cors")))
-			name := ""
-			if parent != nil && parent.object {
-				name = parent.lastName
-			}
-			stack = append(stack, &container{
-				name:     name,
-				object:   delim == '{',
-				wantName: delim == '{',
-				names:    map[string]bool{},
-				schema:   inSchema,
-			})
-		}
-	}
-}
-
-func isMemberName(name string) bool {
-	if name == "" {
-		return false
-	}
-	for i := 0; i < len(name); i++ {
-		c := name[i]
-		lower := c >= 'a' && c <= 'z'
-		digit := c >= '0' && c <= '9'
-		if !lower && !digit && c != '_' {
-			return false
-		}
-	}
-	return true
 }

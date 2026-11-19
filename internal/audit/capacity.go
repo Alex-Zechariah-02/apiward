@@ -14,9 +14,9 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
-	"strconv"
-	"strings"
 	"time"
+
+	"github.com/Alex-Zechariah-02/apiward/internal/filecheck"
 )
 
 // What the log does when every file is in use: refuse every record (and so
@@ -29,38 +29,22 @@ const (
 
 var errFull = errors.New("audit storage full")
 
-// rotatedSet describes the files named "<path>.<n>".
+// rotatedSet describes the rotated files of the active file.
 type rotatedSet struct {
 	count  int
-	next   int   // the next unused n
-	oldest int   // the smallest n, 0 when there is none
-	bytes  int64 // their total size
+	oldest string // the oldest file's path, "" when there is none
+	bytes  int64  // their total size
 }
 
 // rotatedFiles finds the rotated files of path.
 func rotatedFiles(path string) (rotatedSet, error) {
-	entries, err := os.ReadDir(filepath.Dir(path))
-	if err != nil {
+	files, err := RotatedFiles(path)
+	if err != nil || len(files) == 0 {
 		return rotatedSet{}, err
 	}
-	set := rotatedSet{next: 1}
-	prefix := filepath.Base(path) + "."
-	for _, entry := range entries {
-		suffix, found := strings.CutPrefix(entry.Name(), prefix)
-		n, err := strconv.Atoi(suffix)
-		if !found || err != nil || n < 1 {
-			continue
-		}
-		info, err := entry.Info()
-		if err != nil {
-			return rotatedSet{}, err
-		}
-		set.count++
-		set.bytes += info.Size()
-		set.next = max(set.next, n+1)
-		if set.oldest == 0 || n < set.oldest {
-			set.oldest = n
-		}
+	set := rotatedSet{count: len(files), oldest: filepath.Join(filepath.Dir(path), files[0].Name)}
+	for _, file := range files {
+		set.bytes += file.Bytes
 	}
 	return set, nil
 }
@@ -74,14 +58,14 @@ func (a *AuditLog) makeRoom() error {
 	if err != nil {
 		return err
 	}
-	a.rotated, a.next, a.rotatedBytes = set.count, set.next, set.bytes
+	a.rotated, a.rotatedBytes = set.count, set.bytes
 	if a.rotated < a.maxFiles-1 {
 		return nil
 	}
 	if !a.evict {
 		return fmt.Errorf("%w: %d files of up to %d bytes exist; move rotated files to an archive and writing resumes", errFull, a.maxFiles, a.maxBytes)
 	}
-	return a.evictOldest(fmt.Sprintf("%s.%d", a.path, set.oldest))
+	return a.evictOldest(set.oldest)
 }
 
 // evictOldest deletes the rotated file name only after a record naming it,
@@ -89,22 +73,32 @@ func (a *AuditLog) makeRoom() error {
 // synced in the active file; a crash between the two leaves the record and
 // the file, never a deletion without its record.
 func (a *AuditLog) evictOldest(name string) error {
-	summary, err := describe(name)
+	summary, err := a.described(name)
 	if err != nil {
 		return err
 	}
 	summary.File = filepath.Base(name)
-	record := appendEvent(nil, a.stamp(summary))
+	record, head := a.chain(a.appendEvent(nil, a.stamp(summary)), a.head)
 	if err := a.persist(record); err != nil {
 		return err
 	}
+	a.head = head
 	if err := os.Remove(name); err != nil {
+		return err
+	}
+	if err := filecheck.SyncDir(filepath.Dir(name)); err != nil {
 		return err
 	}
 	a.rotated--
 	a.rotatedBytes -= summary.Bytes
+	a.evictions.Add(1)
 	return nil
 }
+
+// Losses is how many refused records the log has counted in its loss
+// records since the start; Evictions how many files it deleted when full.
+func (a *AuditLog) Losses() uint64    { return a.lossTotal.Load() }
+func (a *AuditLog) Evictions() uint64 { return a.evictions.Load() }
 
 // describe reads a rotated file once: its size, SHA-256 and the times of its
 // first and last records, as an audit.evicted event.

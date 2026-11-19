@@ -213,7 +213,7 @@ func (s *Server) handleProvisional(w http.ResponseWriter, r *http.Request, who c
 		adminError(w, http.StatusNotFound, "no_provisional", "")
 		return
 	}
-	record, found, err := s.store.Activation(ctx, "revision", a.Provisional)
+	record, found, err := s.store.Activation(ctx, store.ByRevision, a.Provisional)
 	if err == nil && !found {
 		err = fmt.Errorf("activation of revision %d missing", a.Provisional)
 	}

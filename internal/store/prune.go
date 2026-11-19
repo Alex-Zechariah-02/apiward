@@ -1,6 +1,8 @@
 // Pruning of the history tables: when a revision is committed, the rows only
-// older revisions need are deleted in the same transaction, so the database
-// stops growing with every change. The audit log files stay the full record.
+// older revisions need are deleted in the same transaction, and after a
+// control change the oldest control transitions past the kept number are
+// deleted, so the database stops growing with every change. The audit log
+// files stay the full record.
 
 package store
 
@@ -76,6 +78,49 @@ func prune(ctx context.Context, tx *sql.Tx, keep int) error {
 		}
 	}
 	return nil
+}
+
+// spareControl holds for a control transition (one that produced no revision
+// or candidate) committed before ?1 whose audit record is written and that no
+// kept activation or override names.
+const spareControl = `
+	result_revision IS NULL AND result_candidate IS NULL AND committed_at < ?1
+	AND (outcome = 'rejected' OR audited_at IS NOT NULL)
+	AND id NOT IN (SELECT resolution FROM activation WHERE resolution IS NOT NULL)
+	AND id NOT IN (SELECT creation FROM override)
+	AND id NOT IN (SELECT resolution FROM override WHERE resolution IS NOT NULL)`
+
+// PruneControls keeps the newest keep control transitions with their
+// recorded answers and deletes older ones; keep 0 deletes nothing. A gateway
+// changed only by control changes (blocks, keys, administrators) commits no
+// revision, so revision pruning alone would never bound them.
+func (s *DB) PruneControls(ctx context.Context, keep int) error {
+	if keep <= 0 {
+		return nil
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var bound int64
+	err = tx.QueryRowContext(ctx, `SELECT committed_at FROM transition WHERE result_revision IS NULL AND result_candidate IS NULL
+		ORDER BY committed_at DESC LIMIT 1 OFFSET ?`, keep-1).Scan(&bound)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("pruning control history: %w", err)
+	}
+	for _, query := range []string{
+		`DELETE FROM control_result WHERE transition IN (SELECT id FROM transition WHERE` + spareControl + `)`,
+		`DELETE FROM transition WHERE` + spareControl,
+	} {
+		if _, err := tx.ExecContext(ctx, query, bound); err != nil {
+			return fmt.Errorf("pruning control history: %w", err)
+		}
+	}
+	return tx.Commit()
 }
 
 // MaxUnused is how many unused candidates (staged or withdrawn, never

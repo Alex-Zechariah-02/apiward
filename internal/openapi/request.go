@@ -13,7 +13,7 @@ import (
 	"github.com/Alex-Zechariah-02/apiward/internal/policy"
 )
 
-// emptyBodyNote states the gateway's behaviour (internal/gateway/validation.go
+// emptyBodyNote states the gateway's behaviour (internal/pipeline/validation.go
 // readBody) for a request without a body to an operation with a body rule.
 const emptyBodyNote = "The description allows no body; the gateway refuses a request without one (415 without a JSON Content-Type, else 400 malformed_json)."
 
@@ -143,9 +143,19 @@ func (m *mapper) parameters(item, object map[string]any, itemPointer, pointer st
 		if !present {
 			schema = map[string]any{}
 		}
+		// The gateway reads one value per canonical name, so two spellings
+		// would be one header with two schemas.
+		if _, taken := properties[canonical]; taken {
+			return refuse(CodeKeyword, p.pointer, "Two header parameters name the header %s.", policy.Clip(canonical))
+		}
 		converted, refused := s.convert(schema, p.pointer+"/schema", "headers.properties."+canonical, 1, nil)
 		if refused != nil {
 			return refused
+		}
+		// The gateway compares a header value as text; the compiler would
+		// refuse any other type with its own field path, not the parameter.
+		if object, _ := converted.(map[string]any); object["type"] != "string" {
+			return refuse(CodeKeyword, p.pointer+"/schema", "The header parameter %s needs a schema of type string: the gateway validates header values as text.", policy.Clip(name))
 		}
 		properties[canonical] = converted
 		if isRequired, _ := p.value["required"].(bool); isRequired {
@@ -183,17 +193,23 @@ func (m *mapper) body(object map[string]any, pointer string, c *candidate, s *sc
 	if len(content) == 0 {
 		return refuse(CodeMediaType, "", "The request body names no media type.")
 	}
-	types := sortedKeys(content)
-	first, _ := content[types[0]].(map[string]any)
-	var others []string
-	for _, name := range types {
+	// The JSON media types share one body rule; any other type is reported,
+	// since the gateway refuses a body it cannot validate with 415.
+	var types, others []string
+	for _, name := range sortedKeys(content) {
 		mediaType, _, err := mime.ParseMediaType(name)
-		if err != nil || mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
-			return refuse(CodeMediaType, "", "Only JSON request bodies can be validated; found %q.", policy.Clip(name))
+		if err == nil && (mediaType == "application/json" || strings.HasSuffix(mediaType, "+json")) {
+			types = append(types, name)
 		}
-		if mediaType != "application/json" {
+		if err != nil || mediaType != "application/json" {
 			others = append(others, policy.Clip(name))
 		}
+	}
+	if len(types) == 0 {
+		return refuse(CodeMediaType, "", "Only JSON request bodies can be validated; found %q.", policy.Clip(sortedKeys(content)[0]))
+	}
+	first, _ := content[types[0]].(map[string]any)
+	for _, name := range types {
 		this, _ := content[name].(map[string]any)
 		if !reflect.DeepEqual(first["schema"], this["schema"]) {
 			return refuse(CodeMediaType, "", "The JSON media types have different schemas; one body rule cannot express both.")

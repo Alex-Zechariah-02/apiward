@@ -108,13 +108,15 @@ func TestExportOpenAPI(t *testing.T) {
 			}
 		})
 	}
+	// A /* target would export as /{rest}, which the import refuses, so it
+	// is reported instead of written.
 	t.Run("root prefix", func(t *testing.T) {
-		doc, _, _ := exported(t, shop, ExportOptions{API: "audit"}, JSON)
-		if at(t, doc, "paths", "/{rest}", "get", "x-apiward-target") != "/*" {
+		doc, report, _ := exported(t, shop, ExportOptions{API: "audit"}, JSON)
+		if paths, _ := doc["paths"].(map[string]any); len(paths) != 0 {
 			t.Fatalf("paths %v", doc["paths"])
 		}
-		if _, present := doc["components"]; !present {
-			t.Fatal("signed-in API without a security scheme")
+		if len(report.Changed) != 1 || report.Changed[0].Field != "target" || !strings.Contains(report.Changed[0].Note, "Not exported") {
+			t.Fatalf("report %+v", report)
 		}
 	})
 	t.Run("public API has no security scheme", func(t *testing.T) {
@@ -192,12 +194,23 @@ func TestRoundTripPolicy(t *testing.T) {
 					if err != nil {
 						t.Fatal(err)
 					}
-					if string(got) != string(want) {
-						t.Fatalf("round trip differs:\n%s\nwant:\n%s", got, want)
+					// A /* target is reported instead of exported, so it does
+					// not come back, nor do the permits that name it.
+					kept := p
+					kept.Operations = slices.DeleteFunc(slices.Clone(p.Operations), func(op policy.Operation) bool { return op.API == api.ID && op.Target == "/*" })
+					kept.Permits = slices.DeleteFunc(slices.Clone(p.Permits), func(permit policy.Permit) bool {
+						return !slices.ContainsFunc(kept.Operations, func(op policy.Operation) bool { return op.ID == permit.Operation })
+					})
+					back, err := policy.Encode(kept)
+					if err != nil {
+						t.Fatal(err)
+					}
+					if string(got) != string(back) {
+						t.Fatalf("round trip differs:\n%s\nwant:\n%s", got, back)
 					}
 					// Only signed-in operations no role may call need permissions.
 					var unpermitted []string
-					for _, op := range p.Operations {
+					for _, op := range kept.Operations {
 						if op.API == api.ID && op.Auth == "required" && !slices.ContainsFunc(p.Permits, func(permit policy.Permit) bool { return permit.Operation == op.ID }) {
 							unpermitted = append(unpermitted, op.ID)
 						}

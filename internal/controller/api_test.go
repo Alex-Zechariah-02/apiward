@@ -22,7 +22,7 @@ import (
 // transition on its own, except Publish (see TestPublishOnlyInTests).
 var exported = []string{
 	"AdminWriteTimeout", "CandidateGeneration", "Change", "Config", "Config.Check", "Controller",
-	"Controller.Activate", "Controller.Addresses", "Controller.Admission", "Controller.Audit",
+	"Controller.Activate", "Controller.AddressIndex", "Controller.Addresses", "Controller.Admission", "Controller.Audit",
 	"Controller.BeginStop", "Controller.Block", "Controller.BlockAddress", "Controller.Blocked",
 	"Controller.Capture", "Controller.ChangePassword", "Controller.CreateOverride", "Controller.Current",
 	"Controller.Enrol", "Controller.EstablishBase", "Controller.Expired", "Controller.Gauges", "Controller.Network",

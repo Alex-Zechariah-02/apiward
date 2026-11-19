@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/netip"
 	"runtime/debug"
 	"time"
 
@@ -20,8 +21,10 @@ type request struct {
 	audit        *audit.AuditLog
 	observations *monitor.Observations
 	started      time.Time
-	// rateAddress keys the client's address-based rate counters: the
-	// address, or for IPv6 its configured prefix.
+	// addr is the client address, parsed once; the zero value when the
+	// peer's address did not parse. rateAddress keys the client's
+	// address-based rate counters: the address, or for IPv6 its prefix.
+	addr        netip.Addr
 	rateAddress string
 	// bodyPending is true while a declared HTTP/1 request body has not been
 	// consumed by validation. HTTP/2 needs no connection close for it: the
@@ -44,9 +47,16 @@ func (q *request) fail(stage int, reason string) {
 }
 
 // refuse records the stage result and the refusal, then answers with code.
+// A policy refusal (401, 403, 429) is recorded in full within its client
+// address's budget and counted in the summary beyond it.
 func (q *request) refuse(stage int, result string, status int, code, recorded string) {
 	q.settle(stage, result, status, recorded)
-	q.audit.Record(q.event)
+	switch status {
+	case http.StatusUnauthorized, http.StatusForbidden, http.StatusTooManyRequests:
+		q.audit.RecordRefusal(q.event)
+	default:
+		q.audit.Record(q.event)
+	}
 	q.answer(status, code)
 }
 

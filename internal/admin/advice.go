@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"net/url"
 	"path/filepath"
 	"strconv"
 	"time"
@@ -22,8 +23,13 @@ import (
 // overrides.
 func (s *Server) handleAdvice(w http.ResponseWriter, r *http.Request, who caller) {
 	g := s.control.Current()
+	query, err := url.ParseQuery(r.URL.RawQuery)
+	if err != nil || !knownQuery(query, "candidate") {
+		adminError(w, http.StatusBadRequest, "bad_request", "query")
+		return
+	}
 	var candidate *int64
-	if text := r.URL.Query().Get("candidate"); text != "" {
+	if text := query.Get("candidate"); text != "" {
 		id, err := strconv.ParseInt(text, 10, 64)
 		if err != nil || id < 1 {
 			adminError(w, http.StatusBadRequest, "bad_request", "candidate")
@@ -34,11 +40,11 @@ func (s *Server) handleAdvice(w http.ResponseWriter, r *http.Request, who caller
 			return
 		}
 		candidate = &id
-	} else if g == nil || g.Expired(compile.TrustedNow()) {
+	} else if g == nil || g.Lapsed() {
 		adminError(w, http.StatusServiceUnavailable, "gateway_unavailable", "")
 		return
 	}
-	if !s.scanLog(r.Context()) {
+	if !s.scanLog(w) {
 		return
 	}
 	defer s.scanDone()
@@ -53,11 +59,16 @@ func (s *Server) handleAdvice(w http.ResponseWriter, r *http.Request, who caller
 		s.observations.AdminFailed(monitor.FailLog)
 		unused = monitor.UnreadLog()
 	}
+	warnings := monitor.ConfigurationWarnings(g, s.plain)
+	if s.hostServed {
+		warnings = append(warnings, monitor.HostTransport())
+		monitor.SortFindings(warnings)
+	}
 	pipeline.WriteJSON(w, http.StatusOK, map[string]any{
 		"rules":          monitor.AdviceRules,
 		"generation":     g.ID,
 		"candidate":      candidate,
-		"warnings":       monitor.ConfigurationWarnings(g, s.plain),
+		"warnings":       warnings,
 		"unused_permits": unused,
 	})
 }
@@ -81,7 +92,7 @@ func (s *Server) unusedPermits(ctx context.Context, g *compile.Generation) (moni
 func (s *Server) handleAlerts(w http.ResponseWriter, r *http.Request, who caller) {
 	now := time.Now()
 	items := []monitor.Finding{}
-	if spike := monitor.RefusalSpike(s.observations.Snapshot(), now); spike != nil {
+	if spike := monitor.RefusalSpike(s.observations, now); spike != nil {
 		items = append(items, *spike)
 	}
 	if s.audit.Failed() {

@@ -1,4 +1,5 @@
-// The policy subcommands (import-openapi, export-openapi, validate): flags, bounded file reads, and output that never overwrites.
+// The policy subcommands (import-openapi, export-openapi, validate): flags,
+// the capacity limits they check against, and what each runs.
 
 package openapi
 
@@ -8,8 +9,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"io/fs"
-	"os"
 	"strconv"
 	"time"
 
@@ -20,10 +19,10 @@ import (
 // Synopses of the commands.
 const (
 	importUsage = `apiward policy import-openapi --spec <file.json|.yaml|.yml> --api <id> --upstream <id>
-  --base <policy.json> [--max-body-bytes <n>] [--with-permits] --out <new file> --report <new file>`
+  --base <policy.json> [--max-body-bytes <n>] [--with-permits] [--config <settings>] --out <new file> --report <new file>`
 	exportUsage = `apiward policy export-openapi --policy <policy.json> --api <id>
-  --out <new file.json|.yaml|.yml> --report <new file> [--with-upstream]`
-	validateUsage = `apiward policy validate --policy <policy.json>`
+  --out <new file.json|.yaml|.yml> --report <new file> [--with-upstream] [--config <settings>]`
+	validateUsage = `apiward policy validate --policy <policy.json> [--config <settings>]`
 )
 
 // command is one subcommand: its flags and what it runs once they parse.
@@ -32,20 +31,25 @@ type command struct {
 	required []string
 	optional map[string]string // flag → default
 	switches []string
-	run      func(values map[string]string, stderr io.Writer) (int, error)
+	run      func(values map[string]string, limits policy.Limits, stderr io.Writer) (int, error)
 }
+
+// LimitsReader reads the capacity limits of the gateway settings file at a
+// path, as the gateway resolves them.
+type LimitsReader func(path string) (policy.Limits, error)
 
 var commands = map[string]command{
 	"import-openapi": {importUsage, []string{"spec", "api", "upstream", "base", "out", "report"},
-		map[string]string{"max-body-bytes": strconv.Itoa(DefaultBodyBytes)}, []string{"with-permits"}, runImport},
-	"validate":       {validateUsage, []string{"policy"}, nil, nil, runValidate},
-	"export-openapi": {exportUsage, []string{"policy", "api", "out", "report"}, nil, []string{"with-upstream"}, runExport},
+		map[string]string{"max-body-bytes": strconv.Itoa(DefaultBodyBytes), "config": ""}, []string{"with-permits"}, runImport},
+	"validate":       {validateUsage, []string{"policy"}, map[string]string{"config": ""}, nil, runValidate},
+	"export-openapi": {exportUsage, []string{"policy", "api", "out", "report"}, map[string]string{"config": ""}, []string{"with-upstream"}, runExport},
 }
 
 // Command runs "policy <subcommand>" and returns the exit status. It reads
 // only the files named by flags and creates only the out and report files;
-// an unknown subcommand, or a bad command line, prints the usage.
-func Command(args []string, stderr io.Writer) int {
+// an unknown subcommand, or a bad command line, prints the usage. With
+// --config, read gives the deployment's limits; without, the defaults apply.
+func Command(args []string, stderr io.Writer, read LimitsReader) int {
 	var c command
 	known := len(args) > 0
 	if known {
@@ -63,12 +67,28 @@ func Command(args []string, stderr io.Writer) int {
 		}
 		return ExitFailed
 	}
-	code, err := c.run(values, stderr)
+	code, err := c.start(values, read, stderr)
 	if err != nil {
 		fmt.Fprintln(stderr, "apiward:", err)
 		return ExitFailed
 	}
 	return code
+}
+
+// start resolves the limits and runs the command.
+func (c command) start(values map[string]string, read LimitsReader, stderr io.Writer) (int, error) {
+	var limits policy.Limits
+	if path := values["config"]; path != "" {
+		var err error
+		if limits, err = read(path); err != nil {
+			return ExitFailed, fmt.Errorf("settings file: %w", err)
+		}
+	}
+	limits, err := limits.Resolve()
+	if err != nil {
+		return ExitFailed, err
+	}
+	return c.run(values, limits, stderr)
 }
 
 // errUsage marks an error that the command line itself caused.
@@ -124,7 +144,7 @@ func (c command) parse(args []string) (map[string]string, error) {
 	return values, nil
 }
 
-func runImport(values map[string]string, stderr io.Writer) (int, error) {
+func runImport(values map[string]string, limits policy.Limits, stderr io.Writer) (int, error) {
 	format, err := formatOf(values["spec"])
 	if err != nil {
 		return ExitFailed, err
@@ -137,12 +157,12 @@ func runImport(values map[string]string, stderr io.Writer) (int, error) {
 	if err != nil {
 		return ExitFailed, err
 	}
-	base, err := readPolicy(values["base"], "base")
+	base, err := readPolicy(values["base"], "base", limits)
 	if err != nil {
 		return ExitFailed, err
 	}
 	result, report, err := Import(spec, format, Options{API: values["api"], Upstream: values["upstream"], Base: base,
-		MaxBodyBytes: maxBody, WithPermits: values["with-permits"] == "true"})
+		MaxBodyBytes: maxBody, WithPermits: values["with-permits"] == "true", Limits: limits})
 	if err != nil {
 		return ExitFailed, err
 	}
@@ -154,16 +174,16 @@ func runImport(values map[string]string, stderr io.Writer) (int, error) {
 	return report.Exit(), nil
 }
 
-func runExport(values map[string]string, stderr io.Writer) (int, error) {
+func runExport(values map[string]string, limits policy.Limits, stderr io.Writer) (int, error) {
 	format, err := formatOf(values["out"])
 	if err != nil {
 		return ExitFailed, err
 	}
-	source, err := readPolicy(values["policy"], "policy")
+	source, err := readPolicy(values["policy"], "policy", limits)
 	if err != nil {
 		return ExitFailed, err
 	}
-	document, report, err := Export(source, ExportOptions{API: values["api"], WithUpstream: values["with-upstream"] == "true"})
+	document, report, err := Export(source, ExportOptions{API: values["api"], WithUpstream: values["with-upstream"] == "true", Limits: limits})
 	if err != nil {
 		return ExitFailed, err
 	}
@@ -180,17 +200,18 @@ func runExport(values map[string]string, stderr io.Writer) (int, error) {
 }
 
 // runValidate decodes and compiles a policy file as the gateway does a
-// candidate, with the default capacity limits, and prints its warnings; for
+// candidate, with the default capacity limits or a deployment's, and prints
+// its warnings; for
 // policy kept in Git and checked in CI. Upstream addresses and TLS profiles
 // depend on the gateway's settings and are checked when it is activated.
-func runValidate(values map[string]string, stderr io.Writer) (int, error) {
-	source, err := readPolicy(values["policy"], "policy")
+func runValidate(values map[string]string, limits policy.Limits, stderr io.Writer) (int, error) {
+	source, err := readPolicy(values["policy"], "policy", limits)
 	if err != nil {
 		return ExitFailed, err
 	}
-	g, err := compile.Compile(source, 0, time.Time{}, policy.Limits{})
+	g, err := compile.Compile(source, 0, time.Time{}, limits)
 	if err != nil {
-		return ExitFailed, fmt.Errorf("policy refused: %w", defaultLimits(err))
+		return ExitFailed, fmt.Errorf("policy refused: %w", checkedLimits(err, limits))
 	}
 	for _, warning := range g.Warnings() {
 		fmt.Fprintln(stderr, "warning:", warning)
@@ -199,102 +220,15 @@ func runValidate(values map[string]string, stderr io.Writer) (int, error) {
 	return ExitComplete, nil
 }
 
-// readPolicy reads and strictly decodes a policy file.
-func readPolicy(path, name string) (policy.Policy, error) {
-	document, err := readLimited(path, policy.DefaultPolicyBytes, name)
+// readPolicy reads and strictly decodes a policy file within limits.
+func readPolicy(path, name string, limits policy.Limits) (policy.Policy, error) {
+	document, err := readLimited(path, int64(limits.PolicyBytes), name)
 	if err != nil {
 		return policy.Policy{}, err
 	}
-	p, err := policy.DecodePolicy(document, policy.Limits{})
+	p, err := policy.DecodePolicy(document, limits)
 	if err != nil {
 		return policy.Policy{}, fmt.Errorf("%s policy refused: %w", name, err)
 	}
 	return p, nil
-}
-
-// write encodes the output and the report as 2-space JSON and writes both
-// new files, or neither. Raw output is written as given.
-func write(outPath string, output any, reportPath string, report any) error {
-	if outPath == reportPath {
-		return errors.New("the output and the report must be different files")
-	}
-	files := map[string][]byte{}
-	for path, value := range map[string]any{outPath: output, reportPath: report} {
-		if raw, ok := value.(json.RawMessage); ok {
-			files[path] = raw
-			continue
-		}
-		data, err := indent(value)
-		if err != nil {
-			return err
-		}
-		files[path] = data
-	}
-	return writeNew(files)
-}
-
-// indent is the written form of a JSON output: 2-space indent, final newline.
-func indent(value any) ([]byte, error) {
-	data, err := json.MarshalIndent(value, "", "  ")
-	return append(data, '\n'), err
-}
-
-// readLimited reads at most limit bytes and refuses a longer file.
-func readLimited(path string, limit int64, name string) ([]byte, error) {
-	file, err := os.Open(path)
-	if err != nil {
-		return nil, fmt.Errorf("%s file: %w", name, err)
-	}
-	defer file.Close()
-	data, err := io.ReadAll(io.LimitReader(file, limit+1))
-	if err != nil {
-		return nil, fmt.Errorf("%s file: %w", name, err)
-	}
-	if int64(len(data)) > limit {
-		if limit%(1<<20) == 0 {
-			return nil, fmt.Errorf("the %s file is larger than %d MiB", name, limit>>20)
-		}
-		return nil, fmt.Errorf("the %s file is larger than %d bytes", name, limit)
-	}
-	return data, nil
-}
-
-// writeNew creates every file exclusively before writing any, and removes
-// the files it created if any step fails, so no existing file is changed
-// and a failure leaves no partial output.
-func writeNew(files map[string][]byte) error {
-	opened := map[string]*os.File{}
-	var failure error
-	for path := range files {
-		// 0o600 keeps other local users from reading the policy or report written here.
-		file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
-		if errors.Is(err, fs.ErrExist) {
-			failure = fmt.Errorf("%s already exists; choose a new file", path)
-			break
-		}
-		if err != nil {
-			failure = err
-			break
-		}
-		opened[path] = file
-	}
-	for path, file := range opened {
-		if failure == nil {
-			_, failure = file.Write(files[path])
-		}
-		if err := file.Sync(); failure == nil {
-			failure = err
-		}
-		if err := file.Close(); failure == nil {
-			failure = err
-		}
-	}
-	if failure != nil {
-		for path := range opened {
-			if err := os.Remove(path); err != nil {
-				failure = errors.Join(failure, fmt.Errorf("%s was left behind; remove it by hand: %w", path, err))
-			}
-		}
-	}
-	return failure
 }

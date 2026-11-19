@@ -17,11 +17,11 @@ import (
 
 type noAuthority struct{}
 
-func (noAuthority) Current() *compile.Generation       { return nil }
-func (noAuthority) Expired(*compile.Generation)        {}
-func (noAuthority) Verifier() *Verifier                { return nil }
-func (noAuthority) Blocked() *store.BlockedAccounts    { return nil }
-func (noAuthority) Addresses() *store.BlockedAddresses { return nil }
+func (noAuthority) Current() *compile.Generation      { return nil }
+func (noAuthority) Expired(*compile.Generation)       {}
+func (noAuthority) Verifier() *Verifier               { return nil }
+func (noAuthority) Blocked() *store.BlockedAccounts   { return nil }
+func (noAuthority) AddressIndex() *store.AddressIndex { return nil }
 
 // A ceiling of zero or less selects the default.
 func TestNewSelectsDefaultCeiling(t *testing.T) {

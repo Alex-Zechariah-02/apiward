@@ -70,7 +70,7 @@ type Finding struct {
 	Message  string `json:"message"`
 }
 
-var severityOrder = map[string]int{"critical": 0, "high": 1, "medium": 2, "low": 3}
+var severityOrder = map[string]int{"critical": 0, "high": 1, "medium": 2, "low": 3, "info": 4}
 
 // SortFindings gives the fixed order: severity, rule, object.
 func SortFindings(items []Finding) {
@@ -114,6 +114,13 @@ func ConfigurationWarnings(g *compile.Generation, plain bool) []Finding {
 	}
 	SortFindings(items)
 	return items
+}
+
+// HostTransport is the informational finding W6 of a gateway whose data
+// plane a host program serves: the host owns TLS, so the gateway cannot
+// tell whether requests arrive over HTTPS.
+func HostTransport() Finding {
+	return Finding{"W6", "info", "data_plane", "The host program serves the data plane, so the gateway cannot confirm that requests arrive over HTTPS. Make sure the host program uses TLS."}
 }
 
 type UnusedReport struct {
@@ -179,14 +186,21 @@ func UnreadLog() UnusedReport {
 		MinMinute: int(unusedMinSpan / time.Minute), MinCount: unusedMinRequests}
 }
 
-// RefusalSpike applies the spike rule to the retained observations.
-func RefusalSpike(events []Observed, now time.Time) *Finding {
+// RefusalSpike applies the spike rule to the retained observations. It
+// counts without copying the window, and is withheld (nil) when the window
+// has dropped requests from inside the baseline period, whose share would
+// then be read from part of it. A request stamped after now (a clock step)
+// counts in the last minute.
+func RefusalSpike(o *Observations, now time.Time) *Finding {
+	from := now.Add(-spikeWindow - spikeBaseline)
+	if oldest, dropped := o.RetainedSince(); dropped && oldest.After(from) {
+		return nil
+	}
 	var recent, recentRefused, before, beforeRefused int
-	for _, event := range events {
+	o.Walk(from, func(event *Entry) bool {
 		age := now.Sub(event.Time)
-		refused := event.Decision == "refused"
+		refused := event.Decision == Refused
 		switch {
-		case age < 0:
 		case age <= spikeWindow:
 			recent++
 			if refused {
@@ -198,7 +212,8 @@ func RefusalSpike(events []Observed, now time.Time) *Finding {
 				beforeRefused++
 			}
 		}
-	}
+		return true
+	})
 	if recentRefused < spikeMinRefusals {
 		return nil
 	}

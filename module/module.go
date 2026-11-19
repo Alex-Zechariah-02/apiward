@@ -13,7 +13,8 @@
 // A Check sees only a copy of the request's method, path, client address,
 // headers and verified identity: no body, no token and no connection. It must
 // not perform network or file I/O and must not keep mutable package-level
-// state; per-key state belongs in a Table.
+// state. Each phase's checks together are bounded by the gateway's write
+// timeout; a phase that runs past it fails the request.
 package module
 
 import (
@@ -25,6 +26,7 @@ import (
 	"regexp"
 	"slices"
 	"sync"
+	"sync/atomic"
 )
 
 // Phase is the point of the request pipeline at which a module runs.
@@ -85,7 +87,7 @@ type Check interface {
 // Request is the read-only view of a request a Check receives.
 type Request struct {
 	Method, Path, ClientAddress string
-	Header                      http.Header // a copy: changing it changes nothing
+	Header                      http.Header // a copy made once per phase and shared by its checks: read it, never change it
 	Subject                     string      // empty before or without a verified token
 	Roles                       []string
 	Operation, API              string // empty in the Ingress phase
@@ -191,6 +193,7 @@ func Register(c Control) {
 		panic(fmt.Sprintf("module %s: already registered", info.ID))
 	}
 	controls[info.ID] = c
+	extensions.Store(nil)
 }
 
 // Registered lists every registered module, built-ins included, sorted by
@@ -205,8 +208,20 @@ func Registered() []Info {
 
 // Extensions returns the registered modules that are not built in, sorted
 // by phase and then ID: the ones whose checks the pipeline runs and whose
-// policy members the gateway reads.
-func Extensions() []Control { return sorted(false) }
+// policy members the gateway reads. The sorted list is kept until the next
+// Register, so a policy decode reads it without the lock or a sort; callers
+// must not change it.
+func Extensions() []Control {
+	if list := extensions.Load(); list != nil {
+		return *list
+	}
+	list := sorted(false)
+	extensions.Store(&list)
+	return list
+}
+
+// extensions holds Extensions' result; Register clears it.
+var extensions atomic.Pointer[[]Control]
 
 func sorted(withBuiltins bool) []Control {
 	mu.RLock()

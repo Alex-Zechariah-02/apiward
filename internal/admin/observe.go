@@ -3,6 +3,7 @@
 package admin
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -39,7 +40,7 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request, who caller
 		}
 	}
 	ref, subject, operation, decision := query.Get("ref"), query.Get("subject"), query.Get("operation"), query.Get("decision")
-	validDecision := decision == "" || decision == "allowed" || decision == "refused"
+	validDecision := decision == "" || slices.Contains(monitor.Decisions, decision)
 	// A page above 100 events is refused, so one read copies only a bounded part of the ring.
 	if err != nil || !knownQuery(query, "ref", "subject", "operation", "decision", "limit", "after") || limit < 1 || limit > 100 || !validDecision {
 		adminError(w, http.StatusBadRequest, "bad_request", "")
@@ -54,11 +55,11 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request, who caller
 		}
 	}
 	// One match beyond the page says whether a next page exists.
-	matches := s.observations.Recent(func(event *monitor.Observed) bool {
+	matches := s.observations.Recent(func(event *monitor.Entry) bool {
 		return (after == 0 || event.Sequence() < after) &&
 			(ref == "" || event.RequestID == ref) &&
-			(subject == "" || (event.Subject != nil && *event.Subject == subject)) &&
-			(operation == "" || (event.Operation != nil && *event.Operation == operation)) &&
+			(subject == "" || event.Subject == subject) &&
+			(operation == "" || event.Operation == operation) &&
 			(decision == "" || event.Decision == decision)
 	}, limit+1)
 	items := []monitor.RequestView{}
@@ -87,12 +88,12 @@ func (s *Server) handleEventStream(w http.ResponseWriter, r *http.Request, who c
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-store")
 	controller := http.NewResponseController(w)
-	write := func(data string) bool {
+	write := func(data []byte) bool {
 		// Each frame has a 5 s write deadline, so a stalled viewer ends the stream instead of holding it.
 		if controller.SetWriteDeadline(time.Now().Add(5*time.Second)) != nil {
 			return false
 		}
-		if _, err := fmt.Fprint(w, data); err != nil {
+		if _, err := w.Write(data); err != nil {
 			return false
 		}
 		if controller.Flush() != nil {
@@ -100,7 +101,7 @@ func (s *Server) handleEventStream(w http.ResponseWriter, r *http.Request, who c
 		}
 		return controller.SetWriteDeadline(time.Time{}) == nil
 	}
-	if !write(": connected\n\n") {
+	if !write([]byte(": connected\n\n")) {
 		return
 	}
 	// An idle stream is kept alive every 15 s, and each beat re-checks the session.
@@ -108,6 +109,10 @@ func (s *Server) handleEventStream(w http.ResponseWriter, r *http.Request, who c
 	defer heartbeat.Stop()
 	expiry := time.NewTimer(time.Until(who.session.Expires))
 	defer expiry.Stop()
+	// One buffer and encoder serve every frame of the stream.
+	var frame bytes.Buffer
+	encoder := json.NewEncoder(&frame)
+	checked := time.Now()
 	for {
 		select {
 		case <-r.Context().Done():
@@ -122,20 +127,30 @@ func (s *Server) handleEventStream(w http.ResponseWriter, r *http.Request, who c
 			if !s.sessions.Active(who.token, time.Now()) {
 				return
 			}
-			if !write(": heartbeat\n\n") {
+			if !write([]byte(": heartbeat\n\n")) {
 				return
 			}
 		case event := <-viewer.Feed():
-			if !s.sessions.Active(who.token, time.Now()) {
-				return
-			}
-			if count := s.observations.TakeDropped(viewer); count > 0 {
-				if !write(fmt.Sprintf("event: dropped\ndata: {\"count\":%d}\n\n", count)) {
+			// A revoked session ends the stream through Closed and an expired
+			// one through the timer; idle expiry is checked at most once a
+			// second, not for every event, as the check takes the session lock.
+			if now := time.Now(); now.Sub(checked) >= time.Second {
+				if !s.sessions.Active(who.token, now) {
 					return
 				}
+				checked = now
 			}
-			data, _ := json.Marshal(event.RequestView)
-			if !write("event: request\ndata: " + string(data) + "\n\n") {
+			frame.Reset()
+			if count := s.observations.TakeDropped(viewer); count > 0 {
+				fmt.Fprintf(&frame, "event: dropped\ndata: {\"count\":%d}\n\n", count)
+			}
+			frame.WriteString("event: request\ndata: ")
+			// Encode ends the value with a line feed, which ends the data line.
+			if encoder.Encode(event.View()) != nil {
+				return
+			}
+			frame.WriteString("\n")
+			if !write(frame.Bytes()) {
 				return
 			}
 		}

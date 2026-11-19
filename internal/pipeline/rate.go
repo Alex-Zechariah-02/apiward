@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/audit"
@@ -123,7 +124,8 @@ const (
 type Limiter struct {
 	mu         sync.Mutex
 	counters   map[counterKey]*counter
-	expiry     expiryQueue // the same counters, earliest removable first
+	size       atomic.Int64 // len(counters), read without the lock (Size)
+	expiry     expiryQueue  // the same counters, earliest removable first
 	admissions int
 	capacity   int
 }
@@ -138,8 +140,10 @@ func NewLimiter(capacity int) *Limiter {
 // admit applies the rule at now (Unix milliseconds): with C requests admitted
 // in the current bucket, P in the previous one and offset d into the current
 // bucket, the request is admitted when C + P*(W-d)/W + 1 <= N, and only an
-// admitted request is counted.
-func (l *Limiter) admit(key counterKey, rule *compile.RateRule, now int64) rateDecision {
+// admitted request is counted. A refusal also returns the whole seconds, at
+// least one, until key would next admit a request (RFC 9110 section 10.2.3),
+// read in the same critical section.
+func (l *Limiter) admit(key counterKey, rule *compile.RateRule, now int64) (rateDecision, int64) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
@@ -149,10 +153,11 @@ func (l *Limiter) admit(key counterKey, rule *compile.RateRule, now int64) rateD
 			l.sweep(now, compile.SweepInterval)
 		}
 		if len(l.counters) >= l.capacity {
-			return rateNoCapacity
+			return rateNoCapacity, 0
 		}
 		c = &counter{window: rule.Window(), bucket: now / rule.Window(), key: key}
 		l.counters[key] = c
+		l.size.Store(int64(len(l.counters)))
 		heap.Push(&l.expiry, c)
 	}
 
@@ -169,7 +174,7 @@ func (l *Limiter) admit(key counterKey, rule *compile.RateRule, now int64) rateD
 	}
 
 	if c.usage(now)+rule.Window() > rule.Count()*rule.Window() {
-		return rateExceeded
+		return rateExceeded, max((c.wait(now, rule.Count())+999)/1000, 1)
 	}
 	c.current++
 
@@ -177,19 +182,7 @@ func (l *Limiter) admit(key counterKey, rule *compile.RateRule, now int64) rateD
 	if l.admissions%compile.SweepInterval == 0 {
 		l.sweep(now, compile.SweepInterval)
 	}
-	return rateAdmitted
-}
-
-// retryAfter returns the whole seconds, at least one, until key would next
-// admit a request under rule (RFC 9110 section 10.2.3).
-func (l *Limiter) retryAfter(key counterKey, rule *compile.RateRule, now int64) int64 {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	c := l.counters[key]
-	if c == nil {
-		return 1
-	}
-	return max((c.wait(now, rule.Count())+999)/1000, 1)
+	return rateAdmitted, 0
 }
 
 // sweep removes up to budget counters whose current and previous buckets have
@@ -202,6 +195,7 @@ func (l *Limiter) sweep(now int64, budget int) {
 		c := heap.Pop(&l.expiry).(*counter)
 		delete(l.counters, c.key)
 	}
+	l.size.Store(int64(len(l.counters)))
 }
 
 // Clock reads limiter time: a wall-clock anchor taken once plus the
@@ -249,10 +243,10 @@ func (h *Handler) admitRate(q *request, stage int, key counterKey, rule *compile
 		q.reject(stage, http.StatusBadRequest, "bad_request")
 		return false
 	}
-	now := h.clock.now()
-	switch h.limiter.admit(key, rule, now) {
+	decision, wait := h.limiter.admit(key, rule, h.clock.now())
+	switch decision {
 	case rateExceeded:
-		q.w.Header().Set("Retry-After", strconv.FormatInt(h.limiter.retryAfter(key, rule, now), 10))
+		q.w.Header().Set("Retry-After", strconv.FormatInt(wait, 10))
 		q.event.Reason = "quota_exceeded"
 		q.reject(stage, http.StatusTooManyRequests, "rate_limited")
 		return false
@@ -264,12 +258,9 @@ func (h *Handler) admitRate(q *request, stage int, key counterKey, rule *compile
 	return true
 }
 
-// size returns the number of counters held.
-func (l *Limiter) Size() int {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	return len(l.counters)
-}
+// Size returns the number of counters held, without taking the lock every
+// request takes.
+func (l *Limiter) Size() int { return int(l.size.Load()) }
 
 // ceiling returns the most counters the limiter holds.
 func (l *Limiter) Capacity() int { return l.capacity }

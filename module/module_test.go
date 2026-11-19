@@ -1,4 +1,4 @@
-// Registration rules, the bounded table and failure reasons.
+// Registration rules and failure reasons.
 
 package module
 
@@ -28,15 +28,6 @@ func TestRegisterRefuses(t *testing.T) {
 	}
 	if got := Registered(); len(got) != 1 || got[0].ID != "taken" {
 		t.Fatalf("registered: %v", got)
-	}
-}
-
-// A full table refuses a new key and keeps updating the keys it holds.
-func TestTableBound(t *testing.T) {
-	table := NewTable[string, int](1)
-	add := func(_ int, _ bool) int { return 1 }
-	if !table.Update("a", add) || table.Update("b", add) || !table.Update("a", add) || table.Len() != 1 {
-		t.Fatalf("bounded table: len %d", table.Len())
 	}
 }
 

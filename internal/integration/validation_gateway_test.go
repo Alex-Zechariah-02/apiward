@@ -60,7 +60,7 @@ func TestValidationThroughGateway(t *testing.T) {
 		{"lone surrogate", order(`"quantity":1,"x":"\ud800"`), false, 400, "BODY", "invalid_encoding"},
 		{"repeated member", order(`"quantity":1,"quantity":40`), false, 400, "BODY", "duplicate_member"},
 		{"nesting above the bound", create(jsonType, strings.Repeat(`{"a":`, 17)+"1"+strings.Repeat("}", 17)), false, 400, "BODY", "limit_exceeded"},
-		{"unbounded number", order(`"quantity":1e1000`), false, 400, "BODY", "limit_exceeded"},
+		{"unbounded number", order(`"quantity":1e1000`), false, 400, "BODY", "number_not_comparable"},
 		{"no media type", create("", `{"customer":"cust-001","item":"ITM-001","quantity":1}`), false, 415, "BODY", "media_type"},
 		{"text media type", create("Content-Type: text/plain\r\n", `{}`), false, 415, "BODY", "media_type"},
 		{"other charset", create("Content-Type: application/json; charset=iso-8859-1\r\n", `{}`), false, 415, "BODY", "media_type"},

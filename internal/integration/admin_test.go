@@ -68,10 +68,7 @@ func addAdmin(e *gatewaytest.Env, binary, name, permissions string) (gatewaytest
 func assertAbsent(t *testing.T, e *gatewaytest.Env, values ...string) {
 	t.Helper()
 	e.Shutdown()
-	files, err := filepath.Glob(e.AuditLog + "*")
-	if err != nil {
-		t.Fatal(err)
-	}
+	files := append(gatewaytest.RotatedAudit(t, e.AuditLog), e.AuditLog)
 	databaseFiles, err := filepath.Glob(e.Database + "*")
 	if err != nil {
 		t.Fatal(err)

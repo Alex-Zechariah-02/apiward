@@ -84,16 +84,22 @@ type Event struct {
 	IgnoredRoles  []string          `json:"ignored_roles,omitempty"`
 	ClientAddress string            `json:"client_address,omitempty"`
 	DurationMS    float64           `json:"duration_ms,omitempty"`
-	Actor         string            `json:"actor,omitempty"`
-	Session       string            `json:"session,omitempty"`
-	Generation    string            `json:"generation,omitempty"`
-	Profile       string            `json:"profile,omitempty"`
-	Upstream      string            `json:"upstream,omitempty"`
+	// UpstreamMS is how long the upstream took, from sending the request to
+	// its response headers (monotonic clock), on forwarding outcomes only.
+	UpstreamMS float64 `json:"upstream_ms,omitempty"`
+	Actor      string  `json:"actor,omitempty"`
+	Session    string  `json:"session,omitempty"`
+	Generation string  `json:"generation,omitempty"`
+	Profile    string  `json:"profile,omitempty"`
+	Upstream   string  `json:"upstream,omitempty"`
 	// UpstreamAddress names the address dialled, on forwarding failures only.
 	UpstreamAddress string `json:"upstream_address,omitempty"`
-	Transition      string `json:"transition,omitempty"`
-	Revision        int64  `json:"revision,omitempty"`
-	Candidate       int64  `json:"candidate,omitempty"`
+	// ResolvedDigest is the SHA-256 of the settings as resolved, on
+	// gateway.started and gateway.reloaded.
+	ResolvedDigest string `json:"settings_resolved_digest,omitempty"`
+	Transition     string `json:"transition,omitempty"`
+	Revision       int64  `json:"revision,omitempty"`
+	Candidate      int64  `json:"candidate,omitempty"`
 	// A provisional base's events name its revision, the confirmed revision
 	// it returns to on rollback and its deadline.
 	Provisional    int64     `json:"provisional,omitempty"`
@@ -111,12 +117,14 @@ type Event struct {
 	// An evicted file's size, SHA-256 and the times of its first and last
 	// records; an ingress summary's interval and counts per reason and per
 	// client address.
-	Bytes     int64             `json:"bytes,omitempty"`
-	Digest    string            `json:"sha256,omitempty"`
-	First     time.Time         `json:"first_record,omitzero"`
-	Last      time.Time         `json:"last_record,omitzero"`
-	Counts    map[string]uint64 `json:"counts,omitempty"`
-	Addresses []AddressCount    `json:"addresses,omitempty"`
+	Bytes  int64             `json:"bytes,omitempty"`
+	Digest string            `json:"sha256,omitempty"`
+	First  time.Time         `json:"first_record,omitzero"`
+	Last   time.Time         `json:"last_record,omitzero"`
+	Counts map[string]uint64 `json:"counts,omitempty"`
+	// Signature signs an audit.checkpoint's chain head (base64url).
+	Signature string         `json:"signature,omitempty"`
+	Addresses []AddressCount `json:"addresses,omitempty"`
 	// Private replay context; neither the durable envelope nor the public Event
 	// exposes this flag or retains the credential that led to it.
 	identityKnown bool
@@ -172,9 +180,14 @@ type stages [stageCount]string
 const stagesSize = 256
 
 // MarshalJSON writes every stage in order with its result, a missing one as
-// not run. It appends rather than formats: it runs for every audit record.
+// not run.
 func (s stages) MarshalJSON() ([]byte, error) {
-	out := make([]byte, 0, stagesSize)
+	return s.appendJSON(make([]byte, 0, stagesSize)), nil
+}
+
+// appendJSON appends what MarshalJSON writes; the record encoder calls it
+// directly, so no copy is made.
+func (s stages) appendJSON(out []byte) []byte {
 	out = append(out, '{')
 	for i, name := range StageNames {
 		result := s[i]
@@ -188,11 +201,13 @@ func (s stages) MarshalJSON() ([]byte, error) {
 		out = append(out, ':')
 		out = strconv.AppendQuote(out, result)
 	}
-	return append(out, '}'), nil
+	return append(out, '}')
 }
 
+// NewRequestID returns 16 random bytes as hex; the bytes stay on the stack,
+// so the string is the only allocation.
 func NewRequestID() string {
-	id := make([]byte, 16)
-	rand.Read(id)
-	return hex.EncodeToString(id)
+	var id [16]byte
+	rand.Read(id[:])
+	return hex.EncodeToString(id[:])
 }

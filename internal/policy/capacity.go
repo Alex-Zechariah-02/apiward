@@ -7,7 +7,7 @@ import "fmt"
 
 // Defaults of the capacity ceilings, which a deployment may raise up to the
 // maxima below. A rate counter keeps 257 bytes of heap, so 1,048,576
-// counters need about 257 MiB. MaxPolicyBytes is the store's own bound on a
+// counters need about 257 MiB and the default 32,768 about 8 MiB. MaxPolicyBytes is the store's own bound on a
 // stored document (its CHECK constraint), so a policy is never accepted that
 // the database would refuse to keep.
 const (
@@ -16,7 +16,7 @@ const (
 	DefaultOperations   = 256
 	DefaultRoles        = 64
 	DefaultPermits      = 4096
-	DefaultRateCounters = 262144
+	DefaultRateCounters = 32768
 	DefaultWindow       = 10000
 
 	MaxPolicyBytes  = 64 << 10
@@ -41,9 +41,19 @@ type Limits struct {
 	Window       int
 }
 
+// The smallest encodings of an operation and a permit, in bytes: a
+// configured operation or permit ceiling a policy of PolicyBytes cannot
+// reach is refused.
+const (
+	minOperationBytes = 80
+	minPermitBytes    = 28
+)
+
 // Resolve returns l with every zero member set to its default, or an error
-// naming the first member outside 1 to its maximum.
+// naming the first member outside 1 to its maximum, or a configured
+// operation or permit ceiling no policy within PolicyBytes can reach.
 func (l Limits) Resolve() (Limits, error) {
+	operations, permits := l.Operations, l.Permits
 	for _, s := range []struct {
 		name      string
 		value     *int
@@ -63,6 +73,15 @@ func (l Limits) Resolve() (Limits, error) {
 		if *s.value < 1 || *s.value > s.high {
 			return Limits{}, fmt.Errorf("limits.%s must be 1 to %d", s.name, s.high)
 		}
+	}
+	// Only a ceiling set to other than its default is checked: the default
+	// permits ceiling predates the check, and an already resolved Limits
+	// resolves to itself.
+	if operations != DefaultOperations && operations > l.PolicyBytes/minOperationBytes {
+		return Limits{}, fmt.Errorf("limits.operations %d cannot be reached within limits.policy_bytes %d (at most %d)", operations, l.PolicyBytes, l.PolicyBytes/minOperationBytes)
+	}
+	if permits != DefaultPermits && permits > l.PolicyBytes/minPermitBytes {
+		return Limits{}, fmt.Errorf("limits.permits %d cannot be reached within limits.policy_bytes %d (at most %d)", permits, l.PolicyBytes, l.PolicyBytes/minPermitBytes)
 	}
 	return l, nil
 }

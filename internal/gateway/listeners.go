@@ -133,6 +133,7 @@ func (s *servingCertificate) watchExpiry(done <-chan struct{}) {
 	for {
 		if leaf := s.current.Load().Leaf; time.Until(leaf.NotAfter) < expiryWarning {
 			s.audit.Record(audit.Event{Kind: "tls.certificate_expiring", Expires: leaf.NotAfter})
+			s.logger.Warn("data listener certificate expires soon", "expires", leaf.NotAfter)
 		}
 		select {
 		case <-done:
@@ -181,7 +182,11 @@ func checkHealth(configPath string, logger *slog.Logger) int {
 	}
 	// 5 s: a probe of a local listener; the image's check allows 8 s.
 	client := &http.Client{Timeout: 5 * time.Second}
-	reply, err := client.Get("http://" + loopbackForm(cfg.metricsListen) + "/readyz")
+	probe := cfg.metricsListen
+	if cfg.healthListen != "" {
+		probe = cfg.healthListen
+	}
+	reply, err := client.Get("http://" + loopbackForm(probe) + "/readyz")
 	if err != nil {
 		logger.Error("not ready", "error", err)
 		return exitFailed
@@ -213,7 +218,12 @@ func printJWKS(configPath string, logger *slog.Logger) int {
 		logger.Error("command refused", "command", "jwks", "error", err)
 		return exitFailed
 	}
-	fmt.Println(string(cfg.signer.JWKS()))
+	// A key set cut short by a full disk or a closed pipe must not exit 0:
+	// an upstream would be configured with it.
+	if _, err := fmt.Println(string(cfg.signer.JWKS())); err != nil {
+		logger.Error("key set not written", "error", err)
+		return exitFailed
+	}
 	return 0
 }
 
@@ -234,6 +244,21 @@ func health(metrics http.Handler, ready func() bool) http.Handler {
 	mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, _ *http.Request) { answer(w, ready()) })
 	mux.Handle("/", metrics)
 	return mux
+}
+
+// auxiliary is the handler of the auxiliary listeners: the metrics listener
+// serves health and metrics, the health listener health alone, so a load
+// balancer reads readiness without /metrics reaching its network.
+func (d *deployment) auxiliary(metrics http.Handler, ready func() bool) http.Handler {
+	full, alone := health(metrics, ready), health(http.NotFoundHandler(), ready)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		local, _ := r.Context().Value(http.LocalAddrContextKey).(net.Addr)
+		if local != nil && d.health != "" && local.String() == d.health {
+			alone.ServeHTTP(w, r)
+			return
+		}
+		full.ServeHTTP(w, r)
+	})
 }
 
 // loopbackForm is the address a local health check dials for a listener:

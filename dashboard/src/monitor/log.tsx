@@ -124,7 +124,8 @@ export function SecurityLogView({ admin }: ViewProps) {
             <option value="">Any</option>
             <option value="allowed">Allowed</option>
             <option value="refused">Refused</option>
-            <option value="failed">Outcome Unknown</option>
+            <option value="failed">Gateway Error</option>
+            <option value="upstream_failed">Outcome Unknown</option>
           </select>
         </Field>
         <Field id={`${id}-from`} label="From" hint={`Times are in ${zoneLabel(zone)}, the zone set on My Account.`}>

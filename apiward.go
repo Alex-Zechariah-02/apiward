@@ -13,14 +13,14 @@
 //	gw, err := apiward.New(cfg, logger)
 //	err = gw.Start()
 //	mux.Handle("/api/", http.StripPrefix("/api", gw))
-//	gw.ServerSettings().Apply(server)
+//	server := gw.Server(mux)
 //	...
 //	err = gw.Stop(ctx)
 //
-// The host must apply ServerSettings to its server (header size and
-// timeouts bound slow and oversized clients; the HTTP/1 and HTTP/2
-// protocols and HTTP/2 stream limits are set too) and must not rewrite a
-// request's RemoteAddr from client-supplied headers: address lists and
+// Server returns the host's server with the configured header size and
+// timeouts (which bound slow and oversized clients), the HTTP/1 and HTTP/2
+// protocols and HTTP/2 stream limits already set. The host must not rewrite
+// a request's RemoteAddr from client-supplied headers: address lists and
 // per-address rate limits read it.
 package apiward
 
@@ -41,10 +41,6 @@ type Config = core.Settings
 // 503 gateway_unavailable and recorded. Its methods are safe for concurrent
 // use.
 type Gateway = core.Embedded
-
-// ServerSettings are the configured limits for the host's server; Apply
-// sets them.
-type ServerSettings = core.ServerSettings
 
 // Kinds of failure. Every error from LoadConfig, New, Start and Stop
 // matches exactly one with errors.Is; its text names the setting or file

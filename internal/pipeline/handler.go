@@ -31,9 +31,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if peer, err := netip.ParseAddrPort(r.RemoteAddr); err == nil {
-		addr := h.clientAddress(peer.Addr().Unmap(), r.Header)
-		q.event.ClientAddress = addr.String()
-		q.rateAddress = h.rateAddress(addr, q.event.ClientAddress)
+		q.addr = h.clientAddress(peer.Addr().Unmap(), r.Header)
+		q.event.ClientAddress = q.addr.String()
+		q.rateAddress = h.rateAddress(q.addr, q.event.ClientAddress)
 	}
 	// Keep credentials only for authentication; discard client identity metadata
 	// before any ingress refusal as well as before forwarding.
@@ -88,7 +88,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// A generation past its earliest deadline (a provisional base's or an
 	// override's) admits nothing, even if the controller's timer is late; the
 	// controller is asked to end what expired now.
-	if g.Expired(compile.TrustedNow()) {
+	// Lapsed reads the trusted clock only for a generation with a deadline.
+	if g.Lapsed() {
 		h.authority.Expired(g)
 		q.reject(audit.StageCapture, http.StatusServiceUnavailable, "gateway_unavailable")
 		return
@@ -108,17 +109,19 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if isPreflight(r) && h.preflight(q, g, path, inbound) {
 		return
 	}
-	t, rule := g.Match(path, r.Method, inbound)
-	if t == nil {
-		q.reject(audit.StageRoute, http.StatusNotFound, "not_found")
+	// The routing and permission order is the generation's, shared with the
+	// access checker (compile.Route, compile.Admit).
+	t, rule, code := g.Route(path, r.Method, inbound)
+	if code == "not_found" {
+		q.reject(audit.StageRoute, http.StatusNotFound, code)
 		return
 	}
 	if r.Method == http.MethodOptions && maxForwards(q, r, t.Allow()) {
 		return
 	}
-	if rule == nil {
+	if code == "method_not_allowed" {
 		w.Header().Set("Allow", t.Allow())
-		q.reject(audit.StageRoute, http.StatusMethodNotAllowed, "method_not_allowed")
+		q.reject(audit.StageRoute, http.StatusMethodNotAllowed, code)
 		return
 	}
 	q.event.Operation, q.event.API, q.event.Upstream = rule.Operation(), rule.API(), rule.Upstream()
@@ -126,7 +129,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// access and response headers.
 	q.w = newAPIWriter(w, rule, r)
 	w = q.w
-	if !rule.AddressAllowed(q.event.ClientAddress) {
+	if !rule.Admits(q.addr) {
 		q.reject(audit.StageRoute, http.StatusForbidden, "address_not_allowed")
 		return
 	}
@@ -167,20 +170,23 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if !h.runModules(q, r, module.Identity, moduleView{path: path, rule: rule}) {
 			return
 		}
-		roles, q.event.IgnoredRoles, reason = g.Authorise(verified.roles, rule)
-		q.event.Roles = roles
 		blocked := h.authority.Blocked()
 		if blocked == nil {
 			q.reject(audit.StageRBAC, http.StatusServiceUnavailable, "gateway_unavailable")
 			return
 		}
-		if _, found := (*blocked)[q.event.Subject]; found {
-			q.event.Reason = "account_blocked"
-			q.reject(audit.StageRBAC, http.StatusForbidden, "account_blocked")
+		roles, q.event.IgnoredRoles, reason = g.Admit(verified.roles, rule, func() bool {
+			_, found := (*blocked)[q.event.Subject]
+			return found
+		})
+		q.event.Roles = roles
+		switch reason {
+		case "":
+		case "account_blocked":
+			q.event.Reason = reason
+			q.reject(audit.StageRBAC, http.StatusForbidden, reason)
 			return
-		}
-
-		if reason != "" {
+		default:
 			q.event.Reason = reason
 			q.reject(audit.StageRBAC, http.StatusForbidden, "forbidden")
 			return

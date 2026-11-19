@@ -8,6 +8,7 @@ import (
 	"database/sql"
 	"errors"
 	"net/netip"
+	"slices"
 	"time"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/policy"
@@ -51,6 +52,61 @@ func (list BlockedAddresses) Blocks(addr netip.Addr, now time.Time) bool {
 	return false
 }
 
+// AddressIndex answers Blocks for one published list without testing every
+// entry: it maps each canonical prefix to its expiry and probes one prefix
+// per distinct prefix length in the list. It is immutable after it is built.
+type AddressIndex struct {
+	// ranges maps each prefix to its expiry in Unix nanoseconds, 0 for none;
+	// v4 and v6 hold the distinct prefix lengths of each family.
+	ranges map[netip.Prefix]int64
+	v4, v6 []int
+}
+
+// NewAddressIndex builds the index of list.
+// Len is how many ranges the index holds.
+func (index *AddressIndex) Len() int { return len(index.ranges) }
+
+func NewAddressIndex(list BlockedAddresses) *AddressIndex {
+	index := &AddressIndex{ranges: make(map[netip.Prefix]int64, len(list))}
+	for _, entry := range list {
+		prefix := entry.Prefix.Masked()
+		var expires int64
+		if entry.ExpiresAt != nil {
+			expires = entry.ExpiresAt.UnixNano()
+		}
+		index.ranges[prefix] = expires
+		if prefix.Addr().Is4() {
+			index.v4 = append(index.v4, prefix.Bits())
+		} else {
+			index.v6 = append(index.v6, prefix.Bits())
+		}
+	}
+	slices.Sort(index.v4)
+	slices.Sort(index.v6)
+	index.v4, index.v6 = slices.Compact(index.v4), slices.Compact(index.v6)
+	return index
+}
+
+// Blocks reports whether an active entry covers the address.
+func (index *AddressIndex) Blocks(addr netip.Addr, now time.Time) bool {
+	addr = addr.Unmap()
+	lengths := index.v6
+	if addr.Is4() {
+		lengths = index.v4
+	}
+	at := now.UnixNano()
+	for _, bits := range lengths {
+		prefix, err := addr.Prefix(bits)
+		if err != nil {
+			continue
+		}
+		if expires, found := index.ranges[prefix]; found && (expires == 0 || at < expires) {
+			return true
+		}
+	}
+	return false
+}
+
 // BlockRange returns the canonical CIDR range of an entry key: host bits zero,
 // IPv4-mapped IPv6 written as IPv4. A range not already in that form is
 // refused, so one range has one stored key.
@@ -67,7 +123,9 @@ func BlockRange(text string) (netip.Prefix, bool) {
 
 // BlockedAddresses reads the list, refusing rows the schema cannot express.
 func (s *DB) BlockedAddresses(ctx context.Context) (BlockedAddresses, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT cidr, reason, blocked_by, blocked_at, expires_at FROM blocked_address`)
+	// One row past the bound is read, so an oversized table is refused
+	// without being read whole.
+	rows, err := s.db.QueryContext(ctx, `SELECT cidr, reason, blocked_by, blocked_at, expires_at FROM blocked_address LIMIT ?`, MaxBlockedAddresses+1)
 	if err != nil {
 		return nil, err
 	}

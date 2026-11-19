@@ -184,7 +184,8 @@ func (e *Env) Health() string {
 	var h struct {
 		State string `json:"state"`
 	}
-	if code != http.StatusOK || json.Unmarshal([]byte(body), &h) != nil {
+	// 503 answers exactly the unavailable state, which refuses everything.
+	if json.Unmarshal([]byte(body), &h) != nil || (code == http.StatusServiceUnavailable) != (h.State == "unavailable") || code != http.StatusOK && code != http.StatusServiceUnavailable {
 		e.T.Fatalf("health: %d %s", code, body)
 	}
 	return h.State

@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"time"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/fault"
@@ -24,10 +25,18 @@ func DatabaseURI(path string) string {
 	return "file:" + location.EscapedPath()
 }
 
+// journalModes are the journal modes the gateway uses: WAL for the live
+// database, DELETE for a single-file copy (backup, restore).
+var journalModes = []string{"WAL", "DELETE"}
+
 // Connect opens the database with the settings every connection must have
 // and takes the exclusive lock at once, so a second process fails here rather
 // than at its first mutation.
 func Connect(path, journal string) (*sql.DB, error) {
+	// Only a mode name reaches the DSN, so no caller can add other options.
+	if !slices.Contains(journalModes, journal) {
+		return nil, fmt.Errorf("journal mode %q is not one of %v", journal, journalModes)
+	}
 	dsn := DatabaseURI(path) +
 		"?_pragma=locking_mode(EXCLUSIVE)" +
 		"&_pragma=journal_mode(" + journal + ")" +

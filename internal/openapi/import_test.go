@@ -167,7 +167,7 @@ func TestImportOpenAPI(t *testing.T) {
 			"POST /extra":            {CodeKeyword, "#/paths/~1extra/post" + body + "/additionalProperties"},
 			"POST /sibling":          {CodeKeyword, "#/paths/~1sibling/post" + body + "/maxProperties"},
 			"POST /fanout":           {CodeSchemaLimit, "#/components/schemas/Fan4/properties/p7"},
-			"GET /count":             {CodeCompiler, "headers.properties.X-Count.type"},
+			"GET /count":             {CodeKeyword, "#/paths/~1count/get/parameters/0/schema"},
 			"GET /content-header":    {CodeKeyword, "#/paths/~1content-header/get/parameters/0/content"},
 			"POST /untyped":          {CodeCompiler, "body.schema.type"},
 			"GET /both-schemes":      {CodeSecurity, ""},

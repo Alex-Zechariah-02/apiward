@@ -25,9 +25,10 @@ const nativeUsage = `usage: apiward run --config <file>
   apiward jwks --config <file>
   apiward backup --config <file> --output <file>
   apiward restore --config <file> --backup <file>
-  apiward policy import-openapi --spec <file> --api <id> --upstream <id> --base <file> --out <file> --report <file>
-  apiward policy export-openapi --policy <file> --api <id> --out <file> --report <file>
-  apiward policy validate --policy <file>`
+  apiward policy import-openapi --spec <file> --api <id> --upstream <id> --base <file> --out <file> --report <file> [--config <file>]
+  apiward policy export-openapi --policy <file> --api <id> --out <file> --report <file> [--config <file>]
+  apiward policy validate --policy <file> [--config <file>]
+  apiward audit verify --jwks <file> <files...>`
 
 // Main runs the native gateway command line and returns the exit status.
 // Every diagnostic is a JSON log line on stderr; the usage text is printed
@@ -42,8 +43,13 @@ func Main(args []string) int {
 		return exitFailed
 	}
 	command := args[0]
-	if command == "version" {
+	switch command {
+	case "version":
 		return printVersion(args[1:], logger)
+	case "help", "-h", "--help":
+		// Asked for: the usage on standard output, and no failure.
+		fmt.Println(nativeUsage)
+		return 0
 	}
 	options := []string{"config"}
 	switch command {
@@ -134,6 +140,9 @@ func printVersion(args []string, logger *slog.Logger) int {
 		fmt.Fprintln(os.Stderr, nativeUsage)
 		return exitFailed
 	}
-	fmt.Print(admin.VersionText())
+	if _, err := fmt.Print(admin.VersionText()); err != nil {
+		logger.Error("version not written", "error", err)
+		return exitFailed
+	}
 	return 0
 }

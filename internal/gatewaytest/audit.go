@@ -17,7 +17,15 @@ import (
 	"github.com/Alex-Zechariah-02/apiward/internal/audit"
 )
 
-// AuditEvents reads every record of the deployment's audit log.
+// LogOwn reports the log's own bookkeeping records (the chain, its
+// checkpoints and a clean stop's mark), which the readers below leave out:
+// the audit package's tests check them.
+func LogOwn(kind string) bool {
+	return kind == "audit.chain" || kind == "audit.checkpoint" || kind == "audit.closed"
+}
+
+// AuditEvents reads every record of the deployment's audit log but its own
+// bookkeeping records (LogOwn).
 func (e *Env) AuditEvents() []map[string]any {
 	e.T.Helper()
 	data, err := os.ReadFile(e.AuditLog)
@@ -29,6 +37,21 @@ func (e *Env) AuditEvents() []map[string]any {
 		e.T.Fatal(err)
 	}
 	return events
+}
+
+// RotatedAudit returns the paths of the rotated files of the audit log at
+// active, oldest first.
+func RotatedAudit(t *testing.T, active string) []string {
+	t.Helper()
+	rotated, err := audit.RotatedFiles(active)
+	if err != nil {
+		t.Fatal(err)
+	}
+	paths := make([]string, 0, len(rotated))
+	for _, file := range rotated {
+		paths = append(paths, filepath.Join(filepath.Dir(active), file.Name))
+	}
+	return paths
 }
 
 // ParseAudit decodes the records of the audit file named file. The gateway
@@ -53,7 +76,9 @@ func ParseAudit(data []byte, file string) ([]map[string]any, error) {
 			if at, ok := ev["offset"].(float64); ok && ev["kind"] == "audit.recovered" && ev["file"] == file {
 				recovered[int(at)] = true
 			}
-			events = append(events, ev)
+			if kind, _ := ev["kind"].(string); !LogOwn(kind) {
+				events = append(events, ev)
+			}
 		}
 		offset = end + 1
 	}
@@ -134,7 +159,9 @@ func AuditLines(t *testing.T, path string) []AuditLine {
 		if err := json.Unmarshal([]byte(line), &e); err != nil {
 			t.Fatalf("audit line is not one record: %q", line)
 		}
-		events = append(events, e)
+		if !LogOwn(e.Kind) {
+			events = append(events, e)
+		}
 	}
 	return events
 }
@@ -226,6 +253,19 @@ func SummaryCounts(events []map[string]any) map[string]int {
 		}
 	}
 	return counts
+}
+
+// SummaryRefusals adds up the refusals the ingress summaries among events
+// count (keys <STAGE>/<reason>/<operation>), those over a client address's
+// budget of recorded refusals a minute.
+func SummaryRefusals(events []map[string]any) int {
+	total := 0
+	for reason, n := range SummaryCounts(events) {
+		if strings.Contains(reason, "/") {
+			total += n
+		}
+	}
+	return total
 }
 
 // RecordOf returns a record of one of the requests ids among events, or nil

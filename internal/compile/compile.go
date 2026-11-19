@@ -3,8 +3,6 @@
 package compile
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"maps"
@@ -37,9 +35,11 @@ type Generation struct {
 	NotAfter time.Time
 
 	exact     map[string]*target
+	longest   int         // the longest exact target: longer paths skip the map
 	prefixes  []*target   // ordered most specific first
 	endpoints []*Endpoint // the upstreams, in policy order
 	roles     map[string]bool
+	document  []byte // the compiled policy's encoding, the digest input of ID
 }
 
 type target struct {
@@ -114,6 +114,7 @@ func Compile(p policy.Policy, revision int64, notAfter time.Time, limits policy.
 	targets := map[string]*target{}
 	rules := map[string]*Rule{}
 	schemas := schemaSet{}
+	extensions := module.Extensions()
 	for i, op := range p.Operations {
 		if err := policy.CheckID(op.ID, "operations[%d].id", i); err != nil {
 			return nil, err
@@ -125,7 +126,7 @@ func Compile(p policy.Policy, revision int64, notAfter time.Time, limits policy.
 		if !ok {
 			return nil, policy.Invalid("UNKNOWN_REFERENCE", "operations[%d].api", i)
 		}
-		if !policy.AllowedMethods[op.Method] {
+		if !policy.IsMethod(op.Method) {
 			return nil, policy.Invalid("INVALID_METHOD", "operations[%d].method", i)
 		}
 		prefix, ok := parseTarget(op.Target)
@@ -166,7 +167,7 @@ func Compile(p policy.Policy, revision int64, notAfter time.Time, limits policy.
 		if err := compileControls(op, i, r, schemas); err != nil {
 			return nil, err
 		}
-		if err := compileModules(op, i, r); err != nil {
+		if err := compileModules(op, i, r, extensions); err != nil {
 			return nil, err
 		}
 		if op.When == nil {
@@ -205,6 +206,7 @@ func Compile(p policy.Policy, revision int64, notAfter time.Time, limits policy.
 		t.allow = strings.Join(methods, ", ")
 		if t.prefix == "" {
 			g.exact[t.pattern] = t
+			g.longest = max(g.longest, len(t.pattern))
 		} else {
 			g.prefixes = append(g.prefixes, t)
 		}
@@ -214,7 +216,10 @@ func Compile(p policy.Policy, revision int64, notAfter time.Time, limits policy.
 	// order.
 	sort.Slice(g.prefixes, func(i, j int) bool { return len(g.prefixes[i].prefix) > len(g.prefixes[j].prefix) })
 
-	g.ID = GenerationID(p, revision, notAfter, nil)
+	if g.document, err = json.Marshal(p); err != nil {
+		return nil, policy.Invalid("SCHEMA_INVALID", "")
+	}
+	g.ID = g.identify()
 	return g, nil
 }
 
@@ -255,37 +260,4 @@ func compileControls(op policy.Operation, i int, r *Rule, schemas schemaSet) err
 		r.rateKey = op.Rate.Key
 	}
 	return nil
-}
-
-// Relabel returns a copy of g identified as the generation of revision. p is
-// the effective policy g was compiled from. Compilation does not depend on the
-// revision, so only Revision and ID differ, and g itself stays unchanged.
-func (g *Generation) Relabel(p policy.Policy, revision int64) *Generation {
-	labelled := *g
-	labelled.Revision = revision
-	labelled.ID = GenerationID(p, revision, g.NotAfter, g.Overrides)
-	return &labelled
-}
-
-// GenerationID identifies a generation by its base revision, the overrides
-// applied to it (as "+o<id>.<id>…") and a digest of the compiled document and
-// deadline. A generation without overrides keeps the form "r<revision>-…".
-func GenerationID(p policy.Policy, revision int64, notAfter time.Time, overrides []int64) string {
-	document, _ := json.Marshal(p)
-	sum := sha256.New()
-	fmt.Fprintf(sum, "%s|%d|%d|", compilerVersion, revision, notAfter.UnixMilli())
-	var label strings.Builder
-	fmt.Fprintf(&label, "r%d", revision)
-	for i, id := range overrides {
-		separator := "."
-		if i == 0 {
-			separator = "+o"
-		}
-		fmt.Fprintf(&label, "%s%d", separator, id)
-		fmt.Fprintf(sum, "o%d|", id)
-	}
-	sum.Write(document)
-	// 48 bits tell apart the generations one deployment ever publishes; the
-	// label already names the revision and overrides.
-	return fmt.Sprintf("%s-%s", label.String(), hex.EncodeToString(sum.Sum(nil))[:12])
 }

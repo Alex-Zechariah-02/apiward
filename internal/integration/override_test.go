@@ -5,6 +5,7 @@ package integration
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
 	"testing"
 
@@ -64,7 +65,7 @@ func storedOverrides(t *testing.T, path string) []store.Override {
 	db := gatewaytest.Inspect(t, path)
 	defer db.Close()
 	s := store.Adopt(db)
-	list, err := s.Overrides(t.Context(), `ORDER BY id`)
+	list, err := s.Overrides(t.Context(), 0, math.MaxInt)
 	if err != nil {
 		t.Fatal(err)
 	}

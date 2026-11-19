@@ -95,9 +95,23 @@ func (h *Handler) runModules(q *request, r *http.Request, phase module.Phase, v 
 		}
 	}
 	stage := phaseStage[phase]
+	if len(checks) == 0 {
+		return true
+	}
+	// One phase is bounded by the data plane's write limit, past which no
+	// answer could be written anyway; its checks share one copy of the header.
+	ctx, cancel := context.WithTimeout(r.Context(), h.moduleTimeout)
+	defer cancel()
+	view := moduleRequest(q, r, v)
 	for _, c := range checks {
-		// Checks run one at a time in order; no deadline is added, so a slow check holds the request.
-		result := runCheck(r.Context(), c.Check, moduleRequest(q, r, v))
+		request := *view
+		request.Roles = slices.Clone(view.Roles)
+		result := runCheck(ctx, c.Check, &request)
+		if ctx.Err() != nil && r.Context().Err() == nil {
+			q.event.Modules[c.ID] = audit.StageFail
+			q.fail(stage, "module "+c.ID+": the phase ran out of time")
+			return false
+		}
 		switch {
 		case result.Passed():
 			q.event.Modules[c.ID] = audit.StagePass
@@ -114,8 +128,9 @@ func (h *Handler) runModules(q *request, r *http.Request, phase module.Phase, v 
 	return true
 }
 
-// moduleRequest builds a fresh copy of the request view for one check, so no
-// module can change what another sees. The bearer token is never included.
+// moduleRequest builds the request view of one phase: a copy of the header,
+// shared by the phase's checks, and the request's other values, which each
+// check receives in its own copy. The bearer token is never included.
 func moduleRequest(q *request, r *http.Request, v moduleView) *module.Request {
 	header := r.Header.Clone()
 	header.Del("Authorization")

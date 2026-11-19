@@ -9,9 +9,16 @@ const (
 	// MaxJSONDepth: deeper nesting than any API body or schema needs, and
 	// the decoder's stack stays small.
 	MaxJSONDepth = 16
-	// MaxJSONValues: values per body or schema; bounds decoding and
-	// validation work per request.
+	// MaxJSONValues: values per schema, and the least a body may hold
+	// (BodyValues); bounds decoding and validation work per request.
 	MaxJSONValues = 4096
+	// MaxSchemaDepth: nesting of one schema or headers value inside a
+	// policy, counted from that value; the rest of the document keeps
+	// MaxPolicyDepth.
+	MaxSchemaDepth = 32
+	// bytesPerValue is the smallest share of a body one value takes in a
+	// body of small values ("1," is two bytes; eight leaves room for keys).
+	bytesPerValue = 8
 	// MaxNumberLength and maxExponentDigits: number literals the validator
 	// compares exactly without arbitrary-precision cost.
 	MaxNumberLength   = 32
@@ -27,6 +34,13 @@ const (
 	// far shorter.
 	MaxHeaderName = 64
 )
+
+// BodyValues is the value budget of a body whose ceiling is maxBytes: the
+// larger of MaxJSONValues and one value per bytesPerValue bytes, so a body
+// at its ceiling is refused for its size, not for a count of small values.
+func BodyValues(maxBytes int64) int {
+	return max(MaxJSONValues, int(maxBytes/bytesPerValue))
+}
 
 // IsSubjectID accepts 1 to 128 printable ASCII characters without spaces. The
 // same rule applies to the "sub" claim, so a subject identifier is always

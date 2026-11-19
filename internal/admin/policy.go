@@ -6,11 +6,11 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/controller"
 	"github.com/Alex-Zechariah-02/apiward/internal/monitor"
 	"github.com/Alex-Zechariah-02/apiward/internal/pipeline"
-	"github.com/Alex-Zechariah-02/apiward/internal/policy"
 	"github.com/Alex-Zechariah-02/apiward/internal/store"
 )
 
@@ -21,7 +21,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request, who caller
 		"admission":      s.control.Admission(),
 		"audit_failed":   s.audit.Failed(),
 		"jwt_key_sha256": s.control.Verifier().Fingerprint(),
-		"build":          currentBuild(),
+		"build":          runningBuild(),
 	}
 	if g := s.control.Current(); g != nil {
 		status["revision"] = g.Revision
@@ -50,40 +50,48 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request, who caller
 	pipeline.WriteJSON(w, http.StatusOK, status)
 }
 
-// confirmedPolicy reads the confirmed base. It answers the request itself and
-// returns false when no confirmed base is serving.
-func (s *Server) confirmedPolicy(w http.ResponseWriter, r *http.Request, who caller) (store.RevisionInfo, policy.Policy, bool) {
+// handlePolicy answers the confirmed base as stored; the store checks its
+// checksum when it reads it, so it is not decoded again here. A client that
+// already holds it (If-None-Match naming its ETag) is answered 304.
+func (s *Server) handlePolicy(w http.ResponseWriter, r *http.Request, who caller) {
 	a, err := s.store.Load(r.Context())
 	if err != nil {
 		s.fail(w, r, &who, "unavailable", monitor.FailStore, err)
-		return store.RevisionInfo{}, policy.Policy{}, false
+		return
 	}
 	if a.Mode != store.ModeNormal {
 		adminError(w, http.StatusConflict, "no_confirmed_policy", "")
-		return store.RevisionInfo{}, policy.Policy{}, false
+		return
+	}
+	tag := policyETag(a.Confirmed)
+	w.Header().Set("ETag", tag)
+	if matchesETag(r.Header.Values("If-None-Match"), tag) {
+		w.WriteHeader(http.StatusNotModified)
+		return
 	}
 	revision, ok, err := s.store.Revision(r.Context(), a.Confirmed)
 	if err == nil && !ok {
 		err = fmt.Errorf("confirmed revision %d missing", a.Confirmed)
 	}
-	var p policy.Policy
-	if err == nil {
-		p, err = policy.DecodePolicy(revision.Document, s.config.Limits)
-	}
 	if err != nil {
 		s.fail(w, r, &who, "unavailable", monitor.FailStore, err)
-		return store.RevisionInfo{}, policy.Policy{}, false
-	}
-	return revision, p, true
-}
-
-func (s *Server) handlePolicy(w http.ResponseWriter, r *http.Request, who caller) {
-	revision, _, ok := s.confirmedPolicy(w, r, who)
-	if !ok {
 		return
 	}
-	w.Header().Set("ETag", policyETag(revision.ID))
 	pipeline.WriteJSON(w, http.StatusOK, revision)
+}
+
+// matchesETag applies If-None-Match (RFC 9110 section 13.1.2): "*" or any
+// listed tag equal to tag by weak comparison.
+func matchesETag(fields []string, tag string) bool {
+	for _, field := range fields {
+		for item := range strings.SplitSeq(field, ",") {
+			item = strings.TrimSpace(item)
+			if item == "*" || strings.TrimPrefix(item, "W/") == strings.TrimPrefix(tag, "W/") {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (s *Server) handleRevisions(w http.ResponseWriter, r *http.Request, who caller) {

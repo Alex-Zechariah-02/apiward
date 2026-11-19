@@ -61,8 +61,8 @@ func TestFullLogResumesWhenFilesMoved(t *testing.T) {
 	if a.failed.Load() || !a.full.Load() || commitN(a, 1) != 0 {
 		t.Fatalf("full log: failed %v, full %v, or a commit was acknowledged", a.failed.Load(), a.full.Load())
 	}
-	archive := filepath.Join(t.TempDir(), "audit.log.1")
-	if err := os.Rename(path+".1", archive); err != nil {
+	moved := rotated(t, path)[0]
+	if err := os.Rename(moved, filepath.Join(t.TempDir(), filepath.Base(moved))); err != nil {
 		t.Fatal(err)
 	}
 	if commitN(a, 1) != 1 || a.Failed() {
@@ -73,20 +73,21 @@ func TestFullLogResumesWhenFilesMoved(t *testing.T) {
 func TestEvictionRecordsBeforeDeleting(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "audit.log")
 	a := OpenAudit(path, Settings{MaxBytes: 4 << 10, MaxFiles: 2, WhenFull: FullEvict})
-	commitUntil(t, a, func() bool { return fileExists(path + ".1") })
-	oldest, err := os.ReadFile(path + ".1")
+	commitUntil(t, a, func() bool { return len(rotated(t, path)) == 1 })
+	first := rotated(t, path)[0]
+	oldest, err := os.ReadFile(first)
 	if err != nil {
 		t.Fatal(err)
 	}
-	commitUntil(t, a, func() bool { return !fileExists(path + ".1") })
+	commitUntil(t, a, func() bool { return !fileExists(first) })
 	if err := a.Close(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	sum := sha256.Sum256(oldest)
-	for _, name := range []string{path, path + ".2"} {
+	for _, name := range append(rotated(t, path), path) {
 		for _, e := range records(t, name) {
 			if e.Kind == "audit.evicted" {
-				if e.File != "audit.log.1" || e.Bytes != int64(len(oldest)) || e.Digest != hex.EncodeToString(sum[:]) || e.First.IsZero() || e.Last.Before(e.First) {
+				if e.File != filepath.Base(first) || e.Bytes != int64(len(oldest)) || e.Digest != hex.EncodeToString(sum[:]) || e.First.IsZero() || e.Last.Before(e.First) {
 					t.Fatalf("eviction record %+v does not describe the deleted file", e)
 				}
 				return
@@ -119,8 +120,21 @@ func TestIngressSummaryCounts(t *testing.T) {
 	}
 }
 
-// records decodes every record of the file name.
+// records decodes every record of the file name but the chain records and
+// a clean stop's last one, which their own tests check.
 func records(t *testing.T, name string) []Event {
+	t.Helper()
+	var events []Event
+	for _, e := range allRecords(t, name) {
+		if e.Kind != closedKind && e.Kind != "audit.chain" {
+			events = append(events, e)
+		}
+	}
+	return events
+}
+
+// allRecords decodes every record of the file name.
+func allRecords(t *testing.T, name string) []Event {
 	t.Helper()
 	data, err := os.ReadFile(name)
 	if err != nil {
@@ -140,6 +154,20 @@ func records(t *testing.T, name string) []Event {
 func fileExists(name string) bool {
 	_, err := os.Stat(name)
 	return err == nil
+}
+
+// rotated returns the paths of path's rotated files, oldest first.
+func rotated(t *testing.T, path string) []string {
+	t.Helper()
+	files, err := RotatedFiles(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var paths []string
+	for _, file := range files {
+		paths = append(paths, filepath.Join(filepath.Dir(path), file.Name))
+	}
+	return paths
 }
 
 // With a sync window, a lone record is synced at once, and every record is

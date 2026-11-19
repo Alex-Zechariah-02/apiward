@@ -114,11 +114,16 @@ func (r *Rule) AddressAllowed(address string) bool {
 		return true
 	}
 	addr, err := netip.ParseAddr(address)
-	if err != nil {
-		return false
+	return err == nil && r.Admits(addr)
+}
+
+// Admits is AddressAllowed for an address already parsed; the zero Addr
+// is never admitted by a list.
+func (r *Rule) Admits(addr netip.Addr) bool {
+	if !r.settings.limited {
+		return true
 	}
-	addr = addr.Unmap()
-	return slices.ContainsFunc(r.settings.addresses, func(p netip.Prefix) bool { return p.Contains(addr) })
+	return addr.IsValid() && r.settings.addresses.contains(addr.Unmap())
 }
 
 // firstCORS returns the first rule of an API with browser access, or nil.

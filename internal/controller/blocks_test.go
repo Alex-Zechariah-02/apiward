@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/Alex-Zechariah-02/apiward/internal/monitor"
 	"github.com/Alex-Zechariah-02/apiward/internal/store"
 	"github.com/Alex-Zechariah-02/apiward/internal/storetest"
 )
@@ -40,7 +41,13 @@ func TestStoreErrorOnResendDoesNotMeanNothingChanged(t *testing.T) {
 	if body, status := c.Block(cancelled, block, reason); status != http.StatusServiceUnavailable || string(body) != `{"error":"store_error"}` {
 		t.Fatalf("resend with an unreadable record: %d %s", status, body)
 	}
-	if failures := c.Gauges()[5]; failures.Name != "gateway_control_store_failures_total" || failures.Value != 1 {
+	var failures monitor.Gauge
+	for _, gauge := range c.Gauges() {
+		if gauge.Name == "gateway_control_store_failures_total" {
+			failures = gauge
+		}
+	}
+	if failures.Value != 1 {
 		t.Fatalf("failure metric %+v, want gateway_control_store_failures_total 1", failures)
 	}
 	if _, inForce := (*c.Blocked())["cust-500"]; !inForce {

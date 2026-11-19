@@ -3,6 +3,7 @@
 package integration
 
 import (
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -27,15 +28,17 @@ func draining(e *gatewaytest.Env) int {
 	return n
 }
 
-// refuse sends n denied requests and returns their request identities.
+// refuse sends n requests that no route matches and returns their request
+// identities. Their records are written in full; refusals of a policy are
+// recorded only up to a budget per client address, the rest are counted.
 func refuse(e *gatewaytest.Env, n int) []string {
 	e.T.Helper()
 	ids := make([]string, 0, n)
 	for range n {
-		resp, body := e.Exchange(http.MethodGet, "/d", "", "")
+		resp, body := e.Exchange(http.MethodGet, "/nothing", "", "")
 		_, id := gatewaytest.RequestID(resp, body)
-		if resp.StatusCode != http.StatusForbidden || id == "" {
-			e.T.Fatalf("denied request: %d %s", resp.StatusCode, body)
+		if resp.StatusCode != http.StatusNotFound || id == "" {
+			e.T.Fatalf("unrouted request: %d %s", resp.StatusCode, body)
 		}
 		ids = append(ids, id)
 	}
@@ -68,6 +71,28 @@ func rejectedIDs(events []map[string]any) map[string]int {
 		}
 	}
 	return ids
+}
+
+// unaccounted checks that each refusal a client received is recorded once, or
+// counted in the ingress summary: a client address has a budget of recorded
+// policy refusals a minute, and the rest are only counted. It describes the
+// failure, or returns "".
+func unaccounted(events []map[string]any, ids []string) string {
+	recorded := rejectedIDs(events)
+	unrecorded := 0
+	for _, id := range ids {
+		switch recorded[id] {
+		case 0:
+			unrecorded++
+		case 1:
+		default:
+			return fmt.Sprintf("refusal %s recorded %d times", id, recorded[id])
+		}
+	}
+	if counted := gatewaytest.SummaryRefusals(events); unrecorded > counted {
+		return fmt.Sprintf("%d refusals neither recorded nor counted (%d counted)", unrecorded-counted, counted)
+	}
+	return ""
 }
 
 func lossOf(events []map[string]any) int {

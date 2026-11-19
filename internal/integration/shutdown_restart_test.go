@@ -112,11 +112,8 @@ func TestNativeStopUnderLoad(t *testing.T) {
 			t.Fatalf("receipt %s: %d admission and %d outcome records", r.RequestID, admitted[r.RequestID], forwarded[r.RequestID])
 		}
 	}
-	recorded := rejectedIDs(events)
-	for _, id := range refusals {
-		if recorded[id] != 1 {
-			t.Fatalf("refusal %s recorded %d times", id, recorded[id])
-		}
+	if lost := unaccounted(events, refusals); lost != "" {
+		t.Fatal(lost)
 	}
 	if lossOf(events) != 0 {
 		t.Fatalf("loss counted %d", lossOf(events))
@@ -184,7 +181,7 @@ func TestNativeRestartAfterGracefulStop(t *testing.T) {
 		t.Fatalf("%d committed transitions without their audit record", n)
 	}
 
-	files, _ := filepath.Glob(e.AuditLog + "*")
+	files := append(gatewaytest.RotatedAudit(t, e.AuditLog), e.AuditLog)
 	records := 0
 	for _, file := range files {
 		for _, ev := range gatewaytest.AuditLines(t, file) {

@@ -3,13 +3,13 @@
 package monitor
 
 import (
-	"os"
+	"encoding/json"
 	"path/filepath"
 	"slices"
-	"strconv"
 	"strings"
 	"time"
 
+	"github.com/Alex-Zechariah-02/apiward/internal/audit"
 	"github.com/Alex-Zechariah-02/apiward/internal/policy"
 )
 
@@ -33,28 +33,22 @@ type Query struct {
 	from, to                          time.Time
 }
 
-// auditRequestRecord is the part of a request's audit record the search
-// reads; it is projected through requestView like the live views.
+// auditRequestRecord reads a request's record through the record type
+// itself, so the reader and the writer share one definition. The stage
+// results are left undecoded: views do not show them.
 type auditRequestRecord struct {
-	ID            string            `json:"event_id"`
-	Kind          string            `json:"kind"`
-	Time          time.Time         `json:"time"`
-	RequestID     string            `json:"request_id"`
-	Stage         string            `json:"stage"`
-	Decision      string            `json:"decision"`
-	Status        int               `json:"status"`
-	Error         string            `json:"error"`
-	Method        string            `json:"method"`
-	Path          string            `json:"path"`
-	Truncated     bool              `json:"path_truncated"`
-	Operation     string            `json:"operation"`
-	API           string            `json:"api"`
-	Subject       string            `json:"subject"`
-	Roles         []string          `json:"roles"`
-	ClientAddress string            `json:"client_address"`
-	Generation    string            `json:"generation"`
-	DurationMS    float64           `json:"duration_ms"`
-	Modules       map[string]string `json:"modules"`
+	audit.Event
+	Stages json.RawMessage `json:"stages"`
+}
+
+// decodeRecord decodes a request's record; a record of a newer schema than
+// this gateway writes, or without a request ID, is unreadable.
+func decodeRecord(line []byte) (audit.Event, bool) {
+	var record auditRequestRecord
+	if json.Unmarshal(line, &record) != nil || record.RequestID == "" || record.Schema > audit.EventSchema {
+		return audit.Event{}, false
+	}
+	return record.Event, true
 }
 
 // Cursor is where a search stopped: lines before offset in the
@@ -90,7 +84,7 @@ func ParseQuery(values map[string][]string) (Query, string) {
 	if len(q.subject) > policy.MaxSubjectLength {
 		return q, "subject"
 	}
-	if q.decision != "" && q.decision != "allowed" && q.decision != "refused" && q.decision != "failed" {
+	if q.decision != "" && !slices.Contains(Decisions, q.decision) {
 		return q, "decision"
 	}
 	for name, at := range map[string]*time.Time{"from": &q.from, "to": &q.to} {
@@ -123,38 +117,34 @@ func (q Query) matches(view RequestView) bool {
 		(q.to.IsZero() || view.Time.Before(q.to))
 }
 
-// LogFiles lists the audit files newest first: the active file, then
-// the rotated files from the highest number down. missing names the numbered
-// files below the highest that are no longer present (moved away to archive),
-// only among the numbers the log could still hold: limit counts the files the
-// log keeps, the active one included, so evicted files never count and the
-// list stays bounded over the log's life.
+// LogFiles lists the audit files newest first: the active file, then the
+// rotated files from the newest down. missing names rotated files that are
+// no longer present (moved away to archive): each file but the oldest starts
+// with an audit.rotated record naming the file rotated before it, and so
+// does the oldest while the log holds fewer than limit files (the active one
+// included), since before that no file was evicted. The list stays bounded
+// by the files present.
 func LogFiles(active string, limit int64) (files, missing []string, err error) {
-	entries, err := os.ReadDir(filepath.Dir(active))
+	rotated, err := audit.RotatedFiles(active)
 	if err != nil {
 		return nil, nil, err
 	}
-	prefix := filepath.Base(active) + "."
-	numbers := []int{}
-	for _, entry := range entries {
-		suffix, found := strings.CutPrefix(entry.Name(), prefix)
-		if n, err := strconv.Atoi(suffix); found && err == nil && n >= 1 && strconv.Itoa(n) == suffix {
-			numbers = append(numbers, n)
-		}
-	}
-	slices.Sort(numbers)
 	files = []string{filepath.Base(active)}
-	for i := len(numbers) - 1; i >= 0; i-- {
-		files = append(files, prefix+strconv.Itoa(numbers[i]))
+	for i := len(rotated) - 1; i >= 0; i-- {
+		files = append(files, rotated[i].Name)
 	}
 	missing = []string{}
-	if len(numbers) > 0 {
-		highest := numbers[len(numbers)-1]
-		for n := max(1, highest-int(limit)+2); n < highest; n++ {
-			if !slices.Contains(numbers, n) {
-				missing = append(missing, prefix+strconv.Itoa(n))
-			}
+	checked := files
+	if int64(len(files)) >= limit {
+		checked = files[:len(files)-1]
+	}
+	dir := filepath.Dir(active)
+	for _, name := range checked {
+		head, err := firstRecord(filepath.Join(dir, name))
+		if err != nil || head.Kind != "audit.rotated" || head.File == "" || slices.Contains(files, head.File) {
+			continue
 		}
+		missing = append(missing, head.File)
 	}
 	return files, missing, nil
 }

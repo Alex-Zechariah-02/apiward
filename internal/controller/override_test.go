@@ -185,11 +185,10 @@ func TestApplyOverrides(t *testing.T) {
 	for _, list := range [][]store.Override{all, nil} {
 		unlabelled, err := effectiveGeneration(closedNetwork(t), basePolicy, 0, deadline, list, policy.Limits{})
 		want, wantErr := effectiveGeneration(closedNetwork(t), basePolicy, 7, deadline, list, policy.Limits{})
-		effective, applyErr := applyOverrides(basePolicy, list)
-		if err != nil || wantErr != nil || applyErr != nil {
-			t.Fatal(err, wantErr, applyErr)
+		if err != nil || wantErr != nil {
+			t.Fatal(err, wantErr)
 		}
-		if got := unlabelled.Relabel(effective, 7); got.ID != want.ID || got.Revision != 7 || unlabelled.Revision != 0 {
+		if got := unlabelled.Relabel(7, unlabelled.Overrides); got.ID != want.ID || got.Revision != 7 || unlabelled.Revision != 0 {
 			t.Fatalf("relabelled %s r%d (source r%d), want %s", got.ID, got.Revision, unlabelled.Revision, want.ID)
 		}
 	}

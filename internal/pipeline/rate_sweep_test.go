@@ -23,7 +23,7 @@ func TestFullTableRefusalIsBounded(t *testing.T) {
 		rule := quota(10, 60_000)
 		now := int64(1_000_000)
 		for i := range capacity {
-			if l.admit(counterKey{"search", compile.RateKeyAddress, "2001:db8::" + strconv.Itoa(i)}, rule, now) != rateAdmitted {
+			if decision(l, counterKey{"search", compile.RateKeyAddress, "2001:db8::" + strconv.Itoa(i)}, rule, now) != rateAdmitted {
 				t.Fatalf("filling the table: counter %d refused", i)
 			}
 		}
@@ -35,7 +35,7 @@ func TestFullTableRefusalIsBounded(t *testing.T) {
 			start, count := time.Now(), 0
 			for time.Since(start) < span {
 				for i := range batch {
-					if got := l.admit(counterKey{"search", compile.RateKeyAddress, "2001:db8:1::" + strconv.Itoa(i)}, rule, now); got != rateNoCapacity {
+					if got := decision(l, counterKey{"search", compile.RateKeyAddress, "2001:db8:1::" + strconv.Itoa(i)}, rule, now); got != rateNoCapacity {
 						t.Fatalf("new key with a full table: %v, want no capacity", got)
 					}
 				}
@@ -58,17 +58,17 @@ func TestSweepIsBounded(t *testing.T) {
 	l := NewLimiter(keys)
 	rule := quota(10, 1_000)
 	for i := range keys {
-		l.admit(counterKey{"search", compile.RateKeyAddress, strconv.Itoa(i)}, rule, 0)
+		decision(l, counterKey{"search", compile.RateKeyAddress, strconv.Itoa(i)}, rule, 0)
 	}
 	later := int64(10_000) // every counter above has expired
-	if got := l.admit(counterKey{"search", compile.RateKeyAddress, "new"}, rule, later); got != rateAdmitted {
+	if got := decision(l, counterKey{"search", compile.RateKeyAddress, "new"}, rule, later); got != rateAdmitted {
 		t.Fatalf("new key after expiry: %v, want admitted", got)
 	}
 	if got, want := len(l.counters), keys-compile.SweepInterval+1; got != want {
 		t.Fatalf("a full table kept %d counters after making room, want %d", got, want)
 	}
 	l.admissions = compile.SweepInterval - 1
-	l.admit(counterKey{"search", compile.RateKeyAddress, "new"}, rule, later)
+	decision(l, counterKey{"search", compile.RateKeyAddress, "new"}, rule, later)
 	if got, want := len(l.counters), keys-2*compile.SweepInterval+1; got != want {
 		t.Fatalf("a periodic sweep left %d counters, want %d", got, want)
 	}
@@ -92,7 +92,7 @@ func TestLimiterMatchesReference(t *testing.T) {
 				rule = long // the same key may change window
 			}
 			key := counterKey{"op", compile.RateKeySubject, strconv.Itoa(random.IntN(40))}
-			got, want := l.admit(key, rule, now), reference.admit(key, rule, now)
+			got, want := decision(l, key, rule, now), reference.admit(key, rule, now)
 			if got != want {
 				t.Fatalf("seed %d step %d: decision %v, want %v", seed, step, got, want)
 			}

@@ -1,13 +1,12 @@
-// The Admin API server: routing, authentication, Host, Origin and CSRF checks.
+// The Admin API server: its state, authentication, the Host check and health.
 
 package admin
 
 import (
 	"context"
-	"crypto/subtle"
 	"log/slog"
 	"net/http"
-	"slices"
+	"sync/atomic"
 	"time"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/audit"
@@ -22,9 +21,13 @@ const (
 	// maxAdminBody holds every request body except a whole policy: they are
 	// a few named fields, the largest a temporary rule with its reason.
 	maxAdminBody = 4 << 10
-	// policyMargin is the room a request body has beyond the policy it
-	// carries, for its envelope and the policy's indentation.
-	policyMargin = 16 << 10
+	// policyFactor bounds a body carrying a policy at this many times the
+	// policy limit: a pretty-printed policy at the limit, with one permit
+	// per line, takes up to about twice it, and the envelope little more.
+	policyFactor = 4
+	// answerRoom is the part of the admin write limit kept for writing the
+	// answer of a state-changing request.
+	answerRoom = 2 * time.Second
 	// A default page fills one Dashboard table; a client may ask for twice
 	// that. Pages keep each read and answer small however long a list grows.
 	defaultPageSize = 50
@@ -56,16 +59,19 @@ type Server struct {
 	store        store.Reads
 	audit        *audit.AuditLog
 	observations *monitor.Observations
-	summaries    monitor.Summaries // rotated security log files read for advice
-	limiter      *pipeline.Limiter
-	sessions     *session.Table
-	throttle     *throttle
-	hashing      chan struct{} // bounds concurrent password hashing
-	scans        chan struct{} // bounds concurrent security log scans
-	ui           http.Handler  // the dashboard files; nil when none are configured
-	plain        bool          // the gateway serves the data plane itself over plain HTTP
-	jwks         []byte        // the identity assertion's public key set; nil when none is signed
-	logger       *slog.Logger
+	summaries    monitor.Summaries // security log files read for advice
+	// confirmedSize is the confirmed document's size for the limits view.
+	confirmedSize atomic.Pointer[revisionSize]
+	limiter       *pipeline.Limiter
+	sessions      *session.Table
+	throttle      *throttle
+	hashing       chan struct{} // bounds concurrent password hashing
+	scans         chan struct{} // bounds concurrent security log scans
+	ui            http.Handler  // the dashboard files; nil when none are configured
+	plain         bool          // the gateway serves the data plane itself over plain HTTP
+	hostServed    bool          // a host program serves the data plane (library mode)
+	jwks          []byte        // the identity assertion's public key set; nil when none is signed
+	logger        *slog.Logger
 }
 
 // Deps is what the Admin API serves: an opened controller, the data plane's
@@ -73,13 +79,16 @@ type Server struct {
 // the logger. Plain is true when the gateway serves the data plane itself
 // over plain HTTP, so HSTS is never sent; false when a host program owns it.
 // JWKS is the public key set of the identity assertion (nil: none signed).
+// HostServed is true when a host program serves the data plane, so the
+// advice says the gateway cannot confirm its transport.
 type Deps struct {
-	Control *controller.Controller
-	Limiter *pipeline.Limiter
-	UI      http.Handler
-	Plain   bool
-	Logger  *slog.Logger
-	JWKS    []byte
+	Control    *controller.Controller
+	Limiter    *pipeline.Limiter
+	UI         http.Handler
+	Plain      bool
+	Logger     *slog.Logger
+	JWKS       []byte
+	HostServed bool
 }
 
 // New returns the Admin API of d.Control.
@@ -88,74 +97,8 @@ func New(d Deps) *Server {
 	return &Server{
 		control: c, config: c.Settings(), store: c.Reads(), audit: c.Audit(),
 		observations: c.Observations(), limiter: d.Limiter, sessions: c.Sessions(),
-		throttle: newThrottle(), hashing: make(chan struct{}, maxHashing), scans: make(chan struct{}, maxLogScans), ui: d.UI, plain: d.Plain, jwks: d.JWKS, logger: d.Logger,
+		throttle: newThrottle(), hashing: make(chan struct{}, maxHashing), scans: make(chan struct{}, maxLogScans), ui: d.UI, plain: d.Plain, hostServed: d.HostServed, jwks: d.JWKS, logger: d.Logger,
 	}
-}
-
-// Handler routes every Admin API endpoint behind the Host check.
-func (s *Server) Handler() http.Handler {
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /admin/health", s.handleHealth)
-	mux.HandleFunc("POST /admin/enrol", s.handleEnrol)
-	mux.HandleFunc("POST /admin/session", s.handleLogin)
-	if s.jwks != nil {
-		// Public keys need no session: upstreams and operators fetch them.
-		mux.HandleFunc("GET "+pipeline.JWKSPath, s.handleJWKS)
-	}
-
-	s.route(mux, "GET /admin/session", 0, s.handleWhoAmI)
-	s.route(mux, "DELETE /admin/session", 0, s.handleLogout)
-	s.route(mux, "PUT /admin/password", 0, s.handlePassword)
-	s.route(mux, "GET /admin/status", store.PermRead, s.handleStatus)
-	s.route(mux, "GET /admin/policy", store.PermRead, s.handlePolicy)
-	s.route(mux, "GET /admin/revisions", store.PermRead, s.handleRevisions)
-	s.route(mux, "GET /admin/revisions/{id}", store.PermRead, s.handleRevision)
-	s.route(mux, "GET /admin/keys", store.PermRead, s.handleKeys)
-	s.route(mux, "POST /admin/keys/reload", store.PermManagePolicy, s.handleReloadKeys)
-	s.route(mux, "GET /admin/tls-profiles", store.PermRead, s.handleProfiles)
-	s.route(mux, "GET /admin/blocked-accounts", store.PermRead, s.handleBlockedAccounts)
-	s.route(mux, "PUT /admin/blocked-accounts/{subject}", store.PermManageSubjects, s.handleBlockAccount)
-	s.route(mux, "DELETE /admin/blocked-accounts/{subject}", store.PermManageSubjects, s.handleUnblockAccount)
-	s.route(mux, "GET /admin/blocked-addresses", store.PermRead, s.handleBlockedAddresses)
-	s.route(mux, "PUT /admin/blocked-addresses/{range}", store.PermManageSubjects, s.handleBlockAddress)
-	s.route(mux, "DELETE /admin/blocked-addresses/{range}", store.PermManageSubjects, s.handleUnblockAddress)
-	s.route(mux, "GET /admin/administrators", store.PermRead, s.handleAdministrators)
-	s.route(mux, "GET /admin/events", store.PermRead, s.handleEvents)
-	s.route(mux, "GET /admin/events/stream", store.PermRead, s.handleEventStream)
-	s.route(mux, "GET /admin/traffic", store.PermRead, s.handleTraffic)
-	s.route(mux, "GET /admin/limits", store.PermRead, s.handleLimits)
-	s.route(mux, "POST /admin/access-check", store.PermRead, s.handleAccessCheck)
-	s.route(mux, "GET /admin/advice", store.PermRead, s.handleAdvice)
-	s.route(mux, "GET /admin/alerts", store.PermRead, s.handleAlerts)
-	s.route(mux, "POST /admin/candidates/{id}/impact", store.PermRead, s.handleImpact)
-	s.route(mux, "GET /admin/candidates", store.PermRead, s.handleCandidates)
-	s.route(mux, "GET /admin/candidates/{id}", store.PermRead, s.handleCandidate)
-	s.route(mux, "POST /admin/candidates", store.PermManagePolicy, s.handlePostCandidate)
-	s.route(mux, "DELETE /admin/candidates/{id}", store.PermManagePolicy, s.handleWithdrawCandidate)
-	s.route(mux, "POST /admin/genesis", store.PermManagePolicy, s.handleEstablish("genesis"))
-	s.route(mux, "POST /admin/recovery-base", store.PermManagePolicy, s.handleEstablish("recovery_base"))
-	s.route(mux, "GET /admin/provisional", store.PermRead, s.handleProvisional)
-	s.route(mux, "POST /admin/provisional", store.PermManagePolicy, s.handleActivate)
-	s.route(mux, "POST /admin/provisional/confirm", store.PermManagePolicy, s.handleResolve("cpa.confirm", store.DispositionConfirmed))
-	s.route(mux, "POST /admin/provisional/rollback", store.PermManagePolicy, s.handleResolve("cpa.rollback", store.DispositionRolledBack))
-	s.route(mux, "GET /admin/activations", store.PermReadHistory, s.handleActivations)
-	s.route(mux, "GET /admin/overrides", store.PermRead, s.handleOverrides)
-	s.route(mux, "GET /admin/overrides/history", store.PermReadHistory, s.handleOverrideHistory)
-	s.route(mux, "GET /admin/overrides/{id}", store.PermRead, s.handleOverride)
-	s.route(mux, "POST /admin/overrides/validate", store.PermManagePolicy, s.handleValidateOverride)
-	s.route(mux, "POST /admin/overrides", store.PermManagePolicy, s.handleCreateOverride)
-	s.route(mux, "DELETE /admin/overrides/{id}", store.PermManagePolicy, s.handleRevokeOverride)
-	s.route(mux, "GET /admin/history", store.PermReadHistory, s.handleHistory)
-	s.route(mux, "GET /admin/history/{id}", store.PermReadHistory, s.handleHistoryEntry)
-	s.route(mux, "GET /admin/security-log", store.PermReadHistory, s.handleSecurityLog)
-	if s.ui != nil {
-		// Only the page and its flat assets directory exist: no fallback page
-		// can answer an unknown path, so an API path never receives HTML.
-		mux.Handle("GET /{$}", s.ui)
-		mux.Handle("GET /assets/{file}", s.ui)
-	}
-	registerTestRoutes(s, mux)
-	return s.checkHost(detachWrites(mux))
 }
 
 // checkHost refuses any request whose Host is not exactly the admin listener
@@ -182,7 +125,9 @@ func (s *Server) checkHost(next http.Handler) http.Handler {
 func detachWrites(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if unsafeMethod(r.Method) {
-			ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), controller.AdminWriteTimeout)
+			// Ends answerRoom before the listener's write limit, so a change
+			// that used its whole bound can still be answered.
+			ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), controller.AdminWriteTimeout-answerRoom)
 			defer cancel()
 			r = r.WithContext(ctx)
 		}
@@ -200,43 +145,6 @@ func (s *Server) sameOrigin(r *http.Request) bool {
 
 func unsafeMethod(method string) bool {
 	return method != http.MethodGet && method != http.MethodHead
-}
-
-// readOnlyPosts change nothing: they are POST only because their question is
-// a request body, so they are recorded as reads like any GET.
-var readOnlyPosts = []string{"POST /admin/access-check", "POST /admin/candidates/{id}/impact", "POST /admin/overrides/validate"}
-
-// route registers a handler that runs only for an authenticated administrator
-// holding the required permission (0: any administrator, for their own
-// session). A state-changing request also needs the admin origin and the
-// session's CSRF token.
-func (s *Server) route(mux *http.ServeMux, pattern string, required store.Permission, handler adminHandler) {
-	mux.HandleFunc(pattern, func(w http.ResponseWriter, r *http.Request) {
-		who, ok := s.authenticate(w, r)
-		if !ok {
-			return
-		}
-		if unsafeMethod(r.Method) {
-			if !s.sameOrigin(r) {
-				s.refuse(w, r, http.StatusForbidden, "forbidden", "bad_origin", &who)
-				return
-			}
-			token := r.Header.Get(csrfHeader)
-			if subtle.ConstantTimeCompare([]byte(token), []byte(who.session.CSRF)) != 1 {
-				s.refuse(w, r, http.StatusForbidden, "forbidden", "csrf", &who)
-				return
-			}
-		}
-		if who.admin.Permissions&required != required {
-			s.refuse(w, r, http.StatusForbidden, "forbidden", "permission", &who)
-			return
-		}
-		quiet := r.Method == http.MethodGet && slices.Contains(s.config.IgnoredReads, r.URL.Path)
-		if (!unsafeMethod(r.Method) || slices.Contains(readOnlyPosts, pattern)) && !quiet {
-			s.audit.Record(audit.Event{Kind: "admin.read", Method: r.Method, Path: r.URL.Path, Actor: who.admin.Name, Session: who.session.Reference})
-		}
-		handler(w, r, who)
-	})
 }
 
 // authenticate resolves the session cookie to a live session and re-reads the
@@ -273,10 +181,16 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	if state != store.ModeNormal && state != store.ModeBootstrap && state != store.ModeRecovery {
 		state = "unavailable"
 	}
-	pipeline.WriteJSON(w, http.StatusOK, map[string]string{"state": state})
+	// A health check that reads only the status code sees an unavailable
+	// gateway, which refuses every request, as not ready.
+	status := http.StatusOK
+	if state == "unavailable" {
+		status = http.StatusServiceUnavailable
+	}
+	pipeline.WriteJSON(w, status, map[string]string{"state": state})
 }
 
 // policyBody bounds a request body that carries a whole policy.
 func (s *Server) policyBody() int64 {
-	return int64(s.config.Limits.PolicyBytes) + policyMargin
+	return int64(s.config.Limits.PolicyBytes) * policyFactor
 }

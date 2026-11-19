@@ -16,6 +16,7 @@ import (
 	"sync/atomic"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/controller"
+	"github.com/Alex-Zechariah-02/apiward/internal/pipeline"
 )
 
 // Embedded is one gateway whose data plane a host program serves. Its
@@ -67,7 +68,7 @@ func (e *Embedded) Start() error {
 	case e.started:
 		return classify(ErrStarted, errors.New("the gateway was already started"))
 	}
-	metrics, err := e.deployment.listen(false)
+	auxiliary, err := e.deployment.listen(false, true)
 	if err != nil {
 		e.stopping = true
 		ctx, cancel := context.WithTimeout(context.Background(), controller.ShutdownWait)
@@ -75,27 +76,42 @@ func (e *Embedded) Start() error {
 		return errors.Join(err, e.stop(ctx))
 	}
 	e.started = true
-	go serveAuxiliary("metrics", e.deployment.metrics, metrics, e.logger)
+	for _, l := range auxiliary {
+		go serveAuxiliary("metrics", e.deployment.metrics, l, e.logger)
+	}
 	e.deployment.enforcement.Hold(false)
-	e.logger.Info("listening", "metrics", metrics.Addr().String(), "admin", e.deployment.config.controller.AdminListen,
+	e.logger.Info("listening", "metrics", auxiliary[0].Addr().String(), "health", e.deployment.health, "admin", e.deployment.config.controller.AdminListen,
 		"data", "served by the host program; data.listen is not bound")
 	e.deployment.logAdmission(e.logger)
 	return nil
 }
 
 // ServeHTTP runs the data plane: the full request pipeline for every request.
+// Once Stop has waited for the calls in progress, a later call is refused
+// 503 before it reaches the pipeline, whose audit log is closing.
 func (e *Embedded) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	e.calls.enter()
+	if !e.calls.enter() {
+		pipeline.WriteJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "gateway_unavailable"})
+		return
+	}
 	defer e.calls.leave()
 	e.deployment.enforcement.ServeHTTP(w, r)
 }
 
-// ServerSettings returns the configured limits for the host's server; its
-// HTTP/2 protocol errors are counted in the gateway's metrics.
-func (e *Embedded) ServerSettings() ServerSettings {
+// Server returns the host's data-plane server with the configured header
+// size, timeouts and protocols already set, serving handler (nil: the
+// gateway itself); its HTTP/2 protocol errors are counted in the gateway's
+// metrics. The host sets only its address or listener and TLS, so it cannot
+// forget the bounds that stop slow and oversized clients.
+func (e *Embedded) Server(handler http.Handler) *http.Server {
+	if handler == nil {
+		handler = e
+	}
 	s := e.deployment.config.server()
 	s.countError = e.deployment.controller.Observations().HTTP2Error
-	return s
+	server := &http.Server{Handler: handler} // #nosec G112 -- Apply sets the header and other timeouts
+	s.Apply(server)
+	return server
 }
 
 // hostIgnored names the data-plane settings that only the gateway's own
@@ -161,10 +177,20 @@ func (e *Embedded) shutdown(ctx context.Context) error {
 type calls struct {
 	active   atomic.Int64
 	draining atomic.Bool
+	closed   atomic.Bool   // set once wait found no call in progress; later calls are refused
 	idle     chan struct{} // buffered; signalled when active reaches zero while draining
 }
 
-func (q *calls) enter() { q.active.Add(1) }
+// enter counts a call in, or refuses it once the calls are closed. A call
+// that counted itself before closed was set is one wait still waits for.
+func (q *calls) enter() bool {
+	q.active.Add(1)
+	if q.closed.Load() {
+		q.leave()
+		return false
+	}
+	return true
+}
 
 func (q *calls) leave() {
 	if q.active.Add(-1) == 0 && q.draining.Load() {
@@ -175,10 +201,21 @@ func (q *calls) leave() {
 	}
 }
 
-// wait returns once no call is in progress, or ctx's error. A call may enter
-// after draining began (it is refused); wait then waits for it too.
+// wait returns once no call is in progress and no later call can enter, or
+// ctx's error. A call that entered after draining began is refused by the
+// pipeline; wait waits for it too, then closes the calls and waits again for
+// any that counted itself in before seeing them closed.
 func (q *calls) wait(ctx context.Context) error {
 	q.draining.Store(true)
+	if err := q.drain(ctx); err != nil {
+		return err
+	}
+	q.closed.Store(true)
+	return q.drain(ctx)
+}
+
+// drain waits until no call is counted in, or ctx ends.
+func (q *calls) drain(ctx context.Context) error {
 	// No bound of its own: Stop's caller sets it through ctx.
 	for q.active.Load() != 0 {
 		select {

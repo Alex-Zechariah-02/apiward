@@ -66,8 +66,7 @@ func run(ctx context.Context, config string, listener net.Listener, logger *slog
 	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintln(w, "Host page. The API is served under /api/.")
 	})
-	server := &http.Server{Handler: mux} // #nosec G112 -- Apply below sets the header and other timeouts
-	gw.ServerSettings().Apply(server)
+	server := gw.Server(mux)
 
 	// Buffered: the serve goroutine sends once, so it never blocks when run stops receiving.
 	served := make(chan error, 1)

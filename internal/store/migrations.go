@@ -16,7 +16,8 @@ package store
 //     control answer has the same ceiling.
 //   - A checksum is the 64 hex characters of SHA-256.
 //   - An administrator name is 1 to 64 characters: it is part of transition
-//     IDs and of every audit record about that administrator.
+//     IDs and of every audit record about that administrator. Its character
+//     set (IsAdminName) is checked in Go at every write and every read.
 //   - permissions is a mask of the four permission bits, 1 to 15; 0 would be
 //     an administrator with no right at all.
 //   - A transition ID is 1 to 256 characters: the history key and the
@@ -249,7 +250,13 @@ CREATE TRIGGER revision_kept BEFORE DELETE ON revision WHEN
 BEGIN SELECT RAISE(ABORT, 'a revision in use is kept'); END;
 CREATE TRIGGER transition_kept BEFORE DELETE ON transition WHEN OLD.outcome = 'committed' AND OLD.audited_at IS NULL
 BEGIN SELECT RAISE(ABORT, 'a transition without its audit record is kept'); END;
+`,
+	// Control changes prune the oldest control transitions (prune.go), which
+	// they find by commit time.
+	`
+CREATE INDEX transition_committed ON transition (committed_at);
 `}
 
-// DatabaseVersion is the schema version this build reads and writes.
-var DatabaseVersion = len(migrations)
+// DatabaseVersion is the schema version this build reads and writes: the
+// number of migrations, which a test checks.
+const DatabaseVersion = 8

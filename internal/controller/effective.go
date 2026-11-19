@@ -140,9 +140,7 @@ func effectiveGeneration(network compile.Network, base policy.Policy, revision i
 		return nil, err
 	}
 	if len(ids) > 0 {
-		// Not yet published, so the generation can still be labelled.
-		g.Overrides = ids
-		g.ID = compile.GenerationID(p, revision, notAfter, ids)
+		g = g.Relabel(revision, ids)
 	}
 	return g, nil
 }

@@ -159,14 +159,14 @@ func TestRetryAfterRounding(t *testing.T) {
 	l := NewLimiter(16)
 	rule := quota(1, 2_000)
 	key := counterKey{"op", compile.RateKeySubject, "a"}
-	if l.admit(key, rule, 0) != rateAdmitted || l.admit(key, rule, 500) != rateExceeded {
+	if decision(l, key, rule, 0) != rateAdmitted {
 		t.Fatal("setup")
 	}
 	// Admitted again at 4,000 ms (the counted request's bucket fully faded).
-	if got := l.retryAfter(key, rule, 500); got != 4 {
-		t.Fatalf("retry after %d s, want 4", got)
+	if got, wait := l.admit(key, rule, 500); got != rateExceeded || wait != 4 {
+		t.Fatalf("%v: retry after %d s, want 4", got, wait)
 	}
-	if got := l.retryAfter(key, rule, 3_001); got != 1 {
-		t.Fatalf("retry after %d s at 999 ms before, want 1", got)
+	if got, wait := l.admit(key, rule, 3_001); got != rateExceeded || wait != 1 {
+		t.Fatalf("%v: retry after %d s at 999 ms before, want 1", got, wait)
 	}
 }

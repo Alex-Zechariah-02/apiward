@@ -1,8 +1,10 @@
-// Permission use with rotated-file summaries answers exactly as a full read.
+// Permission use with rotated-file summaries answers exactly as a full read,
+// and the active file's kept prefix is read again only when it may have changed.
 
 package monitor
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -64,5 +66,51 @@ func TestPermitUseSummaries(t *testing.T) {
 	compare("removed file")
 	if _, ok := cache.files["audit.log.2"]; ok {
 		t.Error("the removed file keeps its summary")
+	}
+}
+
+// requestLine is a forwarded request record of boot carrying role.
+func requestLine(boot string, n int, role string) string {
+	return fmt.Sprintf(`{"schema":8,"event_id":"%s-%d","time":"2026-11-02T09:00:%02dZ","kind":"request.forwarded","request_id":"r%d","stage":"FORWARD","decision":"forwarded","status":200,"operation":"read","roles":[%q]}`+"\n", boot, n, n%60, n, role)
+}
+
+// The active file's records already read are kept: an append is read alone,
+// so a rewritten earlier record is not seen, until a new gateway start
+// writes to the file, or it gets shorter, when the whole file is read again.
+func TestPermitUseActivePrefix(t *testing.T) {
+	dir := t.TempDir()
+	active := filepath.Join(dir, "audit.log")
+	write := func(text string) {
+		t.Helper()
+		if err := os.WriteFile(active, []byte(text), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	read := func(cache *Summaries) LogUse {
+		t.Helper()
+		use, err := cache.PermitUse(t.Context(), dir, []string{"audit.log"}, ExportScan)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return use
+	}
+	first := requestLine("a", 1, "OLD") + requestLine("a", 2, "OLD")
+	write(first)
+	var cache Summaries
+	read(&cache)
+	// Same length, same first record: only a re-read would notice.
+	rewritten := requestLine("a", 1, "OLD") + requestLine("a", 2, "NEW")
+	write(rewritten + requestLine("a", 3, "TAIL"))
+	use := read(&cache)
+	if use.requests != 3 || use.used[[2]string{"NEW", "read"}] || !use.used[[2]string{"TAIL", "read"}] {
+		t.Fatalf("an append read the kept prefix again: %+v", use)
+	}
+	write(rewritten + requestLine("a", 3, "TAIL") + requestLine("b", 1, "RESTART"))
+	if use := read(&cache); use.requests != 4 || !use.used[[2]string{"NEW", "read"}] || !use.used[[2]string{"RESTART", "read"}] {
+		t.Fatalf("a new start did not read the whole file: %+v", use)
+	}
+	write(requestLine("a", 1, "OLD"))
+	if use, plain := read(&cache), read(&Summaries{}); !reflect.DeepEqual(use, plain) {
+		t.Fatalf("a shorter file: %+v, a full read %+v", use, plain)
 	}
 }

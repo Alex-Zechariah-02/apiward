@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"sync/atomic"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/monitor"
 )
@@ -56,9 +57,15 @@ func redirectServer(origin string, observed *monitor.Observations, data ServerSe
 // plane keeps serving, and a stopped health listener fails its probes.
 func serveAuxiliary(name string, server *http.Server, l net.Listener, logger *slog.Logger) {
 	if err := server.Serve(l); !errors.Is(err, http.ErrServerClosed) {
+		auxiliaryFailures.Add(1)
 		logger.Error("listener stopped; the data plane keeps serving", "listener", name, "error", err)
 	}
 }
+
+// auxiliaryFailures counts metrics and redirect listeners that stopped on an
+// error, for gateway_listener_failures_total: a dead redirect listener is
+// otherwise seen only in the log.
+var auxiliaryFailures atomic.Int64
 
 // listenRedirect binds the redirect listener; nil when there is none.
 func listenRedirect(r *redirectSettings) (net.Listener, error) {

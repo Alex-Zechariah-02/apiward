@@ -45,7 +45,7 @@ func TestKeysReloadScope(t *testing.T) {
 		jwt := g["jwt"].(map[string]any)
 		jwt["keys"] = append(jwt["keys"].([]pipeline.VerificationKey), pipeline.VerificationKey{Kid: "test-b", PublicKeyFile: filepath.Join(dir, "second.pem")})
 	})
-	if trust, _, err := reload(); err != nil || len(trust.Keys) != 2 {
+	if trust, _, _, err := reload(); err != nil || len(trust.Keys) != 2 {
 		t.Fatalf("key list change: %v %v", trust.Keys, err)
 	}
 
@@ -53,8 +53,9 @@ func TestKeysReloadScope(t *testing.T) {
 		d["listen"] = "127.0.0.3:9480"
 		d["max_body_bytes"] = 1024
 	})
-	if _, _, err := reload(); err == nil || !strings.Contains(err.Error(), "only at a restart: data.listen, data.max_body_bytes") {
-		t.Fatalf("restart-only change: %v", err)
+	// Applied, with the restart-only settings named as a warning.
+	if _, _, warnings, err := reload(); err != nil || len(warnings) != 1 || !strings.Contains(warnings[0], "only at a restart: data.listen, data.max_body_bytes") {
+		t.Fatalf("restart-only change: %v %v", warnings, err)
 	}
 
 	save(func(map[string]any, map[string]any) {})
@@ -65,8 +66,10 @@ func TestKeysReloadScope(t *testing.T) {
 	if err := os.Symlink(moved, path); err != nil {
 		t.Skipf("this host cannot create links: %v", err)
 	}
-	if _, _, err := reload(); err == nil || !strings.Contains(err.Error(), "must be a regular file") {
-		t.Fatalf("settings file replaced by a link: %v", err)
+	// A link to a regular file is read, as a container's mounted
+	// configuration is.
+	if _, _, _, err := reload(); err != nil {
+		t.Fatalf("settings file behind a link: %v", err)
 	}
 }
 
@@ -99,7 +102,7 @@ func TestKeysReloadSkipsIdentityKey(t *testing.T) {
 	if err := os.WriteFile(identity, []byte("not a key"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := settings.native.controller.ReloadKeys(); err != nil {
+	if _, _, _, err := settings.native.controller.ReloadKeys(); err != nil {
 		t.Fatalf("reload with a damaged identity key file: %v", err)
 	}
 }

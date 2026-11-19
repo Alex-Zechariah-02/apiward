@@ -18,12 +18,12 @@ import (
 // activation lifecycle. The hook still needs an administrator session with
 // manage_policy, the admin origin and the CSRF token.
 func registerTestRoutes(s *Server, mux *http.ServeMux) {
-	s.route(mux, "POST /test/publish", store.PermManagePolicy, func(w http.ResponseWriter, r *http.Request, who caller) {
+	s.route(mux, route{"POST /test/publish", store.PermManagePolicy, false, func(w http.ResponseWriter, r *http.Request, who caller) {
 		var change controller.Change
 		if !decodeBody(w, r, s.policyBody(), &change) {
 			return
 		}
 		outcome, status := s.control.Publish(r.Context(), who.admin.Name, change)
 		pipeline.WriteJSON(w, status, outcome)
-	})
+	}})
 }

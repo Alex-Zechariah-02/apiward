@@ -58,6 +58,18 @@ func TestSecurityLogSearch(t *testing.T) {
 	// The active file ends with a record still being written and the zero
 	// tail of a zero-filled file (one 1 MiB fill step).
 	writeAuditFile(t, active, 9, 12, `{"event_id":"e-13","kind":"request.forw`+strings.Repeat("\x00", 1<<20))
+	// Each file starts with the record naming the file rotated before it.
+	for name, previous := range map[string]string{"audit.log": "audit.log.3", "audit.log.3": "audit.log.2", "audit.log.2": "audit.log.1"} {
+		path := filepath.Join(dir, name)
+		content, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		head := `{"event_id":"r-` + name + `","kind":"audit.rotated","file":"` + previous + `"}` + "\n"
+		if err := os.WriteFile(path, append([]byte(head), content...), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
 	files, missing, err := LogFiles(active, 8)
 	if err != nil || !slices.Equal(files, []string{"audit.log", "audit.log.3", "audit.log.2"}) || !slices.Equal(missing, []string{"audit.log.1"}) {
 		t.Fatalf("files %v, missing %v (%v)", files, missing, err)
@@ -182,7 +194,7 @@ func TestScanAllowsRotation(t *testing.T) {
 	writeAuditFile(t, active, 1, 4, "")
 	budget := int64(1 << 20)
 	var renamed error
-	if _, _, err := scanLinesBackward(t.Context(), active, -1, &budget, func([]byte, int64) bool {
+	if _, _, err := scanLinesBackward(t.Context(), active, -1, 0, &budget, func([]byte, int64) bool {
 		renamed = os.Rename(active, active+".1")
 		return true
 	}); err != nil {
@@ -192,7 +204,7 @@ func TestScanAllowsRotation(t *testing.T) {
 		t.Fatalf("rotation rename during a scan: %v", renamed)
 	}
 	var removed error
-	if _, _, err := scanLinesBackward(t.Context(), active+".1", -1, &budget, func([]byte, int64) bool {
+	if _, _, err := scanLinesBackward(t.Context(), active+".1", -1, 0, &budget, func([]byte, int64) bool {
 		removed = os.Remove(active + ".1")
 		return true
 	}); err != nil {
@@ -217,5 +229,19 @@ func TestSearchStopsWhenCancelled(t *testing.T) {
 	}
 	if _, err := (&Summaries{}).PermitUse(gone, dir, []string{"audit.log"}, ExportScan); !errors.Is(err, context.Canceled) {
 		t.Fatalf("permission scan: %v", err)
+	}
+}
+
+// A record of a newer schema than this gateway writes is counted as
+// unreadable, not shown with fields it may have changed.
+func TestSecurityLogNewerSchema(t *testing.T) {
+	current := requestLine("a", 1, "R")
+	newer := strings.Replace(current, `"schema":8`, fmt.Sprintf(`"schema":%d`, audit.EventSchema+1), 1)
+	var result Result
+	if _, ok := securityLogRecord([]byte(strings.TrimSpace(current)), Query{}, &result); !ok || result.Unreadable != 0 {
+		t.Fatalf("current schema: ok %t, unreadable %d", ok, result.Unreadable)
+	}
+	if _, ok := securityLogRecord([]byte(strings.TrimSpace(newer)), Query{}, &result); ok || result.Unreadable != 1 {
+		t.Fatalf("newer schema: ok %t, unreadable %d", ok, result.Unreadable)
 	}
 }

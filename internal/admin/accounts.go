@@ -20,7 +20,7 @@ import (
 // signs for upstreams (RFC 7517). It holds public keys only.
 func (s *Server) handleJWKS(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/jwk-set+json")
-	w.Write(s.jwks)
+	_, _ = w.Write(s.jwks)
 }
 
 // handleKeys lists the trusted keys with how many tokens each verified since
@@ -77,9 +77,14 @@ func (s *Server) handleReloadKeys(w http.ResponseWriter, r *http.Request, who ca
 // holds a client certificate, and when that certificate expires. File paths
 // and keys are never returned.
 func (s *Server) handleProfiles(w http.ResponseWriter, r *http.Request, who caller) {
+	network := s.control.Network()
+	if network == nil {
+		adminError(w, http.StatusServiceUnavailable, "gateway_unavailable", "")
+		return
+	}
 	pipeline.WriteJSON(w, http.StatusOK, struct {
 		Items any `json:"items"`
-	}{s.control.Network().Profiles()})
+	}{network.Profiles()})
 }
 
 func (s *Server) handleBlockedAccounts(w http.ResponseWriter, r *http.Request, who caller) {

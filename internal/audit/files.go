@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/fault"
+	"github.com/Alex-Zechariah-02/apiward/internal/filecheck"
 )
 
 // Default size of the active audit file and number of files kept.
@@ -34,21 +35,33 @@ type Settings struct {
 	Queue    int
 	Window   time.Duration
 	Append   bool
+	// Privacy is how client addresses are recorded; the zero value records
+	// them whole.
+	Privacy Privacy
+	// OutcomeWindow is the longest a request can live; after an unclean
+	// stop, admissions this close to the last record without an outcome
+	// are marked unknown (reconcile.go). 0 skips the check.
+	OutcomeWindow time.Duration
+	// Signer signs the chain's checkpoints; nil writes none.
+	Signer Signer
 }
 
 // OpenAudit never fails: an unusable file yields a log in the failed state,
 // which refuses every acknowledgement and therefore every admission.
 func OpenAudit(path string, s Settings) *AuditLog {
 	a := &AuditLog{
-		boot:     NewRequestID()[:16],
-		path:     path,
-		maxBytes: s.MaxBytes,
-		maxFiles: s.MaxFiles,
-		evict:    s.WhenFull == FullEvict,
-		window:   s.Window,
-		prefill:  prefillSupported && !s.Append,
-		queue:    make(chan auditEntry, max(s.Queue, AuditQueueSize)),
-		done:     make(chan struct{}),
+		boot:          NewRequestID()[:16],
+		path:          path,
+		maxBytes:      s.MaxBytes,
+		maxFiles:      s.MaxFiles,
+		evict:         s.WhenFull == FullEvict,
+		window:        s.Window,
+		prefill:       prefillSupported && !s.Append,
+		privacy:       s.Privacy,
+		outcomeWindow: s.OutcomeWindow,
+		signer:        s.Signer,
+		queue:         make(chan *auditEntry, max(s.Queue, AuditQueueSize)),
+		done:          make(chan struct{}),
 	}
 	incomplete, err := a.open()
 	if err != nil {
@@ -65,6 +78,12 @@ func OpenAudit(path string, s Settings) *AuditLog {
 		// A crash interrupted the last record. It stays in the file for
 		// inspection; this event names where it starts.
 		a.Record(Event{Kind: "audit.recovered", File: filepath.Base(path), Offset: incomplete})
+	}
+	if s.OutcomeWindow > 0 {
+		if err := a.reconcile(a.size); err != nil {
+			a.openErr = err
+			a.Fail(fmt.Errorf("reconciling the audit log: %w", err))
+		}
 	}
 	go a.run()
 	return a
@@ -90,13 +109,21 @@ func (a *AuditLog) open() (int64, error) {
 	if err != nil {
 		return -1, err
 	}
-	a.rotated, a.next, a.rotatedBytes = set.count, set.next, set.bytes
-	// 0600 keeps a new audit file readable and writable only by the gateway's user.
+	a.rotated, a.rotatedBytes = set.count, set.bytes
+	// 0600 keeps the audit file readable and writable only by the gateway's
+	// user: set on creation, and again on a file an earlier version or an
+	// operator left with a wider mode.
 	file, err := os.OpenFile(a.path, os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
 		return -1, err
 	}
 	a.file = file
+	if err := file.Chmod(0o600); err != nil {
+		return -1, err
+	}
+	if err := filecheck.SyncDir(filepath.Dir(a.path)); err != nil {
+		return -1, err
+	}
 	end, err := End(file)
 	if err != nil {
 		return -1, err
@@ -109,6 +136,7 @@ func (a *AuditLog) open() (int64, error) {
 		return -1, err
 	}
 	a.size, a.filled = end, end
+	a.prepareEviction()
 	if incomplete >= 0 {
 		if err := a.persist([]byte("\n")); err != nil {
 			return -1, err
@@ -150,7 +178,10 @@ func (a *AuditLog) rotate() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	rotated := fmt.Sprintf("%s.%d", a.path, a.next)
+	rotated, err := a.freeName(time.Now())
+	if err != nil {
+		return "", err
+	}
 	if err := os.Rename(a.path, rotated); err != nil {
 		return "", err
 	}
@@ -161,11 +192,31 @@ func (a *AuditLog) rotate() (string, error) {
 		return "", err
 	}
 	a.file, a.size, a.filled = file, 0, 0
+	// The rename and the new file are durable before any record goes in it.
+	if err := filecheck.SyncDir(filepath.Dir(a.path)); err != nil {
+		return "", err
+	}
 	a.rotated++
 	a.rotatedBytes += closed
-	a.next++
 	a.publishUsage()
+	a.prepareEviction()
 	return filepath.Base(rotated), nil
+}
+
+// freeName is the name a file rotated at at gets, a millisecond later for
+// each name already taken, so a rotation never replaces a file.
+func (a *AuditLog) freeName(at time.Time) (string, error) {
+	for {
+		name := rotatedName(a.path, at)
+		_, err := os.Lstat(name)
+		if errors.Is(err, fs.ErrNotExist) {
+			return name, nil
+		}
+		if err != nil {
+			return "", err
+		}
+		at = at.Add(time.Millisecond)
+	}
 }
 
 // Usage reports the active file's size and the number of files, each with
@@ -174,9 +225,9 @@ func (a *AuditLog) Usage() (activeBytes, activeLimit, files, filesLimit int64) {
 	return a.activeBytes.Load(), a.maxBytes, a.files.Load(), int64(a.maxFiles)
 }
 
-// Failed reports whether the log refuses new records: it has failed, or
-// every file is in use.
-func (a *AuditLog) Failed() bool { return a.failed.Load() || a.full.Load() }
+// Failed reports whether the log refuses new records: it has failed, every
+// file is in use, or the file system has no space.
+func (a *AuditLog) Failed() bool { return a.failed.Load() || a.full.Load() || a.noSpace.Load() }
 
 // OpenErr is why the log could not open its file, or nil.
 func (a *AuditLog) OpenErr() error { return a.openErr }

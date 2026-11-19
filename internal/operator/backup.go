@@ -12,6 +12,7 @@ import (
 
 	"github.com/Alex-Zechariah-02/apiward/internal/audit"
 	"github.com/Alex-Zechariah-02/apiward/internal/fault"
+	"github.com/Alex-Zechariah-02/apiward/internal/filecheck"
 	"github.com/Alex-Zechariah-02/apiward/internal/store"
 )
 
@@ -53,6 +54,11 @@ func runBackup(o *operatorContext, flags map[string]string) (int, error) {
 		return 1, err
 	}
 
+	// A backup the audit log cannot record is deleted again: refuse it before
+	// the copy instead of after.
+	if o.audit.Failed() {
+		return 1, errors.New("the audit log cannot record a backup now; nothing was copied")
+	}
 	partial := output + ".partial"
 	if _, err := os.Lstat(manifestPath(output)); !errors.Is(err, fs.ErrNotExist) {
 		return 1, errors.New("the backup manifest already exists")
@@ -72,7 +78,7 @@ func runBackup(o *operatorContext, flags map[string]string) (int, error) {
 		return 1, fmt.Errorf("writing snapshot: %w", err)
 	}
 	fault.CrashPoint("backup-before-verify")
-	if err := checkDatabaseFile(partial); err != nil {
+	if err := checkDatabaseFile(partial, true); err != nil {
 		return 1, fmt.Errorf("verifying snapshot: %w", err)
 	}
 	// SQLite opens files by name: the verified file must still be the one
@@ -114,7 +120,7 @@ func runBackup(o *operatorContext, flags map[string]string) (int, error) {
 			removeFiles(manifestPath(output))
 		}
 	}()
-	if err := syncDir(filepath.Dir(output)); err != nil {
+	if err := filecheck.SyncDir(filepath.Dir(output)); err != nil {
 		return 1, fmt.Errorf("syncing the backup's directory: %w", err)
 	}
 	if err := o.record(audit.Event{Kind: "operator.backup", File: filepath.Base(output), Revision: a.Confirmed}); err != nil {

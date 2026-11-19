@@ -138,8 +138,11 @@ func hostMatches(pattern, host string) bool {
 
 // requestHost lower-cases the Host value and removes its port.
 func requestHost(host string) string {
-	if name, _, err := net.SplitHostPort(host); err == nil {
-		host = name
+	// Without a colon there is no port, and SplitHostPort would only fail.
+	if strings.IndexByte(host, ':') >= 0 {
+		if name, _, err := net.SplitHostPort(host); err == nil {
+			host = name
+		}
 	}
 	return strings.ToLower(host)
 }
@@ -233,7 +236,8 @@ func (c *condition) keys() (names, values string) {
 }
 
 // weaker reports whether a conditioned rule admits a request its
-// unconditioned sibling would refuse: allowed where the sibling is denied,
+// unconditioned sibling would refuse: of another API, whose address allow
+// list and settings then decide instead, allowed where the sibling is denied,
 // public where it is protected, a role the sibling does not permit, a rate
 // rule missing, keyed differently or looser, a body the sibling refuses or
 // a different or larger one, or a header schema the sibling has but it lacks.
@@ -241,7 +245,7 @@ func weaker(v, base *Rule, op, baseOp policy.Operation) bool {
 	if !v.permitted {
 		return false
 	}
-	if !base.permitted || v.public && !base.public {
+	if v.api != base.api || !base.permitted || v.public && !base.public {
 		return true
 	}
 	for role := range v.roles {

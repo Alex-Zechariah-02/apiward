@@ -79,10 +79,17 @@ func (f nativeFile) check() (nativeConfig, error) {
 		return nativeConfig{}, errors.New("gateway.metrics_listen must be a loopback address with a nonzero port (any address only with gateway.metrics_listen_any)")
 	}
 	cfg.metricsListen = metrics
+	if g.HealthListen != nil {
+		address, err := netip.ParseAddrPort(*g.HealthListen)
+		if err != nil || (!address.Addr().IsLoopback() && !g.HealthListenAny) || address.Port() == 0 {
+			return nativeConfig{}, errors.New("gateway.health_listen must be a loopback address with a nonzero port (any address only with gateway.health_listen_any)")
+		}
+		cfg.healthListen = *g.HealthListen
+	}
 	if err := checkTransport(d); err != nil {
 		return nativeConfig{}, err
 	}
-	if err := checkDistinct(d, g.AdminListen, metrics); err != nil {
+	if err := checkDistinct(d, g.AdminListen, metrics, cfg.healthListen); err != nil {
 		return nativeConfig{}, err
 	}
 	cfg.tls, cfg.redirect = d.TLS, d.RedirectHTTP
@@ -120,6 +127,10 @@ func (f nativeFile) check() (nativeConfig, error) {
 	if cfg.readHeaderTimeout > cfg.readTimeout {
 		return nativeConfig{}, errors.New("data.read_header_timeout must not exceed data.read_timeout")
 	}
+	// A request lives at most from its header to the end of its write
+	// limit: the window the log reconciles after an unclean stop.
+	cfg.controller.AuditOutcomeWindow = cfg.readHeaderTimeout + cfg.writeTimeout
+	cfg.limits.ModuleTimeout = cfg.writeTimeout
 
 	if cfg.controller.AuditMaxBytes, err = numberSetting("gateway.audit_max_bytes", g.AuditMaxBytes, audit.DefaultAuditBytes, controller.MinAuditBytes, controller.MaxAuditBytes); err != nil {
 		return nativeConfig{}, err
@@ -142,6 +153,9 @@ func (f nativeFile) check() (nativeConfig, error) {
 	cfg.controller.AuditQueue = audit.QueueSize(cfg.limits.MaxInFlight)
 	cfg.controller.AuditWhenFull = g.AuditWhenFull
 	cfg.controller.AuditAppend = g.AuditPrefill != nil && !*g.AuditPrefill
+	if cfg.controller.AuditPrivacy, err = auditPrivacy(g.AuditClientAddress, g.AuditAddressKey); err != nil {
+		return nativeConfig{}, err
+	}
 	if cfg.controller.IgnoredReads, err = ignoredReads(g.AuditIgnoreReads); err != nil {
 		return nativeConfig{}, err
 	}
@@ -152,6 +166,9 @@ func (f nativeFile) check() (nativeConfig, error) {
 		return nativeConfig{}, fmt.Errorf("data.trusted_proxies: %w", err)
 	}
 	if cfg.maxConnections, err = numberSetting("data.max_connections", d.MaxConnections, defaultMaxConnections, 16, maxConnectionsLimit); err != nil {
+		return nativeConfig{}, err
+	}
+	if cfg.perAddress, err = numberSetting("data.max_connections_per_address", d.MaxConnectionsPerAddress, 0, 0, cfg.maxConnections); err != nil {
 		return nativeConfig{}, err
 	}
 	if cfg.headerLimit, err = numberSetting("data.max_header_bytes", d.MaxHeaderBytes, defaultHeaderBytes, minHeaderBytes, maxHeaderBytes); err != nil {
@@ -166,6 +183,10 @@ func (f nativeFile) check() (nativeConfig, error) {
 		return nativeConfig{}, err
 	}
 	if cfg.pool.MaxIdle, err = numberSetting("upstream.max_idle_per_upstream", u.MaxIdlePerUpstream, defaultMaxIdle, 0, maxIdlePerUpstream); err != nil {
+		return nativeConfig{}, err
+	}
+	perUpstream := pipeline.DefaultPerUpstream(cfg.limits.MaxInFlight)
+	if cfg.limits.MaxInFlightPerUpstream, err = numberSetting("upstream.max_in_flight_per_upstream", u.MaxInFlightPerUpstream, perUpstream, 1, cfg.limits.MaxInFlight); err != nil {
 		return nativeConfig{}, err
 	}
 	if u.UnsignedIdentity && u.IdentityKey != nil {

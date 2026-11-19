@@ -128,12 +128,12 @@ func startNative(cfg nativeConfig, logger *slog.Logger) (*nativeGateway, error) 
 		listener.Close()
 		return nil, errors.Join(err, c.Stop())
 	}
-	metricsListener, err := d.listen(d.certificate == nil)
+	auxiliary, err := d.listen(d.certificate == nil, false)
 	if err != nil {
 		closeListeners(listener, redirectListener)
 		return nil, errors.Join(err, c.Stop())
 	}
-	listener = connections.Cap(listener, cfg.maxConnections, c.Observations().ConnectionRefused)
+	listener = connections.CapPerAddress(listener, cfg.maxConnections, cfg.perAddress, c.Observations().ConnectionRefused)
 	if redirectListener != nil {
 		// The redirect listener faces the same clients as the data listener.
 		redirectListener = connections.Cap(redirectListener, cfg.maxConnections, c.Observations().Refuser("redirect"))
@@ -160,7 +160,9 @@ func startNative(cfg nativeConfig, logger *slog.Logger) (*nativeGateway, error) 
 	// A second stop, from a signal or the run loop, returns the first's result.
 	g.stop = sync.OnceValue(g.shutdown)
 	go func() { g.served <- g.data.Serve(listener) }()
-	go serveAuxiliary("metrics", g.metrics, metricsListener, logger)
+	for _, l := range auxiliary {
+		go serveAuxiliary("metrics", g.metrics, l, logger)
+	}
 	if redirectListener != nil {
 		g.redirect = redirectServer(cfg.redirect.Origin, c.Observations(), server)
 		go serveAuxiliary("redirect", g.redirect, redirectListener, logger)
@@ -173,7 +175,7 @@ func startNative(cfg nativeConfig, logger *slog.Logger) (*nativeGateway, error) 
 	if g.certificate != nil {
 		transport = "https"
 	}
-	logger.Info("listening", "data", listener.Addr().String(), "transport", transport, "http2", server.HTTP2, "admin", cfg.controller.AdminListen, "metrics", metricsListener.Addr().String())
+	logger.Info("listening", "data", listener.Addr().String(), "transport", transport, "http2", server.HTTP2, "admin", cfg.controller.AdminListen, "metrics", auxiliary[0].Addr().String(), "health", d.health)
 	d.logAdmission(logger)
 	return g, nil
 }

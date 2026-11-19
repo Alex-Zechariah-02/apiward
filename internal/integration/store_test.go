@@ -12,7 +12,7 @@ import (
 // An installed database has exactly the current schema: the twelve STRICT
 // tables, their keys and constraints, the activation and override indexes
 // and triggers (with those that keep rows in use), WAL journaling and
-// user_version 7, and nothing else.
+// user_version 8, and nothing else.
 func TestInstalledSchema(t *testing.T) {
 	t.Parallel()
 	e := gatewaytest.NewEnv(t)
@@ -64,7 +64,7 @@ func TestInstalledSchema(t *testing.T) {
 	}
 	explicit.Close()
 	if want := []string{"activation_final", "activation_fixed", "activation_kept", "activation_unresolved", "base_provisional",
-		"override_active_target", "override_final", "override_fixed", "override_kept", "override_resolution", "override_shared", "revision_kept", "transition_kept"}; !slices.Equal(names, want) {
+		"override_active_target", "override_final", "override_fixed", "override_kept", "override_resolution", "override_shared", "revision_kept", "transition_committed", "transition_kept"}; !slices.Equal(names, want) {
 		t.Fatalf("explicit indexes and triggers %v, want %v", names, want)
 	}
 	// Of the override's UNIQUE constraints only creation remains on its
@@ -81,7 +81,7 @@ func TestInstalledSchema(t *testing.T) {
 			t.Errorf("table %s has %d foreign keys, want %d", table, n, want)
 		}
 	}
-	if n := gatewaytest.Count(t, db, `PRAGMA user_version`); n != 7 {
+	if n := gatewaytest.Count(t, db, `PRAGMA user_version`); n != 8 {
 		t.Fatalf("user_version %d", n)
 	}
 	var journal string

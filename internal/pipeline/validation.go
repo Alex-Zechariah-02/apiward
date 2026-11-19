@@ -89,7 +89,7 @@ func readBody(r *http.Request, body []byte, rule *compile.BodyRule, globalMaxByt
 	if !IsJSONMediaType(r.Header.Values("Content-Type")) {
 		return nil, &rejection{http.StatusUnsupportedMediaType, "unsupported_media_type", "media_type"}
 	}
-	document, reason := policy.DecodeJSON(body)
+	document, reason := policy.DecodeBounded(body, policy.MaxJSONDepth, policy.BodyValues(rule.MaxBytes()))
 	if reason != "" {
 		return nil, &rejection{http.StatusBadRequest, "bad_request", reason}
 	}

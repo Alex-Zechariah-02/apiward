@@ -151,7 +151,7 @@ test.describe.serial('request drawer', () => {
     expect(await results.count()).toBeGreaterThan(0)
     const lines: number[] = []
     for (const cell of await results.all()) {
-      await expect(cell).toHaveText(/^(Allowed|Refused|Outcome Unknown) · \d{3}$/)
+      await expect(cell).toHaveText(/^(Allowed|Refused|Gateway Error|Outcome Unknown) · \d{3}$/)
       lines.push(await cell.evaluate((td) => td.firstElementChild!.getClientRects().length))
     }
     expect(lines.every((n) => n === 1)).toBe(true)

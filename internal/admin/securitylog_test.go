@@ -3,12 +3,10 @@
 package admin
 
 import (
-	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/monitor"
 )
@@ -38,20 +36,22 @@ func TestSecurityLogMalformedQuery(t *testing.T) {
 	}
 }
 
-// Security log scans run one at a time; a request that stops waiting never
-// gets a slot.
+// Security log scans run one at a time; a second is refused at once with
+// 503 busy and Retry-After instead of waiting.
 func TestLogScansQueue(t *testing.T) {
 	s := &Server{scans: make(chan struct{}, maxLogScans)}
-	if !s.scanLog(t.Context()) {
+	if !s.scanLog(httptest.NewRecorder()) {
 		t.Fatal("the first scan did not start")
 	}
-	waiting, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
-	defer cancel()
-	if s.scanLog(waiting) {
+	second := httptest.NewRecorder()
+	if s.scanLog(second) {
 		t.Fatal("a second scan ran beside the first")
 	}
+	if second.Code != http.StatusServiceUnavailable || second.Header().Get("Retry-After") != "1" || !strings.Contains(second.Body.String(), "busy") {
+		t.Fatalf("second scan answered %d %v %s", second.Code, second.Header(), second.Body)
+	}
 	s.scanDone()
-	if !s.scanLog(t.Context()) {
+	if !s.scanLog(httptest.NewRecorder()) {
 		t.Fatal("no scan started after the first ended")
 	}
 }

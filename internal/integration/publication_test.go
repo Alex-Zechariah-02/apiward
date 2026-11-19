@@ -89,8 +89,8 @@ func TestInvalidCandidateLeavesStateUnchanged(t *testing.T) {
 	}
 
 	oversize := controller.Change{ID: "oversize", Expected: 1, Policy: json.RawMessage(`{"upstreams":[],"operations":[],"pad":"` + strings.Repeat("x", 90000) + `"}`)}
-	if _, code := e.Publish(oversize); code != http.StatusRequestEntityTooLarge {
-		t.Errorf("oversize change: %d", code)
+	if outcome, code := e.Publish(oversize); code != http.StatusBadRequest || outcome.Reason != "POLICY_TOO_LARGE" {
+		t.Errorf("oversize change: %d %+v", code, outcome)
 	}
 	// The hook cannot create a provisional base: that needs an activation
 	// through the confirmed-activation lifecycle, whose period bounds are
@@ -118,8 +118,8 @@ func TestInvalidCandidateLeavesStateUnchanged(t *testing.T) {
 	if n := gatewaytest.Count(t, db, `SELECT COUNT(*) FROM revision`); n != 2 {
 		t.Fatalf("%d revisions stored, want 2", n)
 	}
-	if n := gatewaytest.Count(t, db, `SELECT COUNT(*) FROM transition WHERE outcome = 'rejected'`); n != len(cases) {
-		t.Fatalf("%d rejections recorded, want %d", n, len(cases))
+	if n := gatewaytest.Count(t, db, `SELECT COUNT(*) FROM transition WHERE outcome = 'rejected'`); n != len(cases)+1 { // the oversize change is recorded too
+		t.Fatalf("%d rejections recorded, want %d", n, len(cases)+1)
 	}
 }
 

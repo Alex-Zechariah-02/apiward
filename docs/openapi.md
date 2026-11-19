@@ -10,7 +10,7 @@ Back to the [README](../README.md).
 
 ```
 apiward policy import-openapi --spec <file.json|.yaml|.yml> --api <id> --upstream <id>
-  --base <policy.json> [--max-body-bytes <n>] [--with-permits] --out <new file> --report <new file>
+  --base <policy.json> [--max-body-bytes <n>] [--with-permits] [--config <settings>] --out <new file> --report <new file>
 ```
 
 | Flag | Meaning |
@@ -20,10 +20,11 @@ apiward policy import-openapi --spec <file.json|.yaml|.yml> --api <id> --upstrea
 | `--upstream` | An upstream already in `--base` that serves the API |
 | `--base` | The policy to build on, for example the output of `demo policy export` |
 | `--max-body-bytes` | Body limit for imported request bodies without `x-apiward-max-bytes`: 1 to 1,048,576, default 16,384 |
-| `--with-permits` | Read `x-apiward-roles` into permits, adding missing roles; without it no permit is created |
+| `--with-permits` | Read `x-apiward-roles` into permits, adding missing roles; without it no permit is created, and each operation's roles are reported under `changed` |
+| `--config` | The gateway's settings file: the result is checked against its `limits` instead of the defaults |
 | `--out`, `--report` | New files; the command never overwrites a file and writes both or neither |
 
-Exit status: `0` every operation mapped; `2` both files written, but some operations were refused or widened (read the report); `1` nothing written (bad flags, unreadable or refused description, an output file exists, or the result does not compile). The result is checked against the default capacity limits; the error names them, as a deployment may have raised its own.
+Exit status: `0` every operation mapped; `2` both files written, but some operations were refused or widened (read the report); `1` nothing written (bad flags, unreadable or refused description, an output file exists, or the result does not compile). The result is checked against the default capacity limits, or a deployment's with `--config`; the report's `limits` and a capacity error name the limits used.
 
 **How it maps.**
 
@@ -32,12 +33,16 @@ Exit status: `0` every operation mapped; `2` both files written, but some operat
 - A path whose last segment is a parameter (`/orders/{id}`) becomes the prefix `/orders/*`, which also matches deeper paths.
 - Header parameters become the header schema; query, path and cookie parameters are listed as not enforced.
 - A JSON request body becomes a body rule.
+- A request body with JSON and other media types imports the JSON schema; each other type is reported under `changed`, since the gateway refuses it with `415`.
+- A header parameter needs a string schema: the gateway validates header values as text.
+- Every operation is compiled with the API settings the root `x-apiward-…` members state, so a forward prefix that does not fit is refused per operation.
 - Schema `$ref`s inside the file are inlined, descriptive keywords (`description`, `example`, `x-…`) are removed, and an object without `additionalProperties` allows extra fields, as OpenAPI does.
 - Every operation is checked by the gateway's own compiler, and the whole result is compiled before anything is written.
 
 **What is refused.**
 
-- An operation is left out, with a code in the report, when it cannot be expressed exactly: `TRACE` (`METHOD_REFUSED`); a missing or invalid `operationId` (`OPERATION_ID_INVALID`, with a suggestion) or one used twice (`OPERATION_ID_DUPLICATE`); a parameter in the middle of a path or a `*` in a path (`PATH_TEMPLATE_UNSUPPORTED`; a gateway target ending in `/*` is a prefix); two operations on the same method and target (`TARGET_COLLISION`); API keys, Basic, mutual TLS, optional sign-in or a requirement naming several schemes, all of which the description would need (`SECURITY_SCHEME_UNSUPPORTED`); non-JSON bodies (`MEDIA_TYPE_UNSUPPORTED`); a JSON body without a schema (`SCHEMA_MISSING`); `x-apiward-roles` on a public operation (`EXTENSION_INVALID`); a schema keyword the gateway cannot enforce, such as `format`, `pattern` or `oneOf`, or a parameter whose `name` or `in` is not a string or whose `required` is not `true` or `false` (`SCHEMA_KEYWORD_UNSUPPORTED`; dropping it would accept more than described); a `$ref` to another file (`EXTERNAL_REF`), a missing one (`REF_INVALID`) or a circular one (`SCHEMA_CYCLE`); a schema deeper than 16 levels or larger than 4,096 values once inlined (`SCHEMA_LIMIT_EXCEEDED`); and anything else the compiler rejects (`COMPILER_REFUSED`, with its code and field).
+- An operation is left out, with a code in the report, when it cannot be expressed exactly: `TRACE` (`METHOD_REFUSED`); a missing or invalid `operationId` (`OPERATION_ID_INVALID`, with a suggestion) or one used twice (`OPERATION_ID_DUPLICATE`); a parameter in the middle of a path or a `*` in a path (`PATH_TEMPLATE_UNSUPPORTED`; a gateway target ending in `/*` is a prefix); two operations on the same method and target (`TARGET_COLLISION`); API keys, Basic, mutual TLS, optional sign-in or a requirement naming several schemes, all of which the description would need (`SECURITY_SCHEME_UNSUPPORTED`); a body with no JSON media type (`MEDIA_TYPE_UNSUPPORTED`); a JSON body without a schema (`SCHEMA_MISSING`); `x-apiward-roles` on a public operation (`EXTENSION_INVALID`); a schema keyword the gateway cannot enforce, such as `format`, `pattern` or `oneOf`, a parameter whose `name` or `in` is not a string or whose `required` is not `true` or `false`, a header parameter whose schema is not `type: string`, or two header parameters naming one header in different case (`SCHEMA_KEYWORD_UNSUPPORTED`; dropping it would accept more than described); a `$ref` to another file (`EXTERNAL_REF`), a missing one (`REF_INVALID`) or a circular one (`SCHEMA_CYCLE`); a schema deeper than 16 levels or larger than 4,096 values once inlined (`SCHEMA_LIMIT_EXCEEDED`); and anything else the compiler rejects (`COMPILER_REFUSED`, with its code and field).
+- A path item with no lowercase method but other unknown members (an uppercase `GET`, say) is refused as `METHOD_REFUSED`.
 - YAML anchors, aliases, merge keys, tags, several documents in one file, duplicate or non-string keys and `.nan`/`.inf` refuse the whole file, naming the line.
 
 **Report.** JSON; every list is always present:
@@ -55,11 +60,12 @@ Exit status: `0` every operation mapped; `2` both files written, but some operat
  "annotations_removed": [{"operation": "orders.createOrder", "field": "#/components/schemas/NewOrder/description"}],
  "removed_operations": ["orders.old"],
  "removed_permits": [{"role": "customer", "operation": "orders.old"}],
- "added_permits": [], "replaced_settings": ["allow_addresses"],
- "ignored": ["responses", "servers", "tags"]}
+ "added_permits": [], "replaced_settings": ["allow_addresses"], "applied_settings": ["forward"],
+ "ignored": ["responses", "servers", "tags"],
+ "limits": {"policy_bytes": 65536, "apis": 64, "operations": 256, "roles": 64, "permits": 4096}}
 ```
 
-`mapped` and `widened` list the imported operations (`note` explains a default they rely on); `assumed` lists values the import chose; `changed` lists behaviour the gateway enforces differently from the description; `refused` entries may add `field` (a JSON Pointer into the description, or the compiler's field) and `suggestion`; `description_version` is the description's `info.version`; `needs_permissions` lists the signed-in operations no role can call yet (also those with an empty `x-apiward-roles`); `added_permits` lists the permits `--with-permits` read from `x-apiward-roles`; `replaced_settings` names the replaced API's settings (`forward`, `cors`, `response_headers`, `allow_addresses`) the description removed or changed; `removed_operations` and `removed_permits` are what replacing `--api` took out of the base; `ignored` names description members with no effect on the policy (`servers`, `responses`, `callbacks`, `webhooks`, `links`, `tags`).
+`mapped` and `widened` list the imported operations (`note` explains a default they rely on); `assumed` lists values the import chose; `changed` lists behaviour the gateway enforces differently from the description; `refused` entries may add `field` (a JSON Pointer into the description, or the compiler's field) and `suggestion`; `description_version` is the description's `info.version`; `needs_permissions` lists the signed-in operations no role can call yet (also those with an empty `x-apiward-roles`); `added_permits` lists the permits `--with-permits` read from `x-apiward-roles`; `replaced_settings` names the replaced API's settings (`forward`, `cors`, `response_headers`, `allow_addresses`, and `upstream` when `--upstream` differs) the description removed or changed; `applied_settings` names the settings the description's root members give the API; `limits` are the capacity limits the result was checked against; `removed_operations` and `removed_permits` are what replacing `--api` took out of the base; `ignored` names description members with no effect on the policy (`servers`, `responses`, `callbacks`, `webhooks`, `links`, `tags`), and any member of a path item or operation OpenAPI does not define, such as a misspelt `requestbody`.
 
 **Gateway extensions.** An operation may carry the members the export writes; each is checked, and any other `x-apiward-…` member refuses the operation (`EXTENSION_INVALID`):
 
@@ -80,7 +86,7 @@ At the root, `x-apiward-forward`, `x-apiward-cors`, `x-apiward-response-headers`
 
 ```
 apiward policy export-openapi --policy <policy.json> --api <id>
-  --out <new file.json|.yaml|.yml> --report <new file> [--with-upstream]
+  --out <new file.json|.yaml|.yml> --report <new file> [--with-upstream] [--config <settings>]
 ```
 
 - Each operation becomes the path and method of its target, with `operationId` = the operation identifier without the `<api>.` prefix.
@@ -93,7 +99,7 @@ apiward policy export-openapi --policy <policy.json> --api <id>
 - A description holds one operation per path and method, so a second operation on the same target and method (a conditioned one, after the one without conditions) is not exported and is reported `changed`.
 - The upstream address is written as a server only with `--with-upstream`.
 
-Exit status: `0` the description means exactly what the policy does; `2` both files written, but something differs (read `changed`): a prefix target, which OpenAPI reads as one segment while the gateway also matches deeper paths; an identifier without the `<api>.` prefix, which comes back with it; a target containing `{` or `}`, which is not exported; `1` nothing written. The report lists `exported` (`operation`, `method`, `path`), `changed` (`operation`, `field`, `note`) and `omitted` (what a flag would add).
+Exit status: `0` the description means exactly what the policy does; `2` both files written, but something differs (read `changed`): a prefix target, which OpenAPI reads as one segment while the gateway also matches deeper paths; an identifier without the `<api>.` prefix, which comes back with it; a target containing `{` or `}`, which is not exported; `1` nothing written. The report lists `exported` (`operation`, `method`, `path`), `changed` (`operation`, `field`, `note`), `omitted` (what a flag would add) and `limits` (the default capacity limits, or the deployment's with `--config`).
 
 ## Moving to or from another gateway
 

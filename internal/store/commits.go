@@ -135,6 +135,15 @@ func (s *DB) CommitResolution(ctx context.Context, t TransitionRecord, a Authori
 	}
 	defer tx.Rollback()
 
+	if err := resolveProvisional(ctx, tx, t, a, disposition, now); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// resolveProvisional records t, the disposition of the provisional base of a
+// and the confirmed base that follows it in tx.
+func resolveProvisional(ctx context.Context, tx *sql.Tx, t TransitionRecord, a Authority, disposition string, now time.Time) error {
 	if err := insertCommitted(ctx, tx, t, now); err != nil {
 		return err
 	}
@@ -153,7 +162,7 @@ func (s *DB) CommitResolution(ctx context.Context, t TransitionRecord, a Authori
 		confirmed, a.Provisional); err != nil {
 		return fmt.Errorf("ending provisional revision %d: %w", a.Provisional, err)
 	}
-	return tx.Commit()
+	return nil
 }
 
 // CommitCandidate stores a validated candidate with its committed

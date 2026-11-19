@@ -53,11 +53,24 @@ func (s *DB) Candidates(ctx context.Context, after int64, limit int) ([]Candidat
 const ActivationColumns = `revision, candidate, rollback_target, deadline, activated_at, actor,
 	coalesce(disposition, ''), resolved_at, coalesce(resolved_by, ''), coalesce(resolution, '')`
 
-// Activation reads the activation record selected by column, which is
-// revision or candidate.
-func (s *DB) Activation(ctx context.Context, column string, id int64) (ActivationRecord, bool, error) {
-	// #nosec G202 -- column is a constant of the calling code; the value travels as an argument
-	rows, err := s.db.QueryContext(ctx, `SELECT `+ActivationColumns+` FROM activation WHERE `+column+` = ?`, id)
+// ActivationKey names the column an activation is looked up by; only these
+// two values exist, so no caller composes SQL.
+type ActivationKey int
+
+const (
+	ByRevision ActivationKey = iota
+	ByCandidate
+)
+
+// activationQueries holds the fixed query of each key.
+var activationQueries = [...]string{
+	ByRevision:  `SELECT ` + ActivationColumns + ` FROM activation WHERE revision = ?`,
+	ByCandidate: `SELECT ` + ActivationColumns + ` FROM activation WHERE candidate = ?`,
+}
+
+// Activation reads the activation record whose key column holds id.
+func (s *DB) Activation(ctx context.Context, key ActivationKey, id int64) (ActivationRecord, bool, error) {
+	rows, err := s.db.QueryContext(ctx, activationQueries[key], id)
 	if err != nil {
 		return ActivationRecord{}, false, err
 	}

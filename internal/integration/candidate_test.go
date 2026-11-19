@@ -169,6 +169,8 @@ func TestCandidateRefusals(t *testing.T) {
 	roleStillHeld := e.ProtectedPolicy()
 	roleStillHeld.Roles = []policy.Role{{ID: "READER"}} // alice still holds WRITER
 	roleStillHeld.Permits = []policy.Permit{{Role: "WRITER", Operation: "read-a"}}
+	overPolicyLimit := e.ProtectedPolicy()
+	overPolicyLimit.Upstreams[0].ID = strings.Repeat("u", 90<<10) // above the policy limit, below the request body cap
 	futureSchema := gatewaytest.MustJSON(e.ProtectedPolicy())
 	futureSchema = []byte(strings.Replace(string(futureSchema), fmt.Sprintf(`"schema_version":%d`, policy.SchemaVersion), `"schema_version":99`, 1))
 
@@ -187,6 +189,7 @@ func TestCandidateRefusals(t *testing.T) {
 		{"removed upstream still referenced", unknownUpstream, "UNKNOWN_REFERENCE", "apis[0].upstream"},
 		{"removed role still referenced by permit", roleStillHeld, "UNKNOWN_REFERENCE", "permits[0].role"},
 		{"unsupported schema version", json.RawMessage(futureSchema), "SCHEMA_VERSION_UNSUPPORTED", "schema_version"},
+		{"policy over its size limit", overPolicyLimit, "POLICY_TOO_LARGE", "policy_bytes"},
 	}
 	for i, tc := range cases {
 		// A refusal answers with the outcome itself, not a receipt and candidate.
@@ -213,7 +216,7 @@ func TestCandidateRefusals(t *testing.T) {
 		}
 	}
 	oversized := e.ProtectedPolicy()
-	oversized.Upstreams[0].ID = strings.Repeat("u", 90<<10)
+	oversized.Upstreams[0].ID = strings.Repeat("u", 5*policy.DefaultPolicyBytes) // above the request body cap, four times the policy limit
 	if code, _, _ := e.Stage(harness, oversized, `"r1"`, "oversized-candidate"); code != http.StatusRequestEntityTooLarge {
 		t.Errorf("oversized candidate: %d", code)
 	}

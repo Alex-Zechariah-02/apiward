@@ -5,6 +5,8 @@ package forward
 import (
 	"context"
 	"errors"
+	"sync/atomic"
+	"time"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/compile"
 )
@@ -18,8 +20,16 @@ var (
 
 // binding is the trusted upstream decision carried in the request context:
 // the compiled destination. Only this package can attach it; no header or
-// placeholder can.
-type binding struct{ destination compile.Destination }
+// placeholder can. It also holds the state of the one exchange made for it,
+// which only the forwarder writes: one allocation per request instead of a
+// proxy, its closures and a client trace.
+type binding struct {
+	destination compile.Destination
+	connected   atomic.Bool   // a connection to the upstream was held
+	upstream    time.Duration // from sending the request to the response headers
+	cancel      context.CancelCauseFunc
+	failure     error // why the exchange failed before any response
+}
 
 type bindingKey struct{}
 
@@ -27,11 +37,29 @@ type bindingKey struct{}
 // upstream the request may reach and the path it is forwarded with. It is
 // the only way to attach a binding.
 func Bind(ctx context.Context, d compile.Destination) context.Context {
-	return context.WithValue(ctx, bindingKey{}, binding{destination: d})
+	return context.WithValue(ctx, bindingKey{}, &binding{destination: d})
 }
 
 // Bound returns the destination ctx is bound to, if a binding is attached.
 func Bound(ctx context.Context) (compile.Destination, bool) {
-	b, bound := ctx.Value(bindingKey{}).(binding)
-	return b.destination, bound
+	b := bindingOf(ctx)
+	if b == nil {
+		return compile.Destination{}, false
+	}
+	return b.destination, true
+}
+
+// UpstreamTime is how long the upstream took to answer the request bound in
+// ctx, from sending it to its response headers (monotonic clock); zero when
+// no response arrived.
+func UpstreamTime(ctx context.Context) time.Duration {
+	if b := bindingOf(ctx); b != nil {
+		return b.upstream
+	}
+	return 0
+}
+
+func bindingOf(ctx context.Context) *binding {
+	b, _ := ctx.Value(bindingKey{}).(*binding)
+	return b
 }

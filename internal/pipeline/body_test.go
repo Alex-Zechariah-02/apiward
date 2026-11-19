@@ -45,10 +45,10 @@ func TestBodyDecoding(t *testing.T) {
 		{"nesting above the bound", deep(policy.MaxJSONDepth + 1), "limit_exceeded"},
 		{"values at the bound", "[" + strings.TrimSuffix(strings.Repeat("1,", policy.MaxJSONValues-1), ",") + "]", ""},
 		{"values above the bound", "[" + strings.TrimSuffix(strings.Repeat("1,", policy.MaxJSONValues), ",") + "]", "limit_exceeded"},
-		{"long number", `{"a":` + strings.Repeat("1", policy.MaxNumberLength+1) + `}`, "limit_exceeded"},
+		{"long number", `{"a":` + strings.Repeat("1", policy.MaxNumberLength+1) + `}`, "number_not_comparable"},
 		{"large exponent", `{"a":1e999}`, ""},
-		{"exponent above the bound", `{"a":1e1000}`, "limit_exceeded"},
-		{"negative exponent above the bound", `{"a":1E-1000}`, "limit_exceeded"},
+		{"exponent above the bound", `{"a":1e1000}`, "number_not_comparable"},
+		{"negative exponent above the bound", `{"a":1E-1000}`, "number_not_comparable"},
 	}
 	for _, tc := range cases {
 		started := time.Now()

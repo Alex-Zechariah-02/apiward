@@ -1,14 +1,15 @@
 // A keys reload: the configuration file read again with the checks of a
-// start, applied only when no setting changed that takes effect at a restart.
+// start; the reloadable settings are applied, and the settings that changed
+// but take effect only at a restart are returned as warnings.
 
 package gateway
 
 import (
 	"encoding/json"
-	"fmt"
 	"slices"
 	"strings"
 
+	"github.com/Alex-Zechariah-02/apiward/internal/audit"
 	"github.com/Alex-Zechariah-02/apiward/internal/forward"
 	"github.com/Alex-Zechariah-02/apiward/internal/operator"
 	"github.com/Alex-Zechariah-02/apiward/internal/pipeline"
@@ -21,10 +22,11 @@ var reloadable = []string{"gateway.jwt", "upstream.allow_public_addresses", "ups
 
 // reloadKeys reads the configuration file again, with the checks of a start,
 // and returns its trust and upstream network settings. The identity signing
-// key is not read: it takes effect only at a restart (docs/keys.md). It refuses, naming them,
-// any other setting the file now holds differently, since a reload would not
-// apply it.
-func (cfg nativeConfig) reloadKeys() (pipeline.TrustConfig, *forward.Network, error) {
+// key is not read: it takes effect only at a restart (docs/keys.md). Every
+// other setting the file now holds differently is named in the warnings: a
+// reload does not apply it, and refusing the whole reload for it would keep
+// a compromised key in force.
+func (cfg nativeConfig) reloadKeys() (pipeline.TrustConfig, *forward.Network, []string, error) {
 	reloaded, err := readNativeConfig(cfg.source.path)
 	if err == nil {
 		err = reloaded.loadNetwork()
@@ -33,16 +35,18 @@ func (cfg nativeConfig) reloadKeys() (pipeline.TrustConfig, *forward.Network, er
 		err = operator.CheckPaths(reloaded.source.path, operatorConfig(reloaded), "run", nil)
 	}
 	if err != nil {
-		return pipeline.TrustConfig{}, nil, err
+		return pipeline.TrustConfig{}, nil, nil, err
 	}
 	changed, err := restartOnly(cfg.file, reloaded.file)
 	if err != nil {
-		return pipeline.TrustConfig{}, nil, err
+		return pipeline.TrustConfig{}, nil, nil, err
 	}
+	cfg.reloaded.Store(&audit.Event{Kind: "gateway.reloaded", File: reloaded.source.path, Digest: reloaded.source.digest, ResolvedDigest: resolvedDigest(reloaded.file)})
+	var warnings []string
 	if len(changed) > 0 {
-		return pipeline.TrustConfig{}, nil, fmt.Errorf("changed settings take effect only at a restart: %s", strings.Join(changed, ", "))
+		warnings = []string{"changed settings take effect only at a restart: " + strings.Join(changed, ", ")}
 	}
-	return reloaded.controller.JWT, reloaded.controller.Network, nil
+	return reloaded.controller.JWT, reloaded.controller.Network, warnings, nil
 }
 
 // restartOnly names the settings other than the reloadable ones that differ
@@ -89,4 +93,14 @@ func settingValues(f nativeFile) (map[string]string, error) {
 		}
 	}
 	return values, nil
+}
+
+// reloadedRecord is the gateway.reloaded record of the settings the last
+// reload read; a reload that failed later records nothing (the controller
+// calls this only once a reload is applied).
+func (cfg nativeConfig) reloadedRecord() audit.Event {
+	if e := cfg.reloaded.Load(); e != nil {
+		return *e
+	}
+	return audit.Event{Kind: "gateway.reloaded"}
 }

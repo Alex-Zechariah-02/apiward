@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -25,15 +24,7 @@ import (
 // not one JSON record. A rotated file must hold no zero tail.
 func auditRecords(e *gatewaytest.Env) []map[string]any {
 	e.T.Helper()
-	files, _ := filepath.Glob(e.AuditLog + ".*")
-	// Numeric order of the rotation suffix: shorter names first.
-	slices.SortFunc(files, func(a, b string) int {
-		if len(a) != len(b) {
-			return len(a) - len(b)
-		}
-		return strings.Compare(a, b)
-	})
-	files = append(files, e.AuditLog)
+	files := append(gatewaytest.RotatedAudit(e.T, e.AuditLog), e.AuditLog)
 	var records []map[string]any
 	for _, file := range files {
 		data, err := os.ReadFile(file)
@@ -151,7 +142,7 @@ func TestEventsCoverEveryDecisionClass(t *testing.T) {
 	}
 	for kind := range kinds {
 		known := slices.Contains([]string{"request.admitted", "request.forwarded", "request.rejected", "controller.reconciled",
-			"transition.intent", "transition.published", "transition.rejected", "account.block", "admin.authenticated", "admin.read", "gateway.started", "gateway.key"}, kind)
+			"transition.intent", "transition.published", "transition.rejected", "account.block", "admin.authenticated", "admin.read", "gateway.started", "gateway.key", "audit.reconciled", "request.outcome_unknown"}, kind)
 		if !known {
 			t.Errorf("unexpected event kind %s", kind)
 		}

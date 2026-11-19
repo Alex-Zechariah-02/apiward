@@ -5,6 +5,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 
@@ -14,14 +15,16 @@ import (
 const overrideColumns = `id, type, control, operation, coalesce(role, ''), coalesce(count, 0), target, base,
 	created_at, expires_at, actor, creation, status, resolved_at, coalesce(resolved_by, ''), coalesce(resolution, '')`
 
-// Overrides reads the overrides selected by the WHERE and ORDER clause.
-func (s *DB) Overrides(ctx context.Context, clause string, args ...any) ([]Override, error) {
-	return overrides(ctx, s.db, clause, args...)
+// Overrides reads at most limit overrides with an ID above after, in ID
+// order.
+func (s *DB) Overrides(ctx context.Context, after int64, limit int) ([]Override, error) {
+	return overrides(ctx, s.db, `WHERE id > ? ORDER BY id LIMIT ?`, after, limit)
 }
 
-// overrides reads overrides through q, a connection or a transaction.
+// overrides reads overrides through q, a connection or a transaction. clause
+// is one of this package's constants; values travel as arguments.
 func overrides(ctx context.Context, q querier, clause string, args ...any) ([]Override, error) {
-	// #nosec G202 -- clause is a constant of the calling code; values travel as arguments
+	// #nosec G202 -- clause is a constant of this package
 	rows, err := q.QueryContext(ctx, `SELECT `+overrideColumns+` FROM override `+clause, args...)
 	if err != nil {
 		return nil, err
@@ -46,7 +49,7 @@ func overrides(ctx context.Context, q querier, clause string, args ...any) ([]Ov
 
 // Override reads one override by its identifier.
 func (s *DB) Override(ctx context.Context, id int64) (Override, bool, error) {
-	list, err := s.Overrides(ctx, `WHERE id = ?`, id)
+	list, err := overrides(ctx, s.db, `WHERE id = ?`, id)
 	if err != nil || len(list) == 0 {
 		return Override{}, false, err
 	}
@@ -58,31 +61,42 @@ func (s *DB) Override(ctx context.Context, id int64) (Override, bool, error) {
 // index allow at most one of each. A restore transition, which can quarantine
 // several overrides, is not one.
 func (s *DB) OverrideOf(ctx context.Context, transition string) (Override, bool, error) {
-	list, err := s.Overrides(ctx, `WHERE creation = ? OR (resolution = ? AND status IN ('revoked', 'expired'))`, transition, transition)
+	list, err := overrides(ctx, s.db, `WHERE creation = ? OR (resolution = ? AND status IN ('revoked', 'expired'))`, transition, transition)
 	if err != nil || len(list) == 0 {
 		return Override{}, false, err
 	}
 	return list[0], true, nil
 }
 
-// NextOverrideID is the identifier the next override will have. Rows are
-// never deleted and the controller is the only writer, so it is known before
-// the override is committed and can label the generation compiled for it.
+// NextOverrideID is the identifier the next override will have. History
+// pruning never deletes the newest override (prune.go), so an identifier is
+// never given out twice, and the controller is the only writer, so it is
+// known before the override is committed and can label the generation
+// compiled for it.
 func (s *DB) NextOverrideID(ctx context.Context) (int64, error) {
 	var id int64
 	err := s.db.QueryRowContext(ctx, `SELECT coalesce(max(id), 0) + 1 FROM override`).Scan(&id)
 	return id, err
 }
 
+// ErrOverrideBounds refuses an override whose lifetime or the number of
+// active overrides is outside the bounds every caller checks first.
+var ErrOverrideBounds = errors.New("override outside its bounds")
+
 // CommitOverride stores a new active override with its committed transition.
 // The unique index on active targets refuses a second active override of the
-// same target even if a caller skipped the conflict check.
+// same target even if a caller skipped the conflict check; the lifetime and
+// active-count bounds are checked again inside the transaction for the same
+// reason.
 func (s *DB) CommitOverride(ctx context.Context, t TransitionRecord, o Override, now time.Time) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
+	if err := checkOverride(ctx, tx, o); err != nil {
+		return err
+	}
 
 	if err := insertCommitted(ctx, tx, t, now); err != nil {
 		return err
@@ -106,6 +120,23 @@ func (s *DB) CommitOverride(ctx context.Context, t TransitionRecord, o Override,
 	return tx.Commit()
 }
 
+// checkOverride refuses an override that would live outside MinOverrideSeconds
+// to MaxOverrideSeconds or exceed MaxActiveOverrides active ones.
+func checkOverride(ctx context.Context, tx *sql.Tx, o Override) error {
+	life := o.ExpiresAt.Sub(o.CreatedAt)
+	if life < MinOverrideSeconds*time.Second || life > MaxOverrideSeconds*time.Second {
+		return fmt.Errorf("%w: lifetime %s", ErrOverrideBounds, life)
+	}
+	var active int
+	if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM override WHERE status = 'active'`).Scan(&active); err != nil {
+		return err
+	}
+	if active >= MaxActiveOverrides {
+		return fmt.Errorf("%w: %d active overrides", ErrOverrideBounds, active)
+	}
+	return nil
+}
+
 // CommitOverrideEnd records the final status of an active override with its
 // committed transition. The guarded update fails unless the override is still
 // active, so it can end only once.
@@ -116,6 +147,40 @@ func (s *DB) CommitOverrideEnd(ctx context.Context, t TransitionRecord, id int64
 	}
 	defer tx.Rollback()
 
+	if err := endOverride(ctx, tx, t, id, status, now); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// CommitExpiries records, in one transaction, every ending due at one check:
+// each override named by an expiry's Override ends as expired, and, when
+// timeout names a transition, the provisional base of a times out. Each
+// ending keeps its own committed transition; if any guarded update fails,
+// none is committed.
+func (s *DB) CommitExpiries(ctx context.Context, a Authority, expiries []TransitionRecord, timeout TransitionRecord, now time.Time) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	for _, t := range expiries {
+		if err := endOverride(ctx, tx, t, t.Override, OverrideExpired, now); err != nil {
+			return err
+		}
+	}
+	if timeout.ID != "" {
+		if err := resolveProvisional(ctx, tx, timeout, a, DispositionTimedOut, now); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+// endOverride records t and the final status of the active override id in
+// tx. The guarded update fails unless the override is still active.
+func endOverride(ctx context.Context, tx *sql.Tx, t TransitionRecord, id int64, status string, now time.Time) error {
 	if err := insertCommitted(ctx, tx, t, now); err != nil {
 		return err
 	}
@@ -124,5 +189,5 @@ func (s *DB) CommitOverrideEnd(ctx context.Context, t TransitionRecord, id int64
 		status, now.UnixMilli(), t.Actor, t.ID, id); err != nil {
 		return fmt.Errorf("ending override %d: %w", id, err)
 	}
-	return tx.Commit()
+	return nil
 }

@@ -58,11 +58,11 @@ func TestZeroFilledLog(t *testing.T) {
 		if err != nil || (info.Size() > active) != filled {
 			t.Fatalf("append %v: file %d bytes, content %d (%v)", appends, info.Size(), active, err)
 		}
-		commitUntil(t, a, func() bool { return fileExists(path + ".1") })
+		commitUntil(t, a, func() bool { return len(rotated(t, path)) > 0 })
 		if err := a.Close(context.Background()); err != nil {
 			t.Fatal(err)
 		}
-		for _, name := range []string{path + ".1", path} {
+		for _, name := range append(rotated(t, path), path) {
 			data, err := os.ReadFile(name)
 			if err != nil || len(data) == 0 || data[len(data)-1] != '\n' || bytes.IndexByte(data, 0) >= 0 {
 				t.Fatalf("append %v: %s is not newline-terminated records without zeros (%v)", appends, name, err)

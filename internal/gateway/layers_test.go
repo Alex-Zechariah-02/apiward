@@ -23,7 +23,7 @@ var layers = map[string][]string{
 	"compile":     {"fault", "policy"},
 	"forward":     {"filecheck", "policy", "compile"},
 	"store":       {"fault", "filecheck", "policy"},
-	"audit":       {"fault"},
+	"audit":       {"fault", "filecheck"},
 	"session":     nil,
 	"connections": nil,
 	"monitor":     {"policy", "compile", "audit"},
@@ -32,11 +32,11 @@ var layers = map[string][]string{
 	"pipeline":    {"fault", "filecheck", "policy", "compile", "forward", "store", "audit", "monitor"},
 	"controller":  {"fault", "policy", "compile", "forward", "store", "audit", "session", "monitor", "pipeline", "connections"},
 	"admin":       {"policy", "compile", "store", "audit", "session", "monitor", "pipeline", "controller"},
-	"operator":    {"fault", "policy", "store", "audit", "session"},
+	"operator":    {"fault", "filecheck", "policy", "store", "audit", "session"},
 	"gatewaytest": {"policy", "store", "audit", "session", "pipeline", "controller", "issuertest", "demoports"},
 	"demoports":   nil,
-	"openapi":     {"policy", "compile"},
-	"gateway":     {"fault", "policy", "compile", "forward", "store", "audit", "session", "monitor", "pipeline", "controller", "admin", "operator", "adminui", "connections"},
+	"openapi":     {"filecheck", "policy", "compile"},
+	"gateway":     {"fault", "filecheck", "policy", "compile", "forward", "store", "audit", "session", "monitor", "pipeline", "controller", "admin", "operator", "adminui", "connections"},
 	// integration tests reach the gateway only through its processes.
 	"integration": {"policy", "compile", "store", "audit", "session", "monitor", "pipeline", "controller"},
 }

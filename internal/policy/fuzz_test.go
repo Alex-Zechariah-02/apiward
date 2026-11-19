@@ -20,7 +20,7 @@ func FuzzDecodeJSON(f *testing.F) {
 	} {
 		f.Add([]byte(seed))
 	}
-	reasons := []string{"invalid_encoding", "malformed_json", "duplicate_member", "limit_exceeded", "trailing_data"}
+	reasons := []string{"invalid_encoding", "malformed_json", "duplicate_member", "limit_exceeded", "number_not_comparable", "trailing_data"}
 	f.Fuzz(func(t *testing.T, data []byte) {
 		value, reason := DecodeJSON(data)
 		if reason != "" {

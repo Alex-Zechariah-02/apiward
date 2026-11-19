@@ -98,7 +98,7 @@ func startBench(b *testing.B, upstream string) *httptest.Server {
 	}
 	b.Cleanup(func() { gw.Stop(context.Background()) })
 	host := httptest.NewUnstartedServer(gw)
-	gw.ServerSettings().Apply(host.Config)
+	host.Config = gw.Server(nil)
 	host.Start()
 	b.Cleanup(host.Close)
 	host.Client().Transport.(*http.Transport).MaxIdleConnsPerHost = 256

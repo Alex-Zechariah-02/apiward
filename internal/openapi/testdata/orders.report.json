@@ -3,6 +3,8 @@
   "description_version": "1.0",
   "added_permits": [],
   "replaced_settings": [],
+  "applied_settings": [],
+  "limits": {"policy_bytes": 65536, "apis": 64, "operations": 256, "roles": 64, "permits": 4096},
   "source_format": "json",
   "api": "orders",
   "operations_in_spec": 8,

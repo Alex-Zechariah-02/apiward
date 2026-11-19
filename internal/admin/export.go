@@ -33,7 +33,14 @@ func writeSecurityLogCSV(w http.ResponseWriter, result monitor.Result, next *str
 	}
 	w.WriteHeader(http.StatusOK)
 	out := csv.NewWriter(w)
-	out.Write(securityLogColumns)
+	write := func(row []string) {
+		// A failed write would leave a body the client cannot tell from a
+		// complete export: the connection is aborted instead.
+		if out.Write(row) != nil {
+			panic(http.ErrAbortHandler)
+		}
+	}
+	write(securityLogColumns)
 	text := func(value *string) string {
 		if value == nil {
 			return ""
@@ -45,13 +52,16 @@ func writeSecurityLogCSV(w http.ResponseWriter, result monitor.Result, next *str
 		if v.Truncated {
 			cut = "true"
 		}
-		out.Write([]string{
+		write([]string{
 			v.Time.UTC().Format(time.RFC3339Nano), v.RequestID, v.Decision, strconv.Itoa(v.Status), text(v.Code), v.Stage,
 			safeCell(v.Method), safeCell(v.Path), text(v.Operation), text(v.API), safeCell(text(v.Subject)), safeCell(strings.Join(v.Roles, " ")),
 			v.ClientAddress, v.Generation, strconv.FormatFloat(v.DurationMS, 'f', -1, 64), cut,
 		})
 	}
 	out.Flush()
+	if out.Error() != nil {
+		panic(http.ErrAbortHandler)
+	}
 }
 
 // safeCell keeps a spreadsheet from running a client-chosen value as a formula.

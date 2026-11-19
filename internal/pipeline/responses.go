@@ -5,13 +5,28 @@ package pipeline
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 )
 
 // writeError answers a data-plane refusal; its JSON body is never sniffed
-// as another type.
+// as another type. The body is appended directly, without a map or an
+// encoder: code is one of the gateway's own error words and requestID hex,
+// so neither needs escaping beyond a quote.
 func writeError(w http.ResponseWriter, status int, code, requestID string) {
-	w.Header().Set("X-Content-Type-Options", "nosniff")
-	WriteJSON(w, status, map[string]string{"error": code, "request_id": requestID})
+	header := w.Header()
+	header.Set("X-Content-Type-Options", "nosniff")
+	header.Set("Content-Type", "application/json")
+	header.Set("Cache-Control", "no-store")
+	body := make([]byte, 0, 64+len(code)+len(requestID))
+	body = append(body, `{"error":`...)
+	body = strconv.AppendQuote(body, code)
+	body = append(body, `,"request_id":`...)
+	body = strconv.AppendQuote(body, requestID)
+	body = append(body, "}\n"...)
+	w.WriteHeader(status)
+	if _, err := w.Write(body); err != nil {
+		panic(http.ErrAbortHandler)
+	}
 }
 
 // statusRecorder notes the final status the forwarder wrote, while passing
@@ -44,10 +59,14 @@ func (s *statusRecorder) Unwrap() http.ResponseWriter { return s.ResponseWriter 
 // Interface guard
 var _ http.Handler = (*Handler)(nil)
 
-// WriteJSON answers with value as JSON that no cache keeps.
+// WriteJSON answers with value as JSON that no cache keeps. A body that
+// could not be written in full aborts the connection, so a client never
+// reads a cut-off body as a complete answer.
 func WriteJSON(w http.ResponseWriter, status int, value any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(value)
+	if json.NewEncoder(w).Encode(value) != nil {
+		panic(http.ErrAbortHandler)
+	}
 }

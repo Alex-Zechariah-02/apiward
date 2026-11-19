@@ -15,6 +15,12 @@ func (g *Generation) Expired(now time.Time) bool {
 	return !g.NotAfter.IsZero() && !now.Before(g.NotAfter)
 }
 
+// Lapsed is Expired at TrustedNow, reading the clock only for a generation
+// that has a deadline.
+func (g *Generation) Lapsed() bool {
+	return !g.NotAfter.IsZero() && g.Expired(TrustedNow())
+}
+
 // ProcessStart anchors this process's monotonic clock to the wall clock once,
 // at startup. It is never changed.
 var ProcessStart = time.Now()

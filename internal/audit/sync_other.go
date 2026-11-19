@@ -6,8 +6,27 @@
 
 package audit
 
-import "os"
+import (
+	"errors"
+	"os"
+	"runtime"
+	"syscall"
+)
 
 const prefillSupported = false
 
 func syncData(file *os.File) error { return file.Sync() }
+
+// Windows reports a full disk as ERROR_DISK_FULL or ERROR_HANDLE_DISK_FULL.
+const (
+	errorDiskFull       = syscall.Errno(112)
+	errorHandleDiskFull = syscall.Errno(39)
+)
+
+// noSpace reports a write refused because the file system has no space left.
+func noSpace(err error) bool {
+	if runtime.GOOS == "windows" {
+		return errors.Is(err, errorDiskFull) || errors.Is(err, errorHandleDiskFull)
+	}
+	return errors.Is(err, syscall.ENOSPC)
+}

@@ -158,7 +158,7 @@ func TestMalformedPolicyDocumentsAreRejected(t *testing.T) {
 		{"profile claiming full enforcement", `{"schema_version":4,"profile":"protected"}`, "UNSUPPORTED_FEATURE"},
 		{"missing access", head + `,"upstreams":[{"id":"u","dial":"127.0.0.1:1"}],"apis":[{"id":"a","upstream":"u"}],"operations":[{"id":"x","api":"a","method":"GET","target":"/x","auth":"none"}]}`, "INVALID_VALUE"},
 		{"missing auth", head + `,"upstreams":[{"id":"u","dial":"127.0.0.1:1"}],"apis":[{"id":"a","upstream":"u"}],"operations":[{"id":"x","api":"a","method":"GET","target":"/x","access":"allow"}]}`, "INVALID_VALUE"},
-		{"oversize document", head + `,"roles":[` + strings.Repeat(`{"id":"r"},`, 7000) + `{"id":"r"}]}`, "LIMIT_EXCEEDED"},
+		{"oversize document", head + `,"roles":[` + strings.Repeat(`{"id":"r"},`, 7000) + `{"id":"r"}]}`, "POLICY_TOO_LARGE"},
 		{"deep nesting", strings.Repeat("[", 5000) + strings.Repeat("]", 5000), "LIMIT_EXCEEDED"},
 		{"nesting above the bound", head + `,"roles":` + strings.Repeat("[", policy.MaxPolicyDepth) + "1" + strings.Repeat("]", policy.MaxPolicyDepth) + `}`, "LIMIT_EXCEEDED"},
 	}

@@ -70,23 +70,23 @@ func TestCounterReclamationAndCapacity(t *testing.T) {
 	l.capacity = 3
 	rule := quota(1, 1000)
 	for i := range 3 {
-		if l.admit(counterKey{"op", "subject", strconv.Itoa(i)}, rule, 0) != rateAdmitted {
+		if decision(l, counterKey{"op", "subject", strconv.Itoa(i)}, rule, 0) != rateAdmitted {
 			t.Fatal("first request refused")
 		}
 	}
-	if got := l.admit(counterKey{"op", "subject", "new"}, rule, 500); got != rateNoCapacity {
+	if got := decision(l, counterKey{"op", "subject", "new"}, rule, 500); got != rateNoCapacity {
 		t.Fatalf("new key with a full table of live counters: %v, want no capacity", got)
 	}
 	// Live counters keep their counts.
-	if l.admit(counterKey{"op", "subject", "0"}, rule, 500) != rateExceeded {
+	if decision(l, counterKey{"op", "subject", "0"}, rule, 500) != rateExceeded {
 		t.Fatal("a live counter lost its count")
 	}
 	// At 1.5 s the counters are in their previous bucket: still live.
-	if got := l.admit(counterKey{"op", "subject", "new"}, rule, 1500); got != rateNoCapacity {
+	if got := decision(l, counterKey{"op", "subject", "new"}, rule, 1500); got != rateNoCapacity {
 		t.Fatalf("at 1.5 s: %v, want no capacity", got)
 	}
 	// From 2 s both buckets of every counter have ended; they are removed.
-	if got := l.admit(counterKey{"op", "subject", "new"}, rule, 2000); got != rateAdmitted {
+	if got := decision(l, counterKey{"op", "subject", "new"}, rule, 2000); got != rateAdmitted {
 		t.Fatalf("after expiry: %v, want admitted", got)
 	}
 	if len(l.counters) != 1 {
@@ -96,13 +96,13 @@ func TestCounterReclamationAndCapacity(t *testing.T) {
 	// The periodic sweep removes only expired counters.
 	l = NewLimiter(policy.DefaultRateCounters)
 	long := quota(compile.MaxRateCount, 3600000)
-	l.admit(counterKey{"long", "subject", "a"}, long, 0)
+	decision(l, counterKey{"long", "subject", "a"}, long, 0)
 	for i := range compile.SweepInterval {
-		l.admit(counterKey{"short", "subject", strconv.Itoa(i)}, rule, 0)
+		decision(l, counterKey{"short", "subject", strconv.Itoa(i)}, rule, 0)
 	}
-	l.admit(counterKey{"short", "subject", "late"}, rule, 5000)
+	decision(l, counterKey{"short", "subject", "late"}, rule, 5000)
 	for i := range compile.SweepInterval - 1 {
-		l.admit(counterKey{"long", "subject", "a"}, long, 5000+int64(i))
+		decision(l, counterKey{"long", "subject", "a"}, long, 5000+int64(i))
 	}
 	if _, ok := l.counters[counterKey{"long", "subject", "a"}]; !ok || len(l.counters) > 2 {
 		t.Fatalf("after sweeping: %d counters, long-window counter present %v", len(l.counters), ok)
@@ -121,7 +121,7 @@ func TestConcurrentAdmissionsRespectQuota(t *testing.T) {
 	for range 64 {
 		wg.Go(func() {
 			for range 100 {
-				if l.admit(counterKey{"op", "subject", "alice"}, rule, 1000) == rateAdmitted {
+				if decision(l, counterKey{"op", "subject", "alice"}, rule, 1000) == rateAdmitted {
 					admitted.Add(1)
 				}
 			}
@@ -137,7 +137,7 @@ func TestConcurrentAdmissionsRespectQuota(t *testing.T) {
 		for range 4 {
 			wg.Go(func() {
 				for range 20 {
-					if l.admit(counterKey{"op", "subject", strconv.Itoa(i)}, quota(30, 3600000), 1000) == rateAdmitted {
+					if decision(l, counterKey{"op", "subject", strconv.Itoa(i)}, quota(30, 3600000), 1000) == rateAdmitted {
 						perKey[i].Add(1)
 					}
 				}
@@ -171,4 +171,10 @@ func TestWaitIsExact(t *testing.T) {
 			t.Fatalf("counter %+v at %d, limit %d: wait %d is not the first admitting time", c, now, count, wait)
 		}
 	}
+}
+
+// decision is admit's decision alone.
+func decision(l *Limiter, key counterKey, rule *compile.RateRule, now int64) rateDecision {
+	d, _ := l.admit(key, rule, now)
+	return d
 }

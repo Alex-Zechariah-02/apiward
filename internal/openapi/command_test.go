@@ -5,6 +5,7 @@ package openapi
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -47,6 +48,18 @@ func (r commandRun) args(extra ...string) []string {
 	return append(args, extra...)
 }
 
+// raisedOperations is the operation limit of the "raised" settings file.
+const raisedOperations = policy.DefaultOperations + 64
+
+// testLimits reads the settings files the tests name: "raised" raises the
+// operation limit; any other is unreadable.
+func testLimits(path string) (policy.Limits, error) {
+	if path != "raised" {
+		return policy.Limits{}, errors.New("no such settings file")
+	}
+	return policy.Limits{Operations: raisedOperations}, nil
+}
+
 func exists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
@@ -56,7 +69,7 @@ func TestImportCommand(t *testing.T) {
 	t.Run("writes policy and report", func(t *testing.T) {
 		run := newRun(t, "orders.yaml", fixture(t, "orders.yaml"))
 		var stderr bytes.Buffer
-		if code := Command(run.args(), &stderr); code != ExitPartial {
+		if code := Command(run.args(), &stderr, testLimits); code != ExitPartial {
 			t.Fatalf("exit %d: %s", code, stderr.String())
 		}
 		document, _ := os.ReadFile(run.out)
@@ -76,7 +89,7 @@ func TestImportCommand(t *testing.T) {
 	t.Run("everything mapped exits 0", func(t *testing.T) {
 		spec := `{"openapi":"3.1.0","info":{"title":"t","version":"1"},"paths":{"/orders":{"get":{"operationId":"list","security":[{"b":[]}]}}},"components":{"securitySchemes":{"b":{"type":"http","scheme":"bearer"}}}}`
 		run := newRun(t, "spec.JSON", []byte(spec))
-		if code := Command(run.args("--max-body-bytes", "1048576"), new(bytes.Buffer)); code != ExitComplete {
+		if code := Command(run.args("--max-body-bytes", "1048576"), new(bytes.Buffer), testLimits); code != ExitComplete {
 			t.Fatalf("exit %d", code)
 		}
 	})
@@ -113,7 +126,7 @@ func TestImportCommand(t *testing.T) {
 			}
 			run := newRun(t, c.specName, spec)
 			var stderr bytes.Buffer
-			code := Command(c.args(run), &stderr)
+			code := Command(c.args(run), &stderr, testLimits)
 			if code != ExitFailed || !strings.Contains(stderr.String(), c.want) {
 				t.Errorf("%s: exit %d, stderr %q, want %q", c.name, code, stderr.String(), c.want)
 			}
@@ -134,7 +147,7 @@ func TestImportCommand(t *testing.T) {
 				t.Fatal(err)
 			}
 			var stderr bytes.Buffer
-			if code := Command(run.args(), &stderr); code != ExitFailed || !strings.Contains(stderr.String(), "already exists") {
+			if code := Command(run.args(), &stderr, testLimits); code != ExitFailed || !strings.Contains(stderr.String(), "already exists") {
 				t.Fatalf("%s: exit %d, %q", target, code, stderr.String())
 			}
 			if kept, _ := os.ReadFile(existing); string(kept) != "keep" || exists(other) {
@@ -154,11 +167,20 @@ func TestImportCommand(t *testing.T) {
 		base, _ := json.Marshal(full)
 		os.WriteFile(run.base, base, 0o600)
 		var stderr bytes.Buffer
-		if code := Command(run.args(), &stderr); code != ExitFailed || !strings.Contains(stderr.String(), "LIMIT_EXCEEDED") {
+		if code := Command(run.args(), &stderr, testLimits); code != ExitFailed || !strings.Contains(stderr.String(), "LIMIT_EXCEEDED") {
 			t.Fatalf("exit %d, %q", code, stderr.String())
 		}
 		if exists(run.out) || exists(run.report) {
 			t.Fatal("a file was written")
+		}
+		// The deployment's raised limit, read with --config, admits it and
+		// is recorded in the report.
+		if code := Command(run.args("--config", "raised"), &stderr, testLimits); code == ExitFailed {
+			t.Fatalf("with the deployment's limits: %q", stderr.String())
+		}
+		var written Report
+		if raw, err := os.ReadFile(run.report); err != nil || json.Unmarshal(raw, &written) != nil || written.Limits.Operations != raisedOperations {
+			t.Fatalf("report limits %+v, %v", written.Limits, err)
 		}
 	})
 }
@@ -175,7 +197,7 @@ func TestExportCommand(t *testing.T) {
 	t.Run("writes both files and round trips", func(t *testing.T) {
 		out, report := filepath.Join(dir, "shop.yaml"), filepath.Join(dir, "shop.report.json")
 		var stderr bytes.Buffer
-		if code := Command(args(out, report), &stderr); code != ExitPartial || !strings.Contains(stderr.String(), "exported 8 of 8 operations (3 changed)") {
+		if code := Command(args(out, report), &stderr, testLimits); code != ExitPartial || !strings.Contains(stderr.String(), "exported 8 of 8 operations (3 changed)") {
 			t.Fatalf("exit %d: %s", code, stderr.String())
 		}
 		raw, err := os.ReadFile(report)
@@ -188,7 +210,7 @@ func TestExportCommand(t *testing.T) {
 		}
 		imported, importReport := filepath.Join(dir, "back.json"), filepath.Join(dir, "back.report.json")
 		code := Command([]string{"import-openapi", "--spec", out, "--api", "shop", "--upstream", "shop-svc", "--base", source,
-			"--with-permits", "--out", imported, "--report", importReport}, &stderr)
+			"--with-permits", "--out", imported, "--report", importReport}, &stderr, testLimits)
 		back, err := os.ReadFile(imported)
 		if err != nil {
 			t.Fatal(err)
@@ -216,7 +238,7 @@ func TestExportCommand(t *testing.T) {
 		path := filepath.Join(dir, "exact.json")
 		os.WriteFile(path, data, 0o600)
 		code := Command([]string{"export-openapi", "--policy", path, "--api", "site", "--out", filepath.Join(dir, "site.json"),
-			"--report", filepath.Join(dir, "site.report.json"), "--with-upstream"}, new(bytes.Buffer))
+			"--report", filepath.Join(dir, "site.report.json"), "--with-upstream"}, new(bytes.Buffer), testLimits)
 		if code != ExitComplete {
 			t.Fatalf("exit %d", code)
 		}
@@ -250,7 +272,7 @@ func TestExportCommand(t *testing.T) {
 				full = args(out, report)
 			}
 			var stderr bytes.Buffer
-			if code := Command(full, &stderr); code != ExitFailed || !strings.Contains(stderr.String(), c.want) {
+			if code := Command(full, &stderr, testLimits); code != ExitFailed || !strings.Contains(stderr.String(), c.want) {
 				t.Errorf("%s: exit %d, %q, want %q", c.name, code, stderr.String(), c.want)
 			}
 			if exists(report) || (c.args[0] != "taken" && exists(out)) {

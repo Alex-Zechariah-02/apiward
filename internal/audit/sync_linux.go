@@ -3,6 +3,7 @@
 package audit
 
 import (
+	"errors"
 	"os"
 	"syscall"
 )
@@ -33,4 +34,10 @@ func syncData(file *os.File) error {
 		return &os.PathError{Op: "fdatasync", Path: file.Name(), Err: syncErr}
 	}
 	return nil
+}
+
+// noSpace reports a write refused because the file system or the user's
+// quota has no space left.
+func noSpace(err error) bool {
+	return errors.Is(err, syscall.ENOSPC) || errors.Is(err, syscall.EDQUOT)
 }

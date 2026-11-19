@@ -37,6 +37,7 @@ func (cfg *nativeConfig) identity(u upstreamSettings) error {
 		return fmt.Errorf("upstream.identity_key %s: %w", cfg.identityKey, err)
 	}
 	cfg.signer = signer
+	cfg.controller.AuditSigner = signer.Checkpoint
 	return nil
 }
 

@@ -17,9 +17,13 @@ function intervals(traffic: Traffic, end: number) {
   const step = Math.max(1000, (traffic.window_seconds * 1000) / count)
   const last = Math.floor(end / step) * step
   const first = last - (count - 1) * step
+  // Intervals that start before the gateway's window still holds every
+  // request have no data: drawing them as zero would show a quiet gateway.
+  const covered = traffic.complete === false && traffic.covers_from ? Date.parse(traffic.covers_from) : -Infinity
   const bars = Array.from({ length: count }, (_, n) => ({
     at: new Date(first + n * step).toISOString(),
     to: new Date(first + (n + 1) * step).toISOString(),
+    unknown: first + n * step < covered,
     allowed: 0,
     refused: 0,
     p50: null as number | null,
@@ -99,7 +103,11 @@ export function TrafficChart({ traffic, end }: { traffic: Traffic; end: number }
             Typical {shown.p50.toFixed(1)} ms · Slowest 5% {shown.p95.toFixed(1)} ms
           </p>
         ) : null}
-        {shown.allowed + shown.refused === 0 ? <p className="chart-tip-note">No requests</p> : null}
+        {shown.unknown ? (
+          <p className="chart-tip-note">No data: the gateway no longer holds all requests this old.</p>
+        ) : shown.allowed + shown.refused === 0 ? (
+          <p className="chart-tip-note">No requests</p>
+        ) : null}
       </div>
     ) : null
   return (
@@ -108,7 +116,14 @@ export function TrafficChart({ traffic, end }: { traffic: Traffic; end: number }
         <span>
           Requests every {intervalWords(step)}, times in <Zone />
         </span>
-        <span className="muted">Peak {peak}</span>
+        <span className="muted">
+          {bars.some((p) => p.unknown) ? (
+            <>
+              <span className="key key-unknown" aria-hidden="true" /> No Data ·{' '}
+            </>
+          ) : null}
+          Peak {peak}
+        </span>
       </figcaption>
       <div
         className="chart-plot"
@@ -143,6 +158,7 @@ export function TrafficChart({ traffic, end }: { traffic: Traffic; end: number }
             return (
               <g key={p.at} onMouseEnter={() => setActive(n)}>
                 <rect x={n * band} y={0} width={band} height={height} className={active === n ? 'chart-hover' : 'chart-hit'} />
+                {p.unknown ? <rect x={n * band} y={0} width={band} height={height} className="chart-unknown" /> : null}
                 {p.allowed > 0 ? (
                   <rect x={x} y={height - total} width={bar} height={Math.max(1, total - refused - gap)} rx={1.5} className="chart-allowed" />
                 ) : null}

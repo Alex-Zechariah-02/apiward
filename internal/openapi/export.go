@@ -21,8 +21,9 @@ const scheme = "apiward"
 
 // ExportOptions are the administrator's choices for one export.
 type ExportOptions struct {
-	API          string // the API to describe
-	WithUpstream bool   // write the upstream address as a server
+	API          string        // the API to describe
+	WithUpstream bool          // write the upstream address as a server
+	Limits       policy.Limits // the deployment's capacity limits; zero members take the defaults
 }
 
 // ExportReport is the stable account of one export. Every list is present.
@@ -32,6 +33,7 @@ type ExportReport struct {
 	Exported   []Exported `json:"exported"`
 	Changed    []Changed  `json:"changed"`
 	Omitted    []string   `json:"omitted"`
+	Limits     Limits     `json:"limits"`
 }
 
 // Exported is one operation written to the description.
@@ -54,8 +56,12 @@ func (r *ExportReport) Exit() int {
 // description as JSON-ready values and the report, or an error, in which
 // case nothing may be written. It has no side effects.
 func Export(p policy.Policy, options ExportOptions) (map[string]any, *ExportReport, error) {
-	if _, err := compile.Compile(p, 0, time.Time{}, policy.Limits{}); err != nil {
-		return nil, nil, fmt.Errorf("the policy is not valid: %w", defaultLimits(err))
+	limits, err := options.Limits.Resolve()
+	if err != nil {
+		return nil, nil, err
+	}
+	if _, err := compile.Compile(p, 0, time.Time{}, limits); err != nil {
+		return nil, nil, fmt.Errorf("the policy is not valid: %w", checkedLimits(err, limits))
 	}
 	encoded, err := policy.Encode(p)
 	if err != nil {
@@ -65,7 +71,7 @@ func Export(p policy.Policy, options ExportOptions) (map[string]any, *ExportRepo
 	if index < 0 {
 		return nil, nil, fmt.Errorf("api %q is not in the policy", policy.Clip(options.API))
 	}
-	report := &ExportReport{API: options.API, Exported: []Exported{}, Changed: []Changed{}, Omitted: []string{}}
+	report := &ExportReport{API: options.API, Exported: []Exported{}, Changed: []Changed{}, Omitted: []string{}, Limits: limitsOf(limits)}
 	roles := map[string][]any{}
 	for _, permit := range p.Permits {
 		roles[permit.Operation] = append(roles[permit.Operation], permit.Role)
@@ -135,6 +141,11 @@ func describe(op policy.Operation, roles []any, report *ExportReport) (string, m
 	if strings.ContainsAny(op.Target, "{}") {
 		report.Changed = append(report.Changed, Changed{Operation: op.ID, Field: "target",
 			Note: "Not exported: OpenAPI reads braces in a path as a template, which would widen the target."})
+		return "", nil
+	}
+	if op.Target == "/*" {
+		report.Changed = append(report.Changed, Changed{Operation: op.ID, Field: "target",
+			Note: "Not exported: /* matches every path; as /{rest} it would not import back, since a path whose only segment is templated is refused."})
 		return "", nil
 	}
 	operation := map[string]any{"operationId": op.ID, "x-apiward-access": op.Access, "security": []any{}}

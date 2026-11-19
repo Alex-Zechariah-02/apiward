@@ -6,13 +6,14 @@ The JSON settings file that `apiward run --config <file>` reads. Upstream TLS pr
 
 - The settings file must be a regular file, not a link, device or directory; it is checked before it is opened and again once open.
 - `${NAME}` in any string value is replaced with the environment variable `NAME` (letters, digits and `_`), as in Docker Compose: `"audit_log": "${APIWARD_STATE}/audit.log"`. An unset variable or a `${` that starts no such reference stops the start, naming the setting; `$${` writes a literal `${`.
-- `POST /admin/keys/reload` reads the file again with the same checks and applies only `gateway.jwt`, `upstream.allow_public_addresses`, `upstream.tls_profiles` and `upstream.tls_session_lifetime`. A file that changed any other setting is refused (`422 keys_invalid`), and the log line `keys not reloaded` names the settings that need a restart.
+- `POST /admin/keys/reload` reads the file again with the same checks and applies only `gateway.jwt`, `upstream.allow_public_addresses`, `upstream.tls_profiles` and `upstream.tls_session_lifetime`. Other settings that changed are not applied: the answer's `warnings` and the log line `keys reloaded with settings left for a restart` name them. A file that fails a check, or a reloadable setting that is invalid, is still refused (`422 keys_invalid`).
+- The settings file, the token verification keys, the identity key and the TLS files may be symbolic links (a Kubernetes ConfigMap or Secret mount): the link is followed once and its target must be a regular file with the mode required for it. The settings file must not be writable by the group or others and must belong to the gateway's user or root, since it names the database, the audit log and the trusted keys. The database, the audit log and the lock never follow a link.
 - `apiward health` reads the settings file alone; `apiward jwks` also reads the identity key. Neither reads the token keys or TLS profile files.
 
 ## Start log
 
 - The `listening` line names the data, admin and metrics addresses, the data listener's transport (`http` or `https`) and whether HTTP/2 is on; the `identity assertion` line names the key ID an upstream's key set must hold.
-- Each setting that weakens protection is named in a warning: `data.listen_all_interfaces` in use, `gateway.metrics_listen_any` in use, `upstream.allow_public_addresses`, `upstream.unsigned_identity`, `gateway.audit_when_full: "evict_oldest"`, reads added to `gateway.audit_ignore_reads` and a `data.trusted_proxies` entry that covers every address (`0.0.0.0/0` or `::/0`).
+- Each setting that weakens protection is named in a warning: `data.listen_all_interfaces` in use, `gateway.metrics_listen_any` in use, `gateway.health_listen_any` in use, `upstream.allow_public_addresses`, `upstream.unsigned_identity`, `gateway.audit_when_full: "evict_oldest"`, reads added to `gateway.audit_ignore_reads` and a `data.trusted_proxies` entry that covers every address (`0.0.0.0/0` or `::/0`).
 - Every diagnostic, of the gateway and of the operator commands, is one JSON line on standard error; after a command-line error the usage text follows as it is.
 
 ## Data listener
@@ -24,6 +25,9 @@ The JSON settings file that `apiward run --config <file>` reads. Upstream TLS pr
 ### Overload limits
 
 - Overload is bounded on the data listener: at most `data.max_connections` open connections (default 1,024; one more is accepted and closed at once, counted in `gateway_connections_refused_total`) and `data.max_in_flight` requests inside enforcement (default 1,024, as Envoy's per-upstream request limit; one more is answered `503 overloaded` with `Retry-After: 1` before any token check, and recorded at `INGRESS`).
+- `upstream.max_in_flight_per_upstream` (1 to `data.max_in_flight`, default three quarters of it: 768) bounds the requests in flight to one upstream, so one slow API cannot take every place; one more is answered `503 upstream_busy` with `Retry-After: 1` before admission and recorded at `AUDIT` with reason `upstream_busy` (Envoy's per-cluster circuit breaker, HAProxy's per-server `maxconn`).
+- `data.max_connections_per_address` (0 to `data.max_connections`, default 0: off) bounds one client address's open connections; one more is accepted and closed at once, as at `data.max_connections` (nginx `limit_conn`). Behind a proxy every client shares the proxy's address, so leave it off there.
+- At most 10,000 accounts and 1,024 address ranges can be blocked; one more is refused `LIMIT_EXCEEDED`. `GET /admin/limits` reports both.
 - Each request in flight holds about 140 KiB, so the default bounds overload memory to about 140 MiB (reached only when about a thousand requests wait at once, for example behind a stalled upstream); on a host with little memory lower `data.max_in_flight` and `upstream.max_idle_per_upstream` together. With 256 a one-core host refused requests from about 90 % CPU; with 1,024 only past its CPU limit.
 - A request body is read completely before the request takes an in-flight place, so a slow upload holds only its own connection: at most `data.max_body_bytes` (default 16 KiB, up to 1 MiB; a larger body is answered `413` at `INGRESS`) within `data.read_timeout`.
 - The 16 KiB default is four times the largest Fetch request body; nginx defaults to 1 MiB, Kong and Traefik set no ceiling. Raise it only for APIs whose bodies need it.
@@ -69,6 +73,7 @@ The JSON settings file that `apiward run --config <file>` reads. Upstream TLS pr
 ### Listen addresses
 
 - A listen address of `0.0.0.0` or `[::]` (every interface) is refused unless `"listen_all_interfaces": true` is set under `data`; the metrics listener leaves loopback only with `"metrics_listen_any": true` under `gateway`.
+- `gateway.health_listen` (optional, unset by default) binds a listener that serves `GET /livez` and `GET /readyz` alone, so a load balancer can read readiness without `/metrics` reaching its network; it leaves loopback only with `"health_listen_any": true`. The metrics listener keeps serving both. The `health` command probes it when it is set.
 - No two listeners may share an address and port; `0.0.0.0` covers every IPv4 address and `[::]` every address, so a listener on either conflicts with one on the same port.
 - The admin listener always stays on loopback: reach it through an SSH tunnel.
 - The admin and metrics listeners each keep at most 64 open connections, and the redirect listener `data.max_connections`; one more is closed at once and counted in `gateway_listener_connections_refused_total{listener="admin"|"metrics"|"redirect"}`.
@@ -84,13 +89,13 @@ The JSON settings file that `apiward run --config <file>` reads. Upstream TLS pr
 ### What is signed
 
 - Upstreams can verify that a request passed the gateway; the gateway signs by default.
-- The key is `upstream.identity_key`, or `identity.pem` beside `gateway.database` when that setting is absent: an ECDSA P-256 private key as one PKCS #8 `PRIVATE KEY` PEM block, readable only by its owner.
-- `apiward install` creates the key when the file is missing and keeps a key already there; `openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256` makes one by hand.
+- The key is `upstream.identity_key`, or `identity.pem` beside `gateway.database` when that setting is absent: an Ed25519 or ECDSA P-256 private key as one PKCS #8 `PRIVATE KEY` PEM block, readable only by its owner. The key's type fixes the algorithm: Ed25519 signs `EdDSA` (RFC 8037), P-256 signs `ES256`.
+- `apiward install` creates an Ed25519 key when the file is missing and keeps a key already there; `openssl genpkey -algorithm ED25519` makes one by hand. A deployment with a P-256 key keeps signing `ES256` until the key is replaced; give the upstreams a key set with both keys first.
 - `install` refuses an existing database before it writes any key. An installed deployment whose key file is lost needs that file restored: a new key has a new key ID, which its upstreams do not trust.
 - Without the key file the gateway refuses to start, naming the file.
 - `"upstream": {"unsigned_identity": true}` turns signing off: upstreams then receive only the plain headers, and the start log says so. It cannot be combined with `identity_key`.
 - Signed or not, an upstream must accept requests only from the gateway (client certificates or a firewall), as NIST SP 800-207 requires of a policy enforcement point.
-- Every forwarded request carries `X-Gateway-Assertion`: a JWT signed with ES256, with `iss` `apiward`, `aud` the API's ID, `sub` and `roles` as in `X-Gateway-Subject` and `X-Gateway-Roles` (both absent on a public operation), `method` and `path` the request's method and its path as the upstream receives it (after the API's forward rule, decoded, without the query), `jti` the request ID, `iat`, and `exp` 30 seconds later.
+- Every forwarded request carries `X-Gateway-Assertion`: a JWT signed with `EdDSA` or `ES256` (by the key's type), with `iss` `apiward`, `aud` the API's ID, `sub` and `roles` as in `X-Gateway-Subject` and `X-Gateway-Roles` (both absent on a public operation), `method` and `path` the request's method and its path as the upstream receives it (after the API's forward rule, decoded, without the query), `jti` the request ID, `iat`, and `exp` 30 seconds later.
 - Its `kid` is the key's RFC 7638 thumbprint.
 
 ### Public key
@@ -99,7 +104,7 @@ The JSON settings file that `apiward run --config <file>` reads. Upstream TLS pr
 
 ### What an upstream must check
 
-- An upstream should require exactly one assertion, verify it with that key set accepting only ES256, require its own API ID as `aud`, require `method` and `path` to equal the method and decoded path of the request it arrived on, refuse an expired one allowing a few seconds of clock difference, and take the account from the assertion, not the plain headers.
+- An upstream should require exactly one assertion, verify it with that key set, taking the algorithm from the key the `kid` names (`EdDSA` for an `OKP` Ed25519 key, `ES256` for a P-256 key) and refusing a token whose `alg` differs (RFC 8725 section 3.1), require its own API ID as `aud`, require `method` and `path` to equal the method and decoded path of the request it arrived on, refuse an expired one allowing a few seconds of clock difference, and take the account from the assertion, not the plain headers.
 - An assertion is not bound to the query or the body, so whoever can read the connection to an upstream could repeat the same method and path there, with a query and body of their choice, until it expires: use TLS to upstreams on other hosts, or have the upstream remember each `jti` until its `exp` and refuse a second use (the gateway never sends one twice).
 - A client's own `X-Gateway-Assertion` is removed like every `X-Gateway-` header.
 
@@ -118,19 +123,26 @@ The JSON settings file that `apiward run --config <file>` reads. Upstream TLS pr
 - A directory is read so that no name or link in it leads to a file outside it.
 - The page is never stored (`Cache-Control: no-store`); the files under `assets/` are cached by the browser for a year (their names change with their content) and the build's gzip copies of the scripts and style sheets are sent as they are, or inflated while they are sent for a client that does not accept gzip. A weight that is not a valid `q` value refuses its encoding.
 
+- `upstream.idle_conn_timeout` (default 30 s) must stay below each upstream server's own idle timeout, so the gateway, not the upstream, closes an idle connection; otherwise a request written just as the upstream closes the connection fails (it is never resent).
+
 ## Security log
 
 - A forwarded request has two records with one `request_id`: `request.admitted`, written before forwarding, holds the result of every stage; `request.forwarded`, written after the response, holds the outcome without repeating them (envelope `schema` 8).
-- The log is the file `gateway.audit_log` plus rotated files `<name>.1`, `<name>.2` and so on; a file rotates at `gateway.audit_max_bytes` (4 KiB to 1 GiB, default 64 MiB), and `gateway.audit_max_files` (2 to 1,000, default 8) bounds how many files the log keeps.
+- The log is the file `gateway.audit_log` plus rotated files named by the UTC time they were rotated (`audit-2026-11-19T08-22-33.123.log` for `audit.log`), so names never repeat after files are moved away; a file rotates at `gateway.audit_max_bytes` (4 KiB to 1 GiB, default 64 MiB), and `gateway.audit_max_files` (2 to 1,000, default 8) bounds how many files the log keeps.
 - A forwarded request adds about 1.1 KB (both records, measured with the Fetch mix), so the default 512 MiB lasts about 16 minutes at 500 requests per second.
 - Sizing: the log lasts budget ÷ (bytes per request × requests per second), where budget = `audit_max_bytes` × `audit_max_files`; size it for the time it takes to move rotated files to an archive, with margin.
 - Alert A3 (`GET /admin/alerts`) is raised at 70 % (medium) and 90 % (critical) of the budget, and when, at the active file's recent write rate, the rest lasts less than 1 hour (medium) or 15 minutes (critical); its message states the estimated time to full. The rate is read over the last 1 MiB written to the active file and counts once that file holds 1 MiB. Not raised with `evict_oldest`.
 - The same warning in Prometheus: `predict_linear(gateway_audit_bytes[15m], 3600) >= gateway_audit_budget_bytes` fires when the last 15 minutes' growth would fill the log within an hour.
 - `gateway.audit_when_full` decides what happens when every file is in use: `"refuse"` (default) deletes nothing: it answers every request it would forward `503 gateway_unavailable` and logs one line until rotated files are moved away, and records that need no acknowledgement (refusals, forwarding outcomes) are only counted meanwhile, the count written as an `audit.loss` event once there is room; `"evict_oldest"` deletes the oldest rotated file and records an `audit.evicted` event with its name, size, SHA-256 and the times of its first and last records; the gateway logs a warning at start while eviction is on.
+- `gateway.audit_client_address` (default `"full"`) decides how client addresses are recorded: `"full"`, `"prefix"` (IPv4 /24, IPv6 /48) or `"hash"` (`hmac:` and 32 hex digits, HMAC-SHA-256 with the key in `gateway.audit_address_key`, an absolute path to a file of at least 32 bytes readable only by its owner). Only the record changes: rate limits and blocked addresses still use the whole address, and accounts are never masked. A masked address weakens forensics, so it stays off unless privacy rules ask for it.
 - `gateway_audit_bytes` and `gateway_audit_budget_bytes` on the metrics listener show how full the log is, so an alert can fire before it fills; while it is full `/readyz` answers `503`.
+- A write refused because the file system has no space (`ENOSPC`, or `EDQUOT` for a quota) is recoverable: the gateway answers `503 gateway_unavailable` instead of forwarding, retries once a second, and resumes once a write and its sync succeed, recording `audit.recovered` with reason `storage_space`; no restart is needed after space is freed.
+- A failed sync, or any other write error, stops protected admission until a restart: after a failed sync the system may have dropped the written data, so a later success would not prove it durable (PostgreSQL treats a failed `fsync` the same way).
 - A change the database could not complete is recorded as `transition.failed` (reason `STORE_ERROR`) and counted in `gateway_control_store_failures_total`.
 - Every authenticated Admin API read writes an `admin.read` record (also the read-only `POST` requests: access check, impact preview, temporary rule check), except successful `GET` reads of the paths in `gateway.audit_ignore_reads` (default `["/admin/status", "/admin/traffic", "/admin/events"]`, the reads the Dashboard repeats every second; at most 32 paths, each beginning with `/admin/`; `[]` records every read). Refused reads and every change are always recorded. Paths added beyond the default are named in a warning at start. Every record kind: [logs.md](logs.md).
-- A search lists as missing only the rotated file numbers the log could still hold (`audit_max_files`); older numbers were evicted or archived long ago.
+- A search lists a rotated file as missing when the `audit.rotated` record at the head of the next file names it and it is gone; the oldest file's predecessor counts only while the log holds fewer than `audit_max_files` files, since only then was nothing evicted.
+- Files named `<name>.1`, `<name>.2` by earlier versions are still searched and evicted, as older than every time-named file.
+- Under `evict_oldest` the next file to evict is described (size, SHA-256, first and last record) in the background once the log is one rotation from full, so an eviction does not hold up admissions while a whole file is read.
 - `gateway.audit_sync_window` (0 to 10 ms, default 0) lets the writer gather more records for one sync when more than one is waiting; every acknowledgement still waits for the sync that covers its record.
 - On Linux the gateway fills the active file with zero bytes 1 MiB ahead of its records and writes the records in place, so each sync (`fdatasync`) flushes only data; on ext4 this cut the time to make one record durable by more than half (median 2.3 ms to 0.95 ms).
 - `gateway.audit_prefill` (default `true`) turns the fill off: set `false` on copy-on-write or memory file systems (btrfs, ZFS, tmpfs), where it saves nothing and writes every byte twice; the log then appends and syncs with `fsync`. Other systems always append.
@@ -141,7 +153,11 @@ The JSON settings file that `apiward run --config <file>` reads. Upstream TLS pr
 
 - The database keeps the newest `gateway.history_keep` policy versions (100 to 100,000, default 1,000). Publishing a version deletes, in the same transaction, the versions older than those and the history only they need: their trials, finished temporary rules, drafts and recorded changes. A row in use is never deleted: the policy in force, a trial's undo target, the base of an active temporary rule, a change whose security-log record is not yet written.
 - At most 100 unused drafts (staged or withdrawn, never tried) are kept: staging another deletes the oldest unused one and its recorded changes, once their security-log records are written.
+- After a blocked-list change the newest `gateway.history_keep` changes that published no version are kept with their recorded answers; older ones whose security-log records are written are deleted.
 - A deleted version can no longer be rolled back to or restored, History no longer lists it, and a request key from a deleted change is decided as a new request. The security log files remain the full record of every change.
+- `apiward audit verify --jwks <key set file> <files…>` checks the security log's chain and signed checkpoints: give the files oldest first (rotated files sort by name, the active file last). It prints its report as JSON and exits 0 only when nothing was found altered; it reads no settings file.
+- Restore runs SQLite's full integrity check on the backup and the quick check on the copy it puts in place.
+- A path conflict in the settings or a command's files names both settings and both paths.
 - Keep the gateway stopped when running local operator commands; a deployment lock prevents two processes from sharing a database.
 - Successful operator commands exit 0; refusals and failures exit 1.
 - `install` and `enrol` print a one-time secret intentionally: keep that output private.

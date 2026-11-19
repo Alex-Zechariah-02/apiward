@@ -179,8 +179,10 @@ func TestServerSettings(t *testing.T) {
 	data["idle_timeout"] = "13s"
 	e.WriteNative(settings)
 	lib := openEmbedded(e)
-	var server http.Server
-	lib.ServerSettings().Apply(&server)
+	server := lib.Server(nil)
+	if server.Handler != lib {
+		t.Fatal("the server does not serve the gateway")
+	}
 	if server.MaxHeaderBytes != 32768 || server.ReadHeaderTimeout != 3*time.Second || server.ReadTimeout != 7*time.Second ||
 		server.WriteTimeout != 11*time.Second || server.IdleTimeout != 13*time.Second {
 		t.Fatalf("applied settings: header bytes %d, timeouts %s %s %s %s", server.MaxHeaderBytes,
@@ -205,8 +207,8 @@ func TestServerSettings(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	server = http.Server{}
-	cfg.server().Apply(&server)
+	server = &http.Server{}
+	cfg.server().Apply(server)
 	if server.Protocols.HTTP2() {
 		t.Fatalf("data.http2 false still serves HTTP/2: %v", server.Protocols)
 	}

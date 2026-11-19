@@ -68,7 +68,7 @@ func TestImportSizeAsWritten(t *testing.T) {
 	spec := []byte(`{"openapi": "3.1.0", "info": {"title": "t", "version": "1"},
 		"paths": {"/orders": {"get": {"operationId": "list", "security": []}}}}`)
 	_, _, err := Import(spec, JSON, options)
-	if err == nil || !strings.Contains(err.Error(), "LIMIT_EXCEEDED at size") {
-		t.Fatalf("error %v, want LIMIT_EXCEEDED at size", err)
+	if err == nil || !strings.Contains(err.Error(), "POLICY_TOO_LARGE at policy_bytes") {
+		t.Fatalf("error %v, want POLICY_TOO_LARGE at policy_bytes", err)
 	}
 }

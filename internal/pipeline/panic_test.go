@@ -52,7 +52,9 @@ func TestPanicLeavesFailedRecord(t *testing.T) {
 		Status                 int
 		DurationMS             float64 `json:"duration_ms"`
 	}
-	if err := json.Unmarshal([]byte(strings.TrimSpace(string(data))), &e); err != nil {
+	// The request's record is the first; the log's own records follow it.
+	first, _, _ := strings.Cut(string(data), "\n")
+	if err := json.Unmarshal([]byte(first), &e); err != nil {
 		t.Fatalf("records %s: %v", data, err)
 	}
 	if e.Kind != "request.rejected" || e.Decision != "failed" || e.Reason != "internal_error" || e.Status != http.StatusInternalServerError || e.DurationMS < 0 || e.DurationMS > 10_000 {

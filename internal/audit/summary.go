@@ -1,4 +1,5 @@
-// Ingress refusals counted rather than recorded one by one.
+// Ingress refusals, and policy refusals beyond an address's budget, counted
+// rather than recorded one by one.
 
 package audit
 
@@ -38,6 +39,45 @@ type ingressSummary struct {
 	since     time.Time
 	reasons   map[string]uint64
 	addresses map[string]uint64
+	// refusals counts the full refusal records each address had this
+	// interval (RecordRefusal).
+	refusals map[string]int
+}
+
+// refusalRecords is how many policy refusals (401, 403, 429) one client
+// address may have as full records per SummaryInterval; further ones are
+// counted in the summary, so one cheap request type cannot force a durable
+// record each and push older evidence out of the log.
+const refusalRecords = 60
+
+// RecordRefusal records a policy refusal in full while its client address
+// has had fewer than refusalRecords this interval, and otherwise counts it
+// in the summary under "<stage>/<reason>/<operation>", with exact counts.
+// Refusals from addresses beyond the summaryAddresses tracked are counted
+// too.
+func (a *AuditLog) RecordRefusal(e Event) {
+	if a.refusalBudget(e.ClientAddress) {
+		a.Record(e)
+		return
+	}
+	a.Summarise(e.Stage+"/"+cmp.Or(e.Reason, e.Error)+"/"+e.Operation, e.ClientAddress)
+}
+
+// refusalBudget takes one full refusal record from address's budget, or
+// reports that it has none left.
+func (a *AuditLog) refusalBudget(address string) bool {
+	s := &a.summary
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.refusals == nil {
+		s.refusals = map[string]int{}
+	}
+	n, known := s.refusals[address]
+	if n >= refusalRecords || (!known && len(s.refusals) >= summaryAddresses) {
+		return false
+	}
+	s.refusals[address] = n + 1
+	return true
 }
 
 // Summarise counts one ingress refusal by its reason and client address.
@@ -61,7 +101,7 @@ func (a *AuditLog) takeSummary() (Event, bool) {
 	s := &a.summary
 	s.mu.Lock()
 	reasons, addresses, since := s.reasons, s.addresses, s.since
-	s.reasons, s.addresses = nil, nil
+	s.reasons, s.addresses, s.refusals = nil, nil, nil
 	s.mu.Unlock()
 	if reasons == nil {
 		return Event{}, false

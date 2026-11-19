@@ -40,12 +40,8 @@ func (c *Controller) reconcile(now time.Time) {
 	// A provisional base or an override whose time ran out while the gateway
 	// was stopped is ended before anything is served; it is never published
 	// again.
-	if !c.settle(ctx, now, true) {
-		return
-	}
-	a, err = c.store.Load(ctx)
-	if err != nil {
-		c.unavailable("store_unavailable", err.Error())
+	a, settled := c.settle(ctx, now, true)
+	if !settled {
 		return
 	}
 	// A provisional base is served only while the base it returns to can
@@ -136,7 +132,7 @@ func (c *Controller) replay(ctx context.Context, t store.TransitionRecord) (Outc
 	}
 	if strings.HasPrefix(previous.Kind, "cpa.") {
 		// The activation record holds the rest of a lifecycle receipt.
-		a, found, err := c.store.Activation(ctx, "candidate", previous.Candidate)
+		a, found, err := c.store.Activation(ctx, store.ByCandidate, previous.Candidate)
 		if err != nil || !found {
 			result, status := c.storeFailure(t.ID, fmt.Errorf("activation of candidate %d: %v", previous.Candidate, err))
 			return result, status, true

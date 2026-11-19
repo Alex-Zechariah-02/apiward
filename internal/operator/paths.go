@@ -26,28 +26,43 @@ func pathsAlias(a, b string) bool {
 // keys) are not distinct regular paths, and operator files of command that
 // would overwrite any of them.
 func CheckPaths(configPath string, cfg Config, command string, flags map[string]string) error {
-	protected := []struct{ name, path string }{
-		{"configuration", configPath},
-		{"database", cfg.Database},
-		{"audit log", cfg.AuditLog},
-		{"deployment lock", cfg.Database + ".lock"},
-		{"database WAL", cfg.Database + "-wal"},
-		{"database SHM", cfg.Database + "-shm"},
-		{"database journal", cfg.Database + "-journal"},
+	// Read-only inputs may be links (container secret mounts); writable
+	// state may not.
+	protected := []struct {
+		name, path string
+		readOnly   bool
+	}{
+		{"configuration", configPath, true},
+		{"database", cfg.Database, false},
+		{"audit log", cfg.AuditLog, false},
+		{"deployment lock", cfg.Database + ".lock", false},
+		{"database WAL", cfg.Database + "-wal", false},
+		{"database SHM", cfg.Database + "-shm", false},
+		{"database journal", cfg.Database + "-journal", false},
 	}
 	for _, file := range cfg.KeyFiles {
-		protected = append(protected, struct{ name, path string }{"JWT public key", file})
+		protected = append(protected, struct {
+			name, path string
+			readOnly   bool
+		}{"JWT public key", file, true})
 	}
 	if cfg.IdentityKey != "" {
-		protected = append(protected, struct{ name, path string }{"identity key", cfg.IdentityKey})
+		protected = append(protected, struct {
+			name, path string
+			readOnly   bool
+		}{"identity key", cfg.IdentityKey, true})
 	}
 	for i, file := range protected {
-		if err := store.RegularPath(file.path); err != nil {
+		check := store.RegularPath
+		if file.readOnly {
+			check = store.ReadOnlyPath
+		}
+		if err := check(file.path); err != nil {
 			return fmt.Errorf("%s: %w", file.name, err)
 		}
 		for _, previous := range protected[:i] {
 			if pathsAlias(file.path, previous.path) {
-				return errors.New("configuration paths must name distinct files")
+				return fmt.Errorf("the %s (%s) and the %s (%s) name the same file; configuration paths must name distinct files", previous.name, previous.path, file.name, file.path)
 			}
 		}
 	}
@@ -67,12 +82,12 @@ func CheckPaths(configPath string, cfg Config, command string, flags map[string]
 		}
 		for _, other := range protected {
 			if pathsAlias(path, other.path) {
-				return errors.New("operator paths conflict with deployment authority")
+				return fmt.Errorf("%s names the same file as the %s (%s); operator files must not touch deployment authority", path, other.name, other.path)
 			}
 		}
 		for _, other := range paths[:i] {
 			if pathsAlias(path, other) {
-				return errors.New("operator paths conflict with deployment authority or another operation file")
+				return fmt.Errorf("%s and %s name the same file; the command's files must be distinct", other, path)
 			}
 		}
 	}

@@ -62,8 +62,12 @@ func (m *mapper) extensions(object map[string]any, c *candidate) *refusal {
 		}
 		c.op.When = when
 	}
-	if value, present := object["x-apiward-roles"]; present && m.options.WithPermits {
-		return rolesOf(value, c)
+	if value, present := object["x-apiward-roles"]; present {
+		if m.options.WithPermits {
+			return rolesOf(value, c)
+		}
+		c.changed = append(c.changed, Changed{Operation: c.op.ID, Field: "x-apiward-roles",
+			Note: "Not applied: the description names the roles permitted to call it; --with-permits adds them as permits."})
 	}
 	return nil
 }

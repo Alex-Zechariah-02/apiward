@@ -80,7 +80,27 @@ func (o Override) Dependencies() []string {
 	return targets
 }
 
-// RegularPath refuses devices, directories and links at a file boundary.
+// ReadOnlyPath refuses a read-only input (settings, key or certificate)
+// that is not a regular file once any link is followed: a Kubernetes
+// ConfigMap or Secret is mounted as links into its ..data directory. A
+// missing file passes, as with RegularPath.
+func ReadOnlyPath(path string) error {
+	info, err := os.Stat(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf("%s must name a regular file, not a device or directory", path)
+	}
+	return nil
+}
+
+// RegularPath refuses devices, directories and links at a file boundary:
+// the gateway's writable state (database, audit log, lock) never follows a
+// link.
 // Deployment directories must be controlled by the local operator; these
 // checks do not defend against an actor who can replace their ancestors.
 func RegularPath(path string) error {

@@ -80,13 +80,13 @@ export function LimitsView({ admin }: ViewProps) {
 
 interface Finding {
   id: string
-  severity: 'critical' | 'high' | 'medium' | 'low'
+  severity: 'critical' | 'high' | 'medium' | 'low' | 'info'
   object: string
   message: string
 }
 
-const severityTone = { critical: 'refused', high: 'refused', medium: 'unknown', low: 'neutral' } as const
-const severityWord = { critical: 'Critical', high: 'High', medium: 'Medium', low: 'Low' }
+const severityTone = { critical: 'refused', high: 'refused', medium: 'unknown', low: 'neutral', info: 'neutral' } as const
+const severityWord = { critical: 'Critical', high: 'High', medium: 'Medium', low: 'Low', info: 'Information' }
 
 function FindingRows({ items, label }: { items: Finding[]; label: string }) {
   return (

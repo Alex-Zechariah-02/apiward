@@ -14,7 +14,7 @@ import (
 // admission that cannot be queued is refused at once, and one that is queued
 // but never written times out; neither is acknowledged.
 func TestAuditQueueIsBounded(t *testing.T) {
-	a := &AuditLog{boot: "test", queue: make(chan auditEntry, 1), done: make(chan struct{})}
+	a := &AuditLog{boot: "test", queue: make(chan *auditEntry, 1), done: make(chan struct{})}
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 	defer cancel()
 	if err := a.Commit(ctx, Event{Kind: "request.admitted"}); !errors.Is(err, errAuditFailed) || !strings.Contains(err.Error(), "timed out") {
@@ -33,7 +33,7 @@ func TestAuditQueueIsBounded(t *testing.T) {
 // quarters of the queue: with the writer stalled, a flood of them is counted
 // as lost and an admission is still queued.
 func TestAuditQueueKeepsRoomForAcknowledged(t *testing.T) {
-	a := &AuditLog{boot: "test", queue: make(chan auditEntry, 8), done: make(chan struct{})}
+	a := &AuditLog{boot: "test", queue: make(chan *auditEntry, 8), done: make(chan struct{})}
 	for range 8 {
 		a.Record(Event{Kind: "request.rejected"})
 	}

@@ -47,6 +47,8 @@ func TestEventEnvelopeReflectsStagesReached(t *testing.T) {
 	checked := append(routed, "ACCESS")
 	admitted := append(checked, "BODY")
 	validated := append(slices.Clone(admitted), "VALIDATION")
+	// An admission record is written only once AUDIT has passed.
+	audited := func(stages []string) []string { return append(slices.Clone(stages), "AUDIT") }
 
 	type expected struct {
 		kind, stage, decision, errorCode, operation string
@@ -62,18 +64,18 @@ func TestEventEnvelopeReflectsStagesReached(t *testing.T) {
 			code, _ := e.Get("/a/x")
 			return code, e.A.Receipts()[len(e.A.Receipts())-1].RequestID
 		}, []expected{
-			{"request.admitted", "AUDIT", "admit", "", "read-a", 0, unvalidated(gatewaytest.Public(gatewaytest.ExpectedStages(admitted, "", "")))},
+			{"request.admitted", "AUDIT", "admit", "", "read-a", 0, unvalidated(gatewaytest.Public(gatewaytest.ExpectedStages(audited(admitted), "", "")))},
 			{"request.forwarded", "FORWARD", "forwarded", "", "read-a", 200, nil},
 		}},
 		{"validated body forwarded", func() (int, string) {
 			code, _ := e.Request(http.MethodPost, "/a/item", "application/json", `{"n":1}`)
 			return code, e.A.Receipts()[len(e.A.Receipts())-1].RequestID
 		}, []expected{
-			{"request.admitted", "AUDIT", "admit", "", "write-a", 0, gatewaytest.Public(gatewaytest.ExpectedStages(validated, "", ""))},
+			{"request.admitted", "AUDIT", "admit", "", "write-a", 0, gatewaytest.Public(gatewaytest.ExpectedStages(audited(validated), "", ""))},
 			{"request.forwarded", "FORWARD", "forwarded", "", "write-a", 200, nil},
 		}},
 		{"upstream refused", func() (int, string) { return gatewaytest.RequestID(e.Exchange(http.MethodGet, "/z", "", "")) }, []expected{
-			{"request.admitted", "AUDIT", "admit", "", "read-z", 0, unvalidated(gatewaytest.Public(gatewaytest.ExpectedStages(admitted, "", "")))},
+			{"request.admitted", "AUDIT", "admit", "", "read-z", 0, unvalidated(gatewaytest.Public(gatewaytest.ExpectedStages(audited(admitted), "", "")))},
 			{"request.forwarded", "FORWARD", "upstream_failure", "upstream_unavailable", "read-z", 502, nil},
 		}},
 		{"protocol upgrade", func() (int, string) {

@@ -79,7 +79,7 @@ func Search(ctx context.Context, dir string, files []string, start *Cursor, quer
 // size). It reports done when the search stops inside the file, with
 // result.next set where it stopped.
 func scanSecurityLogFile(ctx context.Context, path, name, first string, end int64, query Query, limit int, budget *int64, result *Result) (bool, error) {
-	stop, stopped, err := scanLinesBackward(ctx, path, end, budget, func(line []byte, _ int64) bool {
+	stop, stopped, err := scanLinesBackward(ctx, path, end, 0, budget, func(line []byte, _ int64) bool {
 		if view, ok := securityLogRecord(line, query, result); ok {
 			result.Items = append(result.Items, view)
 			return len(result.Items) >= limit
@@ -96,31 +96,44 @@ func scanSecurityLogFile(ctx context.Context, path, name, first string, end int6
 }
 
 // scanLinesBackward calls visit for each complete line of a file, newest
-// first, from end (-1: its logical end, audit.End), reading at most *budget bytes in
-// windows. visit returns true to stop. stop is where reading can resume:
-// lines before it are unread. A line still being written at the end of the
-// file is skipped. It returns ctx's error once ctx ends.
-func scanLinesBackward(ctx context.Context, path string, end int64, budget *int64, visit func(line []byte, lineStart int64) bool) (stop int64, stopped bool, err error) {
+// first, from end (-1: its logical end, audit.End) down to floor, a line
+// start, reading at most *budget bytes in windows of one reused buffer. visit
+// returns true to stop; the line is valid only during visit. stop is where
+// reading can resume: lines before it are unread. When the scan reaches
+// floor, stop is the end it started from. A line still being written at the
+// end of the file is skipped. It returns ctx's error once ctx ends.
+func scanLinesBackward(ctx context.Context, path string, end, floor int64, budget *int64, visit func(line []byte, lineStart int64) bool) (stop int64, stopped bool, err error) {
 	file, err := openLog(path)
 	if err != nil {
 		return 0, false, err
 	}
 	defer file.Close()
-	if end < 0 {
-		if end, err = audit.End(file); err != nil {
-			return 0, false, err
-		}
+	logical, err := audit.End(file)
+	if err != nil {
+		return 0, false, err
 	}
-	for end > 0 {
+	// A cursor offset past the content names no line of this file.
+	if end > logical {
+		return 0, false, ErrCursorGone
+	}
+	if end < 0 {
+		end = logical
+	}
+	start := end
+	var buffer []byte
+	for end > floor {
 		if err := ctx.Err(); err != nil {
 			return 0, false, err
 		}
 		if *budget <= 0 {
 			return end, true, nil
 		}
-		size := min(end, securityLogWindow, *budget)
+		size := min(end-floor, securityLogWindow, *budget)
 		base := end - size
-		window := make([]byte, size)
+		if buffer == nil {
+			buffer = make([]byte, size)
+		}
+		window := buffer[:size]
 		if _, err := file.ReadAt(window, base); err != nil && !errors.Is(err, io.EOF) {
 			return 0, false, err
 		}
@@ -128,7 +141,7 @@ func scanLinesBackward(ctx context.Context, path string, end int64, budget *int6
 		// Start at the first whole line; the part before it is read with
 		// the next window. Records are at most maxRecordBytes, far smaller
 		// than a window, so a window always holds a line break.
-		if base > 0 {
+		if base > floor {
 			cut := bytes.IndexByte(window, '\n')
 			if cut < 0 {
 				return 0, false, errors.New("audit line longer than the read window")
@@ -147,7 +160,7 @@ func scanLinesBackward(ctx context.Context, path string, end int64, budget *int6
 		}
 		end = base
 	}
-	return 0, false, nil
+	return start, false, nil
 }
 
 var (
@@ -164,17 +177,12 @@ func securityLogRecord(line []byte, query Query, result *Result) (RequestView, b
 	if query.ref != "" && !bytes.Contains(line, []byte(query.ref)) {
 		return RequestView{}, false
 	}
-	var record auditRequestRecord
-	if err := json.Unmarshal(line, &record); err != nil || record.RequestID == "" {
+	record, ok := decodeRecord(line)
+	if !ok {
 		result.Unreadable++
 		return RequestView{}, false
 	}
-	view := View(audit.Event{
-		Time: record.Time, RequestID: record.RequestID, Stage: record.Stage, Decision: record.Decision, Status: record.Status,
-		Error: record.Error, Method: record.Method, Path: record.Path, Truncated: record.Truncated, Operation: record.Operation, API: record.API,
-		Subject: record.Subject, Roles: record.Roles, ClientAddress: record.ClientAddress, Generation: record.Generation,
-		DurationMS: record.DurationMS, Modules: record.Modules,
-	})
+	view := View(record)
 	return view, query.matches(view)
 }
 
@@ -236,6 +244,8 @@ func ignoreEOF(err error) error {
 type headRecord struct {
 	ID   string    `json:"event_id"`
 	Time time.Time `json:"time"`
+	Kind string    `json:"kind"`
+	File string    `json:"file"` // the file an audit.rotated record names
 }
 
 // firstRecord decodes a file's first line, reading no further than its end

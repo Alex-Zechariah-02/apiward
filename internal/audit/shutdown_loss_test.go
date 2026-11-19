@@ -34,15 +34,19 @@ func TestAuditCloseRecordsLoss(t *testing.T) {
 	if len(events) != room+1 || lossCounted(events) != 10 || lossRecords(events) != 1 {
 		t.Fatalf("%d records, loss %d in %d records", len(events), lossCounted(events), lossRecords(events))
 	}
-	for i, e := range events[1:] {
-		if e.RequestID != strconv.Itoa(i) || e.Seq != uint64(i+1) {
-			t.Fatalf("record %d: request %q, seq %d", i, e.RequestID, e.Seq)
-		}
-	}
-	// The refused events kept their sequence numbers room+1 to room+10, so
-	// the gap is visible; the loss record comes after them.
-	if loss := events[0]; loss.Kind != "audit.loss" || loss.Seq != uint64(room+11) {
+	// Records are numbered in file order: the loss record, written first,
+	// is 1 and seq rises through the file (chain records, read past here,
+	// take the numbers between batches). The refused events are counted by
+	// the loss record, not by gaps.
+	if loss := events[0]; loss.Kind != "audit.loss" || loss.Seq != 1 {
 		t.Fatalf("first record %+v", loss)
+	}
+	previous := events[0].Seq
+	for i, e := range events[1:] {
+		if e.RequestID != strconv.Itoa(i) || e.Seq <= previous {
+			t.Fatalf("record %d: request %q, seq %d after %d", i, e.RequestID, e.Seq, previous)
+		}
+		previous = e.Seq
 	}
 }
 
@@ -99,7 +103,7 @@ func TestAuditCloseKeepsLossAfterFailedRotation(t *testing.T) {
 		path:     path,
 		maxBytes: int64(len(record)),
 		maxFiles: 2,
-		queue:    make(chan auditEntry, AuditQueueSize),
+		queue:    make(chan *auditEntry, AuditQueueSize),
 		done:     make(chan struct{}),
 	}
 	if _, err := a.open(); err != nil {

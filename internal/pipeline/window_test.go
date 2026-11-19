@@ -21,7 +21,7 @@ type step struct {
 func runSteps(t *testing.T, name string, l *Limiter, key counterKey, rule *compile.RateRule, steps []step) {
 	t.Helper()
 	for i, s := range steps {
-		got := l.admit(key, rule, s.at) == rateAdmitted
+		got := decision(l, key, rule, s.at) == rateAdmitted
 		if got != s.admit {
 			t.Fatalf("%s step %d at %d ms: admitted %v, want %v", name, i, s.at, got, s.admit)
 		}
@@ -142,7 +142,7 @@ func TestSlidingWindowAgainstReferenceModel(t *testing.T) {
 					now += random.Int64N(c.w/max(c.n, 1)/2 + 1)
 				}
 				want := model.admit(c.n, c.w, now)
-				if got := l.admit(key, rule, now) == rateAdmitted; got != want {
+				if got := decision(l, key, rule, now) == rateAdmitted; got != want {
 					t.Fatalf("N=%d W=%d seed %d request %d at %d: limiter %v, reference %v", c.n, c.w, seed, i, now, got, want)
 				}
 			}

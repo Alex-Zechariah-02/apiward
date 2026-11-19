@@ -20,10 +20,10 @@ type TrafficGroup struct {
 	durations []float64
 }
 
-func (g *TrafficGroup) Add(event RequestView) {
+func (g *TrafficGroup) Add(event *Entry) {
 	g.Total++
 	g.durations = append(g.durations, event.DurationMS)
-	if WasAllowed(event) {
+	if event.Allowed() {
 		g.Allowed++
 	} else {
 		g.Refused++

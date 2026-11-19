@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"runtime/debug"
 	"strings"
+	"sync"
 
 	"github.com/Alex-Zechariah-02/apiward/module"
 )
@@ -50,5 +51,10 @@ func (b buildInfo) text() string {
 	return out.String()
 }
 
+// runningBuild is read once: the build cannot change while the process
+// runs, and the status reply polled every second would otherwise read it each
+// time. Readers must not change it.
+var runningBuild = sync.OnceValue(currentBuild)
+
 // VersionText is the version command's output for the running binary.
-func VersionText() string { return currentBuild().text() }
+func VersionText() string { return runningBuild().text() }

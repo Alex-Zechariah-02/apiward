@@ -95,9 +95,12 @@ func TestPreflightRateFirstPublic(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// The strictest public rate rule governs preflights, though the first
+	// public operation has none: an API's preflights are never looser than
+	// the requests they announce.
 	for _, rule := range g.Rules() {
-		if limit := rule.PreflightRate(); limit != nil {
-			t.Fatalf("%s: preflight rule %+v, want none (the first public operation has no rate)", rule.Operation(), limit)
+		if limit := rule.PreflightRate(); limit == nil || limit.Count() != 4 {
+			t.Fatalf("%s: preflight rule %+v, want the 4 per 60 s rule", rule.Operation(), limit)
 		}
 	}
 }

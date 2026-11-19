@@ -17,6 +17,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/Alex-Zechariah-02/apiward/internal/filecheck"
 	"github.com/Alex-Zechariah-02/apiward/internal/forward"
 	"github.com/Alex-Zechariah-02/apiward/internal/policy"
 )
@@ -64,16 +65,32 @@ func readNativeConfig(path string) (nativeConfig, error) {
 	return cfg, nil
 }
 
-// readSettings reads the file at path, which must be a regular file: it is
+// PolicyLimits reads the configuration file at path and returns its
+// resolved capacity limits, which the policy tools check a policy against.
+func PolicyLimits(path string) (policy.Limits, error) {
+	cfg, err := readNativeConfig(path)
+	if err != nil {
+		return policy.Limits{}, err
+	}
+	return cfg.controller.Limits, nil
+}
+
+// readSettings reads the file at path, which must name a regular file,
+// directly or through links (a container's mounted configuration): it is
 // checked before it is opened, since opening a device or pipe can block, and
-// again once open, so a file swapped in between is refused.
+// again once open, so a file swapped in between is refused. The settings
+// name the database, the audit log and the trusted keys, so the file is
+// trusted as a key is: no other local account may rewrite it.
 func readSettings(path string) ([]byte, error) {
-	named, err := os.Lstat(path)
+	named, err := os.Stat(path)
 	if err != nil {
 		return nil, err
 	}
 	if !named.Mode().IsRegular() {
-		return nil, fmt.Errorf("%s must be a regular file, not a link, device or directory", path)
+		return nil, fmt.Errorf("%s must name a regular file, not a device or directory", path)
+	}
+	if err := filecheck.Trusted(named); err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
 	}
 	file, err := os.Open(path)
 	if err != nil {

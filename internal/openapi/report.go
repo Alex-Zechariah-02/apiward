@@ -2,6 +2,8 @@
 
 package openapi
 
+import "github.com/Alex-Zechariah-02/apiward/internal/policy"
+
 // Exit statuses of the import command.
 const (
 	ExitComplete = 0 // everything mapped
@@ -48,7 +50,23 @@ type Report struct {
 	RemovedPermits     []Permit      `json:"removed_permits"`
 	AddedPermits       []Permit      `json:"added_permits"`
 	ReplacedSettings   []string      `json:"replaced_settings"`
+	AppliedSettings    []string      `json:"applied_settings"`
 	Ignored            []string      `json:"ignored"`
+	Limits             Limits        `json:"limits"`
+}
+
+// Limits are the capacity limits a result was checked against: the
+// defaults, or a deployment's own read with --config.
+type Limits struct {
+	PolicyBytes int `json:"policy_bytes"`
+	APIs        int `json:"apis"`
+	Operations  int `json:"operations"`
+	Roles       int `json:"roles"`
+	Permits     int `json:"permits"`
+}
+
+func limitsOf(l policy.Limits) Limits {
+	return Limits{PolicyBytes: l.PolicyBytes, APIs: l.APIs, Operations: l.Operations, Roles: l.Roles, Permits: l.Permits}
 }
 
 // NoteDefaultSignIn notes an operation whose description states no security:
@@ -117,7 +135,7 @@ func newReport(format Format, api string) *Report {
 		Mapped: []Mapped{}, Widened: []Mapped{}, Assumed: []Assumed{}, Changed: []Changed{},
 		Refused: []Refused{}, NeedsPermissions: []string{}, ScopesNotMapped: []string{},
 		NotEnforced: []NotEnforced{}, AnnotationsRemoved: []Removed{}, RemovedOperations: []string{},
-		RemovedPermits: []Permit{}, AddedPermits: []Permit{}, ReplacedSettings: []string{}, Ignored: []string{},
+		RemovedPermits: []Permit{}, AddedPermits: []Permit{}, ReplacedSettings: []string{}, AppliedSettings: []string{}, Ignored: []string{},
 	}
 }
 

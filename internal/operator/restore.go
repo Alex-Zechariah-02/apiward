@@ -14,6 +14,7 @@ import (
 
 	"github.com/Alex-Zechariah-02/apiward/internal/audit"
 	"github.com/Alex-Zechariah-02/apiward/internal/fault"
+	"github.com/Alex-Zechariah-02/apiward/internal/filecheck"
 	"github.com/Alex-Zechariah-02/apiward/internal/policy"
 	"github.com/Alex-Zechariah-02/apiward/internal/store"
 )
@@ -85,9 +86,15 @@ func runRestore(o *operatorContext, flags map[string]string) (int, error) {
 		}
 		return 1, err
 	}
+	// The renamed names must be durable before the restore is recorded done.
+	if err := filecheck.SyncDir(filepath.Dir(live)); err != nil {
+		return 1, err
+	}
 	fault.CrashPoint("restore-after-promote")
 
-	if err := o.record(audit.Event{Kind: "transition.committed", Transition: t.ID, File: filepath.Base(backup)}); err != nil {
+	// target names the replaced database's kept copy, so the record says
+	// where the earlier state went.
+	if err := o.record(audit.Event{Kind: "transition.committed", Transition: t.ID, File: filepath.Base(backup), Target: filepath.Base(retired)}); err != nil {
 		return 1, err
 	}
 	// The restore is complete. If its audit receipt cannot be recorded here,
@@ -238,7 +245,9 @@ func copyDatabase(ctx context.Context, source, target string) error {
 	if _, err := db.ExecContext(ctx, "VACUUM INTO ?", target); err != nil {
 		return err
 	}
-	return checkDatabaseFile(target)
+	// The source passed the full integrity check and VACUUM INTO rebuilds every
+	// index from the rows, so the quick check finds what writing it could damage.
+	return checkDatabaseFile(target, false)
 }
 
 func markRecovery(ctx context.Context, path string, t store.TransitionRecord, episode string, now time.Time) error {

@@ -17,6 +17,7 @@ import (
 
 	"github.com/Alex-Zechariah-02/apiward/internal/admin"
 	"github.com/Alex-Zechariah-02/apiward/internal/adminui"
+	"github.com/Alex-Zechariah-02/apiward/internal/audit"
 	"github.com/Alex-Zechariah-02/apiward/internal/connections"
 	"github.com/Alex-Zechariah-02/apiward/internal/controller"
 	"github.com/Alex-Zechariah-02/apiward/internal/forward"
@@ -65,7 +66,9 @@ func LoadSettings(path string) (Settings, error) {
 	if err != nil {
 		return Settings{}, classify(ErrConfig, err)
 	}
+	cfg.reloaded = new(atomic.Pointer[audit.Event])
 	cfg.controller.ReloadKeys = cfg.reloadKeys
+	cfg.controller.Reloaded = cfg.reloadedRecord
 	return Settings{native: &cfg}, nil
 }
 
@@ -94,6 +97,9 @@ type deployment struct {
 	ui      fs.FS
 	logger  *slog.Logger
 	metrics *http.Server
+	// health is the health listener's address, set before it serves; empty
+	// when gateway.health_listen is unset.
+	health string
 	// certificate is the data listener's; nil when it serves plain HTTP.
 	certificate *servingCertificate
 	upstreams   upstreams
@@ -129,7 +135,6 @@ func openDeployment(cfg nativeConfig, logger *slog.Logger) (*deployment, error) 
 	if c.Audit().OpenErr() != nil {
 		return nil, errors.Join(classify(ErrStorage, fmt.Errorf("audit log: %w", c.Audit().OpenErr())), c.Stop())
 	}
-	recordStart(c, cfg)
 	limiter := pipeline.NewLimiter(c.Settings().Limits.RateCounters)
 	enforcement, err := newHandler(c, limiter, cfg.limits, proxy.Forward, cfg.signer)
 	if err != nil {
@@ -149,7 +154,7 @@ func openDeployment(cfg nativeConfig, logger *slog.Logger) (*deployment, error) 
 	// scraper without failing a slow one; 30 s idle keeps a scraper's
 	// connection between scrapes (Prometheus scrapes every 15 s by default).
 	d.metrics = &http.Server{
-		Handler:           health(monitor.Metrics(c.Observations(), c.Gauges), func() bool { return !d.draining.Load() && ready(c, certificate) }),
+		Handler:           d.auxiliary(monitor.Metrics(c.Observations(), func() []monitor.Gauge { return gauges(c, proxy) }), func() bool { return !d.draining.Load() && ready(c, certificate) }),
 		ReadHeaderTimeout: 5 * time.Second,
 		WriteTimeout:      5 * time.Second,
 		IdleTimeout:       30 * time.Second,
@@ -183,24 +188,38 @@ func openController(cfg controller.Config, ui string, logger *slog.Logger) (*con
 	return c, files, nil
 }
 
-// listen binds the metrics address and starts the Admin API. plain is true
-// when the gateway serves the data plane itself, over plain HTTP. On an
-// error neither stays bound; the caller releases the deployment.
-func (d *deployment) listen(plain bool) (net.Listener, error) {
+// listen binds the metrics address, and the health address when one is
+// configured, and starts the Admin API. It returns the auxiliary listeners,
+// metrics first, all served by d.metrics. plain is true when the gateway
+// serves the data plane itself, over plain HTTP; hostServed when a host
+// program serves it (library mode). On an error none stays bound; the
+// caller releases the deployment.
+func (d *deployment) listen(plain, hostServed bool) ([]net.Listener, error) {
 	metrics, err := net.Listen("tcp", d.config.metricsListen)
 	if err != nil {
 		return nil, classify(ErrListen, fmt.Errorf("metrics listener: %w", err))
 	}
-	metrics = connections.Cap(metrics, connections.Auxiliary, d.controller.Observations().Refuser("metrics"))
+	listeners := []net.Listener{connections.Cap(metrics, connections.Auxiliary, d.controller.Observations().Refuser("metrics"))}
+	if d.config.healthListen != "" {
+		health, err := net.Listen("tcp", d.config.healthListen)
+		if err != nil {
+			metrics.Close()
+			return nil, classify(ErrListen, fmt.Errorf("health listener: %w", err))
+		}
+		d.health = health.Addr().String()
+		listeners = append(listeners, connections.Cap(health, connections.Auxiliary, d.controller.Observations().Refuser("health")))
+	}
 	var ui http.Handler // nil when no files are configured: the routes stay unregistered
 	if d.ui != nil {
 		ui = dashboard(d.ui)
 	}
-	if err := d.controller.Start(admin.New(admin.Deps{Control: d.controller, Limiter: d.limiter, UI: ui, Plain: plain, Logger: d.logger, JWKS: d.config.signer.JWKS()}).Handler()); err != nil {
-		metrics.Close()
+	if err := d.controller.Start(admin.New(admin.Deps{Control: d.controller, Limiter: d.limiter, UI: ui, Plain: plain, HostServed: hostServed, Logger: d.logger, JWKS: d.config.signer.JWKS()}).Handler()); err != nil {
+		closeListeners(listeners...)
 		return nil, classify(ErrListen, fmt.Errorf("admin listener: %w", err))
 	}
-	return metrics, nil
+	// Every listener is bound by now: the native data listener before this.
+	recordStart(d.controller, d.config)
+	return listeners, nil
 }
 
 // logAdmission reports whether protected requests are admitted: listening
@@ -236,4 +255,16 @@ func ready(c *controller.Controller, certificate *servingCertificate) bool {
 		return false
 	}
 	return certificate == nil || certificate.valid(time.Now())
+}
+
+// gauges are the controller's figures with the upstream pool's and the
+// auxiliary listeners'.
+func gauges(c *controller.Controller, proxy interface{ Stats() forward.Stats }) []monitor.Gauge {
+	pool := proxy.Stats()
+	return append(c.Gauges(),
+		monitor.Gauge{Name: "gateway_upstream_connections_idle", Value: pool.Idle},
+		monitor.Gauge{Name: "gateway_upstream_dials_total", Value: pool.Dials, Counter: true},
+		monitor.Gauge{Name: "gateway_upstream_reuses_total", Value: pool.Reuses, Counter: true},
+		monitor.Gauge{Name: "gateway_listener_failures_total", Value: auxiliaryFailures.Load(), Counter: true},
+	)
 }

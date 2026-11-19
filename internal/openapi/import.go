@@ -29,6 +29,7 @@ type Options struct {
 	Base         policy.Policy // the policy the result is built on
 	MaxBodyBytes int64         // body limit of body rules without x-apiward-max-bytes
 	WithPermits  bool          // read x-apiward-roles into permits
+	Limits       policy.Limits // the deployment's capacity limits; zero members take the defaults
 }
 
 func (o Options) check() error {
@@ -59,11 +60,14 @@ func Import(spec []byte, format Format, options Options) (policy.Policy, *Report
 	if err := options.check(); err != nil {
 		return policy.Policy{}, nil, err
 	}
+	if options.Limits, err = options.Limits.Resolve(); err != nil {
+		return policy.Policy{}, nil, err
+	}
 	result, report, err := assemble(root, format, options)
 	if err != nil {
 		return policy.Policy{}, nil, err
 	}
-	if err := compiles(result); err != nil {
+	if err := compiles(result, options.Limits); err != nil {
 		return policy.Policy{}, nil, err
 	}
 	return result, report, nil
@@ -81,10 +85,12 @@ func assemble(root map[string]any, format Format, options Options) (policy.Polic
 		return policy.Policy{}, nil, err
 	}
 	report := newReport(format, options.API)
+	report.Limits = limitsOf(options.Limits)
+	report.AppliedSettings = settingNames(settings)
 	report.SpecVersion = version
 	info, _ := root["info"].(map[string]any)
 	report.DescriptionVersion = policy.Clip(descriptionVersion(info["version"]))
-	m := &mapper{root: root, options: options, report: report, ignored: map[string]bool{}}
+	m := &mapper{root: root, options: options, settings: settings, report: report, ignored: map[string]bool{}}
 	found := m.operations()
 
 	result := replaceAPI(options, settings, report)
@@ -113,6 +119,9 @@ func replaceAPI(options Options, settings policy.API, report *Report) policy.Pol
 	for _, api := range base.APIs {
 		if api.ID == options.API {
 			report.ReplacedSettings = replacedSettings(api, settings)
+			if api.Upstream != options.Upstream {
+				report.ReplacedSettings = append(report.ReplacedSettings, "upstream")
+			}
 			continue
 		}
 		result.APIs = append(result.APIs, api)
@@ -214,35 +223,55 @@ func replacedSettings(old, settings policy.API) []string {
 }
 
 // compiles runs the result through what staging runs, on the bytes that
-// are written: the size limit, strict decoding, then the compiler.
-func compiles(result policy.Policy) error {
+// are written: the size limit, strict decoding, then the compiler, all with
+// the resolved limits.
+func compiles(result policy.Policy, limits policy.Limits) error {
 	document, err := indent(result)
 	if err != nil {
 		return err
 	}
-	if len(document) > policy.DefaultPolicyBytes {
-		err = policy.Invalid("LIMIT_EXCEEDED", "size")
+	if len(document) > limits.PolicyBytes {
+		err = policy.Invalid("POLICY_TOO_LARGE", "policy_bytes")
 	} else {
 		var decoded policy.Policy
-		if decoded, err = policy.DecodePolicy(document, policy.Limits{}); err == nil {
-			_, err = compile.Compile(decoded, 0, time.Time{}, policy.Limits{})
+		if decoded, err = policy.DecodePolicy(document, limits); err == nil {
+			_, err = compile.Compile(decoded, 0, time.Time{}, limits)
 		}
 	}
 	if err != nil {
-		return fmt.Errorf("the result is not a valid policy: %w", defaultLimits(err))
+		return fmt.Errorf("the result is not a valid policy: %w", checkedLimits(err, limits))
 	}
 	return nil
 }
 
-// defaultLimits adds to a LIMIT_EXCEEDED refusal the default capacity limits
-// the policy was checked against: a deployment may have raised the counts,
-// but no deployment can raise the size ceiling.
-func defaultLimits(err error) error {
-	if invalid, ok := errors.AsType[*policy.PolicyError](err); !ok || invalid.Code != "LIMIT_EXCEEDED" {
+// checkedLimits adds to a capacity refusal the resolved limits the policy
+// was checked against; --config checks against a deployment's own.
+func checkedLimits(err error, limits policy.Limits) error {
+	invalid, ok := errors.AsType[*policy.PolicyError](err)
+	if !ok || invalid.Code != "LIMIT_EXCEEDED" && invalid.Code != "POLICY_TOO_LARGE" {
 		return err
 	}
-	return fmt.Errorf("%w (checked against the default capacity limits: %d APIs, %d operations, %d roles, %d permits, which a deployment may have raised, and the policy size of %d bytes, which no deployment can raise)",
-		err, policy.DefaultAPIs, policy.DefaultOperations, policy.DefaultRoles, policy.DefaultPermits, policy.MaxPolicyBytes)
+	return fmt.Errorf("%w (checked against %d APIs, %d operations, %d roles, %d permits and %d policy bytes; --config checks against a deployment's limits)",
+		err, limits.APIs, limits.Operations, limits.Roles, limits.Permits, limits.PolicyBytes)
+}
+
+// settingNames names the API settings a description's root members state.
+func settingNames(settings policy.API) []string {
+	names := []string{}
+	for _, s := range []struct {
+		name    string
+		present bool
+	}{
+		{"forward", settings.Forward != nil},
+		{"cors", settings.CORS != nil},
+		{"response_headers", settings.ResponseHeaders != nil},
+		{"allow_addresses", settings.AllowAddresses != nil},
+	} {
+		if s.present {
+			names = append(names, s.name)
+		}
+	}
+	return names
 }
 
 // descriptionVersion is info.version as written: a string, or a plain number

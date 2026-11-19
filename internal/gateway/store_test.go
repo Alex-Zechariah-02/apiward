@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 	"testing"
 	"time"
@@ -136,7 +137,7 @@ func TestOverrideResolutionConstraints(t *testing.T) {
 
 	statuses := map[int64]string{1: store.OverrideRevoked, 2: store.OverrideQuarantined, 3: store.OverrideQuarantined, 4: store.OverrideActive}
 	resolutions := map[int64]string{1: "revoke-1", 2: restore.ID, 3: restore.ID, 4: ""}
-	list, err := s.Overrides(ctx, `ORDER BY id`)
+	list, err := s.Overrides(ctx, 0, math.MaxInt)
 	if err != nil || len(list) != 4 {
 		t.Fatalf("overrides %+v %v", list, err)
 	}

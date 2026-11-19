@@ -70,6 +70,14 @@ type Config struct {
 	// AuditAppend appends to the active audit file instead of zero-filling
 	// it ahead of the writer on Linux (gateway.audit_prefill false).
 	AuditAppend bool
+	// AuditPrivacy is how the log records client addresses.
+	AuditPrivacy audit.Privacy
+	// AuditOutcomeWindow is the longest a request can live; after an
+	// unclean stop the log marks admissions that recent without an outcome
+	// as unknown. 0 skips that.
+	AuditOutcomeWindow time.Duration
+	// AuditSigner signs the audit chain's checkpoints; nil writes none.
+	AuditSigner audit.Signer
 	// IgnoredReads lists the Admin API paths whose successful authenticated
 	// GET reads write no admin.read record (gateway.audit_ignore_reads): nil
 	// takes DefaultIgnoredReads, empty records every read.
@@ -85,7 +93,10 @@ type Config struct {
 	// ReloadKeys reads the trust and upstream network settings again from
 	// the startup configuration, never from HTTP; nil refuses every key
 	// reload.
-	ReloadKeys func() (pipeline.TrustConfig, *forward.Network, error)
+	ReloadKeys func() (pipeline.TrustConfig, *forward.Network, []string, error)
+	// Reloaded is the gateway.reloaded record of the settings the last
+	// successful ReloadKeys read; nil records none.
+	Reloaded func() audit.Event
 	// ReloadCertificate reads the data listener's certificate files again
 	// on every key reload, whatever its result; it records its own failure.
 	// nil when the data listener has no certificate.
@@ -109,7 +120,9 @@ type Controller struct {
 	network  atomic.Pointer[forward.Network]
 	blocked  atomic.Pointer[store.BlockedAccounts]
 	// addresses is the blocked address list; nil until read from the store.
-	addresses atomic.Pointer[store.BlockedAddresses]
+	// addressIndex is its lookup for the pipeline, published with it.
+	addresses    atomic.Pointer[store.BlockedAddresses]
+	addressIndex atomic.Pointer[store.AddressIndex]
 
 	observations *monitor.Observations
 	// failures counts changes the database could not complete (storeFailure).
@@ -142,6 +155,11 @@ type Controller struct {
 	// expiring is set while a request-triggered deadline check is pending, so
 	// requests that see an expired generation start at most one.
 	expiring atomic.Bool
+
+	// retry and retryWait schedule the next attempt to recover from a
+	// transient failure (see recover.go); both are guarded by mu.
+	retry     *time.Timer
+	retryWait time.Duration
 }
 
 // Prepare checks cfg and builds the controller, opening nothing; its errors
@@ -205,7 +223,7 @@ func (c *Controller) Open() error {
 		ownership.Close()
 		return err
 	}
-	log := audit.OpenAudit(cfg.AuditLog, audit.Settings{MaxBytes: cfg.AuditMaxBytes, MaxFiles: cfg.AuditMaxFiles, WhenFull: cfg.AuditWhenFull, Queue: cfg.AuditQueue, Window: cfg.AuditSyncWindow, Append: cfg.AuditAppend})
+	log := audit.OpenAudit(cfg.AuditLog, audit.Settings{MaxBytes: cfg.AuditMaxBytes, MaxFiles: cfg.AuditMaxFiles, WhenFull: cfg.AuditWhenFull, Queue: cfg.AuditQueue, Window: cfg.AuditSyncWindow, Append: cfg.AuditAppend, Privacy: cfg.AuditPrivacy, OutcomeWindow: cfg.AuditOutcomeWindow, Signer: cfg.AuditSigner})
 
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -245,7 +263,7 @@ func (c *Controller) Open() error {
 		c.unavailable("store_unavailable", "reading blocked addresses: "+err.Error())
 		return nil
 	}
-	c.addresses.Store(&addresses)
+	c.publishAddresses(addresses)
 	c.reconcile(compile.TrustedNow())
 	return nil
 }

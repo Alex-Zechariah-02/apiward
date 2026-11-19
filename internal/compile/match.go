@@ -32,11 +32,8 @@ func parseTarget(pattern string) (string, bool) {
 // forwarding. Any encoding whose meaning could differ between the gateway and
 // an upstream is rejected rather than normalised.
 func CanonicalPath(r *http.Request) (string, bool) {
-	escaped := strings.ToLower(r.URL.EscapedPath())
-	for _, banned := range []string{"%2f", "%5c", "%2e", "%00"} {
-		if strings.Contains(escaped, banned) {
-			return "", false
-		}
+	if bannedEscape(r.URL.EscapedPath()) {
+		return "", false
 	}
 	path := r.URL.Path
 	if !IsCanonical(path) {
@@ -45,25 +42,55 @@ func CanonicalPath(r *http.Request) (string, bool) {
 	return path, true
 }
 
+// bannedEscape reports an escape of '/', '\\', '.' or NUL in either
+// letter case.
+func bannedEscape(escaped string) bool {
+	for i := strings.IndexByte(escaped, '%'); i >= 0 && i+2 < len(escaped); {
+		switch escaped[i+1] {
+		case '0':
+			if escaped[i+2] == '0' {
+				return true
+			}
+		case '2':
+			if c := escaped[i+2] | 0x20; c == 'f' || c == 'e' {
+				return true
+			}
+		case '5':
+			if escaped[i+2]|0x20 == 'c' {
+				return true
+			}
+		}
+		next := strings.IndexByte(escaped[i+1:], '%')
+		if next < 0 {
+			return false
+		}
+		i += 1 + next
+	}
+	return false
+}
+
+// IsCanonical reports a path of printable ASCII without '\\' or '%' whose
+// segments are neither "." nor "..", and empty only as a trailing slash.
 func IsCanonical(path string) bool {
 	if !strings.HasPrefix(path, "/") {
 		return false
 	}
-	for i := 0; i < len(path); i++ {
-		c := path[i]
-		if c < 0x21 || c > 0x7e || c == '\\' || c == '%' {
+	start := 1 // the current segment's first byte
+	for i := 1; i <= len(path); i++ {
+		if i < len(path) {
+			c := path[i]
+			if c < 0x21 || c > 0x7e || c == '\\' || c == '%' {
+				return false
+			}
+			if c != '/' {
+				continue
+			}
+		}
+		segment := path[start:i]
+		if segment == "." || segment == ".." || segment == "" && i != len(path) {
 			return false
 		}
-	}
-	segments := strings.Split(path[1:], "/")
-	for i, segment := range segments {
-		if segment == "." || segment == ".." {
-			return false
-		}
-		// Only a single trailing empty segment (a trailing slash) is allowed.
-		if segment == "" && i != len(segments)-1 {
-			return false
-		}
+		start = i + 1
 	}
 	return true
 }
@@ -78,18 +105,24 @@ func (g *Generation) Match(path, method string, in Inbound) (*target, *Rule) {
 	if t == nil {
 		return nil, nil
 	}
+	rule := t.match(method, in)
+	if rule == nil && len(t.variants[method]) > 0 {
+		return nil, nil
+	}
+	return t, rule
+}
+
+// match selects the method's operation on t as Match does; nil when none.
+func (t *target) match(method string, in Inbound) *Rule {
 	if variants := t.variants[method]; len(variants) > 0 {
 		host := requestHost(in.Host)
 		for _, v := range variants {
 			if v.when.holds(host, in.Header) {
-				return t, v
+				return v
 			}
 		}
-		if t.methods[method] == nil {
-			return nil, nil
-		}
 	}
-	return t, t.methods[method]
+	return t.methods[method]
 }
 
 // Conditioned reports whether the method on the path's target has
@@ -110,7 +143,7 @@ func (g *Generation) Preflight(path, method string, in Inbound) (rule, api *Rule
 	if t == nil || t.cors == nil {
 		return nil, nil
 	}
-	_, rule = g.Match(path, method, in)
+	rule = t.match(method, in)
 	if rule == nil {
 		return nil, t.cors
 	}
@@ -119,8 +152,10 @@ func (g *Generation) Preflight(path, method string, in Inbound) (rule, api *Rule
 
 // lookup returns the most specific target for a canonical path.
 func (g *Generation) lookup(path string) *target {
-	if t := g.exact[path]; t != nil {
-		return t
+	if len(path) <= g.longest {
+		if t := g.exact[path]; t != nil {
+			return t
+		}
 	}
 	for _, candidate := range g.prefixes {
 		rest, ok := strings.CutPrefix(path, candidate.prefix)
@@ -136,10 +171,16 @@ func (g *Generation) lookup(path string) *target {
 func (g *Generation) Authorise(asserted []string, r *Rule) (roles, ignored []string, reason string) {
 	allowed := false
 	for _, role := range asserted {
-		if g.roles[role] {
+		// A permitted role is always declared, so one lookup settles it.
+		permitted := r.roles[role]
+		switch {
+		case permitted || g.roles[role]:
+			if roles == nil {
+				roles = make([]string, 0, len(asserted))
+			}
 			roles = append(roles, role)
-			allowed = allowed || r.roles[role]
-		} else {
+			allowed = allowed || permitted
+		default:
 			ignored = append(ignored, role)
 		}
 	}

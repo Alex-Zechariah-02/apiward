@@ -5,6 +5,7 @@
 package forward
 
 import (
+	"bytes"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rsa"
@@ -70,6 +71,26 @@ type profile struct {
 	roots       *x509.CertPool // nil: the system roots
 	certificate *tls.Certificate
 	info        ProfileInfo
+}
+
+// sameProfile reports whether other holds the profile name exactly as n
+// does: both without it, or with an equal CA pin and client certificate. A
+// connection made under n is then one other would make.
+func (n *Network) sameProfile(other *Network, name string) bool {
+	if n == nil || other == nil || n.public != other.public {
+		return false
+	}
+	a, b := n.profiles[name], other.profiles[name]
+	if a == nil || b == nil {
+		return a == nil && b == nil && name == ""
+	}
+	if (a.roots == nil) != (b.roots == nil) || a.roots != nil && !a.roots.Equal(b.roots) {
+		return false
+	}
+	if (a.certificate == nil) != (b.certificate == nil) {
+		return false
+	}
+	return a.certificate == nil || slices.EqualFunc(a.certificate.Certificate, b.certificate.Certificate, bytes.Equal)
 }
 
 // LoadNetwork reads every profile's files. It fails on the first profile

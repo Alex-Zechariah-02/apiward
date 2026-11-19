@@ -7,6 +7,7 @@ package store_test
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"sync"
@@ -138,5 +139,33 @@ func TestSnapshotCancelled(t *testing.T) {
 func TestDigestError(t *testing.T) {
 	if _, err := store.Digest("kind", "target", sql.NullInt64{}, func() {}); err == nil {
 		t.Fatal("a payload JSON cannot encode was digested")
+	}
+}
+
+// Control changes past the kept number delete the oldest control
+// transitions with their answers once their audit records are written.
+func TestPruneControls(t *testing.T) {
+	st := open(t)
+	ctx := context.Background()
+	start := time.Now()
+	const keep, changes = 3, 10
+	for i := range changes {
+		id := fmt.Sprintf("test:block:%d", i)
+		at := start.Add(time.Duration(i) * time.Second)
+		if err := st.CommitControl(ctx, store.TransitionRecord{ID: id, Kind: "account.block", Actor: "test", Target: "t", Digest: "d"}, []byte(`{}`), nil, at); err != nil {
+			t.Fatal(err)
+		}
+		if err := st.MarkAudited(ctx, id, at); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := st.PruneControls(ctx, keep); err != nil {
+		t.Fatal(err)
+	}
+	for i := range changes {
+		_, err := st.ControlResult(ctx, fmt.Sprintf("test:block:%d", i))
+		if kept := i >= changes-keep; kept != (err == nil) || !kept && !errors.Is(err, sql.ErrNoRows) {
+			t.Errorf("change %d: kept %v, read error %v", i, kept, err)
+		}
 	}
 }

@@ -9,13 +9,19 @@ import (
 	"encoding/hex"
 	"errors"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
 // NewToken returns 32 random bytes in URL-safe base64.
+// tokenBytes of crypto/rand output (256 bits): enough that a token cannot
+// be guessed. tokenLength is the length of every token NewToken returns.
+const tokenBytes = 32
+
+var tokenLength = base64.RawURLEncoding.EncodedLen(tokenBytes)
+
 func NewToken() string {
-	// 32 bytes (256 bits) of crypto/rand output: enough that a token cannot be guessed.
-	token := make([]byte, 32)
+	token := make([]byte, tokenBytes)
 	rand.Read(token)
 	return base64.RawURLEncoding.EncodeToString(token)
 }
@@ -46,17 +52,26 @@ type Session struct {
 	Admin      string
 	Credential int64 // administrator credential version at login
 	CSRF       string
-	Reference  string // non-secret identifier recorded in audit events
-	lastSeen   time.Time
+	Reference  string        // non-secret identifier recorded in audit events
 	Expires    time.Time     // absolute end of the session
 	done       chan struct{} // closes when revoked or swept; long-lived readers stop too
 }
 
+// entry is a live session and its last use, in Unix nanoseconds: lookups
+// record use under the read lock.
+type entry struct {
+	session  Session
+	lastSeen atomic.Int64
+}
+
+// key is the SHA-256 of a session token, the table's index.
+type key [sha256.Size]byte
+
 // Table holds the live administrator sessions in memory. A restart ends
 // every session; nothing about them is ever written to the database.
 type Table struct {
-	mu       sync.Mutex
-	byHash   map[string]*Session
+	mu       sync.RWMutex
+	byHash   map[key]*entry
 	idle     time.Duration
 	lifetime time.Duration
 	perAdmin int
@@ -65,7 +80,7 @@ type Table struct {
 // New returns an empty table whose sessions end after idle without use or
 // lifetime after sign-in; one administrator holds at most perAdmin of them.
 func New(idle, lifetime time.Duration, perAdmin int) *Table {
-	return &Table{byHash: map[string]*Session{}, idle: idle, lifetime: lifetime, perAdmin: perAdmin}
+	return &Table{byHash: map[key]*entry{}, idle: idle, lifetime: lifetime, perAdmin: perAdmin}
 }
 
 // Create starts a session and returns its token. Ended sessions are swept
@@ -75,78 +90,96 @@ func (s *Table) Create(admin string, credential int64, now time.Time) (string, S
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.sweep(now)
-	held, oldest := 0, ""
+	held, oldest := 0, (*entry)(nil)
+	var oldestHash key
 	for hash, existing := range s.byHash {
-		if existing.Admin != admin {
+		if existing.session.Admin != admin {
 			continue
 		}
 		held++
-		if oldest == "" || existing.Expires.Before(s.byHash[oldest].Expires) {
-			oldest = hash
+		if oldest == nil || existing.session.Expires.Before(oldest.session.Expires) {
+			oldest, oldestHash = existing, hash
 		}
 	}
+	// Checked before the oldest session ends, so a refused sign-in signs
+	// nobody out.
+	full := len(s.byHash) >= Max
 	if held >= s.perAdmin {
-		s.end(oldest)
+		full = len(s.byHash)-1 >= Max
 	}
-	if len(s.byHash) >= Max {
+	if full {
 		return "", Session{}, ErrFull
 	}
+	if held >= s.perAdmin {
+		s.end(oldestHash)
+	}
 	token := NewToken()
-	hash := Hash(token)
-	created := &Session{
+	created := &entry{session: Session{
 		Admin:      admin,
 		Credential: credential,
 		CSRF:       NewToken(),
-		Reference:  hash[:16],
-		lastSeen:   now,
+		Reference:  Hash(token)[:16],
 		Expires:    now.Add(s.lifetime),
 		done:       make(chan struct{}),
-	}
-	s.byHash[hash] = created
-	return token, *created, nil
+	}}
+	created.lastSeen.Store(now.UnixNano())
+	s.byHash[sha256.Sum256([]byte(token))] = created
+	return token, created.session, nil
 }
 
-func (s *Table) alive(entry *Session, now time.Time) bool {
-	return now.Before(entry.Expires) && now.Before(entry.lastSeen.Add(s.idle))
+func (s *Table) alive(e *entry, now time.Time) bool {
+	return now.Before(e.session.Expires) && now.Before(time.Unix(0, e.lastSeen.Load()).Add(s.idle))
 }
 
 // Lookup returns the session for a token and records the activity. An unknown
 // token is never adopted; an expired one is removed.
 func (s *Table) Lookup(token string, now time.Time) (Session, string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	hash := Hash(token)
-	entry := s.byHash[hash]
-	if entry == nil {
+	// A token of another length was never issued: it is not hashed.
+	if len(token) != tokenLength {
 		return Session{}, "no_session"
 	}
-	if !s.alive(entry, now) {
-		s.end(hash)
+	hash := key(sha256.Sum256([]byte(token)))
+	s.mu.RLock()
+	found := s.byHash[hash]
+	live := found != nil && s.alive(found, now)
+	if live {
+		found.lastSeen.Store(now.UnixNano())
+	}
+	s.mu.RUnlock()
+	switch {
+	case found == nil:
+		return Session{}, "no_session"
+	case !live:
+		s.mu.Lock()
+		// Ended only if still the same entry and still not alive.
+		if s.byHash[hash] == found && !s.alive(found, now) {
+			s.end(hash)
+		}
+		s.mu.Unlock()
 		return Session{}, "expired"
 	}
-	entry.lastSeen = now
-	return *entry, ""
+	return found.session, ""
 }
 
 func (s *Table) Revoke(token string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.end(Hash(token))
+	s.end(sha256.Sum256([]byte(token)))
 }
 
 // end is called with s.mu held. Removing the entry makes closure one-shot.
-func (s *Table) end(hash string) {
-	if entry := s.byHash[hash]; entry != nil {
-		close(entry.done)
+func (s *Table) end(hash key) {
+	if found := s.byHash[hash]; found != nil {
+		close(found.session.done)
 		delete(s.byHash, hash)
 	}
 }
 
 func (s *Table) Active(token string, now time.Time) bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	entry := s.byHash[Hash(token)]
-	return entry != nil && s.alive(entry, now)
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	found := s.byHash[sha256.Sum256([]byte(token))]
+	return found != nil && s.alive(found, now)
 }
 
 // RevokeAdmin ends every session of one administrator, as a credential change
@@ -154,8 +187,8 @@ func (s *Table) Active(token string, now time.Time) bool {
 func (s *Table) RevokeAdmin(name string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	for hash, entry := range s.byHash {
-		if entry.Admin == name {
+	for hash, existing := range s.byHash {
+		if existing.session.Admin == name {
 			s.end(hash)
 		}
 	}

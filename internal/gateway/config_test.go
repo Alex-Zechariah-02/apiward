@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Alex-Zechariah-02/apiward/internal/audit"
 	"github.com/Alex-Zechariah-02/apiward/internal/controller"
 	"github.com/Alex-Zechariah-02/apiward/internal/forward"
 	"github.com/Alex-Zechariah-02/apiward/internal/gatewaytest"
@@ -90,12 +91,14 @@ func TestNativeConfigSettings(t *testing.T) {
 			AuditQueue:           4096, // four places per in-flight request (audit.QueueSize)
 			JWT:                  gatewaytest.TestTrust("issuer", "gateway", filepath.Join(dir, "issuer.pem")),
 			Network:              closed,
-			Limits:               policy.Limits{PolicyBytes: 64 << 10, APIs: 64, Operations: 256, Roles: 64, Permits: 4096, RateCounters: 262144, Window: 10000},
+			Limits:               policy.Limits{PolicyBytes: 64 << 10, APIs: 64, Operations: 256, Roles: 64, Permits: 4096, RateCounters: 32768, Window: 10000},
+			AuditPrivacy:         audit.Privacy{Mode: audit.AddressFull},
+			AuditOutcomeWindow:   35 * time.Second, // read_header_timeout + write_timeout
 		},
 		listen:            "127.0.0.2:9480",
 		metricsListen:     "127.0.0.1:9450",
 		identityKey:       filepath.Join(dir, "identity.pem"),
-		limits:            pipeline.Limits{MaxBodyBytes: 16 << 10, MaxInFlight: 1024, IPv6RatePrefix: 64},
+		limits:            pipeline.Limits{MaxBodyBytes: 16 << 10, MaxInFlight: 1024, MaxInFlightPerUpstream: 768, IPv6RatePrefix: 64, ModuleTimeout: 30 * time.Second},
 		maxConnections:    1024,
 		http2:             true,
 		headerLimit:       16 << 10,
@@ -130,7 +133,7 @@ func TestNativeConfigSettings(t *testing.T) {
 		})
 		s["upstream"] = map[string]any{"dial_timeout": "1s", "response_header_timeout": "3s", "read_idle_timeout": "2m",
 			"max_idle_per_upstream": 0, "idle_conn_timeout": "5s", "tls_session_lifetime": "10m", "eject_after": 0}
-		s["limits"] = map[string]any{"policy_bytes": 32 << 10, "apis": 256, "operations": 4096, "roles": 1, "permits": 65536,
+		s["limits"] = map[string]any{"policy_bytes": 32 << 10, "apis": 256, "operations": 400, "roles": 1, "permits": 1170,
 			"rate_counters": 1 << 20, "monitor_window": 100000}
 	}))
 	if err != nil {
@@ -140,11 +143,11 @@ func TestNativeConfigSettings(t *testing.T) {
 	if c.AdminIdleTimeout != 10*time.Minute || c.AdminSessionLifetime != time.Hour || c.AdminSessions != 3 || c.AuditTimeout != time.Second ||
 		c.AuditMaxBytes != 1<<20 || c.AuditMaxFiles != 4 || cfg.adminUI != site || c.Database != filepath.Join(dir, "${state}.db") ||
 		c.AuditWhenFull != "evict_oldest" || c.AuditQueue != 2048 || c.AuditSyncWindow != 2*time.Millisecond || !c.AuditAppend || cfg.shutdownGrace != 30*time.Second || cfg.shutdownDelay != 2*time.Second ||
-		!reflect.DeepEqual(cfg.limits, pipeline.Limits{MaxBodyBytes: 2048, MaxInFlight: 512, IPv6RatePrefix: 56, TrustedProxies: []netip.Prefix{netip.MustParsePrefix("10.0.0.0/8"), netip.MustParsePrefix("192.0.2.7/32")}}) || cfg.maxConnections != 100 || cfg.http2 || cfg.headerLimit != 32768 || cfg.readHeaderTimeout != 2*time.Second ||
+		!reflect.DeepEqual(cfg.limits, pipeline.Limits{MaxBodyBytes: 2048, MaxInFlight: 512, MaxInFlightPerUpstream: 384, IPv6RatePrefix: 56, ModuleTimeout: 4 * time.Second, TrustedProxies: []netip.Prefix{netip.MustParsePrefix("10.0.0.0/8"), netip.MustParsePrefix("192.0.2.7/32")}}) || cfg.maxConnections != 100 || cfg.http2 || cfg.headerLimit != 32768 || cfg.readHeaderTimeout != 2*time.Second ||
 		cfg.readTimeout != 3*time.Second || cfg.writeTimeout != 4*time.Second || cfg.idleTimeout != time.Minute ||
 		cfg.upstream != (forward.UpstreamTimeouts{Dial: time.Second, ResponseHeader: 3 * time.Second, ReadIdle: 2 * time.Minute}) ||
 		cfg.pool != (forward.PoolSettings{MaxIdle: 0, IdleTimeout: 5 * time.Second}) ||
-		c.Limits != (policy.Limits{PolicyBytes: 32 << 10, APIs: 256, Operations: 4096, Roles: 1, Permits: 65536, RateCounters: 1 << 20, Window: 100000}) {
+		c.Limits != (policy.Limits{PolicyBytes: 32 << 10, APIs: 256, Operations: 400, Roles: 1, Permits: 1170, RateCounters: 1 << 20, Window: 100000}) {
 		t.Fatalf("written settings not taken: %+v", cfg)
 	}
 }
@@ -187,6 +190,7 @@ func TestNativeConfigRefusals(t *testing.T) {
 		})), `unknown field "algorithms"`},
 		{"wrong type", string(configDocument(t, dir, set("data", "max_body_bytes", "1024"))), "data.max_body_bytes: a JSON string is not a valid value"},
 		{"limit written as zero", string(configDocument(t, dir, set("limits", "operations", 0))), "limits.operations must be at least 1"},
+		{"ceiling no policy can reach", string(configDocument(t, dir, set("limits", "operations", 4096))), "cannot be reached within limits.policy_bytes"},
 		{"limit above its maximum", string(configDocument(t, dir, set("limits", "rate_counters", 1<<20+1))), "limits.rate_counters must be 1 to 1048576"},
 		{"fractional number", string(configDocument(t, dir, set("gateway", "audit_max_files", 2.5))), "gateway.audit_max_files"},
 		{"duration as a number", string(configDocument(t, dir, set("data", "read_timeout", 10))), "data.read_timeout"},
@@ -270,22 +274,6 @@ func TestNativeConfigRefusals(t *testing.T) {
 			}
 		})
 	}
-
-	t.Run("settings file not regular", func(t *testing.T) {
-		path := filepath.Join(t.TempDir(), "settings.json")
-		if err := os.WriteFile(path, []byte(valid), 0o600); err != nil {
-			t.Fatal(err)
-		}
-		link := filepath.Join(t.TempDir(), "link.json")
-		for _, refused := range []string{filepath.Dir(path), link} {
-			if refused == link && os.Symlink(path, link) != nil {
-				continue
-			}
-			if _, err := readNativeConfig(refused); err == nil || !strings.Contains(err.Error(), "must be a regular file") {
-				t.Errorf("%s: got %v", refused, err)
-			}
-		}
-	})
 
 	t.Run("file larger than the bound", func(t *testing.T) {
 		path := filepath.Join(t.TempDir(), "large.json")

@@ -164,9 +164,10 @@ func TestSchemaCompilation(t *testing.T) {
 		{"repeated schema member", document(`{"type":"object","additionalProperties":false,"additionalProperties":true}`), "DUPLICATE_MEMBER"},
 		{"repeated property name", document(`{"type":"object","additionalProperties":true,"properties":{"a":{"type":"string"},"a":{"type":"integer"}}}`), "DUPLICATE_MEMBER"},
 		{"upper-case member outside a schema", strings.Replace(document(gatewaytest.AnyObject), `"max_bytes"`, `"Max_bytes"`, 1), "UNKNOWN_FIELD"},
-		// nested(n) places its innermost schema at policy depth 5+2n.
-		{"nesting above the policy bound", document(nested(6)), "LIMIT_EXCEEDED"},
-		{"nesting within the bound", document(nested(5)), ""},
+		// nested(n) places its innermost schema at depth 1+2n within the
+		// schema value, which has its own budget of policy.MaxSchemaDepth.
+		{"nesting above the policy bound", document(nested(16)), "LIMIT_EXCEEDED"},
+		{"nesting within the bound", document(nested(15)), ""},
 	}
 	for _, tc := range documents {
 		if got := errorCode(compileJSON(t, tc.document)); got != tc.code {

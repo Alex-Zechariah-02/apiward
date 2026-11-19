@@ -3,15 +3,11 @@
 package monitor
 
 import (
-	"maps"
-	"slices"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/audit"
-	"github.com/Alex-Zechariah-02/apiward/internal/policy"
 )
 
 // QueueSize events buffer a burst for one live view; a view that falls
@@ -23,57 +19,25 @@ const QueueSize = 128
 // writer, and eight cover a small team's open tabs.
 const MaxStreams = 8
 
-// RequestView is the explicit, secret-free Admin API projection. Private audit
-// envelopes and their future fields are never serialized to viewers.
-type RequestView struct {
-	RequestID     string    `json:"request_id"`
-	Time          time.Time `json:"time"`
-	Method        string    `json:"method"`
-	Path          string    `json:"path"`
-	Operation     *string   `json:"operation"`
-	API           *string   `json:"api"`
-	Subject       *string   `json:"subject"`
-	Roles         []string  `json:"roles"`
-	ClientAddress string    `json:"client_address"`
-	Decision      string    `json:"decision"`
-	Status        int       `json:"status"`
-	Stage         string    `json:"stage"`
-	Code          *string   `json:"code"`
-	Generation    string    `json:"generation"`
-	DurationMS    float64   `json:"duration_ms"`
-	// Modules is present only in builds with modules other than the built-ins.
-	Modules map[string]string `json:"modules,omitempty"`
-	// Truncated says Path was cut to audit.MaxLoggedPath.
-	Truncated bool `json:"path_truncated,omitempty"`
-}
-
-type Observed struct {
-	RequestView
-	sequence      uint64
-	assertedRoles []string // verified assertions, including roles dropped by the active policy
-	identityKnown bool     // evaluated authentication, or no credential was supplied
-	// routingPath is separate from the displayed path. One byte beyond the
-	// longest target distinguishes an exact match from a longer request; prefix
-	// matching needs no more. Empty means canonicalization did not pass.
-	routingPath string
-}
-
 type Viewer struct {
-	events  chan Observed
-	dropped uint64 // guarded by observations.mu
+	events  chan Entry
+	dropped atomic.Uint64
 }
 
 // Observations owns a bounded ring and bounded, nonblocking subscriptions.
 // It has no authority over admission, policy, durable audit or upstream writes.
 type Observations struct {
-	mu sync.Mutex
-	// ring grows to window requests as they arrive, then the newest replaces
-	// the oldest, so an idle gateway holds no window it has not used.
-	ring    []Observed
-	window  int
-	next    uint64
+	// mu guards the ring and the viewers. A request holds it only to store
+	// its entry and hand it to the live views.
+	mu      sync.Mutex
+	ring    ring
 	viewers map[*Viewer]bool
-	dropped uint64
+	// newest is the latest request time recorded and late the most any
+	// request was recorded behind it, which bounds how far a time-bounded
+	// walk must look past its start (see Walk).
+	newest  time.Time
+	late    time.Duration
+	dropped atomic.Uint64
 	done    chan struct{}
 	closed  bool
 	metrics requestMetrics
@@ -96,7 +60,7 @@ type Observations struct {
 // New keeps the last window requests; apis bounds the per-API duration
 // metrics. Both are the resolved capacity limits.
 func New(window, apis int) *Observations {
-	o := &Observations{window: window, viewers: map[*Viewer]bool{}, done: make(chan struct{}), metrics: requestMetrics{apis: apis},
+	o := &Observations{ring: ring{size: window}, viewers: map[*Viewer]bool{}, done: make(chan struct{}), metrics: requestMetrics{apis: apis},
 		auxiliary: map[string]*atomic.Uint64{}}
 	for _, name := range Auxiliary {
 		o.auxiliary[name] = new(atomic.Uint64)
@@ -104,93 +68,26 @@ func New(window, apis int) *Observations {
 	return o
 }
 
-func OptionalString(value string) *string {
-	if value == "" {
-		return nil
-	}
-	return &value
-}
-
-// View is the secret-free view of a request's final audit event, shared
-// by the live views and the security log search so both show the same fields.
-func View(event audit.Event) RequestView {
-	view := RequestView{
-		RequestID: event.RequestID, Time: event.Time, Method: event.Method,
-		Path:      strings.Clone(event.Path[:min(len(event.Path), audit.MaxLoggedPath)]),
-		Operation: OptionalString(event.Operation), API: OptionalString(event.API), Subject: OptionalString(event.Subject),
-		Roles: slices.Clone(event.Roles), ClientAddress: event.ClientAddress, Status: event.Status,
-		Code: OptionalString(event.Error), Generation: event.Generation, DurationMS: event.DurationMS,
-		Modules: maps.Clone(event.Modules),
-		// The path is cut at the stored record's bound, so live and searched
-		// views show the same text. A live event still holds the whole path;
-		// one read back from the log was cut when written and carries the
-		// record's flag.
-		Truncated: len(event.Path) > audit.MaxLoggedPath || (event.Truncated && len(event.Path) == audit.MaxLoggedPath),
-	}
-	if view.Roles == nil {
-		view.Roles = []string{}
-	}
-	switch event.Decision {
-	case "forwarded", "allowed": // allowed: a CORS preflight the gateway answered
-		view.Decision = "allowed"
-	case "upstream_failure":
-		view.Decision = "failed"
-	default:
-		view.Decision = "refused"
-	}
-	switch event.Stage {
-	case "FORWARD", "BIND":
-		view.Stage = "forward"
-	case "ACCESS":
-		view.Stage = "access"
-	case "JWT":
-		view.Stage = "token"
-	case "RBAC":
-		view.Stage = "permit"
-		if event.Error == "account_blocked" {
-			view.Stage = "blocked"
-		}
-	case "RATE":
-		view.Stage = "rate"
-	case "BODY", "VALIDATION", "INGRESS", "CANONICAL":
-		view.Stage = "validation"
-	case "AUDIT", "CAPTURE":
-		view.Stage = "record"
-	default:
-		view.Stage = "route"
-	}
-	return view
-}
-
+// Record keeps a request's final event in the window, counts it in the
+// metrics and hands it to the live views. The view is built only when read.
 func (o *Observations) Record(event audit.Event) {
-	view := View(event)
-	var routingPath string
-	if event.Stages[audit.StageCanonical] == audit.StagePass {
-		routingPath = strings.Clone(event.Path[:min(len(event.Path), policy.MaxTargetLength+1)])
-	}
-	// One lock keeps the window, the live feeds and the counters consistent with each other.
+	entry := newEntry(event)
+	o.metrics.Record(event)
+	// One lock keeps the window and the live feeds consistent with each other.
 	o.mu.Lock()
 	defer o.mu.Unlock()
-	o.metrics.Record(view)
-	o.next++
-	asserted := append(slices.Clone(view.Roles), event.IgnoredRoles...)
-	slices.Sort(asserted)
-	request := Observed{RequestView: view, sequence: o.next, assertedRoles: asserted, identityKnown: event.IdentityKnown(), routingPath: routingPath}
-	if len(o.ring) < o.window {
-		// Grown by hand: append's growth could overshoot the window.
-		if len(o.ring) == cap(o.ring) {
-			o.ring = append(make([]Observed, 0, min(max(2*cap(o.ring), 64), o.window)), o.ring...)
-		}
-		o.ring = append(o.ring, request)
-	} else {
-		o.ring[o.slot(0)] = request
+	if entry.Time.After(o.newest) {
+		o.newest = entry.Time
+	} else if late := o.newest.Sub(entry.Time); late > o.late {
+		o.late = late
 	}
+	stored := o.ring.push(entry)
 	for viewer := range o.viewers {
 		select {
-		case viewer.events <- request:
+		case viewer.events <- *stored:
 		default:
-			viewer.dropped++
-			o.dropped++
+			viewer.dropped.Add(1)
+			o.dropped.Add(1)
 		}
 	}
 }
@@ -201,7 +98,7 @@ func (o *Observations) Subscribe() *Viewer {
 	if o.closed || len(o.viewers) >= MaxStreams {
 		return nil
 	}
-	viewer := &Viewer{events: make(chan Observed, QueueSize)}
+	viewer := &Viewer{events: make(chan Entry, QueueSize)}
 	o.viewers[viewer] = true
 	return viewer
 }
@@ -212,13 +109,8 @@ func (o *Observations) Unsubscribe(viewer *Viewer) {
 	delete(o.viewers, viewer)
 }
 
-func (o *Observations) TakeDropped(viewer *Viewer) uint64 {
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	count := viewer.dropped
-	viewer.dropped = 0
-	return count
-}
+// TakeDropped returns and resets the count of requests the viewer missed.
+func (o *Observations) TakeDropped(viewer *Viewer) uint64 { return viewer.dropped.Swap(0) }
 
 func (o *Observations) Close() {
 	o.mu.Lock()
@@ -240,21 +132,14 @@ func (o *Observations) Viewers() int {
 func (o *Observations) Retained() int {
 	o.mu.Lock()
 	defer o.mu.Unlock()
-	return len(o.ring)
+	return o.ring.count
 }
 
 // Window returns the number of requests the window keeps at most.
-func (o *Observations) Window() int { return o.window }
-
-// Sequence is the request's position in the window, for paging.
-func (e Observed) Sequence() uint64 { return e.sequence }
-
-// ClaimedRoles are the verified role assertions, including roles the active
-// policy dropped.
-func (e Observed) ClaimedRoles() []string { return e.assertedRoles }
+func (o *Observations) Window() int { return o.ring.size }
 
 // Feed delivers the viewer's requests.
-func (v *Viewer) Feed() <-chan Observed { return v.events }
+func (v *Viewer) Feed() <-chan Entry { return v.events }
 
 // Closing closes when the observations close.
 func (o *Observations) Closing() <-chan struct{} { return o.done }

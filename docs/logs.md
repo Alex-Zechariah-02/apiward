@@ -4,8 +4,11 @@ What the gateway records, when a record is waited for, and how to read the log. 
 
 ## Files
 
-- The active file is `gateway.audit_log`; rotated files are named `<file>.1`, `<file>.2` and so on, the highest number the newest.
+- The active file is `gateway.audit_log`; a rotated file is named by the UTC time it was rotated, to the millisecond (`audit-2026-11-19T08-22-33.123.log` for `audit.log`), so names sort by age and never repeat.
 - Each line is one JSON record with `schema`, `event_id`, `time`, `seq` and `kind`, plus the fields of its kind.
+- `seq` numbers one run's records in file order, rising by one; records refused for lack of room leave no gap and are counted in `audit.loss`.
+- A record never exceeds 64 KiB: one that would is replaced by `audit.unwritable` with its request ID, decision and status, `target` its kind and `reason` `too_large`.
+- The active file is kept at mode `0600`, also when an existing file had a wider mode; new, renamed and deleted file names are synced to disk with their directory.
 - Records never hold tokens, passwords, cookies or request bodies.
 - **Waited for**: the gateway goes on only after the record is on disk; when it cannot be written, the action is refused.
 - **Queued**: the record is written with the next batch; a record that finds no room is counted, and the count is written as `audit.loss`.
@@ -19,11 +22,15 @@ What the gateway records, when a record is waited for, and how to read the log. 
 | `request.rejected` | A check refused the request, or enforcement failed | Queued |
 | `request.preflight` | The gateway answered an `OPTIONS` request itself: a browser preflight, or one with `Max-Forwards: 0` (code `max_forwards`) | Queued |
 
+- An admission record's `AUDIT` stage reads `PASS`: it is written only when that stage passes.
+- An admission whose record is not on disk within `gateway.audit_timeout` is answered `503` and recorded as `request.rejected` at `AUDIT` with reason `audit_timeout`. If the writer had not yet taken the admission record, it is withdrawn and never written; otherwise the rejection follows it and supersedes it (same `request_id`).
+- `request.forwarded` also holds `upstream_ms`: the time from sending the request upstream to its response headers (monotonic clock). `duration_ms` minus `upstream_ms` is the gateway's own share.
 - A request record holds the request ID, method, path, client address, policy version, operation, API, account, roles, the result of each check, status, error code and duration.
 - A recorded method is cut at 32 bytes and a path at 256 (`path_truncated` marks the path).
 - A request whose identity assertion would exceed 4,096 bytes (a very long path or many roles) is refused `400` at `BIND` with reason `assertion_too_large`, since upstreams may refuse a longer header.
 - A failure inside the gateway while forwarding is recorded as `request.forwarded` with decision `failed` and code `internal_error`, answered `500` when nothing was sent yet.
 - Refusals before any policy applies (overload, oversized or malformed requests, tunnels, upgrades) write no request record; they are counted per reason and address in `audit.ingress_summary` once a minute.
+- Policy refusals (`401`, `403`, `429`) are recorded in full up to 60 per client address per minute; further ones from that address in the same minute are counted in the same summary under `<stage>/<reason>/<operation>`, with exact counts, so a flood cannot push older records out of the log. Admissions and outcomes are always recorded in full.
 
 ## Administrator records
 
@@ -54,6 +61,7 @@ What the gateway records, when a record is waited for, and how to read the log. 
 | `controller.reconciled` | The gateway reconciled its stored state at start | Queued |
 | `controller.unavailable` | The gateway stopped accepting protected requests; `reason` is the state code, `error` the detail | Queued |
 
+- Temporary rules and a trial whose times run out by the same check end together: each keeps its own `transition.intent` and outcome record (`tpo.expired`, `cpa.timed_out`), and every outcome names the one policy generation published for them all.
 - At start, an outcome whose record is missing is written again under its own kind with reason `reconciled`.
 - So a `transition.intent` without an outcome record means the change was not committed: every committed change has its outcome record once the gateway has started again.
 - The state codes of `controller.unavailable`, also the `state` of `GET /admin/status`: `store_unavailable`, `audit_reconcile_failed`, `clock_regression`, `rollback_target_invalid`, `deadline_mismatch`, `transition_incomplete`, `policy_invalid`, or the stored mode that serves no policy. The detail stays in the log and the gateway's own output.
@@ -71,10 +79,24 @@ What the gateway records, when a record is waited for, and how to read the log. 
 | `audit.rotated` | The active file was rotated | With its batch |
 | `audit.evicted` | A full log under `evict_oldest` deleted its oldest file (name, size, SHA-256, first and last record) | Before the deletion |
 | `audit.loss` | Records were dropped for lack of room since the last batch | With its batch |
-| `audit.recovered` | At start, the last record of the active file had been cut off | Queued |
+| `audit.recovered` | At start, the last record of the active file had been cut off (`file`, `offset`); or, with reason `storage_space`, writing resumed after the file system had no space (`duration_ms` how long, `lost` the records counted meanwhile) | Queued |
+| `audit.chain` | Every written batch: `sha256` is the chain head after the batch | Ends its batch |
+| `audit.checkpoint` | Once a minute and at each rotation: `sha256` the chain head, `target` the identity key ID, `signature` its signature | With its batch |
+| `audit.closed` | A clean stop; nothing follows it but its chain record | Last |
+| `request.outcome_unknown` | At a start after an unclean stop, once per admission without an outcome in the last `data.read_header_timeout` + `data.write_timeout` before the stop (`reason` `unclean_stop`) | Queued |
+| `audit.reconciled` | After the `request.outcome_unknown` records, with their count in `counts.outcome_unknown` | Queued |
+| `audit.unwritable` | A record would exceed 64 KiB; it stands in for that record | In its place |
 | `audit.ingress_summary` | Refusals before any policy applied were counted | Once a minute |
 
 - Operator commands (`install`, `enrol`, `migrate`, `restore`) write `transition.intent` and `transition.committed` around their change.
+
+## Tamper evidence
+
+- Each batch extends a SHA-256 chain: the head is SHA-256 of the previous head and the batch's bytes, starting from zero at each start of the gateway, and the batch ends with `audit.chain` naming it.
+- `audit.checkpoint` signs the head with the identity key (the key upstreams verify assertions with) once a minute and at rotation.
+- `apiward audit verify --jwks <key set> <files…>` recomputes the chain over the files, oldest first, and checks every checkpoint; it names each record altered, added or removed. Records after the last chain record of an unclean stop are reported as unchained, not as altered.
+- `apiward_audit_chain_head_info` on the metrics listener shows the current head; copy heads or checkpoints off the host regularly.
+- Limit: anyone with root on the host holds the identity key and can rewrite and re-sign the tail; only heads or checkpoints copied off the host bound that.
 
 ## Reading the log
 

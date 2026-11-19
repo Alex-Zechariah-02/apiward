@@ -21,14 +21,14 @@ var issuer = issuertest.New(2048)
 // openController opens a controller whose confirmed policy is
 // storetest.Protected and stops it when the test ends. Its admin address is
 // never served.
-func openController(t *testing.T) *controller.Controller {
+func openController(t testing.TB) *controller.Controller {
 	t.Helper()
 	return openSeeded(t, storetest.Options{}, nil)
 }
 
 // openSeeded is openController over a seed with opts; adjust, when set,
 // changes the database before the controller opens it.
-func openSeeded(t *testing.T, opts storetest.Options, adjust func(database string)) *controller.Controller {
+func openSeeded(t testing.TB, opts storetest.Options, adjust func(database string)) *controller.Controller {
 	t.Helper()
 	dir := t.TempDir()
 	key := filepath.Join(dir, "issuer.pem")

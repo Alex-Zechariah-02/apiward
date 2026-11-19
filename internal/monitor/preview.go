@@ -4,8 +4,6 @@
 package monitor
 
 import (
-	"net/http"
-
 	"github.com/Alex-Zechariah-02/apiward/internal/compile"
 )
 
@@ -51,10 +49,4 @@ func PreviewDecision(g *compile.Generation, event Observed) (decision, code, ope
 		}
 	}
 	return "allowed", "", rule.Operation(), true
-}
-
-// traffic failures are refusals from the caller's perspective, while request
-// events retain the distinction between refusal and an unknown upstream result.
-func WasAllowed(event RequestView) bool {
-	return event.Decision == "allowed" && event.Status >= http.StatusOK
 }

@@ -5,11 +5,9 @@ package integration
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -60,12 +58,8 @@ func TestAuditRotationAndRetention(t *testing.T) {
 	}
 	e.Stop()
 
-	rotated, err := filepath.Glob(e.AuditLog + ".*")
-	if err != nil {
-		t.Fatal(err)
-	}
-	slices.Sort(rotated)
-	if !slices.Equal(rotated, []string{e.AuditLog + ".1", e.AuditLog + ".2"}) {
+	rotated := gatewaytest.RotatedAudit(t, e.AuditLog)
+	if len(rotated) != 2 {
 		t.Fatalf("rotated files %v", rotated)
 	}
 	for _, file := range append(rotated, e.AuditLog) {
@@ -94,12 +88,12 @@ func TestAuditRotationAndRetention(t *testing.T) {
 			t.Fatalf("forwarded request %q has %d admission records", r.RequestID, seen[r.RequestID])
 		}
 	}
-	for i, file := range []string{e.AuditLog + ".2", e.AuditLog} {
+	for i, file := range []string{rotated[1], e.AuditLog} {
 		data, _ := os.ReadFile(file)
 		first, _, _ := bytes.Cut(data, []byte("\n"))
 		var marker map[string]any
 		json.Unmarshal(first, &marker)
-		if marker["kind"] != "audit.rotated" || marker["file"] != filepath.Base(e.AuditLog)+fmt.Sprintf(".%d", i+1) {
+		if marker["kind"] != "audit.rotated" || marker["file"] != filepath.Base(rotated[i]) {
 			t.Fatalf("%s starts with %s", file, first)
 		}
 	}
@@ -144,8 +138,8 @@ func TestCrashDuringRotation(t *testing.T) {
 	if len(forwarded) == 0 {
 		t.Fatal("no request was forwarded before the rotation")
 	}
-	if _, err := os.Stat(e.AuditLog + ".1"); err != nil {
-		t.Fatalf("renamed file: %v", err)
+	if renamed := gatewaytest.RotatedAudit(t, e.AuditLog); len(renamed) != 1 {
+		t.Fatalf("renamed files: %v", renamed)
 	}
 	e.Start(gatewaytest.Binaries.Plain)
 	if code, _ := e.Get("/a/x"); code != http.StatusOK {

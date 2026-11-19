@@ -18,12 +18,8 @@ import (
 // so a standard build decodes exactly as written; any other unknown member
 // is then refused by the strict decoding. A module value must pass the
 // bounded JSON decoding, so the canonical encoding can always write it.
-// Its errors are policy problems.
-func takeModules(document []byte) ([]byte, []map[string]json.RawMessage, error) {
-	var ids []string
-	for _, c := range module.Extensions() {
-		ids = append(ids, c.Info().ID)
-	}
+// Its errors are policy problems. ids are the modules' IDs (moduleIDs).
+func takeModules(document []byte, ids []string) ([]byte, []map[string]json.RawMessage, error) {
 	if len(ids) == 0 {
 		return document, nil, nil
 	}
@@ -60,6 +56,16 @@ func takeModules(document []byte) ([]byte, []map[string]json.RawMessage, error) 
 		return nil, nil, Invalid("SCHEMA_INVALID", "")
 	}
 	return stripped, taken, nil
+}
+
+// moduleIDs lists the IDs of the registered modules other than the
+// built-ins: the operation members they own.
+func moduleIDs() []string {
+	var ids []string
+	for _, c := range module.Extensions() {
+		ids = append(ids, c.Info().ID)
+	}
+	return ids
 }
 
 // MarshalJSON writes the operation's own members and then its module

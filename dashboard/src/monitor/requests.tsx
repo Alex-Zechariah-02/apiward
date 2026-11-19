@@ -1,7 +1,7 @@
 import { AccountLink, XRef } from '../shared/links'
 import { TableScroll, type Tone } from '../shared/ui'
 import { Time, Zone } from '../shared/time'
-import { decisionWords, stages, stepWords, type Stage, type StepState } from '../shared/checks'
+import { decisionWords, stages, stepWords, type Decision, type Stage, type StepState } from '../shared/checks'
 import { Explain } from '../shared/explain'
 import { refAddress } from '../app/views'
 
@@ -17,12 +17,16 @@ export interface RequestEvent {
   subject: string | null
   roles: string[]
   client_address: string
-  decision: 'allowed' | 'refused' | 'failed'
+  decision: Decision
   status: number
   stage: Stage
   code: string | null
   generation: string
   duration_ms: number
+  // The service address the request was bound to, and the path sent to it
+  // when the endpoint's forward rule changed it.
+  upstream?: string | null
+  forwarded_path?: string | null
   // path_truncated says the gateway recorded only the start of a long path.
   path_truncated?: true
 }
@@ -73,7 +77,7 @@ export function outcomeOf(event: Pick<RequestEvent, 'decision' | 'status'>): str
   return `${decisionWords[event.decision]} · ${event.status}`
 }
 
-export const decisionTone: Record<RequestEvent['decision'], Tone> = { allowed: 'ok', refused: 'refused', failed: 'unknown' }
+export const decisionTone: Record<RequestEvent['decision'], Tone> = { allowed: 'ok', refused: 'refused', failed: 'unknown', upstream_failed: 'unknown' }
 
 // beforeRouting says the gateway decided a request before matching it to an
 // operation: it was refused on its form, or no policy could be captured (a
@@ -91,7 +95,7 @@ function pathStates(event: Pick<RequestEvent, 'stage' | 'decision' | 'operation'
   const early = beforeRouting(event)
   return stages.map((_, n) => {
     if (event.decision === 'allowed') return 'passed'
-    if (n === stop) return event.decision === 'failed' ? 'unknown' : 'refused'
+    if (n === stop) return event.decision === 'refused' ? 'refused' : 'unknown'
     if (n > stop) return 'unreached'
     return early ? 'skipped' : 'passed'
   })

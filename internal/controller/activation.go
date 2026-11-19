@@ -87,11 +87,10 @@ func (c *Controller) Activate(ctx context.Context, t store.TransitionRecord, can
 		return result, status
 	}
 	// Overrides that have expired by now must not block the candidate.
-	if c.mode() == store.ModeNormal && !c.settle(ctx, now, false) {
+	a, settled, err := c.prepare(ctx, now)
+	if !settled {
 		return c.unavailableOutcome(t.ID, t.Actor)
 	}
-
-	a, err := c.store.Load(ctx)
 	if err != nil {
 		return c.storeFailure(t.ID, err)
 	}
@@ -157,11 +156,10 @@ func (c *Controller) Resolve(ctx context.Context, t store.TransitionRecord, prov
 		return result, status
 	}
 	// The base that follows is compiled with the overrides still active now.
-	if c.mode() == store.ModeNormal && !c.settle(ctx, now, false) {
+	a, settled, err := c.prepare(ctx, now)
+	if !settled {
 		return c.unavailableOutcome(t.ID, t.Actor)
 	}
-
-	a, err := c.store.Load(ctx)
 	if err != nil {
 		return c.storeFailure(t.ID, err)
 	}
@@ -171,7 +169,7 @@ func (c *Controller) Resolve(ctx context.Context, t store.TransitionRecord, prov
 	// Revision 0 means "no provisional base", so a request naming it can never
 	// match one; without this, 0 equals the absent base and starts a rollback.
 	if provisional <= 0 || a.Provisional != provisional {
-		earlier, found, err := c.store.Activation(ctx, "revision", provisional)
+		earlier, found, err := c.store.Activation(ctx, store.ByRevision, provisional)
 		switch {
 		case err != nil:
 			return c.storeFailure(t.ID, err)
@@ -191,7 +189,7 @@ func (c *Controller) Resolve(ctx context.Context, t store.TransitionRecord, prov
 	}
 	if !now.Before(a.Deadline) {
 		result, status := c.reject(ctx, t, "DEADLINE_PASSED", "", now)
-		c.timeout(ctx, a, now)
+		c.endDue(ctx, a, now, true)
 		return result, status
 	}
 	return c.endProvisional(ctx, t, a, disposition, now)

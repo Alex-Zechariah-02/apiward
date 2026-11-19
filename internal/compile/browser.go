@@ -53,11 +53,11 @@ func compileCORS(c *policy.CORS, i int) (*CORS, error) {
 		}
 		out.origins[origin] = true
 	}
-	if len(c.Methods) < 1 || len(c.Methods) > len(policy.AllowedMethods) {
+	if len(c.Methods) < 1 || len(c.Methods) > policy.MethodCount {
 		return nil, policy.Invalid("INVALID_VALUE", "%s.methods", field)
 	}
 	for j, method := range c.Methods {
-		if !policy.AllowedMethods[method] || out.methods[method] {
+		if !policy.IsMethod(method) || out.methods[method] {
 			return nil, policy.Invalid("INVALID_VALUE", "%s.methods[%d]", field, j)
 		}
 		out.methods[method] = true

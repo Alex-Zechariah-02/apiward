@@ -23,8 +23,11 @@ func checkDataListen(listen string, all bool) error {
 
 // checkDistinct refuses two listeners that would bind the same port on a
 // shared address, so the conflict is named here rather than met at the bind.
-func checkDistinct(d dataSettings, admin, metrics string) error {
+func checkDistinct(d dataSettings, admin, metrics, health string) error {
 	listeners := []struct{ name, address string }{{"data.listen", d.Listen}, {"gateway.admin_listen", admin}, {"gateway.metrics_listen", metrics}}
+	if health != "" {
+		listeners = append(listeners, struct{ name, address string }{"gateway.health_listen", health})
+	}
 	if d.RedirectHTTP != nil {
 		listeners = append(listeners, struct{ name, address string }{"data.redirect_http.listen", d.RedirectHTTP.Listen})
 	}

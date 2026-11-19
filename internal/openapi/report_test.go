@@ -43,8 +43,8 @@ func TestImportReportsGrants(t *testing.T) {
 	}
 }
 
-// A result over a default capacity limit names the limits the import checks
-// against, as the deployment's own may be higher.
+// A result over a capacity limit names the limits the import checked
+// against and how to check against the deployment's own.
 func TestImportNamesDefaultLimits(t *testing.T) {
 	var paths []string
 	for n := range 300 {
@@ -52,8 +52,7 @@ func TestImportNamesDefaultLimits(t *testing.T) {
 	}
 	spec := `{"openapi":"3.1.0","info":{"title":"t","version":"1"},"paths":{` + strings.Join(paths, ",") + `}}`
 	_, _, err := Import([]byte(spec), JSON, testOptions())
-	if err == nil || !strings.Contains(err.Error(), "default capacity limits") || !strings.Contains(err.Error(), "256 operations") ||
-		!strings.Contains(err.Error(), "which no deployment can raise") {
+	if err == nil || !strings.Contains(err.Error(), "256 operations") || !strings.Contains(err.Error(), "--config") {
 		t.Fatalf("error %v", err)
 	}
 }

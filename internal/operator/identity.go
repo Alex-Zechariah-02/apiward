@@ -13,6 +13,8 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+
+	"github.com/Alex-Zechariah-02/apiward/internal/filecheck"
 )
 
 // createIdentityKey writes a new ECDSA P-256 key as one PKCS #8 PEM block,
@@ -59,5 +61,5 @@ func createIdentityKey(path string) (bool, error) {
 	if err := os.Link(temporary, path); err != nil {
 		return false, err
 	}
-	return true, syncDir(dir)
+	return true, filecheck.SyncDir(dir)
 }

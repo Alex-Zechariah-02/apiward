@@ -1,4 +1,5 @@
-// The identity assertion for upstreams: a short-lived ES256 JWT the gateway
+// The identity assertion for upstreams: a short-lived JWT, EdDSA (Ed25519)
+// or ES256 by the key's type, the gateway
 // signs for each request it forwards, naming the API, the verified account
 // and its roles. An upstream holding the gateway's public key can check that
 // a request passed this gateway instead of trusting the plain identity
@@ -9,6 +10,7 @@ package pipeline
 import (
 	"bytes"
 	"crypto/ecdsa"
+	"crypto/ed25519"
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/sha256"
@@ -47,10 +49,12 @@ const (
 	coordinateBytes = 32
 )
 
-// Signer signs assertions with one ECDSA P-256 key. It is immutable, so
-// requests share it without a lock.
+// Signer signs assertions with one key: Ed25519, signing EdDSA (RFC 8037),
+// or ECDSA P-256, signing ES256. The key's type fixes the algorithm (RFC
+// 8725 section 3.1). It is immutable, so requests share it without a lock.
 type Signer struct {
-	key *ecdsa.PrivateKey
+	ed ed25519.PrivateKey // set for an Ed25519 key
+	ec *ecdsa.PrivateKey  // set for a P-256 key
 	// prefix is the encoded JOSE header and the dot after it, the same for
 	// every assertion of this key.
 	prefix string
@@ -74,19 +78,21 @@ type claims struct {
 	ID       string   `json:"jti"`
 }
 
-// jwk is a public P-256 key as a JSON Web Key (RFC 7517).
+// jwk is a public key as a JSON Web Key (RFC 7517): P-256 with x and y,
+// Ed25519 with x only (RFC 8037 section 2).
 type jwk struct {
 	Type      string `json:"kty"`
 	Curve     string `json:"crv"`
 	X         string `json:"x"`
-	Y         string `json:"y"`
+	Y         string `json:"y,omitempty"`
 	ID        string `json:"kid"`
 	Use       string `json:"use"`
 	Algorithm string `json:"alg"`
 }
 
 // LoadSigner reads the signing key at path: one PEM "PRIVATE KEY" block
-// (PKCS #8) holding an ECDSA P-256 key, in a file only its owner can read.
+// (PKCS #8) holding an Ed25519 or ECDSA P-256 key, in a file only its owner
+// can read.
 func LoadSigner(path string) (*Signer, error) {
 	data, err := forward.ReadPEM(path, filecheck.Secret)
 	if err != nil {
@@ -100,15 +106,47 @@ func LoadSigner(path string) (*Signer, error) {
 	if err != nil {
 		return nil, errors.New("the key is not valid PKCS #8")
 	}
-	key, ok := parsed.(*ecdsa.PrivateKey)
-	if !ok || key.Curve != elliptic.P256() {
-		return nil, errors.New("the key must be ECDSA P-256")
+	switch key := parsed.(type) {
+	case ed25519.PrivateKey:
+		return newEdSigner(key)
+	case *ecdsa.PrivateKey:
+		if key.Curve == elliptic.P256() {
+			return newSigner(key)
+		}
 	}
-	return newSigner(key)
+	return nil, errors.New("the key must be Ed25519 or ECDSA P-256")
+}
+
+// newEdSigner derives the key ID, the JOSE header and the published key set
+// of an Ed25519 key. The key ID is the key's JWK thumbprint (RFC 7638
+// section 3.2, RFC 8037 section 2: the required members in order).
+func newEdSigner(key ed25519.PrivateKey) (*Signer, error) {
+	x := base64.RawURLEncoding.EncodeToString(key.Public().(ed25519.PublicKey))
+	thumbprint := sha256.Sum256(fmt.Appendf(nil, `{"crv":"Ed25519","kty":"OKP","x":"%s"}`, x))
+	s, err := keySigner(base64.RawURLEncoding.EncodeToString(thumbprint[:]), "EdDSA", jwk{Type: "OKP", Curve: "Ed25519", X: x})
+	if err != nil {
+		return nil, err
+	}
+	s.ed = key
+	return s, nil
+}
+
+// keySigner builds the header and key set shared by both key types.
+func keySigner(kid, algorithm string, key jwk) (*Signer, error) {
+	header, err := json.Marshal(map[string]string{"alg": algorithm, "kid": kid, "typ": "JWT"})
+	if err != nil {
+		return nil, err
+	}
+	key.ID, key.Use, key.Algorithm = kid, "sig", algorithm
+	set, err := json.Marshal(map[string][]jwk{"keys": {key}})
+	if err != nil {
+		return nil, err
+	}
+	return &Signer{prefix: base64.RawURLEncoding.EncodeToString(header) + ".", jwks: set, kid: kid}, nil
 }
 
 // newSigner derives the key ID, the JOSE header and the published key set
-// from key. The key ID is the key's JWK thumbprint (RFC 7638).
+// of a P-256 key. The key ID is the key's JWK thumbprint (RFC 7638).
 func newSigner(key *ecdsa.PrivateKey) (*Signer, error) {
 	encoded, err := key.PublicKey.Bytes()
 	if err != nil {
@@ -120,16 +158,20 @@ func newSigner(key *ecdsa.PrivateKey) (*Signer, error) {
 	y := base64.RawURLEncoding.EncodeToString(point[coordinateBytes:])
 	// RFC 7638, section 3.2: the required members in lexicographic order.
 	thumbprint := sha256.Sum256(fmt.Appendf(nil, `{"crv":"P-256","kty":"EC","x":"%s","y":"%s"}`, x, y))
-	kid := base64.RawURLEncoding.EncodeToString(thumbprint[:])
-	header, err := json.Marshal(map[string]string{"alg": "ES256", "kid": kid, "typ": "JWT"})
+	s, err := keySigner(base64.RawURLEncoding.EncodeToString(thumbprint[:]), "ES256", jwk{Type: "EC", Curve: "P-256", X: x, Y: y})
 	if err != nil {
 		return nil, err
 	}
-	set, err := json.Marshal(map[string][]jwk{"keys": {{Type: "EC", Curve: "P-256", X: x, Y: y, ID: kid, Use: "sig", Algorithm: "ES256"}}})
-	if err != nil {
-		return nil, err
-	}
-	return &Signer{key: key, prefix: base64.RawURLEncoding.EncodeToString(header) + ".", jwks: set, kid: kid}, nil
+	s.ec = key
+	return s, nil
+}
+
+// Checkpoint signs an audit checkpoint's message with the identity key and
+// names the key; the audit chain's verifier checks it with the same public
+// key set upstreams use.
+func (s *Signer) Checkpoint(message []byte) (string, []byte, error) {
+	signature, err := s.signature(message)
+	return s.kid, signature, err
 }
 
 // KeyID returns the key ID, the key's JWK thumbprint.
@@ -151,21 +193,34 @@ func (s *Signer) sign(c claims, now time.Time) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	const signatureLength = 86 // two coordinates, base64url without padding
+	const signatureLength = 86 // 64 bytes, base64url without padding, for either key type
 	token := make([]byte, 0, len(s.prefix)+base64.RawURLEncoding.EncodedLen(len(payload))+1+signatureLength)
 	token = append(token, s.prefix...)
 	token = base64.RawURLEncoding.AppendEncode(token, payload)
-	digest := sha256.Sum256(token)
-	r, v, err := ecdsa.Sign(rand.Reader, s.key, digest[:])
+	signature, err := s.signature(token)
 	if err != nil {
 		return "", err
 	}
-	// JOSE wants the two integers at fixed width, not the ASN.1 form.
-	var signature [2 * coordinateBytes]byte
+	token = append(token, '.')
+	return string(base64.RawURLEncoding.AppendEncode(token, signature)), nil
+}
+
+// signature signs the signing input: Ed25519 signs it itself (RFC 8037
+// section 3.1); ES256 signs its SHA-256 and gives the two integers at fixed
+// width, not the ASN.1 form (RFC 7518 section 3.4).
+func (s *Signer) signature(input []byte) ([]byte, error) {
+	if s.ed != nil {
+		return ed25519.Sign(s.ed, input), nil
+	}
+	digest := sha256.Sum256(input)
+	r, v, err := ecdsa.Sign(rand.Reader, s.ec, digest[:])
+	if err != nil {
+		return nil, err
+	}
+	signature := make([]byte, 2*coordinateBytes)
 	r.FillBytes(signature[:coordinateBytes])
 	v.FillBytes(signature[coordinateBytes:])
-	token = append(token, '.')
-	return string(base64.RawURLEncoding.AppendEncode(token, signature[:])), nil
+	return signature, nil
 }
 
 // assert signs the assertion of a request that passed every check, before

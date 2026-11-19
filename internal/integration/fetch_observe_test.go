@@ -85,7 +85,7 @@ func TestFetchEventsAndTraffic(t *testing.T) {
 		t.Fatalf("lookup: %s (%v)", body, err)
 	}
 	event := page.Items[0]
-	wantKeys := []string{"request_id", "time", "method", "path", "operation", "api", "subject", "roles", "client_address", "decision", "status", "stage", "code", "generation", "duration_ms"}
+	wantKeys := []string{"request_id", "time", "method", "path", "operation", "api", "subject", "roles", "client_address", "decision", "status", "stage", "code", "generation", "duration_ms", "upstream", "forwarded_path"}
 	if len(event) != len(wantKeys) {
 		t.Errorf("event fields: %v", event)
 	}
@@ -94,13 +94,13 @@ func TestFetchEventsAndTraffic(t *testing.T) {
 			t.Errorf("missing %s", key)
 		}
 	}
-	if event["path"] != "/a/first" || event["subject"] != "alice" || event["decision"] != "allowed" || event["stage"] != "forward" || event["client_address"] != "127.0.0.1" || event["code"] != nil {
+	if event["path"] != "/a/first" || event["subject"] != "alice" || event["decision"] != "allowed" || event["stage"] != "forward" || event["client_address"] != "127.0.0.1" || event["code"] != nil || event["upstream"] != "A" {
 		t.Errorf("event: %v", event)
 	}
 	if strings.Contains(body, token) || strings.Contains(body, "never-record-this") {
 		t.Fatal("credentials or query leaked")
 	}
-	for query, count := range map[string]int{"subject=alice": 1, "operation=read-a": 2, "decision=refused": 2, "limit=1": 1, "subject=nobody": 0} {
+	for query, count := range map[string]int{"subject=alice": 1, "operation=read-a": 2, "decision=refused": 2, "decision=allowed": 1, "decision=failed": 0, "decision=upstream_failed": 0, "limit=1": 1, "subject=nobody": 0} {
 		code, body, _ = e.As(admin, "GET", "/admin/events?"+query, "")
 		if code != 200 || json.Unmarshal([]byte(body), &page) != nil || len(page.Items) != count {
 			t.Errorf("%s: %d %s", query, code, body)
@@ -116,7 +116,7 @@ func TestFetchEventsAndTraffic(t *testing.T) {
 	if code != 200 || len(page.Items) != 2 {
 		t.Errorf("continuation: %d %s", code, body)
 	}
-	for _, query := range []string{"limit=0", "limit=101", "limit=1&limit=2", "decision=failed", "unknown=x", "after=bad", "bad%zz=x&limit=1"} {
+	for _, query := range []string{"limit=0", "limit=101", "limit=1&limit=2", "decision=bogus", "unknown=x", "after=bad", "bad%zz=x&limit=1"} {
 		if code, body, _ := e.As(admin, "GET", "/admin/events?"+query, ""); code != 400 {
 			t.Errorf("%s: %d %s", query, code, body)
 		}

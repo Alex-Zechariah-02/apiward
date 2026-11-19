@@ -3,6 +3,9 @@
 package pipeline
 
 import (
+	"crypto"
+	"crypto/rsa"
+	"crypto/sha256"
 	"encoding/base64"
 	"math"
 	"slices"
@@ -71,7 +74,8 @@ func (v *Verifier) verify(token string, now time.Time) (verifiedToken, string) {
 	if !isCompactToken(token) {
 		return verifiedToken{}, "malformed_credential"
 	}
-	header, _, _ := strings.Cut(token, ".")
+	header, rest, _ := strings.Cut(token, ".")
+	body, sealed, _ := strings.Cut(rest, ".")
 	kid, reason := checkHeader(header)
 	if reason != "" {
 		return verifiedToken{}, reason
@@ -80,12 +84,19 @@ func (v *Verifier) verify(token string, now time.Time) (verifiedToken, string) {
 	if key == nil {
 		return verifiedToken{}, "unknown_kid"
 	}
-	signed, err := jose.ParseSignedCompact(token, []jose.SignatureAlgorithm{jose.RS256})
+	payload, err := base64.RawURLEncoding.DecodeString(body)
 	if err != nil {
 		return verifiedToken{}, "malformed_credential"
 	}
-	payload, err := signed.Verify(key)
+	signature, err := base64.RawURLEncoding.DecodeString(sealed)
 	if err != nil {
+		return verifiedToken{}, "malformed_credential"
+	}
+	// RS256 is RSASSA-PKCS1-v1_5 with SHA-256 over the encoded header, a dot
+	// and the encoded payload (RFC 7515 section 5.2, RFC 7518 section 3.3);
+	// the header was checked to name exactly that algorithm.
+	digest := sha256.Sum256([]byte(token[:len(header)+1+len(body)]))
+	if rsa.VerifyPKCS1v15(key, crypto.SHA256, digest[:], signature) != nil {
 		return verifiedToken{}, "invalid_signature"
 	}
 	verified, reason := v.checkClaims(payload, now)

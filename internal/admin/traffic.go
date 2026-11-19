@@ -3,6 +3,7 @@
 package admin
 
 import (
+	"cmp"
 	"fmt"
 	"maps"
 	"net/http"
@@ -75,12 +76,12 @@ func (s *Server) handleTraffic(w http.ResponseWriter, r *http.Request, who calle
 	intervals := map[int64]*interval{}
 	current, previous := totals{}, totals{}
 	// The ring is newest first, so the latest refusal code of each account or
-	// address is the first one seen.
-	for _, entry := range s.observations.Recent(func(event *monitor.Observed) bool {
-		return !event.Time.Before(previousStart) && !event.Time.After(now)
-	}, 0) {
-		event := entry.RequestView
-		allowed := monitor.WasAllowed(event)
+	// address is the first one seen. The walk ends soon after previousStart.
+	s.observations.Walk(previousStart, func(event *monitor.Entry) bool {
+		if event.Time.Before(previousStart) || event.Time.After(now) {
+			return true
+		}
+		allowed := event.Allowed()
 		if event.Time.Before(start) {
 			previous.Total++
 			if allowed {
@@ -88,22 +89,19 @@ func (s *Server) handleTraffic(w http.ResponseWriter, r *http.Request, who calle
 			} else {
 				previous.Refused++
 			}
-			continue
+			return true
 		}
 		current.Total++
-		api := "unknown"
-		if event.API != nil {
-			api = *event.API
-		}
+		api := cmp.Or(event.API, "unknown")
 		if apis[api] == nil {
 			apis[api] = &monitor.TrafficGroup{API: api}
 		}
 		apis[api].Add(event)
-		if event.Operation != nil {
-			if operations[*event.Operation] == nil {
-				operations[*event.Operation] = &monitor.TrafficGroup{API: api, Operation: *event.Operation}
+		if event.Operation != "" {
+			if operations[event.Operation] == nil {
+				operations[event.Operation] = &monitor.TrafficGroup{API: api, Operation: event.Operation}
 			}
-			operations[*event.Operation].Add(event)
+			operations[event.Operation].Add(event)
 		}
 		at := event.Time.Unix()
 		if seconds[at] == nil {
@@ -118,27 +116,24 @@ func (s *Server) handleTraffic(w http.ResponseWriter, r *http.Request, who calle
 		if allowed {
 			current.Allowed++
 			seconds[at].Allowed++
-			continue
+			return true
 		}
 		current.Refused++
 		seconds[at].Refused++
-		if event.Code != nil {
-			reasons[*event.Code]++
+		if event.Code != "" {
+			reasons[event.Code]++
 		}
 		kind, id := "address", event.ClientAddress
-		if event.Subject != nil {
-			kind, id = "account", *event.Subject
+		if event.Subject != "" {
+			kind, id = "account", event.Subject
 		}
 		key := kind + " " + id
 		if refusers[key] == nil {
-			code := ""
-			if event.Code != nil {
-				code = *event.Code
-			}
-			refusers[key] = &refusedBy{Kind: kind, ID: id, LatestCode: code}
+			refusers[key] = &refusedBy{Kind: kind, ID: id, LatestCode: event.Code}
 		}
 		refusers[key].Refused++
-	}
+		return true
+	})
 	byAPI := []monitor.TrafficGroup{}
 	for _, name := range slices.Sorted(maps.Keys(apis)) {
 		byAPI = append(byAPI, apis[name].Settle())
@@ -169,9 +164,16 @@ func (s *Server) handleTraffic(w http.ResponseWriter, r *http.Request, who calle
 	}
 	// A comparison needs the whole previous window: when the ring has dropped
 	// requests from inside it, the count would be too low, so none is given.
+	// The current window is answered from what the ring holds, and says from
+	// when it is complete, so a chart can show the seconds before as unknown.
 	var earlier *totals
-	if oldest, dropped := s.observations.RetainedSince(); !dropped || !oldest.After(previousStart) {
+	oldest, dropped := s.observations.RetainedSince()
+	if !dropped || !oldest.After(previousStart) {
 		earlier = &previous
+	}
+	covers, complete := start, !dropped || !oldest.After(start)
+	if !complete {
+		covers = oldest.UTC()
 	}
 	pipeline.WriteJSON(w, http.StatusOK, struct {
 		Window      int                    `json:"window_seconds"`
@@ -185,5 +187,7 @@ func (s *Server) handleTraffic(w http.ResponseWriter, r *http.Request, who calle
 		TopRefused  []refusedBy            `json:"top_refused"`
 		Previous    *totals                `json:"previous"`
 		Latency     []interval             `json:"latency"`
-	}{window, current.Total, current.Allowed, current.Refused, byAPI, refusalReasons, perSecond, byOperation, topRefused, earlier, latency})
+		CoversFrom  time.Time              `json:"covers_from"`
+		Complete    bool                   `json:"complete"`
+	}{window, current.Total, current.Allowed, current.Refused, byAPI, refusalReasons, perSecond, byOperation, topRefused, earlier, latency, covers, complete})
 }

@@ -22,12 +22,12 @@ var issuer = issuertest.New(2048)
 
 // env is one disposable deployment directory.
 type env struct {
-	t        *testing.T
+	t        testing.TB
 	dir      string
 	database string
 }
 
-func newEnv(t *testing.T) *env {
+func newEnv(t testing.TB) *env {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "issuer.pem"), issuer.PublicPEM(), 0o600); err != nil {
 		t.Fatal(err)

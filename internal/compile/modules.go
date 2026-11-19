@@ -20,11 +20,21 @@ type ModuleCheck struct {
 // order; none for a module not configured for the operation.
 func (r *Rule) Checks(phase module.Phase) []ModuleCheck { return r.checks[phase] }
 
-// compileModules compiles the settings of every module other than the
-// built-ins for operation i. Ingress modules take no settings, so a member
-// for one is unknown.
-func compileModules(op policy.Operation, i int, r *Rule) error {
-	for _, c := range module.Extensions() {
+// hasChecks reports whether any module checks the rule's requests.
+func (r *Rule) hasChecks() bool {
+	for _, checks := range r.checks {
+		if len(checks) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// compileModules compiles for operation i the settings of extensions, the
+// modules other than the built-ins. Ingress modules take no settings, so a
+// member for one is unknown.
+func compileModules(op policy.Operation, i int, r *Rule, extensions []module.Control) error {
+	for _, c := range extensions {
 		info := c.Info()
 		raw, present := op.Modules[info.ID]
 		if info.Phase == module.Ingress {

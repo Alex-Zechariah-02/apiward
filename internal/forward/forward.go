@@ -16,13 +16,8 @@ import (
 	"net/http"
 	"net/http/httptrace"
 	"net/http/httputil"
-	"net/url"
-	"strconv"
 	"sync"
-	"sync/atomic"
 	"time"
-
-	"github.com/Alex-Zechariah-02/apiward/internal/compile"
 )
 
 // UpstreamTimeouts bounds the phases of one exchange with an upstream.
@@ -66,6 +61,7 @@ type upstreamProxy struct {
 	errorLog  *log.Logger
 	buffers   copyBuffers
 	ejector   *ejector
+	proxy     *httputil.ReverseProxy // shared by every exchange
 }
 
 // copySize is the buffer the reverse proxy copies a response body through:
@@ -139,8 +135,9 @@ func NewUpstreamProxy(timeouts UpstreamTimeouts, pool PoolSettings, network func
 		Protocols:              protocols,
 	}
 	if pool.MaxIdle > 0 {
-		p.pool = newConnPool(pool, p.transport, network)
+		p.pool = newConnPool(pool, p.transport, network, p.connected)
 	}
+	p.proxy = p.newReverseProxy()
 	return p, nil
 }
 
@@ -148,6 +145,14 @@ func NewUpstreamProxy(timeouts UpstreamTimeouts, pool PoolSettings, network func
 // a longer one fails the exchange. Envoy's default for HTTP/1 response
 // headers is 80 KiB, NGINX's proxy_buffer_size 4 or 8 KiB.
 const MaxResponseHeaderBytes = 64 << 10
+
+// Stats returns the connection pool's figures; zero without a pool.
+func (p *upstreamProxy) Stats() Stats {
+	if p.pool == nil {
+		return Stats{}
+	}
+	return p.pool.stats()
+}
 
 // Close closes the idle pooled connections; a request still in progress
 // keeps its connection until it ends.
@@ -165,108 +170,61 @@ func (p *upstreamProxy) roundTripper() http.RoundTripper {
 	return p.transport
 }
 
-// forward sends an admitted request to the upstream bound to it and copies
+// Forward sends an admitted request to the upstream bound to it and copies
 // the response to w; it is the enforcement handler's forwarder. The
-// destination is the binding alone, and a request without a usable binding is
-// sent nowhere. A failure before any response is returned for the handler to
-// answer; a response that fails after it started is aborted by the reverse
-// proxy with http.ErrAbortHandler, which it panics with only under a net/http
-// server, so the handler must be served by one.
+// destination is the binding alone, and a request without a usable binding
+// is sent nowhere. A failure before any response is returned for the handler
+// to answer; a response that fails after it started is aborted by the
+// reverse proxy with http.ErrAbortHandler, which it panics with only under a
+// net/http server, so the handler must be served by one.
 func (p *upstreamProxy) Forward(w http.ResponseWriter, r *http.Request) error {
-	d, bound := Bound(r.Context())
-	if !bound || d.Endpoint() == nil || !compile.IsCanonical(d.Path()) {
+	b := bindingOf(r.Context())
+	if b == nil || b.destination.Endpoint() == nil {
 		return fmt.Errorf("%w: %w", ErrNoUpstream, errNotSent)
 	}
-	address := d.Endpoint().Address()
+	address := b.destination.Endpoint().Address()
 	if !p.ejector.admit(address, time.Now()) {
 		return fmt.Errorf("%w: %w", errEjected, errNotSent)
 	}
-
 	// The exchange ends when the client goes away, through its request's
 	// context, or when the response body stalls.
 	ctx, cancel := context.WithCancelCause(r.Context())
 	defer cancel(nil)
-	var connected atomic.Bool
-	ctx = httptrace.WithClientTrace(ctx, &httptrace.ClientTrace{
-		GotConn: func(httptrace.GotConnInfo) { connected.Store(true) },
-	})
-	// Deferred, so a response aborted after it started still counts.
-	defer func() { p.ejector.settle(address, connected.Load(), r.Context().Err() != nil) }()
-
-	var failure error
-	proxy := &httputil.ReverseProxy{
-		Rewrite:    func(pr *httputil.ProxyRequest) { rewriteToUpstream(pr, d.Endpoint(), d.Path()) },
-		Transport:  p.roundTripper(),
-		ErrorLog:   p.errorLog,
-		BufferPool: &p.buffers,
-		// A response with a declared length is otherwise held in the server's
-		// buffer, headers included, until it ends; flushing every 100 ms
-		// (Traefik's default) passes a slow response on as it arrives. Event
-		// streams and bodies without a length are flushed at once regardless.
-		FlushInterval: 100 * time.Millisecond,
-		ModifyResponse: func(res *http.Response) error {
-			// Every protocol switch is refused at ingress, so an upstream that
-			// switches anyway is not followed into a tunnel. The proxy closes
-			// the response, and with it the connection.
-			if res.StatusCode == http.StatusSwitchingProtocols {
-				return errProtocolSwitched
-			}
-			// Only the gateway assigns the response's correlation reference.
-			res.Header.Del("X-Request-Id")
-			res.Header.Add("Via", via(res.ProtoMajor, res.ProtoMinor))
-			res.Body = newIdleBody(res.Body, p.readIdle, func() { cancel(ErrResponseStalled) })
-			return nil
-		},
-		// The enforcement handler answers the client; only the cause is kept.
-		ErrorHandler: func(_ http.ResponseWriter, _ *http.Request, err error) { failure = err },
+	b.cancel = cancel
+	if p.pool == nil {
+		// Only the pool reports its connection itself.
+		ctx = httptrace.WithClientTrace(ctx, &httptrace.ClientTrace{GotConn: func(httptrace.GotConnInfo) { p.connected(b) }})
 	}
-	proxy.ServeHTTP(w, r.WithContext(ctx))
-	if failure == nil {
+	defer func() { // a request that never connected, however it ends
+		if !b.connected.Load() {
+			p.ejector.settle(address, r.Context().Err() != nil)
+		}
+	}()
+	p.proxy.ServeHTTP(w, r.WithContext(ctx))
+	if b.failure == nil {
 		return nil
 	}
-	return ExchangeFailure(failure, connected.Load(), r.Context().Err() != nil)
+	return ExchangeFailure(b.failure, b.connected.Load(), r.Context().Err() != nil)
 }
 
-// rewriteToUpstream addresses the outbound request to the endpoint with the
-// bound path and sets the gateway's forwarding metadata. The reverse proxy calls it
-// after removing the hop-by-hop fields, including every field the client
-// named in Connection, and the client's Forwarded and X-Forwarded-* fields,
-// so the client can neither remove nor supply anything set here.
-func rewriteToUpstream(pr *httputil.ProxyRequest, e *compile.Endpoint, path string) {
-	in := pr.In.URL
-	// The client's target as admitted: the query unparsed, unparsable
-	// parameters included, and the path in its received encoding unless the
-	// API's forward rule rewrote it. The gateway does not interpret the
-	// query, so it cannot read it differently from the upstream. The outbound
-	// request keeps the inbound Host unless the upstream asks for its own;
-	// either reaches the upstream but never chooses it.
-	rawPath := in.RawPath
-	if path != in.Path {
-		rawPath = "" // the rewritten path is canonical, so its encoding is unambiguous
+// connected records that b's exchange holds a connection: a probe of an
+// ejected endpoint settles at once, not when its exchange ends.
+func (p *upstreamProxy) connected(b *binding) {
+	if b.connected.CompareAndSwap(false, true) {
+		p.ejector.result(b.destination.Endpoint().Address(), true, time.Now())
 	}
-	pr.Out.URL = &url.URL{
-		Scheme:     e.Scheme(),
-		Host:       e.Address(),
-		Path:       path,
-		RawPath:    rawPath,
-		RawQuery:   in.RawQuery,
-		ForceQuery: in.ForceQuery,
-	}
-	if e.Host() != "" {
-		pr.Out.Host = e.Host()
-	}
-	// The direct peer's address, the inbound Host and the inbound protocol.
-	pr.SetXForwarded()
-	pr.Out.Header.Add("Via", via(pr.In.ProtoMajor, pr.In.ProtoMinor))
 }
 
-// via is the Via entry for a message of the given protocol version: HTTP/2
-// and later have no minor version (RFC 9110 section 7.6.3).
-func via(major, minor int) string {
-	if major >= 2 {
-		return strconv.Itoa(major) + " gateway"
+// RoundTrip sends the outbound request through the pool or the transport and
+// notes how long the upstream took to answer with its headers.
+func (p *upstreamProxy) RoundTrip(req *http.Request) (*http.Response, error) {
+	b := bindingOf(req.Context())
+	start := time.Now()
+	res, err := p.roundTripper().RoundTrip(req)
+	if err == nil && b != nil {
+		b.upstream = time.Since(start)
 	}
-	return strconv.Itoa(major) + "." + strconv.Itoa(minor) + " gateway"
+	return res, err
 }
 
 // idleBody is an upstream response body each of whose reads may wait at most

@@ -38,11 +38,11 @@ func TestAdminLimits(t *testing.T) {
 		Used int64 `json:"used"`
 		Max  int64 `json:"max"`
 	}
-	if err := json.Unmarshal([]byte(body), &limits); err != nil || len(limits) != 8 {
+	if err := json.Unmarshal([]byte(body), &limits); err != nil || len(limits) != 10 {
 		t.Fatalf("limits body: %s (%v)", body, err)
 	}
 	want := map[string]int64{
-		"temporary_rules": store.MaxActiveOverrides, "live_views": monitor.MaxStreams, "administrator_sessions": session.Max,
+		"temporary_rules": store.MaxActiveOverrides, "blocked_accounts": store.MaxBlockedAccounts, "blocked_addresses": store.MaxBlockedAddresses, "live_views": monitor.MaxStreams, "administrator_sessions": session.Max,
 		"rate_counters": 1000, "recent_requests": 500, "policy_bytes": policy.DefaultPolicyBytes,
 	}
 	if got := limits["policy_bytes"].Used; got < 1 || got > policy.DefaultPolicyBytes {

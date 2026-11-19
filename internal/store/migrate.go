@@ -59,7 +59,8 @@ func migratable(db *sql.DB) (int, error) {
 }
 
 // Migrate applies the migrations from version to the current one in a single
-// transaction with the operator transition, then checks the result. A
+// transaction with the operator transition, then checks the result. The
+// migrated schema is compared with the current one before the commit. A
 // database whose migrated content fails the integrity or foreign key check is
 // left at its earlier version: the checks run before the commit, so damaged
 // rows are refused rather than carried into the new version.
@@ -70,6 +71,9 @@ func (s *DB) Migrate(ctx context.Context, from int, t TransitionRecord, now time
 	}
 	defer tx.Rollback()
 	if err := ApplyMigrations(ctx, tx, from, DatabaseVersion); err != nil {
+		return err
+	}
+	if err := checkSchema(ctx, tx, DatabaseVersion); err != nil {
 		return err
 	}
 	var check string

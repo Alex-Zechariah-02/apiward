@@ -94,6 +94,7 @@ func TestRoleSwapsUnderLoad(t *testing.T) {
 	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.ProtectedPolicy(), gatewaytest.SeedOptions{})
+	e.Interruptible = true // the ingress summary is read after a graceful stop
 	e.Start(gatewaytest.Binaries.Fault)
 	bobToken := gatewaytest.Issuer.TokenFor(t, "bob")
 
@@ -172,10 +173,9 @@ func TestRoleSwapsUnderLoad(t *testing.T) {
 		}
 		forwarded++
 	}
-	events := e.EventsWhen(func(events []map[string]any) bool {
-		return gatewaytest.CountKind(events, "request.forwarded")+gatewaytest.CountKind(events, "request.rejected") >= workers*swaps
-	})
-	refused := 0
+	e.Shutdown() // refusals over the per-address budget are counted in the stop's summary
+	events := e.AuditEvents()
+	refused := gatewaytest.SummaryRefusals(events)
 	for _, ev := range events {
 		if ev["kind"] != "request.rejected" {
 			continue

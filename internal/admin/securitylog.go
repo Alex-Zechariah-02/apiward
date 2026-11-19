@@ -3,7 +3,6 @@
 package admin
 
 import (
-	"context"
 	"errors"
 	"net/http"
 	"net/url"
@@ -16,15 +15,19 @@ import (
 
 // maxLogScans is how many security log scans run at once. Each reads up to
 // monitor.ExportScan bytes from the disk the log's writer syncs to; parallel
-// scans measured beside traffic doubled request p99, so they queue.
+// scans measured beside traffic doubled request p99, so one runs at a time.
 const maxLogScans = 1
 
-// scanLog waits for a security log scan slot; false when ctx ended first.
-func (s *Server) scanLog(ctx context.Context) bool {
+// scanLog takes the security log scan slot, or answers 503 busy with
+// Retry-After at once, as password hashing does: a waiting scan would hold
+// a goroutine and a connection with no sign to its client.
+func (s *Server) scanLog(w http.ResponseWriter) bool {
 	select {
 	case s.scans <- struct{}{}:
 		return true
-	case <-ctx.Done():
+	default:
+		w.Header().Set("Retry-After", "1")
+		adminError(w, http.StatusServiceUnavailable, "busy", "")
 		return false
 	}
 }
@@ -38,6 +41,11 @@ func (s *Server) handleSecurityLog(w http.ResponseWriter, r *http.Request, who c
 	// URL.Query would drop a malformed pair and answer unfiltered rows.
 	values, err := url.ParseQuery(r.URL.RawQuery)
 	if err != nil {
+		adminError(w, http.StatusBadRequest, "bad_request", "query")
+		return
+	}
+	// An unknown or repeated name would be ignored and answer unfiltered rows.
+	if !knownQuery(values, "ref", "subject", "operation", "decision", "from", "to", "format", "limit", "after") {
 		adminError(w, http.StatusBadRequest, "bad_request", "query")
 		return
 	}
@@ -71,7 +79,7 @@ func (s *Server) handleSecurityLog(w http.ResponseWriter, r *http.Request, who c
 			return
 		}
 	}
-	if !s.scanLog(r.Context()) {
+	if !s.scanLog(w) {
 		return
 	}
 	defer s.scanDone()

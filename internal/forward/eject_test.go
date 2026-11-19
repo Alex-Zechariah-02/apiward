@@ -68,7 +68,7 @@ func TestEjectionDoublesAndProbesOnce(t *testing.T) {
 	if e.admit("a", probe.Add(1999*time.Millisecond)) || !e.admit("a", probe.Add(2*time.Second)) {
 		t.Fatal("a failed probe must eject for twice as long")
 	}
-	e.settle("a", false, true) // the probe's client went away
+	e.settle("a", true) // the probe's client went away
 	if !e.admit("a", probe.Add(2*time.Second)) {
 		t.Fatal("a probe whose client left must pass its turn on")
 	}

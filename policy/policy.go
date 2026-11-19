@@ -46,6 +46,30 @@ const (
 	ProfileCore         = document.ProfileCore
 )
 
+// The vocabulary of an operation's access and auth and a rate rule's
+// algorithm and key. The types name the values a field takes; they are
+// strings, so the JSON form is unchanged and a field accepts the constants
+// directly.
+type (
+	Access    = string
+	Auth      = string
+	Algorithm = string
+	RateKey   = string
+)
+
+const (
+	AccessAllow Access = "allow" // the operation may be called
+	AccessDeny  Access = "deny"  // the operation is refused for everyone
+
+	AuthRequired Auth = "required" // a verified token is needed
+	AuthNone     Auth = "none"     // public: no token is read
+
+	SlidingWindow Algorithm = compile.RateAlgorithm // the only rate algorithm
+
+	KeySubject       RateKey = compile.RateKeySubject // count per verified subject
+	KeyClientAddress RateKey = compile.RateKeyAddress // count per client address
+)
+
 // Decode strictly decodes a policy document: unknown, repeated or
 // non-lower-case members, anything after the document and a document larger
 // than the gateway's default limit are refused with a *PolicyError. It checks

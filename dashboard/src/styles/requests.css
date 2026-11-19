@@ -41,7 +41,8 @@
   color: var(--refused);
 }
 
-.dp-label-failed {
+.dp-label-failed,
+.dp-label-upstream_failed {
   color: var(--unknown);
 }
 
@@ -67,7 +68,8 @@
   color: var(--refused);
 }
 
-.outcome-failed {
+.outcome-failed,
+.outcome-upstream_failed {
   color: var(--unknown);
 }
 

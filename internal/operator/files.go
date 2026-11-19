@@ -10,23 +10,25 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"runtime"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/store"
 )
 
 // checkDatabaseFile opens a snapshot with the gateway's settings in rollback
-// journal mode, so it is a single self-contained file, and runs the full
-// integrity check and the schema checks.
-func checkDatabaseFile(path string) error {
+// journal mode, so it is a single self-contained file, and runs the schema
+// checks, which include SQLite's quick check; full adds the integrity check,
+// which also compares every index with its table.
+func checkDatabaseFile(path string, full bool) error {
 	db, err := store.Connect(path, "DELETE")
 	if err != nil {
 		return err
 	}
 	defer db.Close()
 	var check string
-	if err := db.QueryRow("PRAGMA integrity_check").Scan(&check); err != nil || check != "ok" {
-		return fmt.Errorf("integrity check failed: %v %s", err, check)
+	if full {
+		if err := db.QueryRow("PRAGMA integrity_check").Scan(&check); err != nil || check != "ok" {
+			return fmt.Errorf("integrity check failed: %v %s", err, check)
+		}
 	}
 	return store.Verify(db)
 }
@@ -91,20 +93,6 @@ func readBounded(path string, limit int64) ([]byte, error) {
 		return nil, fmt.Errorf("%s is larger than %d bytes", path, limit)
 	}
 	return data, nil
-}
-
-// syncDir makes new names in dir durable: on Linux a new directory entry
-// survives a power cut only once the directory is synced (fsync(2)).
-// Windows cannot flush a directory handle; NTFS journals its entries.
-func syncDir(dir string) error {
-	if runtime.GOOS == "windows" {
-		return nil
-	}
-	handle, err := os.Open(dir)
-	if err != nil {
-		return err
-	}
-	return errors.Join(handle.Sync(), handle.Close())
 }
 
 // writeNewFile writes value as JSON to a file that must not exist yet.

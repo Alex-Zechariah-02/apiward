@@ -16,9 +16,9 @@ type apiRule struct {
 	forward   *rewrite      // nil: the inbound path is forwarded unchanged
 	cors      *CORS         // nil: no browser access
 	response  *ResponseRule // nil: responses unchanged
-	addresses []netip.Prefix
+	addresses ranges
 	limited   bool      // addresses applies; false admits every client address
-	preflight *RateRule // the first public operation's rate rule, if any
+	preflight *RateRule // the strictest public operation's rate rule, if any
 }
 
 // compileAPIs checks the policy's APIs against the upstream inventory and
@@ -46,9 +46,11 @@ func compileAPIs(p policy.Policy, endpoints map[string]*Endpoint) (map[string]*a
 		if api.response, err = compileResponse(a.ResponseHeaders, i); err != nil {
 			return nil, err
 		}
-		if api.addresses, err = compileAddresses(a.AllowAddresses, i); err != nil {
+		prefixes, err := compileAddresses(a.AllowAddresses, i)
+		if err != nil {
 			return nil, err
 		}
+		api.addresses = newRanges(prefixes)
 		apis[a.ID] = api
 	}
 	return apis, nil
@@ -80,21 +82,22 @@ func compileAddresses(ranges []string, i int) ([]netip.Prefix, error) {
 // checkAPIs applies the rules that depend on an API's operations: every CORS
 // method is a method of one of them, and origins ["*"] is allowed only
 // without credentials on an API whose operations are all public. It also
-// picks each API's preflight rate rule: the first public operation's.
+// picks each API's preflight rate rule: the strictest of its public
+// operations' rules, so no public operation's quota is looser for a
+// preflight than for the request it announces.
 func checkAPIs(p policy.Policy, apis map[string]*apiRule, rules map[string]*Rule) error {
 	for i, a := range p.APIs {
 		api := apis[a.ID]
-		methods, public, chosen := map[string]bool{}, true, false
+		methods, public := map[string]bool{}, true
 		for _, op := range p.Operations {
 			if op.API != a.ID {
 				continue
 			}
 			methods[op.Method] = true
 			public = public && op.Auth == "none"
-			// The first public operation decides, also when it has no rate:
-			// a nil rule then means preflights are not counted.
-			if !chosen && op.Auth == "none" {
-				api.preflight, chosen = rules[op.ID].rate, true
+			// No public operation with a rate rule: preflights are not counted.
+			if rate := rules[op.ID].rate; op.Auth == "none" && rate != nil && (api.preflight == nil || rate.stricter(api.preflight)) {
+				api.preflight = rate
 			}
 		}
 		if api.cors == nil {

@@ -79,6 +79,11 @@ func (c *Controller) finishControl(ctx context.Context, t store.TransitionRecord
 		c.logger.Error("recording control publication receipt", "error", err)
 	}
 	fault.CrashPoint("after-receipt")
+	// A gateway changed only by control changes commits no revision, so
+	// revision pruning alone would never bound its history.
+	if err := c.store.PruneControls(ctx, c.config.HistoryKeep); err != nil {
+		c.logger.Error("pruning control history", "error", err)
+	}
 	outcome, status := c.finish(ctx, Outcome{Transition: t.ID, Outcome: "committed"}, audit.Event{Kind: t.Kind, Transition: t.ID, Actor: t.Actor, Target: t.Target})
 	if status != http.StatusOK {
 		// The change is committed and in force; only its outcome event is
@@ -98,43 +103,50 @@ func (c *Controller) reloadKeys(ctx context.Context, t store.TransitionRecord) (
 	if c.config.ReloadCertificate != nil {
 		c.config.ReloadCertificate()
 	}
-	loaded, network, err := c.readKeys()
+	loaded, network, warnings, err := c.readKeys()
 	if err != nil {
 		c.logger.Warn("keys not reloaded", "error", err)
 		c.observations.KeyReloadFailed()
 		return c.rejectControl(ctx, t, "KEYS_INVALID", now)
 	}
+	for _, warning := range warnings {
+		c.logger.Warn("keys reloaded with settings left for a restart", "warning", warning)
+	}
 	return c.finishControl(ctx, t, struct {
-		Items []pipeline.KeyInfo `json:"items"`
-	}{loaded.Keys()}, nil, func() {
+		Items    []pipeline.KeyInfo `json:"items"`
+		Warnings []string           `json:"warnings,omitempty"`
+	}{loaded.Keys(), warnings}, nil, func() {
 		loaded.AdoptUses(c.verifier.Load())
 		c.verifier.Store(loaded)
 		c.network.Store(network)
+		if c.config.Reloaded != nil {
+			c.audit.Record(c.config.Reloaded())
+		}
 	}, now)
 }
 
 // readKeys reads the trust and upstream network settings again and checks
 // that they may replace the running ones: the issuer and audience unchanged,
 // and every upstream the served generation uses still reachable.
-func (c *Controller) readKeys() (*pipeline.Verifier, *forward.Network, error) {
+func (c *Controller) readKeys() (*pipeline.Verifier, *forward.Network, []string, error) {
 	if c.config.ReloadKeys == nil {
-		return nil, nil, errors.New("this gateway has no settings file to reload")
+		return nil, nil, nil, errors.New("this gateway has no settings file to reload")
 	}
-	trust, network, err := c.config.ReloadKeys()
+	trust, network, warnings, err := c.config.ReloadKeys()
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	if g := c.current.Load(); g != nil {
 		if err := g.CheckNetwork(network); err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 	}
 	current := c.verifier.Load()
 	if trust.Issuer != current.Issuer() || trust.Audience != current.Audience() {
-		return nil, nil, errors.New("the issuer and audience take effect only at a restart")
+		return nil, nil, nil, errors.New("the issuer and audience take effect only at a restart")
 	}
 	loaded, err := pipeline.LoadVerifier(trust)
-	return loaded, network, err
+	return loaded, network, warnings, err
 }
 
 func (c *Controller) changeBlock(ctx context.Context, t store.TransitionRecord, reason string) (json.RawMessage, int) {
@@ -153,28 +165,23 @@ func (c *Controller) changeBlock(ctx context.Context, t store.TransitionRecord, 
 	var result any
 	var change func(*sql.Tx) error
 	if t.Kind == "account.block" {
+		if !found && len(next) >= store.MaxBlockedAccounts {
+			return c.rejectControl(ctx, t, "LIMIT_EXCEEDED", now)
+		}
 		entry := store.BlockedAccount{Subject: t.Target, Reason: reason, BlockedBy: t.Actor, BlockedAt: now}
 		if found && previous.Reason == reason {
 			entry = previous
 		}
 		next[t.Target] = entry
 		result = entry
-		change = func(tx *sql.Tx) error {
-			_, err := tx.ExecContext(ctx, `INSERT INTO blocked_account (subject, reason, blocked_by, blocked_at) VALUES (?, ?, ?, ?)
-				ON CONFLICT(subject) DO UPDATE SET reason=excluded.reason, blocked_by=excluded.blocked_by, blocked_at=excluded.blocked_at`,
-				entry.Subject, entry.Reason, entry.BlockedBy, entry.BlockedAt.UnixMilli())
-			return err
-		}
+		change = func(tx *sql.Tx) error { return store.SaveBlockedAccount(ctx, tx, entry) }
 	} else {
 		if !found {
 			return c.rejectControl(ctx, t, "NOT_FOUND", now)
 		}
 		delete(next, t.Target)
 		result = map[string]any{"subject": t.Target, "unblocked": true}
-		change = func(tx *sql.Tx) error {
-			_, err := tx.ExecContext(ctx, `DELETE FROM blocked_account WHERE subject = ?`, t.Target)
-			return err
-		}
+		change = func(tx *sql.Tx) error { return store.DeleteBlockedAccount(ctx, tx, t.Target) }
 	}
 	return c.finishControl(ctx, t, result, change, func() { c.blocked.Store(&next) }, now)
 }
@@ -217,7 +224,7 @@ func (c *Controller) changeAddress(ctx context.Context, t store.TransitionRecord
 		result = map[string]any{"range": entry.Range, "unblocked": true}
 		change = func(tx *sql.Tx) error { return store.DeleteBlockedAddress(ctx, tx, entry.Range, now) }
 	}
-	return c.finishControl(ctx, t, result, change, func() { c.addresses.Store(&next) }, now)
+	return c.finishControl(ctx, t, result, change, func() { c.publishAddresses(next) }, now)
 }
 
 // expiry is an entry's expiry as a comparable list: empty when it has none.

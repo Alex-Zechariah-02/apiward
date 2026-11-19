@@ -21,9 +21,6 @@ const (
 	maxQuestionValue   = 256
 )
 
-// questionMethods are the methods a question may ask about.
-var questionMethods = []string{"GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"}
-
 // Question is a checked request description. Only NewQuestion makes one,
 // so every question has passed the request handler's own input checks.
 type Question struct {
@@ -37,7 +34,7 @@ type Question struct {
 // form the handler accepts, the roles standing for a verified token's, and
 // the host and headers conditions select by. field names the refused input.
 func NewQuestion(method, path, host string, headers map[string]string, roles []string) (q Question, field string) {
-	if !slices.Contains(questionMethods, method) {
+	if !policy.IsMethod(method) {
 		return q, "method"
 	}
 	canonical, ok := checkedPath(path)
@@ -104,14 +101,16 @@ func (g *Generation) Decide(q Question, blocked func() bool) Answer {
 		answer.Check, answer.Code = check, code
 		return answer
 	}
-	target, rule := g.Match(q.path, q.method, q.inbound)
-	if target == nil {
-		return refuse("route", "not_found")
-	}
-	if rule == nil {
-		return refuse("route", "method_not_allowed")
+	_, rule, code := g.Route(q.path, q.method, q.inbound)
+	if code != "" {
+		return refuse("route", code)
 	}
 	answer.Operation, answer.API, answer.Public = rule.Operation(), rule.API(), rule.Public()
+	// Module checks run only on a real request.
+	modules := rule.hasChecks()
+	if modules {
+		answer.NotChecked = append(answer.NotChecked, "modules")
+	}
 	if !rule.Permitted() {
 		return refuse("access", "forbidden")
 	}
@@ -119,12 +118,15 @@ func (g *Generation) Decide(q Question, blocked func() bool) Answer {
 		// A real request also needs a valid token from the trusted issuer;
 		// the roles asked about stand for its verified roles.
 		answer.NotChecked = []string{"address", "token", "rate", "body"}
-		roles, ignored, reason := g.Authorise(q.roles, rule)
-		answer.Roles, answer.Ignored = nonNil(roles), nonNil(ignored)
-		if blocked() {
-			return refuse("blocked", "account_blocked")
+		if modules {
+			answer.NotChecked = append(answer.NotChecked, "modules")
 		}
-		if reason != "" {
+		roles, ignored, reason := g.Admit(q.roles, rule, blocked)
+		answer.Roles, answer.Ignored = nonNil(roles), nonNil(ignored)
+		switch reason {
+		case "account_blocked":
+			return refuse("blocked", reason)
+		case "no_permit":
 			return refuse("role", "forbidden")
 		}
 	}
@@ -134,6 +136,34 @@ func (g *Generation) Decide(q Question, blocked func() bool) Answer {
 	}
 	answer.Allowed, answer.Forwarded = true, destination.Path()
 	return answer
+}
+
+// Route is the request order's routing decision: code is "not_found" when
+// no target matches the path, "method_not_allowed" when the target has no
+// operation for the method (t is then set, for its Allow header), and empty
+// when rule is selected.
+func (g *Generation) Route(path, method string, in Inbound) (t *target, rule *Rule, code string) {
+	t, rule = g.Match(path, method, in)
+	switch {
+	case t == nil:
+		return nil, nil, "not_found"
+	case rule == nil:
+		return t, nil, "method_not_allowed"
+	}
+	return t, rule, ""
+}
+
+// Admit is the request order's permission decision for an operation that
+// is not public: asserted roles are kept only when declared, then a blocked
+// account is refused before a missing permit. blocked reports whether the
+// account is on the blocked list. reason is empty when admitted, else
+// "account_blocked" or "no_permit".
+func (g *Generation) Admit(asserted []string, rule *Rule, blocked func() bool) (roles, ignored []string, reason string) {
+	roles, ignored, reason = g.Authorise(asserted, rule)
+	if blocked() {
+		return roles, ignored, "account_blocked"
+	}
+	return roles, ignored, reason
 }
 
 func nonNil(values []string) []string {

@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/audit"
-	"github.com/Alex-Zechariah-02/apiward/internal/compile"
 	"github.com/Alex-Zechariah-02/apiward/internal/store"
 )
 
@@ -72,6 +71,7 @@ func (c *Controller) BeginStop() {
 	if c.timer != nil {
 		c.timer.Stop()
 	}
+	c.stopRetry()
 }
 
 func (c *Controller) shutdown(ctx context.Context) error {
@@ -126,7 +126,7 @@ func (c *Controller) Admission() string {
 	switch {
 	case g == nil:
 		return "unavailable"
-	case g.Expired(compile.TrustedNow()):
+	case g.Lapsed():
 		return "generation_expired"
 	case c.audit.Failed():
 		return "audit_failed"
@@ -137,11 +137,13 @@ func (c *Controller) Admission() string {
 // unavailable withdraws the published generation. code, a fixed word, becomes
 // the state the Admin API reports; detail, which may hold driver text, goes
 // only to the log and the security record.
+// A state a later read can clear is retried (scheduleRetry).
 func (c *Controller) unavailable(code, detail string) {
 	c.current.Store(nil)
 	c.state.Store(code)
 	c.logger.Error("protected admission unavailable", "reason", code, "detail", detail)
 	c.audit.Record(audit.Event{Kind: "controller.unavailable", Reason: code, Error: detail})
+	c.scheduleRetry(code)
 }
 
 // ready reports whether mutations can be processed: the database is open and

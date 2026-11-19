@@ -31,8 +31,14 @@ func ValidBlockReason(reason string) bool {
 	return utf8.ValidString(reason) && count >= 1 && count <= 200
 }
 
+// MaxBlockedAccounts bounds the published list, which is copied at every
+// change and kept in memory; blocking more accounts is refused.
+const MaxBlockedAccounts = 10000
+
+// BlockedAccounts reads the list. One row past the bound is read, so an
+// oversized table is refused without being read whole.
 func (s *DB) BlockedAccounts(ctx context.Context) (BlockedAccounts, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT subject, reason, blocked_by, blocked_at FROM blocked_account`)
+	rows, err := s.db.QueryContext(ctx, `SELECT subject, reason, blocked_by, blocked_at FROM blocked_account LIMIT ?`, MaxBlockedAccounts+1)
 	if err != nil {
 		return nil, err
 	}
@@ -50,7 +56,27 @@ func (s *DB) BlockedAccounts(ctx context.Context) (BlockedAccounts, error) {
 		entry.BlockedAt = time.UnixMilli(at).UTC()
 		result[entry.Subject] = entry
 	}
-	return result, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if len(result) > MaxBlockedAccounts {
+		return nil, errors.New("too many blocked accounts")
+	}
+	return result, nil
+}
+
+// SaveBlockedAccount writes or replaces one blocked account in tx.
+func SaveBlockedAccount(ctx context.Context, tx *sql.Tx, entry BlockedAccount) error {
+	_, err := tx.ExecContext(ctx, `INSERT INTO blocked_account (subject, reason, blocked_by, blocked_at) VALUES (?, ?, ?, ?)
+		ON CONFLICT(subject) DO UPDATE SET reason=excluded.reason, blocked_by=excluded.blocked_by, blocked_at=excluded.blocked_at`,
+		entry.Subject, entry.Reason, entry.BlockedBy, entry.BlockedAt.UnixMilli())
+	return err
+}
+
+// DeleteBlockedAccount removes one blocked account in tx.
+func DeleteBlockedAccount(ctx context.Context, tx *sql.Tx, subject string) error {
+	_, err := tx.ExecContext(ctx, `DELETE FROM blocked_account WHERE subject = ?`, subject)
+	return err
 }
 
 // CommitControl keeps the state change, transition and exact replay response in

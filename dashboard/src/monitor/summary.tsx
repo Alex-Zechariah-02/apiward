@@ -22,6 +22,10 @@ export interface Traffic {
   top_refused?: { kind: 'account' | 'address'; id: string; refused: number; latest_code: string }[]
   previous?: { total: number; allowed: number; refused: number } | null
   latency?: { at: string; count: number; p50_ms: number; p95_ms: number }[]
+  // The window is complete from covers_from; before it the gateway no
+  // longer holds every request (complete false).
+  covers_from?: string
+  complete?: boolean
 }
 
 // Change states a figure against the window before, in words and an arrow,

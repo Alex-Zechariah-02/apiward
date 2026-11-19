@@ -35,11 +35,19 @@ func (a *AuditLog) persist(data []byte) error {
 // whose record writes change no size, else fsync (FlushFileBuffers on
 // Windows), as an append needs.
 func (a *AuditLog) sync(file *os.File) error {
+	sync := file.Sync
 	if a.prefill {
-		return syncData(file)
+		sync = func() error { return syncData(file) }
 	}
-	return file.Sync()
+	if err := sync(); err != nil {
+		return syncError{err}
+	}
+	return nil
 }
+
+// zeros is written in place of new zero buffers at every fill step; it is
+// never written to, so its pages stay the shared zero page until read.
+var zeros [fillStep]byte
 
 // reserve zero-fills the file up to the fillStep boundary past need, but not
 // past the file size limit unless need is, and syncs the zeros, so the
@@ -49,8 +57,12 @@ func (a *AuditLog) reserve(need int64) error {
 		return nil
 	}
 	target := min((need+fillStep-1)/fillStep*fillStep, max(a.maxBytes, need))
-	if _, err := a.file.WriteAt(make([]byte, target-a.filled), a.filled); err != nil {
-		return err
+	for at := a.filled; at < target; {
+		n, err := a.file.WriteAt(zeros[:min(int64(fillStep), target-at)], at)
+		if err != nil {
+			return err
+		}
+		at += int64(n)
 	}
 	if err := a.sync(a.file); err != nil {
 		return err

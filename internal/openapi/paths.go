@@ -4,6 +4,7 @@ package openapi
 
 import (
 	"errors"
+	"slices"
 	"strings"
 	"time"
 
@@ -29,13 +30,24 @@ type candidate struct {
 	maxBytes    int64    // body limit from x-apiward-max-bytes; 0 when absent
 }
 
-// mapper walks one description.
+// mapper walks one description; settings are the API settings its root
+// members state, which each operation's trial compiles with.
 type mapper struct {
-	root    map[string]any
-	options Options
-	report  *Report
-	ignored map[string]bool
+	root     map[string]any
+	options  Options
+	settings policy.API
+	report   *Report
+	ignored  map[string]bool
 }
+
+// The members OpenAPI 3.1 defines for a path item and an operation; any other
+// name (a misspelt requestBody, an uppercase method) would leave a check out
+// silently, so it is reported as ignored.
+var (
+	itemMembers      = []string{"$ref", "summary", "description", "servers", "parameters"}
+	operationMembers = []string{"tags", "summary", "description", "externalDocs", "operationId", "parameters",
+		"requestBody", "responses", "callbacks", "deprecated", "security", "servers"}
+)
 
 // operations returns the candidates in path and method order; refusals go
 // straight into the report.
@@ -55,12 +67,31 @@ func (m *mapper) operations() []*candidate {
 			continue
 		}
 		m.notice(item, "servers")
+		unknown := m.unknown(item, append(slices.Clone(itemMembers), methods...))
+		stated := false
 		for _, method := range methods {
 			if _, present := item[method]; !present {
 				continue
 			}
+			stated = true
 			m.report.OperationsInSpec++
 			found = m.add(found, method, path, item, pointer)
+		}
+		if !stated && unknown {
+			m.refuse("", path, refuse(CodeMethod, pointer, "The path item has no operation under a lowercase method name."))
+		}
+	}
+	return found
+}
+
+// unknown adds to the ignored members every member of object that is not
+// known and is not an extension, and reports whether there was one.
+func (m *mapper) unknown(object map[string]any, known []string) bool {
+	found := false
+	for name := range object {
+		if !slices.Contains(known, name) && !strings.HasPrefix(name, "x-") {
+			m.ignored[policy.Clip(name)] = true
+			found = true
 		}
 	}
 	return found
@@ -102,6 +133,7 @@ func (m *mapper) operation(method, path string, item map[string]any, itemPointer
 		return nil, refuse(CodeRefInvalid, pointer, "The operation is not an object.")
 	}
 	m.notice(object, "servers", "responses", "callbacks", "tags")
+	m.unknown(object, operationMembers)
 	m.noticeLinks(object)
 
 	operationID, _ := object["operationId"].(string)
@@ -158,16 +190,22 @@ func targetOf(path string) (string, bool, *refusal) {
 		if i != len(segments)-1 {
 			return "", false, refuse(CodePathTemplate, "", "A templated segment followed by more segments cannot be expressed.")
 		}
-		// A target is exact or one trailing /* prefix, so only the last segment can widen.
+		// A target is exact or one trailing /* prefix, so only the last
+		// segment can widen. With no literal segment before it the prefix
+		// would be /*, which matches every path.
+		if i == 1 {
+			return "", false, refuse(CodePathTemplate, "", "A path whose only segment is templated would match every path.")
+		}
 		return strings.Join(segments[:i], "/") + "/*", true, nil
 	}
 	return path, false, nil
 }
 
 // trial compiles the operation alone with the real compiler, so every rule
-// it enforces (targets, header names, schema subset) is checked by one code
-// path. It uses the base's schema version, which decides the upstream forms
-// allowed (an upstream URL needs version 5).
+// it enforces (targets, header names, schema subset, and the rules that
+// depend on the API's settings, such as a forward prefix) is checked by one
+// code path. It uses the base's schema version, which decides the upstream
+// forms allowed (an upstream URL needs version 5).
 func (m *mapper) trial(op policy.Operation) *refusal {
 	var upstream policy.Upstream
 	for _, u := range m.options.Base.Upstreams {
@@ -175,13 +213,17 @@ func (m *mapper) trial(op policy.Operation) *refusal {
 			upstream = u
 		}
 	}
+	// CORS is left out: its methods must each belong to some operation of
+	// the API, which one operation alone cannot show; the whole result checks it.
+	api := m.settings
+	api.ID, api.Upstream, api.CORS = m.options.API, upstream.ID, nil
 	single := policy.Policy{
 		SchemaVersion: m.options.Base.SchemaVersion, Profile: policy.ProfileCore,
 		Upstreams:  []policy.Upstream{upstream},
-		APIs:       []policy.API{{ID: m.options.API, Upstream: upstream.ID}},
+		APIs:       []policy.API{api},
 		Operations: []policy.Operation{op},
 	}
-	_, err := compile.Compile(single, 0, time.Time{}, policy.Limits{})
+	_, err := compile.Compile(single, 0, time.Time{}, m.options.Limits)
 	if err == nil {
 		return nil
 	}

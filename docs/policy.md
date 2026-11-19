@@ -50,6 +50,7 @@ Every request goes through these checks in this order; the first that refuses an
 - Only declared request headers are checked, each a string; a repeated declared header is refused. `Authorization`, `Host`, hop-by-hop and forwarding headers cannot be declared.
 - Query strings, path segments, multipart bodies and responses are never validated.
 - A body or header that fails its schema is answered `400 bad_request`; the security log records the reason (`schema_mismatch`, `malformed_json`, `duplicate_member` and others).
+- A body number longer than 32 characters, or with an exponent of more than three digits, cannot be compared exactly and is refused with reason `number_not_comparable`.
 
 ## JSON Schema subset
 
@@ -182,7 +183,7 @@ An API's `"response_headers": {"hsts": true, "nosniff": true, "frame": "deny", "
 
 ## Changing a policy
 
-- `apiward policy validate --policy <file>` checks a policy file as the gateway checks a draft, with the default capacity limits, and prints its warnings; it exits 0 only for a valid policy, so CI can run it on policy kept in Git. Upstream addresses and TLS profiles depend on the gateway's settings and are checked when the policy is activated.
+- `apiward policy validate --policy <file> [--config <settings>]` checks a policy file as the gateway checks a draft, with the default capacity limits or those of the settings file, and prints its warnings; it exits 0 only for a valid policy, so CI can run it on policy kept in Git. Upstream addresses and TLS profiles depend on the gateway's settings and are checked when the policy is activated.
 
 Administrators change the policy through two workflows.
 

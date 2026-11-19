@@ -22,7 +22,11 @@ func (c *Controller) Enrol(ctx context.Context, e store.Enrolment, passwordHash 
 	defer c.mu.Unlock()
 	now := compile.TrustedNow()
 	// 32 hex characters (128 bits) of the secret's hash name the enrolment
-	// uniquely and fit the transition ID cap.
+	// uniquely and fit the transition ID cap; a stored hash is 64, so a
+	// shorter one is a damaged row, refused rather than sliced.
+	if len(e.Secret) < 32 {
+		return c.countFailure("enrol:invalid", fmt.Errorf("stored enrolment of %s has a %d-character secret hash", e.Name, len(e.Secret)))
+	}
 	t := store.TransitionRecord{ID: "enrol:" + e.Secret[:32], Kind: "admin.enrol", Actor: e.Name, Target: e.Name, Digest: e.Secret}
 	if !c.ready() {
 		return c.unavailableOutcome(t.ID, t.Actor)

@@ -4,19 +4,38 @@ package audit
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"log/slog"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 )
 
+// auditEntry is one queued event. The queue holds pointers, so its ring
+// keeps one word per place instead of a whole event.
 type auditEntry struct {
 	event Event
 	done  chan error // nil for events that need no acknowledgement
+	// state settles an acknowledged entry once: the writer takes it, or a
+	// Commit whose wait ended withdraws it first, so it is never written.
+	state atomic.Int32
 }
+
+// Acknowledged entry states.
+const (
+	entryQueued int32 = iota
+	entryTaken
+	entryWithdrawn
+)
+
+// ErrTimedOut is Commit's error when its wait ended before the record was
+// synced. The record was withdrawn, or, if the writer had already taken it,
+// is written; either way the caller records the refusal that supersedes it.
+var ErrTimedOut = fmt.Errorf("%w: acknowledgement timed out", errAuditFailed)
 
 // AuditLog writes events to a local file. Events that gate a decision wait
 // until the batch containing them has been synced to disk; other events are
@@ -48,20 +67,49 @@ type AuditLog struct {
 	prefill bool
 	filled  int64
 	rotated int // rotated files present; used only by the writer
-	next    int // suffix of the next rotated file; used only by the writer
+	// prepared delivers the description of preparing, the next file to
+	// evict, made in the background (prepare.go); used only by the writer.
+	prepared  chan describedFile
+	preparing string
 	// rotatedBytes is the rotated files' total size; used only by the writer.
 	rotatedBytes int64
-	evict        bool // delete the oldest rotated file when full
+	// encoded is the last batch's memory, reused by the next batch; used
+	// only by the writer.
+	encoded []byte
+	// seq numbers records in file order; used only by the writer.
+	seq uint64
+	// marker names the rotated file the next write must record first, set
+	// when a rotation's marker is not yet written; used only by the writer.
+	marker string
+	evict  bool // delete the oldest rotated file when full
+	// privacy is how client addresses are recorded; never changes.
+	privacy Privacy
+	// outcomeWindow bounds reconciliation after an unclean stop.
+	outcomeWindow time.Duration
+	// head is the chain head of the batches written since the start, and
+	// signer signs its checkpoints (chain.go); used only by the writer.
+	head   [sha256.Size]byte
+	signer Signer
+	// published copies head for readers outside the writer (ChainHead).
+	published atomic.Pointer[[sha256.Size]byte]
 	// window is how long a batch with siblings waits for more events
 	// before its sync; 0 syncs each batch as soon as it is drained.
-	window   time.Duration
-	openErr  error // why openAudit could not open the file; never changes
-	queue    chan auditEntry
-	failed   atomic.Bool
-	full     atomic.Bool   // every file in use; cleared once a rotation succeeds
-	lost     atomic.Uint64 // events refused and not yet counted in the file
-	seq      atomic.Uint64
-	accepted atomic.Uint64 // events queued
+	window  time.Duration
+	openErr error // why openAudit could not open the file; never changes
+	queue   chan *auditEntry
+	failed  atomic.Bool
+	full    atomic.Bool // every file in use; cleared once a rotation succeeds
+	// noSpace is set while the file system has no space for a write; the
+	// writer clears it once a retried write and its sync succeed.
+	noSpace atomic.Bool
+	// spaceSince is when the log ran out of space; used only by the writer.
+	spaceSince time.Time
+	lost       atomic.Uint64 // events refused and not yet counted in the file
+	// lossTotal and evictions count, since the start, the refused events
+	// written in loss records and the files evicted, for the metrics.
+	lossTotal atomic.Uint64
+	evictions atomic.Uint64
+	accepted  atomic.Uint64 // events queued
 	// activeBytes and files copy size and rotated+1 for readers outside the
 	// writer (the limits read); only the writer stores them.
 	activeBytes atomic.Int64
@@ -85,20 +133,23 @@ func (a *AuditLog) Fail(err error) {
 }
 
 // Commit records an event and waits for durable acknowledgement. A failed or
-// closing log, or a full queue, refuses it at once.
+// closing log, a file system without space, or a full queue, refuses it at
+// once. When ctx ends first it withdraws the event if the writer has not
+// taken it, and returns ErrTimedOut.
 func (a *AuditLog) Commit(ctx context.Context, e Event) error {
-	if a.failed.Load() {
+	if a.failed.Load() || a.noSpace.Load() {
 		return errAuditFailed
 	}
-	done := make(chan error, 1)
-	if err := a.enqueue(e, done); err != nil {
+	entry := &auditEntry{event: e, done: make(chan error, 1)}
+	if err := a.enqueue(entry); err != nil {
 		return fmt.Errorf("%w: %v", errAuditFailed, err)
 	}
 	select {
-	case err := <-done:
+	case err := <-entry.done:
 		return err
 	case <-ctx.Done():
-		return fmt.Errorf("%w: acknowledgement timed out", errAuditFailed)
+		entry.state.CompareAndSwap(entryQueued, entryWithdrawn)
+		return ErrTimedOut
 	}
 }
 
@@ -107,7 +158,7 @@ func (a *AuditLog) Commit(ctx context.Context, e Event) error {
 // or it is closing, is counted; the writer writes the count with its next
 // batch, or as it ends.
 func (a *AuditLog) Record(e Event) {
-	if a.failed.Load() || a.enqueue(e, nil) != nil {
+	if a.failed.Load() || a.enqueue(&auditEntry{event: e}) != nil {
 		a.lost.Add(1)
 	}
 }
@@ -118,12 +169,13 @@ func (a *AuditLog) Record(e Event) {
 // need no sign-in, and a flood of their records must not refuse those.
 func RecordRoom(capacity int) int { return capacity - capacity/4 }
 
-// enqueue stamps and queues an event, unless the log is closing or its queue
-// has no room for it: an acknowledged event (done set) may take any free
-// place, any other only within RecordRoom. A refused event keeps its
-// sequence number, so the gap stays visible. Queueing never waits, so the
-// read lock is held only briefly.
-func (a *AuditLog) enqueue(e Event, done chan error) error {
+// enqueue stamps and queues an entry, unless the log is closing or its queue
+// has no room for it: an acknowledged entry (done set) may take any free
+// place, any other only within RecordRoom. A refused event is counted in
+// the next loss record; the writer numbers only written records, so seq
+// rises by one in file order. Queueing never waits, so the read lock is held
+// only briefly.
+func (a *AuditLog) enqueue(entry *auditEntry) error {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 	if a.closing {
@@ -132,8 +184,8 @@ func (a *AuditLog) enqueue(e Event, done chan error) error {
 	// Counted before the writer can receive it, so written never exceeds
 	// accepted.
 	a.accepted.Add(1)
-	entry := auditEntry{event: a.stamp(e), done: done}
-	if done == nil && len(a.queue) >= RecordRoom(cap(a.queue)) {
+	entry.event = a.stamp(entry.event)
+	if entry.done == nil && len(a.queue) >= RecordRoom(cap(a.queue)) {
 		a.accepted.Add(^uint64(0))
 		return errQueueFull
 	}
@@ -146,11 +198,17 @@ func (a *AuditLog) enqueue(e Event, done chan error) error {
 	}
 }
 
+// stamp sets the schema and time of e and bounds its client-controlled
+// strings; the writer numbers it (seal) as it writes it.
 func (a *AuditLog) stamp(e Event) Event {
 	e.Schema = EventSchema
 	e.Time = time.Now().UTC()
-	e.Seq = a.seq.Add(1)
-	e.ID = fmt.Sprintf("%s-%d", a.boot, e.Seq)
+	if e.ClientAddress != "" && a.privacy.Mode != "" {
+		e.ClientAddress = a.privacy.address(e.ClientAddress)
+	}
+	for i := range e.Addresses {
+		e.Addresses[i].Address = a.privacy.address(e.Addresses[i].Address)
+	}
 	// The method is cut silently: Truncated (path_truncated) is the path's.
 	if len(e.Method) > MaxLoggedMethod {
 		e.Method = e.Method[:MaxLoggedMethod]
@@ -166,6 +224,13 @@ func (a *AuditLog) stamp(e Event) Event {
 	// A substring can retain the complete request target's backing storage.
 	e.Method, e.Path, e.ForwardedPath = strings.Clone(e.Method), strings.Clone(e.Path), strings.Clone(e.ForwardedPath)
 	return e
+}
+
+// seal numbers e as the next record in file order; only the writer calls it.
+func (a *AuditLog) seal(e *Event) {
+	a.seq++
+	e.Seq = a.seq
+	e.ID = a.boot + "-" + strconv.FormatUint(a.seq, 10)
 }
 
 // Close ends the log. From the moment it begins no event can be queued:
@@ -192,6 +257,9 @@ func (a *AuditLog) Close(ctx context.Context) error {
 			events, lost := a.Unconfirmed()
 			return fmt.Errorf("audit log not drained within the stop bound: %d accepted events and the count of %d refused events not confirmed written", events, lost)
 		}
+	}
+	if a.openErr != nil {
+		return fmt.Errorf("audit log never opened: %w", a.openErr)
 	}
 	if events, lost := a.Unconfirmed(); events > 0 || lost > 0 {
 		return fmt.Errorf("audit log incomplete: %d accepted events and the count of %d refused events not written", events, lost)
