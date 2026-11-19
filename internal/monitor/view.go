@@ -223,13 +223,9 @@ func (e Observed) Sequence() uint64 { return e.sequence }
 // policy dropped.
 func (e Observed) ClaimedRoles() []string { return e.assertedRoles }
 
-// WasAllowed: traffic failures are refusals from the caller's perspective,
-// while request views keep the distinction between a refusal and a failure.
-func WasAllowed(event RequestView) bool {
-	return event.Decision == Allowed && event.Status >= http.StatusOK
-}
-
-// Allowed is WasAllowed for an entry.
+// Allowed reports whether an entry was admitted and answered: traffic
+// failures are refusals from the caller's perspective, while request views
+// keep the distinction between a refusal and a failure.
 func (e *Entry) Allowed() bool {
 	return e.Decision == Allowed && e.Status >= http.StatusOK
 }
