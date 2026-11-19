@@ -24,6 +24,7 @@ func writeError(w http.ResponseWriter, status int, code, requestID string) {
 	body = strconv.AppendQuote(body, requestID)
 	body = append(body, "}\n"...)
 	w.WriteHeader(status)
+	// #nosec G705 -- a JSON body of quoted values, sent as application/json with nosniff
 	if _, err := w.Write(body); err != nil {
 		panic(http.ErrAbortHandler)
 	}

@@ -88,8 +88,8 @@ func (c *Controller) Gauges() []monitor.Gauge {
 		{Name: "gateway_blocked_addresses", Value: addresses},
 		{Name: "gateway_audit_bytes", Value: used},
 		{Name: "gateway_audit_budget_bytes", Value: budget},
-		{Name: "gateway_audit_records_lost_total", Value: int64(c.audit.Losses()), Counter: true},
-		{Name: "gateway_audit_evictions_total", Value: int64(c.audit.Evictions()), Counter: true},
+		{Name: "gateway_audit_records_lost_total", Value: int64(c.audit.Losses()), Counter: true}, // #nosec G115 -- a count of records, far below 2^63
+		{Name: "gateway_audit_evictions_total", Value: int64(c.audit.Evictions()), Counter: true}, // #nosec G115 -- a count of files, far below 2^63
 		{Name: "gateway_control_store_failures_total", Value: c.failures.Load(), Counter: true},
 	}
 	// The chain head an operator copies off the host (tamper evidence).

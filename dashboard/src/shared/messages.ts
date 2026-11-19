@@ -116,6 +116,14 @@ export const messages: Record<string, Message> = {
   SCHEMA_VERSION_UNSUPPORTED: { title: 'This policy format version is not supported', action: 'Use schema version 4.' },
   UNSUPPORTED_FEATURE: { title: 'The document uses something the gateway does not support', action: 'Remove the feature named under More details.' },
   LIMIT_EXCEEDED: { title: 'The document is too large', action: 'It exceeds a size or count limit. Make it smaller.' },
+  POLICY_TOO_LARGE: {
+    title: 'The policy is too large',
+    action: 'It is over the size the gateway accepts (64 KiB unless the operator changed it). Remove endpoints, rules or schemas you no longer need, then save again.',
+  },
+  LIMITS_INVALID: {
+    title: "The gateway's limit settings are not valid",
+    action: "A policy limit in the gateway's settings is out of range, so no policy can be checked. Ask the operator to correct the settings file and restart the gateway.",
+  },
   INVALID_UPSTREAM: {
     title: 'A service address is not allowed',
     action:
