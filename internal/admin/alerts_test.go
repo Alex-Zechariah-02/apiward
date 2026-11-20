@@ -1,6 +1,6 @@
 // Alert A3 by the share of the security log budget in use and by the time
 // the rest of the budget lasts at the active file's recent write rate
-// (checks-0.6).
+// (checks-0.7).
 
 package admin
 

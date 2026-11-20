@@ -187,7 +187,7 @@ test.describe.serial('dashboard', () => {
       route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({ rules: 'checks-0.6', evaluated_at: new Date().toISOString(), alerts: [{ id: 'A2', severity: 'critical', object: 'security_log', message: 'The security log cannot be written, so the gateway refuses requests it cannot record.' }] }),
+        body: JSON.stringify({ rules: 'checks-0.7', evaluated_at: new Date().toISOString(), alerts: [{ id: 'A2', severity: 'critical', object: 'security_log', message: 'The security log cannot be written, so the gateway refuses requests it cannot record.' }] }),
       }),
     )
     await go(admin, 'Changes')

@@ -10,6 +10,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -104,6 +105,38 @@ func TestArchiveCompressesAndRecords(t *testing.T) {
 	report, err := VerifyChain(append(paths, path), nil)
 	if err != nil || report.Unchained != 0 || len(report.Problems) != 0 || len(report.Missing) != 0 {
 		t.Fatalf("verify over both folders: %+v (%v)", report, err)
+	}
+}
+
+// An installation upgraded from an earlier version holds uncompressed files
+// named audit.log.<n>; at start they are compressed, archived and recorded
+// like any rotated file, and verification reads them in the archive.
+func TestArchiveUpgradesEarlierFiles(t *testing.T) {
+	dir := t.TempDir()
+	path, archive := filepath.Join(dir, "audit.log"), filepath.Join(dir, "archive")
+	for n, at := range map[int]string{1: "01", 2: "02"} {
+		line := `{"time":"2026-11-01T00:00:` + at + `Z","kind":"request.forwarded"}` + "\n"
+		if err := os.WriteFile(fmt.Sprintf("%s.%d", path, n), []byte(line), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	a := OpenAudit(path, Settings{MaxBytes: 1 << 20, MaxFiles: 8, WhenFull: FullEvict, Storage: Storage{Archive: archive}})
+	waitFor(t, time.Now().Add(10*time.Second), "the earlier files archived", func() bool {
+		return !fileExists(path+".1") && !fileExists(path+".2")
+	})
+	if err := a.Close(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	recorded := map[string]bool{}
+	for _, e := range allRecords(t, path) {
+		if e.Kind == "audit.archived" && e.Target == "archive" && !e.First.IsZero() {
+			recorded[e.File] = true
+		}
+	}
+	for _, name := range []string{"audit.log.1", "audit.log.2"} {
+		if _, err := ReadPacked(filepath.Join(archive, name+packedSuffix)); err != nil || !recorded[name] {
+			t.Fatalf("%s: archived copy %v, recorded %v", name, err, recorded[name])
+		}
 	}
 }
 

@@ -12,7 +12,7 @@ import (
 	"github.com/Alex-Zechariah-02/apiward/internal/compile"
 )
 
-// The fixed checks, rule set version "checks-0.6": static
+// The fixed checks, rule set version "checks-0.7": static
 // configuration warnings, unused permissions from observed traffic, and
 // alerts. They advise only: nothing here blocks, changes or activates
 // anything, and nothing runs on the request path. Each answer names the
@@ -20,7 +20,7 @@ import (
 // The values below are the published rule set AdviceRules; changing one is a
 // new rule set version, never a setting.
 const (
-	AdviceRules = "checks-0.6"
+	AdviceRules = "checks-0.7"
 
 	// The security log also raises an alert when, at the active file's recent
 	// write rate, its remaining budget lasts less than FillingTime (medium) or
