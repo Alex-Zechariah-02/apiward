@@ -171,7 +171,7 @@ test.describe.serial('dashboard', () => {
     await go(admin, 'Advice')
     await expect(admin.getByRole('heading', { name: 'Settings to Review' })).toBeVisible()
     await expect(admin.getByText(/Shown once the security log covers 60 minutes/)).toBeVisible()
-    await expect(admin.getByText(/Checked with rule set checks-0\.6/)).toBeVisible()
+    await expect(admin.getByText(/Checked with rule set checks-0\.7/)).toBeVisible()
     await shot(admin, '47-advice')
 
     // The Overview shows exactly the alerts the gateway reports. Whether a
