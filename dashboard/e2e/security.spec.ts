@@ -1,4 +1,5 @@
 import { spawnSync } from 'node:child_process'
+import { rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { expect, test } from '@playwright/test'
 import { adminURL, raw, siteURL } from './env'
@@ -93,15 +94,16 @@ test.describe.serial('dashboard', () => {
     record('admin-api-refusals', { statuses: Object.fromEntries(Object.entries(cases).map(([k, v]) => [k, v.status])), read, reasons: reasons('/admin/blocked-accounts/cust-002') })
   })
 
-  test('a failing security event log is shown as such, nothing is admitted, and a restart recovers', async () => {
+  test('a failing security event log is shown as such, nothing is admitted, and the gateway recovers by itself', async () => {
     const failure = 'The security log cannot be written, so every protected request is refused.'
     const main = admin.getByRole('main')
     const startedAt = Date.now()
+    // Every sync fails while this file exists, as when a disk fails; the
+    // gateway keeps trying a new file once a second.
+    const armed = join(demo.dir, 'audit-fault-armed')
 
-    // The gateway starts normally; the first admission record it writes is
-    // cut off part-way, as when a disk fails.
     await demo.stop()
-    await demo.start({ fault: 'audit-partial' })
+    await demo.start({ fault: 'audit-sync', armed })
     await admin.reload()
     await signIn(admin, 'admin', password)
     await go(admin, 'Overview')
@@ -109,6 +111,7 @@ test.describe.serial('dashboard', () => {
     await expect(main.getByText('Accepting Requests', { exact: true })).toBeVisible()
     await expect(admin.getByText(failure)).toHaveCount(0)
 
+    writeFileSync(armed, '')
     const refused = await call('orders', 'GET', '/orders', 'ops-01')
     expect(refused.status).toBe(503)
     expect(refused.receipts).toHaveLength(0)
@@ -117,7 +120,7 @@ test.describe.serial('dashboard', () => {
     expect(again.receipts).toHaveLength(0)
 
     // The dashboard shows the failure from the server's status, after a read.
-    expect(await status()).toMatchObject({ audit_failed: true, admission: 'audit_failed' })
+    await expect.poll(() => status()).toMatchObject({ audit_failed: true, admission: 'audit_failed' })
     await admin.getByRole('button', { name: 'Refresh', exact: true }).click()
     await expect(main.getByRole('alert').filter({ hasText: failure })).toBeVisible()
     await expect(main.getByText('Not Accepting Requests', { exact: true })).toBeVisible()
@@ -128,19 +131,17 @@ test.describe.serial('dashboard', () => {
     await expect(admin.getByRole('status').filter({ hasText: 'The gateway is not accepting requests.' })).toContainText(failure)
     await go(admin, 'Overview')
 
-    // Restarting with a working log recovers: the incomplete record is
-    // terminated and named, and requests are admitted again.
-    await demo.stop()
-    await demo.start()
-    await admin.reload()
-    await signIn(admin, 'admin', password)
-    await go(admin, 'Overview')
-    expect(await status()).toMatchObject({ state: 'normal', admission: 'ready', audit_failed: false })
+    // Once the disk works again the gateway replaces its file, records it and
+    // admits requests again, with no restart.
+    rmSync(armed)
+    await expect.poll(() => status(), { timeout: 10_000 }).toMatchObject({ state: 'normal', admission: 'ready', audit_failed: false })
+    await admin.getByRole('button', { name: 'Refresh', exact: true }).click()
     await expect(admin.getByText(failure)).toHaveCount(0)
+    await expect(admin.getByRole('status').getByText('The security log is written again; protected requests are accepted.')).toBeVisible()
     const admitted = await call('orders', 'GET', '/orders', 'ops-01')
     expect(admitted.status).toBe(200)
     expect(admitted.receipts).toHaveLength(1)
-    await expect.poll(() => auditEvents().filter((e) => e.kind === 'audit.recovered' && Date.parse(String(e.time)) >= startedAt).length).toBe(1)
+    await expect.poll(() => auditEvents().filter((e) => e.kind === 'audit.recovered' && e.reason === 'sync_failed' && Date.parse(String(e.time)) >= startedAt).length).toBeGreaterThan(0)
     record('audit-failure', { refused: [refused.status, again.status], recovered: admitted.receipts[0] })
   })
 

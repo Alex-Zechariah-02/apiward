@@ -11,6 +11,8 @@ type NoticeTone = 'ok' | 'pending' | 'neutral' | 'refused'
 interface Notice {
   tone: NoticeTone
   text: string
+  // ends names a condition whose notice an opposite change withdraws.
+  ends?: 'audit'
 }
 
 interface Shown extends Notice {
@@ -25,8 +27,8 @@ const words: Record<NoticeTone, string> = { ok: 'Done', pending: 'In progress', 
 
 // statusNotices names what changed between two status reads: a trial that
 // started or ended, temporary rules added or ended, signing keys reloaded,
-// and a security log that stopped working. It only reports what the gateway
-// said; it decides nothing.
+// and a security log that stopped or started working again. It only reports
+// what the gateway said; it decides nothing.
 function statusNotices(before: Status, after: Status): Notice[] {
   const notices: Notice[] = []
   if (before.provisional === undefined && after.provisional !== undefined) {
@@ -47,7 +49,10 @@ function statusNotices(before: Status, after: Status): Notice[] {
     notices.push({ tone: 'neutral', text: 'The signing keys were reloaded.' })
   }
   if (!before.audit_failed && after.audit_failed) {
-    notices.push({ tone: 'refused', text: 'The security log cannot be written, so every protected request is refused.' })
+    notices.push({ tone: 'refused', text: 'The security log cannot be written, so every protected request is refused.', ends: 'audit' })
+  }
+  if (before.audit_failed && !after.audit_failed) {
+    notices.push({ tone: 'ok', text: 'The security log is written again; protected requests are accepted.' })
   }
   return notices
 }
@@ -67,8 +72,10 @@ export function Notifications(props: { status: Status | undefined; view: View })
     previous.current = props.status
     if (!before || !props.status) return
     const fresh = statusNotices(before, props.status).map((notice) => ({ ...notice, id: ++next.current, view: props.view }))
+    // A security log that works again withdraws the problem it had raised.
+    const recovered = before.audit_failed && !props.status.audit_failed
     // The 5 newest stay: a burst of changes cannot stack notices over the whole page.
-    if (fresh.length > 0) setShown((list) => [...list, ...fresh].slice(-5))
+    if (fresh.length > 0 || recovered) setShown((list) => [...list.filter((notice) => !(recovered && notice.ends === 'audit')), ...fresh].slice(-5))
   }, [props.status])
 
   // Opening another page forgets the earlier page's notices; the render below
