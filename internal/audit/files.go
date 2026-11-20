@@ -16,14 +16,16 @@ import (
 	"github.com/Alex-Zechariah-02/apiward/internal/filecheck"
 )
 
-// Default size of the active audit file and number of files kept.
+// Default size of the active audit file and the number of such files that
+// bound the log folder (active plus rotated files not yet archived).
 const (
 	DefaultAuditBytes = 64 << 20
 	DefaultAuditFiles = 8
 )
 
-// Settings bound the log: the size of each file, how many files it keeps,
-// what it does when all are in use (FullRefuse or FullEvict), how many
+// Settings bound the log: the size of each file, how many files the log
+// folder holds, what it does when its storage is full (FullRefuse or
+// FullEvict), how many
 // records its queue holds (QueueSize), its sync window (0: none) and
 // whether it appends to the active file (Append) instead of zero-filling it
 // ahead of the writer on Linux; copy-on-write file systems gain nothing from
