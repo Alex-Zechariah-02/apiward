@@ -92,6 +92,7 @@ func (c *Controller) Gauges() []monitor.Gauge {
 		{Name: "gateway_audit_evictions_total", Value: int64(c.audit.Evictions()), Counter: true}, // #nosec G115 -- a count of files, far below 2^63
 		{Name: "gateway_control_store_failures_total", Value: c.failures.Load(), Counter: true},
 	}
+	gauges = append(gauges, auditGauges(c.audit)...)
 	// The chain head an operator copies off the host (tamper evidence).
 	if head := c.audit.ChainHead(); head != "" {
 		gauges = append(gauges, monitor.Gauge{Name: "apiward_audit_chain_head_info", Value: 1, Labels: []string{"sha256", head}})

@@ -68,14 +68,16 @@ func addAdmin(e *gatewaytest.Env, binary, name, permissions string) (gatewaytest
 func assertAbsent(t *testing.T, e *gatewaytest.Env, values ...string) {
 	t.Helper()
 	e.Shutdown()
-	files := append(gatewaytest.RotatedAudit(t, e.AuditLog), e.AuditLog)
+	sources := map[string]string{"gateway output": e.Output.String()}
+	// Audit files are read decompressed: a compressed copy hides its text.
+	for _, file := range append(gatewaytest.RotatedAudit(t, e.AuditLog), e.AuditLog) {
+		sources[filepath.Base(file)] = string(gatewaytest.ReadAudit(t, file))
+	}
 	databaseFiles, err := filepath.Glob(e.Database + "*")
 	if err != nil {
 		t.Fatal(err)
 	}
-	files = append(files, databaseFiles...)
-	sources := map[string]string{"gateway output": e.Output.String()}
-	for _, file := range files {
+	for _, file := range databaseFiles {
 		data, err := os.ReadFile(file)
 		if err != nil {
 			t.Fatalf("reading %s for secrets: %v", filepath.Base(file), err)

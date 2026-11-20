@@ -27,13 +27,7 @@ func auditRecords(e *gatewaytest.Env) []map[string]any {
 	files := append(gatewaytest.RotatedAudit(e.T, e.AuditLog), e.AuditLog)
 	var records []map[string]any
 	for _, file := range files {
-		data, err := os.ReadFile(file)
-		if err != nil {
-			e.T.Fatal(err)
-		}
-		if file == e.AuditLog {
-			data = audit.Content(data)
-		}
+		data := gatewaytest.ReadAudit(e.T, file)
 		for line := range bytes.SplitSeq(bytes.TrimSuffix(data, []byte("\n")), []byte("\n")) {
 			var record map[string]any
 			if err := json.Unmarshal(line, &record); err != nil {

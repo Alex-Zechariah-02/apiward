@@ -9,7 +9,6 @@ import (
 	"math"
 	"net/http"
 	"net/url"
-	"path/filepath"
 	"strconv"
 	"time"
 
@@ -75,12 +74,11 @@ func (s *Server) handleAdvice(w http.ResponseWriter, r *http.Request, who caller
 
 // unusedPermits reads the security log files for the unused-permission advice.
 func (s *Server) unusedPermits(ctx context.Context, g *compile.Generation) (monitor.UnusedReport, error) {
-	_, _, _, kept := s.audit.Usage()
-	files, missing, err := monitor.LogFiles(s.audit.Path(), kept)
+	files, missing, err := monitor.LogFiles(s.audit.Path(), s.audit.ArchivePath())
 	if err != nil {
 		return monitor.UnusedReport{}, err
 	}
-	use, err := s.summaries.PermitUse(ctx, filepath.Dir(s.audit.Path()), files, monitor.ExportScan)
+	use, err := s.summaries.PermitUse(ctx, files, monitor.ExportScan)
 	if err != nil {
 		return monitor.UnusedReport{}, err
 	}
@@ -110,6 +108,7 @@ func (s *Server) handleAlerts(w http.ResponseWriter, r *http.Request, who caller
 		}
 		items = append(items, *alert)
 	}
+	items = append(items, storageAlerts(s.audit.Archive())...)
 	if float64(s.limiter.Size()) >= monitor.NearlyFull*float64(s.limiter.Capacity()) {
 		items = append(items, monitor.Finding{ID: "A4", Severity: "medium", Object: "rate_counters", Message: "Rate limit counters are nearly full. When they run out, requests that need a new counter are refused."})
 	}

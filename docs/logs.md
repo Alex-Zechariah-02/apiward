@@ -5,6 +5,7 @@ What the gateway records, when a record is waited for, and how to read the log. 
 ## Files
 
 - The active file is `gateway.audit_log`; a rotated file is named by the UTC time it was rotated, to the millisecond (`audit-2026-11-19T08-22-33.123.log` for `audit.log`), so names sort by age and never repeat.
+- Rotated files are compressed to `<name>.gz` in the archive folder (`gateway.audit_archive`), in 1 MiB gzip members; `gzip -dc` reads one, and its gzip header comment holds the first and last record times and the SHA-256 of the uncompressed content.
 - Each line is one JSON record with `schema`, `event_id`, `time`, `seq` and `kind`, plus the fields of its kind.
 - `seq` numbers one run's records in file order, rising by one; records refused for lack of room leave no gap and are counted in `audit.loss`.
 - A record never exceeds 64 KiB: one that would is replaced by `audit.unwritable` with its request ID, decision and status, `target` its kind and `reason` `too_large`.
@@ -77,9 +78,10 @@ What the gateway records, when a record is waited for, and how to read the log. 
 | `tls.certificate_expiring` | Daily while the listener certificate expires within 14 days | Queued |
 | `operator.backup` | `apiward backup` wrote a backup | Waited for |
 | `audit.rotated` | The active file was rotated | With its batch |
-| `audit.evicted` | A full log under `evict_oldest` deleted its oldest file (name, size, SHA-256, first and last record) | Before the deletion |
+| `audit.archived` | A rotated file was compressed and moved (`file`, `bytes` and `sha256` of the uncompressed file, `archived_bytes`, `first_record`, `last_record`, `target` `archive` or `live`) | Before the original is deleted |
+| `audit.evicted` | The oldest file was deleted (`file`, `bytes` and `sha256` as stored, `first_record`, `last_record`, `reason` `archive_budget`, `log_budget` or `disk_pressure`, `target`) | Before the deletion |
 | `audit.loss` | Records were dropped for lack of room since the last batch | With its batch |
-| `audit.recovered` | At start, the last record of the active file had been cut off (`file`, `offset`); or, with reason `storage_space`, writing resumed after the file system had no space (`duration_ms` how long, `lost` the records counted meanwhile) | Queued |
+| `audit.recovered` | At start, the last record of the active file had been cut off (`file`, `offset`); with reason `storage_space`, writing resumed after the file system had no space (`duration_ms` how long, `lost` the records counted meanwhile); with reason `sync_failed` or `rotation_failed`, the active file was replaced (`file` the suspect file, `offset` the end of its last synced batch) | Queued |
 | `audit.chain` | Every written batch: `sha256` is the chain head after the batch | Ends its batch |
 | `audit.checkpoint` | Once a minute and at each rotation: `sha256` the chain head, `target` the identity key ID, `signature` its signature | With its batch |
 | `audit.closed` | A clean stop; nothing follows it but its chain record | Last |
@@ -94,14 +96,14 @@ What the gateway records, when a record is waited for, and how to read the log. 
 
 - Each batch extends a SHA-256 chain: the head is SHA-256 of the previous head and the batch's bytes, starting from zero at each start of the gateway, and the batch ends with `audit.chain` naming it.
 - `audit.checkpoint` signs the head with the identity key (the key upstreams verify assertions with) once a minute and at rotation.
-- `apiward audit verify --jwks <key set> <files…>` recomputes the chain over the files, oldest first, and checks every checkpoint; it names each record altered, added or removed. Records after the last chain record of an unclean stop are reported as unchained, not as altered.
+- `apiward audit verify --jwks <key set> <files…>` recomputes the chain over the files, oldest first, and checks every checkpoint; it names each record altered, added or removed, each compressed file whose content does not match its header's SHA-256, and each missing file. Records after the last chain record of an unclean stop, or of a file replaced after a failed sync, are reported as unchained, not as altered.
 - `apiward_audit_chain_head_info` on the metrics listener shows the current head; copy heads or checkpoints off the host regularly.
 - Limit: anyone with root on the host holds the identity key and can rewrite and re-sign the tail; only heads or checkpoints copied off the host bound that.
 
 ## Reading the log
 
 - The files are plain JSON lines: `jq` or any log shipper reads them.
-- `GET /admin/security-log` (permission `read_history`) searches the request records of the active and rotated files, newest first, by request ID, account, operation, decision and time.
+- `GET /admin/security-log` (permission `read_history`) searches the request records of the active, rotated and archived files, newest first, by request ID, account, operation, decision and time.
 - `format=csv` or `format=json` exports up to 10,000 rows within 256 MiB of reading; the CSV escapes values a spreadsheet would run as formulas.
 - Searches, exports and the unused-permission advice read the files one at a time and stop when the client leaves.
 - `GET /admin/advice` reads the files for unused permissions; `GET /admin/alerts` reads the active file's last 1 MiB for its write rate.
@@ -109,4 +111,4 @@ What the gateway records, when a record is waited for, and how to read the log. 
 - `gateway_audit_bytes` and `gateway_audit_budget_bytes` on the metrics listener show how full the log is.
 - `gateway_key_reload_failures_total` counts key reloads refused because the keys or the settings beside them were invalid.
 - `gateway_admin_failures_total{reason}` counts Admin API requests the gateway could not answer itself: `store`, `audit`, `busy`, `log`, `streams` (every live-view slot in use).
-- `/readyz` answers `503` while the log has failed or is full.
+- `/readyz` answers `503` while the log refuses records: it has failed, has no space, is replacing its file, or is full under `refuse`.

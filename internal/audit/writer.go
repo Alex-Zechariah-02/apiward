@@ -11,7 +11,8 @@ import (
 // until the queue is closed and empty, which only close does; receiving from
 // a closed channel yields every value still buffered first. Once per
 // SummaryInterval it writes the ingress refusals counted, and while the file
-// system has no space it retries once per spaceRetry. At the end it writes
+// system has no space, or the active file is being replaced, it retries
+// once per spaceRetry. At the end it writes
 // the last summary and the loss count still pending and closes the file.
 func (a *AuditLog) run() {
 	defer close(a.done)
@@ -53,7 +54,10 @@ func (a *AuditLog) run() {
 				a.write([]*auditEntry{{event: e, done: make(chan error, 1)}})
 			}
 		case <-retry.C:
-			if a.noSpace.Load() {
+			switch {
+			case a.down.Load():
+				a.replace()
+			case a.noSpace.Load():
 				a.retrySpace()
 			}
 		}
@@ -77,7 +81,7 @@ func (a *AuditLog) settle(batch []*auditEntry, err error) {
 	switch {
 	case err == nil:
 		a.written.Add(uint64(len(batch)))
-	case errors.Is(err, errStorageFull), errors.Is(err, errNoSpace):
+	case errors.Is(err, errStorageFull), errors.Is(err, errNoSpace), errors.Is(err, errDown):
 		a.accepted.Add(-uint64(len(batch)))
 	}
 	for _, entry := range batch {
@@ -135,7 +139,7 @@ func (a *AuditLog) writeSummary() {
 	}
 	summary := []*auditEntry{{event: a.stamp(e)}}
 	err := a.write(summary)
-	if err != nil && !errors.Is(err, errStorageFull) && !errors.Is(err, errNoSpace) {
+	if err != nil && !errors.Is(err, errStorageFull) && !errors.Is(err, errNoSpace) && !errors.Is(err, errDown) {
 		a.lost.Add(unacknowledged(summary))
 	}
 }
@@ -143,9 +147,10 @@ func (a *AuditLog) writeSummary() {
 // write writes batch at the end of the log, after a pending rotation marker
 // and the pending loss count, and syncs it. Records are numbered as they are
 // encoded, so seq rises by one in file order. When a rotation is due and
-// every file is in use, or the file system has no space, the batch is
-// refused and its unacknowledged events are counted as lost; any other
-// failure fails the log until a restart.
+// the active folder is full under FullRefuse, the file system has no space,
+// or the active file is being replaced, the batch is refused and its
+// unacknowledged events are counted as lost; any other failure replaces the
+// active file (recover.go).
 func (a *AuditLog) write(batch []*auditEntry) error {
 	if a.failed.Load() {
 		return errAuditFailed
@@ -153,6 +158,10 @@ func (a *AuditLog) write(batch []*auditEntry) error {
 	if a.noSpace.Load() {
 		a.lost.Add(unacknowledged(batch))
 		return errNoSpace
+	}
+	if a.down.Load() {
+		a.lost.Add(unacknowledged(batch))
+		return errDown
 	}
 	return a.writeBatch(batch)
 }
@@ -171,16 +180,14 @@ func (a *AuditLog) writeBatch(batch []*auditEntry) error {
 			a.markFull(err)
 			return errStorageFull
 		} else if err != nil {
-			a.lost.Add(lost)
-			a.Fail(err)
-			return errAuditFailed
+			a.lost.Add(lost + unacknowledged(batch))
+			return a.failWrite(err, "rotation_failed")
 		}
 		rotated, err := a.rotate()
 		if err != nil {
 			// The count was not written, so it stays pending.
-			a.lost.Add(lost)
-			a.Fail(err)
-			return errAuditFailed
+			a.lost.Add(lost + unacknowledged(batch))
+			return a.failWrite(err, "rotation_failed")
 		}
 		a.marker = rotated
 		rotatedNow = true
@@ -195,18 +202,22 @@ func (a *AuditLog) writeBatch(batch []*auditEntry) error {
 		}
 	}
 	buffer, head := a.chain(buffer, a.head)
-	if err := a.persist(buffer); err != nil {
+	err := a.persist(buffer)
+	if err != nil && spaceError(err) && a.releaseReserve() {
+		err = a.persist(buffer)
+	}
+	if err != nil {
 		a.seq = mark
 		a.lost.Add(lost)
+		a.lost.Add(unacknowledged(batch))
 		if spaceError(err) {
-			a.lost.Add(unacknowledged(batch))
 			a.enterNoSpace(err)
 			return errNoSpace
 		}
-		a.Fail(err)
-		return errAuditFailed
+		return a.failWrite(err, "sync_failed")
 	}
 	a.marker = ""
+	a.fresh = false
 	a.lossTotal.Add(lost)
 	a.head = head
 	a.published.Store(&head)

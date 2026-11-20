@@ -94,6 +94,7 @@ func TestNativeConfigSettings(t *testing.T) {
 			Limits:               policy.Limits{PolicyBytes: 64 << 10, APIs: 64, Operations: 256, Roles: 64, Permits: 4096, RateCounters: 32768, Window: 10000},
 			AuditPrivacy:         audit.Privacy{Mode: audit.AddressFull},
 			AuditOutcomeWindow:   35 * time.Second, // read_header_timeout + write_timeout
+			AuditStorage:         audit.Storage{Archive: filepath.Join(dir, "archive"), ArchiveBytes: 10 << 30, MinFree: 10, Reserve: 64 << 20},
 		},
 		listen:            "127.0.0.2:9480",
 		metricsListen:     "127.0.0.1:9450",

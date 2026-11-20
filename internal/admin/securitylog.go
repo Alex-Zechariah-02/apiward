@@ -6,7 +6,6 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
-	"path/filepath"
 	"strconv"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/monitor"
@@ -83,13 +82,12 @@ func (s *Server) handleSecurityLog(w http.ResponseWriter, r *http.Request, who c
 		return
 	}
 	defer s.scanDone()
-	_, _, _, kept := s.audit.Usage()
-	files, missing, err := monitor.LogFiles(s.audit.Path(), kept)
+	files, missing, err := monitor.LogFiles(s.audit.Path(), s.audit.ArchivePath())
 	if err != nil {
 		s.fail(w, r, &who, "gateway_unavailable", monitor.FailLog, err)
 		return
 	}
-	result, err := monitor.Search(r.Context(), filepath.Dir(s.audit.Path()), files, start, query, limit, scan)
+	result, err := monitor.Search(r.Context(), files, start, query, limit, scan)
 	switch {
 	case r.Context().Err() != nil:
 		return // the client has gone

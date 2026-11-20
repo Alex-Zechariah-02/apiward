@@ -118,6 +118,13 @@ type gatewaySettings struct {
 	AuditWhenFull        string  `json:"audit_when_full"`
 	AuditSyncWindow      *string `json:"audit_sync_window"`
 	AuditPrefill         *bool   `json:"audit_prefill"`
+	// Where rotated files go and how the disks are kept from filling
+	// (storage.go).
+	AuditArchive         *string `json:"audit_archive"`
+	AuditArchiveMaxBytes *int64  `json:"audit_archive_max_bytes"`
+	AuditCompress        *bool   `json:"audit_compress"`
+	AuditMinFreePercent  *int    `json:"audit_min_free_percent"`
+	AuditReserveBytes    *int64  `json:"audit_reserve_bytes"`
 	// AuditClientAddress is how the log records client addresses: "full"
 	// (default), "prefix" or "hash" with AuditAddressKey.
 	AuditClientAddress *string              `json:"audit_client_address"`

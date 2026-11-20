@@ -13,6 +13,13 @@ import (
 	"github.com/Alex-Zechariah-02/apiward/internal/policy"
 )
 
+// testStorage are the security log storage settings of every test
+// deployment: a 1 % free-space threshold, so a developer's nearly full disk
+// does not evict the files a test counts, and the smallest reserve, so
+// parallel tests do not each write 64 MiB. Tests of those settings set
+// their own.
+var testStorage = map[string]any{"audit_min_free_percent": 1, "audit_reserve_bytes": 1 << 20}
+
 // WriteConfig writes the gateway configuration file for opts, filling the
 // defaults ConfigOptions names.
 func (e *Env) WriteConfig(opts ConfigOptions) {
@@ -32,6 +39,7 @@ func (e *Env) WriteConfig(opts ConfigOptions) {
 		"metrics_listen": e.Metrics,
 		"jwt":            opts.JWT,
 	}
+	maps.Copy(gateway, testStorage)
 	maps.Copy(gateway, opts.Audit)
 	maps.Copy(gateway, opts.Admin)
 	settings := e.NativeSettings()
@@ -47,11 +55,13 @@ func (e *Env) NativeSettings() map[string]any {
 	return map[string]any{
 		"version": ConfigVersion,
 		"gateway": map[string]any{
-			"database":       e.Database,
-			"audit_log":      e.AuditLog,
-			"admin_listen":   e.Admin,
-			"metrics_listen": e.Metrics,
-			"jwt":            TestTrust(issuertest.Name, issuertest.Audience, e.PublicKey),
+			"database":               e.Database,
+			"audit_log":              e.AuditLog,
+			"admin_listen":           e.Admin,
+			"metrics_listen":         e.Metrics,
+			"jwt":                    TestTrust(issuertest.Name, issuertest.Audience, e.PublicKey),
+			"audit_min_free_percent": testStorage["audit_min_free_percent"],
+			"audit_reserve_bytes":    testStorage["audit_reserve_bytes"],
 		},
 		"data": map[string]any{"listen": e.DataAddr},
 	}

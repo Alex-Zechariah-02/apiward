@@ -33,17 +33,17 @@ func TestPermitUseSummaries(t *testing.T) {
 	var cache Summaries
 	compare := func(step string) {
 		t.Helper()
-		files, _, err := LogFiles(active, 8)
+		files, _, err := LogFiles(active, "")
 		if err != nil {
 			t.Fatal(err)
 		}
 		for _, budget := range budgets {
-			plain, err := (&Summaries{}).PermitUse(t.Context(), dir, files, budget)
+			plain, err := (&Summaries{}).PermitUse(t.Context(), files, budget)
 			if err != nil {
 				t.Fatal(err)
 			}
 			for _, call := range []string{"first", "second"} {
-				cached, err := cache.PermitUse(t.Context(), dir, files, budget)
+				cached, err := cache.PermitUse(t.Context(), files, budget)
 				if err != nil || !reflect.DeepEqual(cached, plain) {
 					t.Errorf("%s, budget %d, %s call: %+v, uncached %+v (%v)", step, budget, call, cached, plain, err)
 				}
@@ -88,7 +88,7 @@ func TestPermitUseActivePrefix(t *testing.T) {
 	}
 	read := func(cache *Summaries) LogUse {
 		t.Helper()
-		use, err := cache.PermitUse(t.Context(), dir, []string{"audit.log"}, ExportScan)
+		use, err := cache.PermitUse(t.Context(), []string{filepath.Join(dir, "audit.log")}, ExportScan)
 		if err != nil {
 			t.Fatal(err)
 		}

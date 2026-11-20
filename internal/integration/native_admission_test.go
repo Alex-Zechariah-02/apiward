@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -199,16 +200,23 @@ func TestNativeAdmissionStatus(t *testing.T) {
 		e.AssertReceipts(0, 0, 0)
 	})
 
+	// Every sync fails once armed, so the replacement file fails too and the
+	// log stays unavailable.
 	t.Run("audit log failed while serving", func(t *testing.T) {
 		e := gatewaytest.NewEnv(t)
 		gatewaytest.Seed(t, e.Database, e.Policy(e.A, false), gatewaytest.SeedOptions{})
-		e.Start(gatewaytest.Binaries.Fault, "GATEWAY_FAULT=audit-fail-outcome")
+		armed := filepath.Join(e.Dir, "fault-armed")
+		e.Start(gatewaytest.Binaries.Fault, "GATEWAY_FAULT=audit-sync", "GATEWAY_FAULT_ARMED="+armed)
 		if s := e.Status(); s.Admission != "ready" {
 			t.Fatalf("before the failure %+v", s)
 		}
 		if code, _ := e.Get("/a/x"); code != http.StatusOK {
 			t.Fatalf("first request: %d", code)
 		}
+		if err := os.WriteFile(armed, nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		e.Get("/a/x") // its admission meets the failing sync
 		gatewaytest.WaitFor(t, time.Now().Add(10*time.Second), "the audit failure", func() bool { return e.Status().AuditFailed })
 		if s := e.Status(); s.Admission != "audit_failed" || s.State != store.ModeNormal || e.Health() != store.ModeNormal {
 			t.Fatalf("after the failure %+v, health %q", s, e.Health())

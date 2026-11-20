@@ -204,8 +204,9 @@ func TestNativeStopReportsIncompleteDrain(t *testing.T) {
 }
 
 // A writer that fails, in its sync or in every write, leaves accepted events
-// unwritten: the stop exits with status 3 and says so, and no credential
-// reaches the output.
+// unwritten: the replacement file fails too, so the log stays unavailable,
+// the stop exits with status 3 and says so, and no credential reaches the
+// output.
 func TestNativeStopReportsAuditFailure(t *testing.T) {
 	t.Parallel()
 	for _, fault := range []string{"audit-sync", "audit-full"} {
@@ -215,7 +216,8 @@ func TestNativeStopReportsAuditFailure(t *testing.T) {
 			e.Interruptible = true
 			e.Start(gatewaytest.Binaries.Fault, "GATEWAY_FAULT="+fault)
 			gatewaytest.WaitFor(t, time.Now().Add(10*time.Second), "the audit failure", func() bool {
-				return strings.Contains(e.Output.String(), "audit log failed")
+				out := e.Output.String()
+				return strings.Contains(out, "audit file failed") || strings.Contains(out, "audit log has no space")
 			})
 			token := gatewaytest.Issuer.TokenFor(t, "alice")
 			if code, _ := e.Get("/a/x", "Authorization", "Bearer "+token); code != http.StatusServiceUnavailable {

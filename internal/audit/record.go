@@ -185,6 +185,10 @@ func appendRecord(b []byte, e *Event) []byte {
 		b = append(b, `,"sha256":`...)
 		b = appendString(b, e.Digest)
 	}
+	if e.Archived != 0 {
+		b = append(b, `,"archived_bytes":`...)
+		b = strconv.AppendInt(b, e.Archived, 10)
+	}
 	if !e.First.IsZero() {
 		b = append(b, `,"first_record":`...)
 		b = appendTime(b, e.First)

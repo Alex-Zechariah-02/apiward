@@ -1,8 +1,9 @@
-// A file system without space: the log refuses admission, fail closed, and
-// retries until a write and its sync succeed again. A failed sync, or any
-// other write error, fails the log until a restart instead: after a failed
-// sync the kernel may have dropped the written pages, so a later success
-// would not prove them durable.
+// A file system without space: the writer first releases the reserve file
+// and writes again (reserve.go); without one, the log refuses admission,
+// fail closed, and retries until a write and its sync succeed again. A
+// failed sync, or any other write error, replaces the active file instead
+// (recover.go): after a failed sync the kernel may have dropped the written
+// pages, so a later success in the same file would not prove them durable.
 
 package audit
 
@@ -27,7 +28,7 @@ func (a *AuditLog) enterNoSpace(err error) {
 		// An append may have left part of the batch past the logical end;
 		// shrinking needs no space.
 		if truncErr := a.file.Truncate(a.size); truncErr != nil {
-			a.Fail(errors.Join(err, truncErr))
+			a.failWrite(errors.Join(err, truncErr), "sync_failed")
 			return
 		}
 	}

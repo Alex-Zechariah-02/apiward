@@ -24,12 +24,23 @@ func Metrics(o *Observations, gauges func() []Gauge) http.Handler {
 
 // Gauge is one sample the metrics listener reports as read; Counter marks a
 // value that only grows, reported with the counter type. Labels are name and
-// value pairs, such as the value of an info metric (Value 1).
+// value pairs, such as the value of an info metric (Value 1). Samples of one
+// name are listed together. Spread, when set, makes it a histogram instead.
 type Gauge struct {
 	Name    string
 	Value   int64
 	Counter bool
 	Labels  []string
+	Spread  *Spread
+}
+
+// Spread is a histogram: counts per bucket of Bounds (not cumulative; one
+// more for values above every bound), the count and the sum in seconds.
+type Spread struct {
+	Bounds  []float64
+	Buckets []uint64
+	Count   uint64
+	Sum     float64
 }
 
 // exposition writes the text format. Label values are escaped as the format
@@ -120,12 +131,21 @@ func serveMetrics(w http.ResponseWriter, r *http.Request, o *Observations, gauge
 	}
 	b.family("gateway_metric_series_dropped_total", "counter")
 	b.sample("gateway_metric_series_dropped_total", count(collapsed))
+	previous := ""
 	for _, gauge := range gauges() {
+		if gauge.Spread != nil {
+			b.family(gauge.Name, "histogram")
+			b.histogram(gauge.Name, "", gauge.Spread.Bounds, histogram{buckets: gauge.Spread.Buckets, count: gauge.Spread.Count, sum: gauge.Spread.Sum})
+			continue
+		}
 		kind := "gauge"
 		if gauge.Counter {
 			kind = "counter"
 		}
-		b.family(gauge.Name, kind)
+		if gauge.Name != previous {
+			b.family(gauge.Name, kind)
+		}
+		previous = gauge.Name
 		b.sample(gauge.Name, strconv.FormatInt(gauge.Value, 10), gauge.Labels...)
 	}
 	o.window(&b)

@@ -95,7 +95,7 @@ func BenchmarkPermitUse(b *testing.B) {
 	var c Summaries
 	b.ReportAllocs()
 	for b.Loop() {
-		if _, err := c.PermitUse(context.Background(), filepath.Dir(path), []string{filepath.Base(path)}, ExportScan); err != nil {
+		if _, err := c.PermitUse(context.Background(), []string{path}, ExportScan); err != nil {
 			b.Fatal(err)
 		}
 	}
@@ -107,7 +107,7 @@ func BenchmarkSearchExport(b *testing.B) {
 	query, _ := ParseQuery(map[string][]string{"ref": {"absent"}})
 	b.ReportAllocs()
 	for b.Loop() {
-		if _, err := Search(context.Background(), filepath.Dir(path), []string{filepath.Base(path)}, nil, query, ExportRows, ExportScan); err != nil {
+		if _, err := Search(context.Background(), []string{path}, nil, query, ExportRows, ExportScan); err != nil {
 			b.Fatal(err)
 		}
 	}

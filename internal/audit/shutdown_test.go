@@ -60,6 +60,8 @@ type fileRecord struct {
 	RequestID string `json:"request_id"`
 	Seq       uint64 `json:"seq"`
 	Lost      uint64 `json:"lost"`
+	Reason    string `json:"reason"`
+	File      string `json:"file"`
 }
 
 // fileEvents reads every record of an audit file.

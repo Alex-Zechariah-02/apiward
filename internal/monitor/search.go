@@ -4,7 +4,6 @@ package monitor
 
 import (
 	"encoding/json"
-	"path/filepath"
 	"slices"
 	"strings"
 	"time"
@@ -117,31 +116,33 @@ func (q Query) matches(view RequestView) bool {
 		(q.to.IsZero() || view.Time.Before(q.to))
 }
 
-// LogFiles lists the audit files newest first: the active file, then the
-// rotated files from the newest down. missing names rotated files that are
-// no longer present (moved away to archive): each file but the oldest starts
-// with an audit.rotated record naming the file rotated before it, and so
-// does the oldest while the log holds fewer than limit files (the active one
-// included), since before that no file was evicted. The list stays bounded
-// by the files present.
-func LogFiles(active string, limit int64) (files, missing []string, err error) {
-	rotated, err := audit.RotatedFiles(active)
+// LogFiles lists the audit files by path, newest first: the active file,
+// then the rotated files of the active and archive ("" for none) folders
+// from the newest down. missing names rotated files no longer present: each
+// file starts with an audit.rotated record naming the file rotated before
+// it, and a named file in neither folder, under either name, is missing
+// unless a tombstone says it was evicted. The oldest file's predecessor is
+// not checked: the oldest files are evicted, or moved away by an operator.
+// The list stays bounded by the files present.
+func LogFiles(active, archive string) (files, missing []string, err error) {
+	rotated, err := audit.RotatedFiles(active, archive)
 	if err != nil {
 		return nil, nil, err
 	}
-	files = []string{filepath.Base(active)}
+	evicted, err := audit.Tombstones(active)
+	if err != nil {
+		return nil, nil, err
+	}
+	present := map[string]bool{}
+	files = []string{active}
 	for i := len(rotated) - 1; i >= 0; i-- {
-		files = append(files, rotated[i].Name)
+		files = append(files, rotated[i].Path())
+		present[rotated[i].Plain()] = true
 	}
 	missing = []string{}
-	checked := files
-	if int64(len(files)) >= limit {
-		checked = files[:len(files)-1]
-	}
-	dir := filepath.Dir(active)
-	for _, name := range checked {
-		head, err := firstRecord(filepath.Join(dir, name))
-		if err != nil || head.Kind != "audit.rotated" || head.File == "" || slices.Contains(files, head.File) {
+	for _, path := range files[:len(files)-1] {
+		head, err := firstRecord(path)
+		if err != nil || head.Kind != "audit.rotated" || head.File == "" || present[head.File] || evicted[head.File] {
 			continue
 		}
 		missing = append(missing, head.File)

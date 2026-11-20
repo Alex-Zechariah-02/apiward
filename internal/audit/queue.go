@@ -4,13 +4,9 @@ package audit
 
 import (
 	"context"
-	"crypto/sha256"
 	"fmt"
-	"log/slog"
-	"os"
 	"strconv"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -37,115 +33,22 @@ const (
 // is written; either way the caller records the refusal that supersedes it.
 var ErrTimedOut = fmt.Errorf("%w: acknowledgement timed out", errAuditFailed)
 
-// AuditLog writes events to a local file. Events that gate a decision wait
-// until the batch containing them has been synced to disk; other events are
-// queued without blocking and counted when they cannot be queued.
-//
-// An event is accepted when enqueue puts it in the queue. Every accepted event
-// is written in order by the one writer, which ends only once close has
-// closed the queue and every event in it has been written; so a close that
-// returns nil means every accepted event, and the count of every refused one,
-// is in the file and synced.
-//
-// On Linux, unless the settings ask to append, the active file is filled with
-// zero bytes ahead of the writer and written in place; its content ends at
-// End. The active file is rotated to "<path>.<n>" before it would exceed
-// maxBytes.
-// Once maxFiles files exist the log is full: it refuses records, and so
-// protected admission, until an operator moves rotated files away, which it
-// notices at its next rotation; or, when it may evict, it deletes the oldest
-// rotated file after a synced record of what that file held.
-type AuditLog struct {
-	boot     string // distinguishes event identities across process starts
-	path     string
-	maxBytes int64
-	maxFiles int
-	file     *os.File // used only by the writer, which closes it as it ends
-	size     int64    // logical size of the active file; used only by the writer
-	// prefill zero-fills the active file ahead of the writer up to filled,
-	// its physical size (see fill.go); used only by the writer.
-	prefill bool
-	filled  int64
-	rotated int // rotated files present; used only by the writer
-	// prepared delivers the description of preparing, the next file to
-	// evict, made in the background (prepare.go); used only by the writer.
-	prepared  chan describedFile
-	preparing string
-	// rotatedBytes is the rotated files' total size; used only by the writer.
-	rotatedBytes int64
-	// encoded is the last batch's memory, reused by the next batch; used
-	// only by the writer.
-	encoded []byte
-	// seq numbers records in file order; used only by the writer.
-	seq uint64
-	// marker names the rotated file the next write must record first, set
-	// when a rotation's marker is not yet written; used only by the writer.
-	marker string
-	evict  bool // delete the oldest rotated file when full
-	// privacy is how client addresses are recorded; never changes.
-	privacy Privacy
-	// outcomeWindow bounds reconciliation after an unclean stop.
-	outcomeWindow time.Duration
-	// head is the chain head of the batches written since the start, and
-	// signer signs its checkpoints (chain.go); used only by the writer.
-	head   [sha256.Size]byte
-	signer Signer
-	// published copies head for readers outside the writer (ChainHead).
-	published atomic.Pointer[[sha256.Size]byte]
-	// window is how long a batch with siblings waits for more events
-	// before its sync; 0 syncs each batch as soon as it is drained.
-	window  time.Duration
-	openErr error // why openAudit could not open the file; never changes
-	queue   chan *auditEntry
-	failed  atomic.Bool
-	full    atomic.Bool // every file in use; cleared once a rotation succeeds
-	// noSpace is set while the file system has no space for a write; the
-	// writer clears it once a retried write and its sync succeed.
-	noSpace atomic.Bool
-	// spaceSince is when the log ran out of space; used only by the writer.
-	spaceSince time.Time
-	lost       atomic.Uint64 // events refused and not yet counted in the file
-	// lossTotal and evictions count, since the start, the refused events
-	// written in loss records and the files evicted, for the metrics.
-	lossTotal atomic.Uint64
-	evictions atomic.Uint64
-	accepted  atomic.Uint64 // events queued
-	// activeBytes and files copy size and rotated+1 for readers outside the
-	// writer (the limits read); only the writer stores them.
-	activeBytes atomic.Int64
-	files       atomic.Int64
-	usedBytes   atomic.Int64 // every file's bytes
-	summary     ingressSummary
-	written     atomic.Uint64 // queued events written and synced
-	// mu orders queueing against closing: enqueue holds it shared while it
-	// checks closing and queues, and close holds it exclusively while it sets
-	// closing and closes the queue. Neither blocks while holding it.
-	mu      sync.RWMutex
-	closing bool
-	done    chan struct{} // closed when the writer has ended
-	fileErr error         // the result of closing the file; set by the writer before done
-}
-
-func (a *AuditLog) Fail(err error) {
-	if a.failed.CompareAndSwap(false, true) {
-		slog.Error("audit log failed; protected admission disabled", "error", err)
-	}
-}
-
 // Commit records an event and waits for durable acknowledgement. A failed or
 // closing log, a file system without space, or a full queue, refuses it at
 // once. When ctx ends first it withdraws the event if the writer has not
 // taken it, and returns ErrTimedOut.
 func (a *AuditLog) Commit(ctx context.Context, e Event) error {
-	if a.failed.Load() || a.noSpace.Load() {
+	if a.failed.Load() || a.noSpace.Load() || a.down.Load() {
 		return errAuditFailed
 	}
 	entry := &auditEntry{event: e, done: make(chan error, 1)}
 	if err := a.enqueue(entry); err != nil {
 		return fmt.Errorf("%w: %v", errAuditFailed, err)
 	}
+	start := time.Now()
 	select {
 	case err := <-entry.done:
+		a.saves.observe(time.Since(start))
 		return err
 	case <-ctx.Done():
 		entry.state.CompareAndSwap(entryQueued, entryWithdrawn)
@@ -242,6 +145,8 @@ func (a *AuditLog) seal(e *Event) {
 // first, the writer keeps the file and may still finish. Each later call
 // reports the state it then finds.
 func (a *AuditLog) Close(ctx context.Context) error {
+	// The archiver's records need the queue, so it stops first.
+	a.archive.halt(ctx)
 	a.mu.Lock()
 	if !a.closing {
 		a.closing = true

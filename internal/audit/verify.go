@@ -3,7 +3,10 @@
 // audit.checkpoint signature checked with the gateway's public keys. A run
 // starts at each start of the gateway (its boot ID); records written after
 // a run's last chain record (an unclean stop) are reported as unchained, not
-// as tampered.
+// as tampered. Compressed files are read through gzip and their content
+// checked against the SHA-256 in their header; a file named by the next
+// file's audit.rotated record that was neither given nor evicted (an
+// audit.evicted record names it) is reported missing.
 
 package audit
 
@@ -21,6 +24,7 @@ import (
 	"io"
 	"math/big"
 	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -31,10 +35,11 @@ type ChainReport struct {
 	Checkpoints int      `json:"checkpoints"`
 	Unchained   int      `json:"unchained_records"`
 	Problems    []string `json:"problems"`
+	Missing     []string `json:"missing_files"`
 }
 
-// Valid reports whether nothing was found altered.
-func (r ChainReport) Valid() bool { return len(r.Problems) == 0 }
+// Valid reports whether nothing was found altered or missing.
+func (r ChainReport) Valid() bool { return len(r.Problems) == 0 && len(r.Missing) == 0 }
 
 // chainLine is what verification reads of one record.
 type chainLine struct {
@@ -43,6 +48,7 @@ type chainLine struct {
 	Digest    string `json:"sha256"`
 	Target    string `json:"target"`
 	Signature string `json:"signature"`
+	File      string `json:"file"`
 }
 
 // verifier is the state carried from line to line, across files.
@@ -53,22 +59,28 @@ type verifier struct {
 	head    [sha256.Size]byte
 	pending []byte
 	lines   int // records in pending
+	// evicted names the files audit.evicted records name; before the file
+	// each given file's first audit.rotated record names.
+	evicted map[string]bool
+	before  []string
 }
 
 // VerifyChain checks the files, oldest first, with the checkpoint keys by
 // key ID (Ed25519 or ECDSA P-256 public keys).
 func VerifyChain(paths []string, keys map[string]crypto.PublicKey) (ChainReport, error) {
-	v := &verifier{keys: keys, report: ChainReport{Problems: []string{}}}
+	v := &verifier{keys: keys, report: ChainReport{Problems: []string{}, Missing: []string{}}, evicted: map[string]bool{}}
+	given := map[string]bool{}
 	for _, path := range paths {
-		data, err := os.ReadFile(path)
+		given[strings.TrimSuffix(filepath.Base(path), packedSuffix)] = true
+		data, err := v.content(path)
 		if err != nil {
 			return v.report, err
 		}
-		reader := bufio.NewReaderSize(bytes.NewReader(Content(data)), MaxRecordBytes)
+		reader := bufio.NewReaderSize(bytes.NewReader(data), MaxRecordBytes)
 		for n := 1; ; n++ {
 			line, err := reader.ReadBytes('\n')
 			if len(line) > 0 {
-				v.line(line, fmt.Sprintf("%s:%d", path, n))
+				v.line(line, fmt.Sprintf("%s:%d", path, n), n == 1)
 			}
 			if err == io.EOF {
 				break
@@ -79,14 +91,62 @@ func VerifyChain(paths []string, keys map[string]crypto.PublicKey) (ChainReport,
 		}
 	}
 	v.report.Unchained += v.lines
+	// The first file's predecessor is not checked: a subset may be given.
+	for i, name := range v.before {
+		if i > 0 && name != "" && !given[name] && !v.evicted[name] {
+			v.report.Missing = append(v.report.Missing, name)
+		}
+	}
 	return v.report, nil
 }
 
-// line takes one record with its newline; where names it in problems.
-func (v *verifier) line(line []byte, where string) {
+// content reads a file's records: a compressed file whole through gzip,
+// with a changed or damaged one reported and read as empty.
+func (v *verifier) content(path string) ([]byte, error) {
+	if !strings.HasSuffix(path, packedSuffix) {
+		data, err := os.ReadFile(path)
+		return Content(data), err
+	}
+	header, err := ReadPacked(path)
+	if err != nil {
+		v.report.Problems = append(v.report.Problems, path+": "+err.Error())
+		return nil, nil
+	}
+	reader, err := OpenRecords(path)
+	if err != nil {
+		return nil, err
+	}
+	defer reader.Close()
+	// Bounded by the size the header states, so a changed file cannot
+	// expand without limit; a longer content fails the digest check.
+	data, err := io.ReadAll(io.LimitReader(reader, header.Bytes+1))
+	sum := sha256.Sum256(data)
+	switch {
+	case err != nil:
+		v.report.Problems = append(v.report.Problems, path+": the compressed file is damaged: "+err.Error())
+		return nil, nil
+	case hex.EncodeToString(sum[:]) != header.Digest:
+		v.report.Problems = append(v.report.Problems, path+": the content does not match the SHA-256 in its header")
+	}
+	return data, nil
+}
+
+// line takes one record with its newline; where names it in problems, and
+// head marks a file's first record.
+func (v *verifier) line(line []byte, where string, head bool) {
 	v.report.Records++
 	var r chainLine
 	parsed := json.Unmarshal(bytes.TrimSpace(line), &r) == nil
+	if head {
+		before := ""
+		if parsed && r.Kind == "audit.rotated" {
+			before = r.File
+		}
+		v.before = append(v.before, before)
+	}
+	if parsed && r.Kind == "audit.evicted" {
+		v.evicted[r.File] = true
+	}
 	if parsed {
 		if boot, _, found := strings.Cut(r.ID, "-"); found && boot != v.boot {
 			// A new run: what the last one left unchained is not its.

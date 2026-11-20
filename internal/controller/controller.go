@@ -60,7 +60,7 @@ type Config struct {
 	// older history is pruned when a revision is committed. Zero takes
 	// DefaultHistory.
 	HistoryKeep int
-	// AuditWhenFull is audit.FullRefuse (the default) or audit.FullEvict.
+	// AuditWhenFull is audit.FullEvict (the default) or audit.FullRefuse.
 	AuditWhenFull string
 	// AuditQueue is the audit queue's size; audit.QueueSize derives it.
 	AuditQueue int
@@ -78,6 +78,9 @@ type Config struct {
 	AuditOutcomeWindow time.Duration
 	// AuditSigner signs the audit chain's checkpoints; nil writes none.
 	AuditSigner audit.Signer
+	// AuditStorage is the archive, free-space and reserve settings; its
+	// zero value runs no archiver.
+	AuditStorage audit.Storage
 	// IgnoredReads lists the Admin API paths whose successful authenticated
 	// GET reads write no admin.read record (gateway.audit_ignore_reads): nil
 	// takes DefaultIgnoredReads, empty records every read.
@@ -223,7 +226,7 @@ func (c *Controller) Open() error {
 		ownership.Close()
 		return err
 	}
-	log := audit.OpenAudit(cfg.AuditLog, audit.Settings{MaxBytes: cfg.AuditMaxBytes, MaxFiles: cfg.AuditMaxFiles, WhenFull: cfg.AuditWhenFull, Queue: cfg.AuditQueue, Window: cfg.AuditSyncWindow, Append: cfg.AuditAppend, Privacy: cfg.AuditPrivacy, OutcomeWindow: cfg.AuditOutcomeWindow, Signer: cfg.AuditSigner})
+	log := audit.OpenAudit(cfg.AuditLog, audit.Settings{MaxBytes: cfg.AuditMaxBytes, MaxFiles: cfg.AuditMaxFiles, WhenFull: cfg.AuditWhenFull, Queue: cfg.AuditQueue, Window: cfg.AuditSyncWindow, Append: cfg.AuditAppend, Privacy: cfg.AuditPrivacy, OutcomeWindow: cfg.AuditOutcomeWindow, Signer: cfg.AuditSigner, Storage: cfg.AuditStorage})
 
 	c.mu.Lock()
 	defer c.mu.Unlock()

@@ -17,13 +17,20 @@ import (
 )
 
 // The active file is rotated before it would exceed its size, records are
-// never lost or split, and when the retained files are full the gateway
-// stops admitting rather than deleting evidence. An operator who archives
-// the files and restarts restores admission.
+// never lost or split, and with refuse opted in and the archive
+// unavailable, when the retained files are full the gateway stops
+// admitting rather than deleting evidence. An operator who moves the files
+// away and restarts restores admission.
 func TestAuditRotationAndRetention(t *testing.T) {
 	t.Parallel()
 	e := gatewaytest.NewEnv(t)
-	e.WriteConfig(gatewaytest.ConfigOptions{Audit: map[string]any{"audit_max_bytes": 8192, "audit_max_files": 3}})
+	// A file where the archive folder should be: nothing is moved.
+	blocked := filepath.Join(e.Dir, "blocked")
+	if err := os.WriteFile(blocked, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	e.WriteConfig(gatewaytest.ConfigOptions{Audit: map[string]any{"audit_max_bytes": 8192, "audit_max_files": 3,
+		"audit_when_full": "refuse", "audit_compress": false, "audit_archive": blocked}})
 	gatewaytest.Seed(t, e.Database, e.Policy(e.A, false), gatewaytest.SeedOptions{})
 	e.Start(gatewaytest.Binaries.Plain)
 	e.Status() // signs the harness in while the log has room

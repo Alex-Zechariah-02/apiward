@@ -38,7 +38,7 @@ func TestAdminLimits(t *testing.T) {
 		Used int64 `json:"used"`
 		Max  int64 `json:"max"`
 	}
-	if err := json.Unmarshal([]byte(body), &limits); err != nil || len(limits) != 10 {
+	if err := json.Unmarshal([]byte(body), &limits); err != nil || len(limits) != 11 {
 		t.Fatalf("limits body: %s (%v)", body, err)
 	}
 	want := map[string]int64{
@@ -64,5 +64,9 @@ func TestAdminLimits(t *testing.T) {
 	}
 	if files, bytes := limits["audit_files"], limits["audit_active_bytes"]; files.Used < 1 || files.Used > files.Max || bytes.Used < 1 || bytes.Used > bytes.Max {
 		t.Errorf("audit usage: files %+v, active bytes %+v", files, bytes)
+	}
+	// The archive's bound is the default 10 GiB; nothing is archived yet.
+	if archive := limits["audit_archive_bytes"]; archive.Max != 10<<30 || archive.Used != 0 {
+		t.Errorf("audit archive: %+v", archive)
 	}
 }

@@ -18,14 +18,16 @@ const limitRows: { id: string; name: string; atLimit: string; bytes?: boolean }[
   { id: 'temporary_rules', name: 'Active Temporary Rules', atLimit: 'New temporary rules are refused until one ends or is revoked.' },
   { id: 'live_views', name: 'Open Live Views', atLimit: 'Another Live Traffic view cannot connect until one closes.' },
   { id: 'administrator_sessions', name: 'Administrator Sessions', atLimit: 'New sign-ins are refused until a session ends.' },
-  { id: 'audit_files', name: 'Security Log Files', atLimit: 'The gateway stops accepting requests until earlier files are moved away and it restarts.' },
-  { id: 'audit_active_bytes', name: 'Current Security Log File', atLimit: 'The file is closed and a new one started.', bytes: true },
+  { id: 'audit_files', name: 'Security Log Files Waiting to Archive', atLimit: 'The oldest file is deleted after a record of it is saved; with the refuse setting, the gateway stops accepting requests until files are moved away.' },
+  { id: 'audit_active_bytes', name: 'Current Security Log File', atLimit: 'The file is closed, compressed and moved to the archive, and a new one started.', bytes: true },
+  { id: 'audit_archive_bytes', name: 'Security Log Archive', atLimit: 'The oldest archived file is deleted after a record of it is saved.', bytes: true },
   { id: 'rate_counters', name: 'Rate Limit Counters', atLimit: 'Requests that need a new counter are refused until older ones expire.' },
   { id: 'recent_requests', name: 'Recent Requests Kept for Live Views', atLimit: 'The oldest is dropped; the security log keeps every request.' },
 ]
 
 function amount(value: number, bytes?: boolean): string {
   if (!bytes) return value.toLocaleString()
+  if (value >= 1 << 30) return `${(value / (1 << 30)).toFixed(1)} GiB`
   return value >= 1 << 20 ? `${(value / (1 << 20)).toFixed(1)} MiB` : `${(value / 1024).toFixed(1)} KiB`
 }
 

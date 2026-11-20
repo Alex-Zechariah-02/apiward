@@ -4,6 +4,8 @@ package integration
 
 import (
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -84,15 +86,20 @@ func TestAdmissionWaitsForDurableAudit(t *testing.T) {
 }
 
 // A failure to record an outcome after the upstream acted cannot undo that
-// action: the fixture change stays, the log shows the admission without an
-// outcome, the failure is reported, and no later request is admitted.
+// action: the fixture change stays and the log shows the admission without
+// an outcome. The failed file is replaced without a restart: the replacement is recorded with the lost outcome counted, and
+// once the failure has passed, later requests are admitted again.
 func TestOutcomeFailureStopsLaterAdmissions(t *testing.T) {
 	t.Parallel()
 	fixtures := gatewaytest.StartFixtures(t)
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, gatewaytest.FixturePolicy(fixtures), gatewaytest.SeedOptions{})
-	e.Start(gatewaytest.Binaries.Fault, "GATEWAY_FAULT=audit-fail-outcome")
+	armed := filepath.Join(e.Dir, "fault-armed")
+	e.Start(gatewaytest.Binaries.Fault, "GATEWAY_FAULT=audit-fail-outcome", "GATEWAY_FAULT_ARMED="+armed)
 	e.Status() // signs the harness in while the log still works
+	if err := os.WriteFile(armed, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
 	orders := fixtures["orders"]
 	seedState := orders.State().SHA256
 
@@ -101,33 +108,42 @@ func TestOutcomeFailureStopsLaterAdmissions(t *testing.T) {
 		t.Fatalf("first order: %d %s", resp.StatusCode, body)
 	}
 	id := orders.Receipts()[0].RequestID
-	deadline := time.Now().Add(5 * time.Second)
-	for !e.Status().AuditFailed {
-		if time.Now().After(deadline) {
-			t.Fatal("outcome failure not reported")
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
+	gatewaytest.WaitFor(t, time.Now().Add(5*time.Second), "the outcome failure", func() bool {
+		return strings.Contains(e.Output.String(), "audit file failed; replacing it")
+	})
 	if orders.State().SHA256 == seedState || len(orders.Receipts()) != 1 {
 		t.Fatal("the forwarded order did not take effect")
 	}
-	for _, path := range []string{"/orders", "/inventory/health"} {
-		if code, _ := e.Request(http.MethodGet, path, "", "", gatewaytest.Bearer(t, "staff-01")...); code != http.StatusServiceUnavailable {
-			t.Errorf("GET %s after the outcome failure: %d, want 503", path, code)
-		}
-	}
+	os.Remove(armed)
+	gatewaytest.WaitFor(t, time.Now().Add(5*time.Second), "admission again", func() bool {
+		code, _ := e.Request(http.MethodGet, "/inventory/health", "", "", gatewaytest.Bearer(t, "staff-01")...)
+		return code == http.StatusOK
+	})
 	if code, _ := e.Get("/orders"); code != http.StatusUnauthorized {
 		t.Errorf("a refusal stays a refusal: %d", code)
 	}
-	if n := len(orders.Receipts()); n != 1 {
-		t.Fatalf("%d receipts after the failure, want 1", n)
-	}
 	events := e.AuditEvents()
-	if gatewaytest.FindEvent(events, "request.admitted", id) == nil || gatewaytest.FindEvent(events, "request.forwarded", id) != nil {
-		t.Fatalf("log for %s: admitted %v forwarded %v", id, gatewaytest.FindEvent(events, "request.admitted", id), gatewaytest.FindEvent(events, "request.forwarded", id))
+	if gatewaytest.FindEvent(events, "request.admitted", id) != nil || gatewaytest.FindEvent(events, "request.forwarded", id) != nil {
+		t.Fatalf("the new file holds records of %s", id)
 	}
-	if !strings.Contains(e.Output.String(), "audit log failed; protected admission disabled") {
-		t.Fatalf("no operator diagnostic in\n%s", e.Output)
+	recovered, lost := false, 0.0
+	for _, ev := range events {
+		recovered = recovered || (ev["kind"] == "audit.recovered" && ev["reason"] == "sync_failed")
+		if ev["kind"] == "audit.loss" {
+			lost += ev["lost"].(float64)
+		}
+	}
+	if !recovered || lost < 1 {
+		t.Fatalf("replacement recorded %v, lost outcomes counted %v", recovered, lost)
+	}
+	var admitted bool
+	for _, file := range gatewaytest.RotatedAudit(t, e.AuditLog) {
+		if found, _ := gatewaytest.ParseAudit(gatewaytest.ReadAudit(t, file), filepath.Base(file)); gatewaytest.FindEvent(found, "request.admitted", id) != nil {
+			admitted = gatewaytest.FindEvent(found, "request.forwarded", id) == nil
+		}
+	}
+	if !admitted {
+		t.Fatalf("the replaced file does not show %s admitted without an outcome", id)
 	}
 }
 

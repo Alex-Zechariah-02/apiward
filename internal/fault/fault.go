@@ -9,8 +9,11 @@ import (
 	"context"
 	"errors"
 	"os"
+	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -63,7 +66,8 @@ func CrashPoint(name string) {
 }
 
 // WriteAudit writes data at offset and makes it durable with sync, unless a
-// fault is injected: no space for any write, a failed sync after any write,
+// fault is injected: no space for any write (or only while the reserve file
+// exists), a failed sync after any write,
 // and, for a batch holding an admission, a write of half the data, a crash
 // after half the data (a torn write), a crash between write and sync, or a
 // sync delayed past the acknowledgement wait; or a failed write of a batch
@@ -80,7 +84,10 @@ func WriteAudit(file *os.File, data []byte, offset int64, sync func(*os.File) er
 	}
 	switch {
 	case faultEnabled("audit-full"):
-		return errors.New("injected audit failure: no space left on device")
+		return noSpace(file)
+	case faultEnabled("audit-full-reserve") && reserveExists(file):
+		// A disk that is full until the reserve file is deleted.
+		return noSpace(file)
 	case faultEnabled("audit-fail-outcome") && outcome:
 		return errors.New("injected audit failure writing an outcome")
 	case faultEnabled("audit-fail-published") && published:
@@ -104,6 +111,23 @@ func WriteAudit(file *os.File, data []byte, offset int64, sync func(*os.File) er
 		time.Sleep(3 * time.Second)
 	}
 	return sync(file)
+}
+
+// noSpace is the error a full disk gives a write to file: ENOSPC, or
+// ERROR_DISK_FULL on Windows.
+func noSpace(file *os.File) error {
+	errno := syscall.ENOSPC
+	if runtime.GOOS == "windows" {
+		errno = syscall.Errno(112)
+	}
+	return &os.PathError{Op: "write", Path: file.Name(), Err: errno}
+}
+
+// reserveExists reports whether the audit reserve file beside file exists.
+func reserveExists(file *os.File) bool {
+	name := file.Name()
+	_, err := os.Stat(strings.TrimSuffix(name, filepath.Ext(name)) + ".reserve")
+	return err == nil
 }
 
 // holdAudit holds the writer before a write while the file GATEWAY_AUDIT_HOLD

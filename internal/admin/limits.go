@@ -30,6 +30,7 @@ func (s *Server) handleLimits(w http.ResponseWriter, r *http.Request, who caller
 		addresses = len(*list)
 	}
 	auditBytes, auditBytesLimit, auditFiles, auditFilesLimit := s.audit.Usage()
+	archive, _ := s.audit.Archive()
 	document, err := s.confirmedBytes(r.Context())
 	if err != nil {
 		s.fail(w, r, &who, "unavailable", monitor.FailStore, err)
@@ -45,6 +46,7 @@ func (s *Server) handleLimits(w http.ResponseWriter, r *http.Request, who caller
 		"administrator_sessions": limit(int64(s.sessions.Count(time.Now())), session.Max),
 		"audit_files":            limit(auditFiles, auditFilesLimit),
 		"audit_active_bytes":     limit(auditBytes, auditBytesLimit),
+		"audit_archive_bytes":    limit(archive.Bytes, archive.Budget),
 		"rate_counters":          limit(int64(s.limiter.Size()), int64(s.limiter.Capacity())),
 		"recent_requests":        limit(int64(s.observations.Retained()), int64(s.observations.Window())),
 	})

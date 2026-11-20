@@ -5,11 +5,13 @@ package integration
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -17,9 +19,11 @@ import (
 	"github.com/Alex-Zechariah-02/apiward/internal/gatewaytest"
 )
 
-// An interrupted append leaves an incomplete last record. After a restart it
-// is kept, terminated, and named by an audit.recovered event; complete
-// records are unchanged and admission works again.
+// An interrupted append leaves an incomplete last record. The writer
+// replaces the file at once: the suspect file keeps its
+// complete records and the incomplete one after them, and the new file's
+// audit.recovered names the suspect file and where its synced records end.
+// After a restart without the fault, admission works again.
 func TestIncompleteRecordIsRecovered(t *testing.T) {
 	t.Parallel()
 	e := gatewaytest.NewEnv(t)
@@ -37,51 +41,36 @@ func TestIncompleteRecordIsRecovered(t *testing.T) {
 	if code, _ := e.Get("/a/x"); code != http.StatusServiceUnavailable {
 		t.Fatalf("admission with a partial write: %d", code)
 	}
-	if !e.Status().AuditFailed {
-		t.Fatal("partial write not reported")
-	}
+	var marker map[string]any
+	gatewaytest.WaitFor(t, time.Now().Add(5*time.Second), "the replacement record", func() bool {
+		for _, ev := range e.AuditEvents() {
+			if ev["kind"] == "audit.recovered" && ev["reason"] == "sync_failed" {
+				marker = ev
+			}
+		}
+		return marker != nil
+	})
 	e.Stop()
-	partial := readAudit(t, e.AuditLog)
-	if !bytes.HasPrefix(partial, complete) || len(partial) == len(complete) || partial[len(partial)-1] == '\n' {
-		t.Fatalf("expected an incomplete record after %d complete bytes; file has %d bytes", len(complete), len(partial))
+	var suspect []byte
+	for _, file := range gatewaytest.RotatedAudit(t, e.AuditLog) {
+		if strings.TrimSuffix(filepath.Base(file), ".gz") == marker["file"] {
+			// Read raw: the incomplete record follows the last newline.
+			raw, err := audit.OpenRecords(file)
+			if err != nil {
+				t.Fatal(err)
+			}
+			suspect, _ = io.ReadAll(raw)
+			raw.Close()
+		}
 	}
-	offset := bytes.LastIndexByte(partial, '\n') + 1
+	offset, _ := marker["offset"].(float64)
+	if !bytes.HasPrefix(suspect, complete) || int(offset) >= len(suspect) || suspect[int(offset)-1] != '\n' || suspect[len(suspect)-1] == '\n' || json.Valid(suspect[int(offset):]) {
+		t.Fatalf("suspect file %v: %d bytes, synced end %v, after %d complete bytes", marker["file"], len(suspect), offset, len(complete))
+	}
 
 	e.Start(gatewaytest.Binaries.Plain)
 	if code, _ := e.Get("/a/x"); code != http.StatusOK {
 		t.Fatalf("after recovery: %d", code)
-	}
-	// The shared readers refuse any invalid line, so this one parses the file
-	// itself and checks below that the interrupted record is the only one.
-	var data []byte
-	var marker map[string]any
-	for deadline := time.Now().Add(5 * time.Second); marker == nil && time.Now().Before(deadline); time.Sleep(20 * time.Millisecond) {
-		data = readAudit(t, e.AuditLog)
-		for line := range bytes.SplitSeq(data, []byte("\n")) {
-			var ev map[string]any
-			if json.Unmarshal(line, &ev) == nil && ev["kind"] == "audit.recovered" {
-				marker = ev
-			}
-		}
-	}
-	if !bytes.HasPrefix(data, partial) {
-		t.Fatal("recovery rewrote existing records")
-	}
-	if marker == nil || marker["offset"] != float64(offset) || marker["file"] != filepath.Base(e.AuditLog) {
-		t.Fatalf("recovery event %v, want offset %d", marker, offset)
-	}
-	// The incomplete record is on its own line and is the only invalid one.
-	invalid := 0
-	for line := range bytes.SplitSeq(bytes.TrimSuffix(data, []byte("\n")), []byte("\n")) {
-		if !json.Valid(line) {
-			invalid++
-			if !bytes.Equal(line, partial[offset:]) {
-				t.Fatalf("invalid line %q is not the interrupted record", line)
-			}
-		}
-	}
-	if invalid != 1 {
-		t.Fatalf("%d invalid lines, want 1", invalid)
 	}
 	e.AssertReceipts(2, 0, 0)
 }

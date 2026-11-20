@@ -153,6 +153,9 @@ func (f nativeFile) check() (nativeConfig, error) {
 	cfg.controller.AuditQueue = audit.QueueSize(cfg.limits.MaxInFlight)
 	cfg.controller.AuditWhenFull = g.AuditWhenFull
 	cfg.controller.AuditAppend = g.AuditPrefill != nil && !*g.AuditPrefill
+	if cfg.controller.AuditStorage, err = auditStorage(g); err != nil {
+		return nativeConfig{}, err
+	}
 	if cfg.controller.AuditPrivacy, err = auditPrivacy(g.AuditClientAddress, g.AuditAddressKey); err != nil {
 		return nativeConfig{}, err
 	}

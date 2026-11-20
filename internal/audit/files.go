@@ -44,6 +44,23 @@ type Settings struct {
 	OutcomeWindow time.Duration
 	// Signer signs the chain's checkpoints; nil writes none.
 	Signer Signer
+	Storage
+}
+
+// Storage is where rotated files go and how the log keeps its disks from
+// filling. Archive is the folder rotated files move to; "" runs no
+// archiver, so rotated files stay where they are and nothing is evicted
+// (operator commands, which run while the gateway is stopped).
+// ArchiveBytes bounds the archive folder (0: no bound); Plain moves rotated
+// files uncompressed; MinFree is the free share of a disk, in percent,
+// below which the oldest files are evicted early (0: never); Reserve is the
+// size of the reserve file (0: none).
+type Storage struct {
+	Archive      string
+	ArchiveBytes int64
+	Plain        bool
+	MinFree      int
+	Reserve      int64
 }
 
 // OpenAudit never fails: an unusable file yields a log in the failed state,
@@ -54,7 +71,7 @@ func OpenAudit(path string, s Settings) *AuditLog {
 		path:          path,
 		maxBytes:      s.MaxBytes,
 		maxFiles:      s.MaxFiles,
-		evict:         s.WhenFull == FullEvict,
+		evict:         s.WhenFull == FullEvict && s.Archive != "",
 		window:        s.Window,
 		prefill:       prefillSupported && !s.Append,
 		privacy:       s.Privacy,
@@ -85,6 +102,13 @@ func OpenAudit(path string, s Settings) *AuditLog {
 			a.Fail(fmt.Errorf("reconciling the audit log: %w", err))
 		}
 	}
+	if s.Reserve > 0 {
+		a.reservePath = reserveName(path)
+	}
+	if s.Archive != "" {
+		a.archive = newArchiver(a, s)
+		go a.archive.run()
+	}
 	go a.run()
 	return a
 }
@@ -105,7 +129,7 @@ func (a *AuditLog) open() (int64, error) {
 		return -1, fmt.Errorf("%s is not a regular file", a.path)
 	}
 
-	set, err := rotatedFiles(a.path)
+	set, err := rotatedFiles(a.path, a.maxBytes)
 	if err != nil {
 		return -1, err
 	}
@@ -136,7 +160,6 @@ func (a *AuditLog) open() (int64, error) {
 		return -1, err
 	}
 	a.size, a.filled = end, end
-	a.prepareEviction()
 	if incomplete >= 0 {
 		if err := a.persist([]byte("\n")); err != nil {
 			return -1, err
@@ -164,8 +187,8 @@ func incompleteRecord(file *os.File, end int64) (int64, error) {
 }
 
 // rotate trims the active file to its logical end, closes it, renames it to
-// the next rotated name and opens a new active file; makeRoom has freed a
-// slot for it. Every batch was synced when written, so closing loses nothing,
+// the next rotated name, opens a new active file and wakes the archiver;
+// makeRoom has checked there is room for it. Every batch was synced when written, so closing loses nothing,
 // and the trim is synced before the rename, so a rotated file never carries
 // a zero tail.
 func (a *AuditLog) rotate() (string, error) {
@@ -199,7 +222,7 @@ func (a *AuditLog) rotate() (string, error) {
 	a.rotated++
 	a.rotatedBytes += closed
 	a.publishUsage()
-	a.prepareEviction()
+	a.archive.signal()
 	return filepath.Base(rotated), nil
 }
 
@@ -225,9 +248,12 @@ func (a *AuditLog) Usage() (activeBytes, activeLimit, files, filesLimit int64) {
 	return a.activeBytes.Load(), a.maxBytes, a.files.Load(), int64(a.maxFiles)
 }
 
-// Failed reports whether the log refuses new records: it has failed, every
-// file is in use, or the file system has no space.
-func (a *AuditLog) Failed() bool { return a.failed.Load() || a.full.Load() || a.noSpace.Load() }
+// Failed reports whether the log refuses new records: it has failed, its
+// folder is full under FullRefuse, the file system has no space, or the
+// active file is being replaced.
+func (a *AuditLog) Failed() bool {
+	return a.failed.Load() || a.full.Load() || a.noSpace.Load() || a.down.Load()
+}
 
 // OpenErr is why the log could not open its file, or nil.
 func (a *AuditLog) OpenErr() error { return a.openErr }

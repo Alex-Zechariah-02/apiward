@@ -22,26 +22,27 @@ import (
 
 var ErrCursorGone = errors.New("the file the search stopped in is no longer present")
 
-// Search reads the files in dir newest first from start, at most
+// Search reads the files, by path, newest first from start, at most
 // scan bytes, until limit records match. Only the final record of each
 // request (request.rejected or request.forwarded) is read, as the live views
 // do. A line still being written at the end of the active file is skipped.
 // The search stops with ctx's error when ctx ends, such as when the client
 // that asked has gone.
-func Search(ctx context.Context, dir string, files []string, start *Cursor, query Query, limit int, scan int64) (Result, error) {
+func Search(ctx context.Context, files []string, start *Cursor, query Query, limit int, scan int64) (Result, error) {
 	result := Result{Items: []RequestView{}, Searched: []string{}}
 	index, offset := 0, int64(-1) // -1 reads a file from its end
 	if start != nil {
 		index = -1
 		// The named file first, then any other: a rotation renames the
-		// active file, which keeps its first record.
+		// active file and compression renames a rotated one; each keeps
+		// its first record.
 		order := slices.Clone(files)
-		if i := slices.Index(order, start.File); i > 0 {
+		if i := slices.IndexFunc(order, func(path string) bool { return filepath.Base(path) == start.File }); i > 0 {
 			order[0], order[i] = order[i], order[0]
 		}
-		for _, name := range order {
-			if first, err := firstRecordID(filepath.Join(dir, name)); err == nil && first == start.First {
-				index, offset = slices.Index(files, name), start.Offset
+		for _, path := range order {
+			if first, err := firstRecordID(path); err == nil && first == start.First {
+				index, offset = slices.Index(files, path), start.Offset
 				break
 			}
 		}
@@ -51,8 +52,8 @@ func Search(ctx context.Context, dir string, files []string, start *Cursor, quer
 	}
 	budget := scan
 	for ; index < len(files); index, offset = index+1, -1 {
-		name := files[index]
-		first, err := firstRecordID(filepath.Join(dir, name))
+		path, name := files[index], filepath.Base(files[index])
+		first, err := firstRecordID(path)
 		if errors.Is(err, os.ErrNotExist) {
 			continue // archived since it was listed
 		}
@@ -63,7 +64,7 @@ func Search(ctx context.Context, dir string, files []string, start *Cursor, quer
 			result.Next = &Cursor{File: name, First: first, Offset: offset}
 			return result, nil
 		}
-		done, err := scanSecurityLogFile(ctx, filepath.Join(dir, name), name, first, offset, query, limit, &budget, &result)
+		done, err := scanSecurityLogFile(ctx, path, name, first, offset, query, limit, &budget, &result)
 		if errors.Is(err, os.ErrNotExist) {
 			continue // archived between the first record's read and the scan
 		}
@@ -103,12 +104,12 @@ func scanSecurityLogFile(ctx context.Context, path, name, first string, end int6
 // floor, stop is the end it started from. A line still being written at the
 // end of the file is skipped. It returns ctx's error once ctx ends.
 func scanLinesBackward(ctx context.Context, path string, end, floor int64, budget *int64, visit func(line []byte, lineStart int64) bool) (stop int64, stopped bool, err error) {
-	file, err := openLog(path)
+	file, err := audit.OpenLog(path)
 	if err != nil {
 		return 0, false, err
 	}
 	defer file.Close()
-	logical, err := audit.End(file)
+	logical, err := file.End()
 	if err != nil {
 		return 0, false, err
 	}
@@ -199,12 +200,12 @@ func firstRecordID(path string) (string, error) {
 // less than span or no complete, decodable record starts there. Besides
 // audit.End's search, it reads at most two records.
 func RecentRecord(path string, span int64) (int64, time.Time, error) {
-	file, err := openLog(path)
+	file, err := audit.OpenLog(path)
 	if err != nil {
 		return 0, time.Time{}, err
 	}
 	defer file.Close()
-	end, err := audit.End(file)
+	end, err := file.End()
 	if err != nil || end < span {
 		return 0, time.Time{}, err // a file just rotated in holds no span yet
 	}
@@ -251,13 +252,13 @@ type headRecord struct {
 // firstRecord decodes a file's first line, reading no further than its end
 // or MaxRecordBytes.
 func firstRecord(path string) (headRecord, error) {
-	file, err := openLog(path)
+	file, err := audit.OpenLog(path)
 	if err != nil {
 		return headRecord{}, err
 	}
 	defer file.Close()
 	// Only the first record's ID and time are needed, so the read stops at the first line.
-	line, err := bufio.NewReader(io.LimitReader(file, audit.MaxRecordBytes+1)).ReadBytes('\n')
+	line, err := bufio.NewReader(io.NewSectionReader(file, 0, audit.MaxRecordBytes+1)).ReadBytes('\n')
 	if err != nil && !errors.Is(err, io.EOF) {
 		return headRecord{}, err
 	}

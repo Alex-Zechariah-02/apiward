@@ -4,7 +4,6 @@ package audit
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -50,10 +49,11 @@ func TestAuditCloseRecordsLoss(t *testing.T) {
 	}
 }
 
-// A writer that can no longer write fails the log: the stop reports the
-// accepted events and the refused-event count it could not write, a waiting
-// acknowledgement fails, and nothing claims success. The count is not lost
-// with the failed write that carried it.
+// A writer that can no longer write its file replaces it without a
+// restart: the batch that failed is refused and its records are counted in
+// a loss record in the new file, an audit.recovered record names
+// the suspect file, the later batches (the admission among them) are saved,
+// and the stop then reports nothing missing.
 func TestAuditCloseReportsWriterFailure(t *testing.T) {
 	a, release := heldAudit(t)
 	room := RecordRoom(AuditQueueSize)
@@ -68,22 +68,35 @@ func TestAuditCloseReportsWriterFailure(t *testing.T) {
 	for range 3 {
 		a.Record(Event{Kind: "request.rejected"})
 	}
-	// The disk goes away: every write fails.
+	// The file fails under the writer: the next write errors.
 	a.file.Close()
 	release()
-	err := a.Close(context.Background())
-	if err == nil || !strings.Contains(err.Error(), fmt.Sprintf("%d accepted events and the count of 3 refused events not written", room+1)) {
-		t.Fatalf("close after the write failure: %v", err)
+	if err := <-ack; err != nil {
+		t.Fatalf("the admission after the replacement: %v", err)
 	}
-	if !a.failed.Load() || !errors.Is(<-ack, errAuditFailed) {
-		t.Fatal("the failure was not reported to the waiting admission")
+	if err := a.Close(context.Background()); err != nil {
+		t.Fatalf("close after the replaced file: %v", err)
 	}
-	if err := a.Commit(context.Background(), Event{Kind: "request.admitted"}); !errors.Is(err, errAuditFailed) {
-		t.Fatalf("Commit after the failure: %v", err)
+	if a.failed.Load() || a.down.Load() || a.Recoveries() != 1 {
+		t.Fatalf("after the replacement: failed %v, down %v, recoveries %d", a.failed.Load(), a.down.Load(), a.Recoveries())
 	}
-	if events := fileEvents(t, a.path); len(events) != 0 {
-		t.Fatalf("%d records written by a failed writer", len(events))
+	var lost uint64
+	recovered := false
+	for _, e := range fileEvents(t, a.path) {
+		lost += e.Lost * boolCount(e.Kind == "audit.loss")
+		recovered = recovered || (e.Kind == "audit.recovered" && e.Reason == "sync_failed" && e.File != "")
 	}
+	// The failed batch, plus the 3 records refused while the queue was full.
+	if !recovered || lost != auditBatchSize+3 {
+		t.Fatalf("new file: recovered %v, lost %d, want %d", recovered, lost, auditBatchSize+3)
+	}
+}
+
+func boolCount(b bool) uint64 {
+	if b {
+		return 1
+	}
+	return 0
 }
 
 // A rotation that fails fails the log as a failed write does: the

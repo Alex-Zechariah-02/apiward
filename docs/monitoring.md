@@ -37,5 +37,5 @@ What the gateway reports about its own traffic: the metrics listener, the Admin 
 - `GET /admin/advice` keeps a summary of the active security log file's part already read and reads only what was written since; a rotation, a shorter file or a new gateway start reads the file again.
 - `gateway_upstream_connections_idle`, `gateway_upstream_dials_total` and `gateway_upstream_reuses_total` show the upstream connection pool: idle connections now, and connections dialled and reused since the start.
 - `gateway_listener_failures_total` counts metrics and redirect listeners that stopped on an error; the data plane keeps serving.
-- `gateway_audit_records_lost_total`, `gateway_audit_evictions_total` and `gateway_blocked_addresses` count refused audit records written in loss records, files evicted when the log was full, and the blocked address ranges.
+- `gateway_audit_records_lost_total`, `gateway_audit_evictions_total` and `gateway_blocked_addresses` count refused audit records written in loss records, security log files evicted (each after its `audit.evicted` record), and the blocked address ranges; the security log's archive, disk and save-wait metrics are in [settings.md](settings.md#security-log).
 - `apiward_audit_chain_head_info{sha256="…"}` is the audit chain head ([logs.md](logs.md#tamper-evidence)); copy it off the host.

@@ -1,17 +1,17 @@
-// Windows: security log files are opened for reading with delete sharing,
-// so a read never blocks the audit writer's rename at a rotation or delete
-// at an eviction; os.Open shares read and write access only.
+// Windows: audit files are opened for reading with delete sharing, so a
+// read never blocks the writer's rename at a rotation, or the archiver's
+// move or deletion; os.Open shares read and write access only.
 
-package monitor
+package audit
 
 import (
 	"os"
 	"syscall"
 )
 
-// openLog opens a security log file for reading. Renaming or deleting it
-// while it is open succeeds; the open handle keeps reading the same file.
-func openLog(path string) (*os.File, error) {
+// OpenShared opens an audit file for reading. Renaming or deleting it while
+// it is open succeeds; the open handle keeps reading the same file.
+func OpenShared(path string) (*os.File, error) {
 	name, err := syscall.UTF16PtrFromString(path)
 	if err != nil {
 		return nil, &os.PathError{Op: "open", Path: path, Err: err}

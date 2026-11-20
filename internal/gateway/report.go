@@ -40,8 +40,11 @@ func weakenings(cfg nativeConfig) []weakening {
 	if cfg.file.Upstream.AllowPublicAddresses {
 		list = append(list, weakening{"upstream.allow_public_addresses", "upstreams may use public addresses"})
 	}
-	if cfg.controller.AuditWhenFull == audit.FullEvict {
-		list = append(list, weakening{"gateway.audit_when_full", "security log eviction on: the oldest rotated file is deleted when the file limit is reached"})
+	switch cfg.controller.AuditWhenFull {
+	case audit.FullEvict:
+		list = append(list, weakening{"gateway.audit_when_full", "security log eviction on: the oldest files are deleted, each after an audit.evicted record, when the archive or the log folder reaches its bound or a disk runs low on space"})
+	case audit.FullRefuse:
+		list = append(list, weakening{"gateway.audit_when_full", "security log refuse mode: nothing is deleted, so protected requests are refused once the log folder fills (gateway.audit_max_files × gateway.audit_max_bytes) until files are moved away"})
 	}
 	return list
 }

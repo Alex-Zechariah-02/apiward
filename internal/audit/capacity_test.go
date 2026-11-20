@@ -10,6 +10,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -71,27 +72,38 @@ func TestFullLogResumesWhenFilesMoved(t *testing.T) {
 }
 
 func TestEvictionRecordsBeforeDeleting(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "audit.log")
-	a := OpenAudit(path, Settings{MaxBytes: 4 << 10, MaxFiles: 2, WhenFull: FullEvict})
-	commitUntil(t, a, func() bool { return len(rotated(t, path)) == 1 })
-	first := rotated(t, path)[0]
-	oldest, err := os.ReadFile(first)
+	dir := t.TempDir()
+	path, archive := filepath.Join(dir, "audit.log"), filepath.Join(dir, "archive")
+	a := OpenAudit(path, Settings{MaxBytes: 4 << 10, MaxFiles: 64, WhenFull: FullEvict, Storage: Storage{Archive: archive}})
+	var files []RotatedFile
+	commitUntil(t, a, func() bool {
+		files, _ = RotatedFiles(path, archive)
+		return len(files) > 0 && files[0].Dir == archive
+	})
+	oldest, err := os.ReadFile(files[0].Path())
 	if err != nil {
 		t.Fatal(err)
 	}
-	commitUntil(t, a, func() bool { return !fileExists(first) })
+	header, err := ReadPacked(files[0].Path())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := a.archive.evict(files, 0, evictArchive); err != nil {
+		t.Fatal(err)
+	}
+	if fileExists(files[0].Path()) {
+		t.Fatal("the evicted file is still present")
+	}
 	if err := a.Close(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	sum := sha256.Sum256(oldest)
-	for _, name := range append(rotated(t, path), path) {
-		for _, e := range records(t, name) {
-			if e.Kind == "audit.evicted" {
-				if e.File != filepath.Base(first) || e.Bytes != int64(len(oldest)) || e.Digest != hex.EncodeToString(sum[:]) || e.First.IsZero() || e.Last.Before(e.First) {
-					t.Fatalf("eviction record %+v does not describe the deleted file", e)
-				}
-				return
+	for _, e := range records(t, path) {
+		if e.Kind == "audit.evicted" {
+			if e.File != files[0].Plain() || e.Bytes != int64(len(oldest)) || e.Digest != hex.EncodeToString(sum[:]) || !e.First.Equal(header.First) || !e.Last.Equal(header.Last) || e.Reason != evictArchive {
+				t.Fatalf("eviction record %+v does not describe the deleted file", e)
 			}
+			return
 		}
 	}
 	t.Fatal("the oldest file was deleted without an audit.evicted record")
@@ -133,10 +145,15 @@ func records(t *testing.T, name string) []Event {
 	return events
 }
 
-// allRecords decodes every record of the file name.
+// allRecords decodes every record of the file name, plain or compressed.
 func allRecords(t *testing.T, name string) []Event {
 	t.Helper()
-	data, err := os.ReadFile(name)
+	reader, err := OpenRecords(name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := io.ReadAll(reader)
+	reader.Close()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -159,7 +176,7 @@ func fileExists(name string) bool {
 // rotated returns the paths of path's rotated files, oldest first.
 func rotated(t *testing.T, path string) []string {
 	t.Helper()
-	files, err := RotatedFiles(path)
+	files, err := RotatedFiles(path, "")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -43,7 +43,7 @@ func QueueSize(maxInFlight int64) int {
 }
 
 // EventSchema is the version of the event envelope below.
-const EventSchema = 8
+const EventSchema = 9
 
 var (
 	errAuditFailed = errors.New("audit log unavailable")
@@ -117,11 +117,13 @@ type Event struct {
 	// An evicted file's size, SHA-256 and the times of its first and last
 	// records; an ingress summary's interval and counts per reason and per
 	// client address.
-	Bytes  int64             `json:"bytes,omitempty"`
-	Digest string            `json:"sha256,omitempty"`
-	First  time.Time         `json:"first_record,omitzero"`
-	Last   time.Time         `json:"last_record,omitzero"`
-	Counts map[string]uint64 `json:"counts,omitempty"`
+	Bytes  int64  `json:"bytes,omitempty"`
+	Digest string `json:"sha256,omitempty"`
+	// Archived is an archived file's stored (compressed) size.
+	Archived int64             `json:"archived_bytes,omitempty"`
+	First    time.Time         `json:"first_record,omitzero"`
+	Last     time.Time         `json:"last_record,omitzero"`
+	Counts   map[string]uint64 `json:"counts,omitempty"`
 	// Signature signs an audit.checkpoint's chain head (base64url).
 	Signature string         `json:"signature,omitempty"`
 	Addresses []AddressCount `json:"addresses,omitempty"`

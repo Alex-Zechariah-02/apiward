@@ -66,7 +66,7 @@ func (cfg *Config) applyDefaults() error {
 		cfg.HistoryKeep = DefaultHistory
 	}
 	if cfg.AuditWhenFull == "" {
-		cfg.AuditWhenFull = audit.FullRefuse
+		cfg.AuditWhenFull = audit.FullEvict
 	}
 	if cfg.IgnoredReads == nil {
 		cfg.IgnoredReads = DefaultIgnoredReads

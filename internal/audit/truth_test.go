@@ -126,7 +126,7 @@ func TestSeqFollowsFileOrder(t *testing.T) {
 	if err := a.Close(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	rotated, err := RotatedFiles(path)
+	rotated, err := RotatedFiles(path, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -175,7 +175,7 @@ func TestNoSpaceRecovers(t *testing.T) {
 }
 
 // Only a refused write is a space error; a failed sync never is, so it
-// keeps failing the log until a restart.
+// replaces the active file instead (recover.go).
 func TestSpaceErrorClassifies(t *testing.T) {
 	full := error(&os.PathError{Op: "write", Err: syscall.ENOSPC})
 	if runtime.GOOS == "windows" {

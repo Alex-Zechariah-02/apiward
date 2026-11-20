@@ -74,11 +74,11 @@ type summary struct {
 // bytes. A rotated file with a summary is not read but takes the budget its
 // full read took, so the answer is the same as a full read's. It stops with
 // ctx's error once ctx ends.
-func (c *Summaries) PermitUse(ctx context.Context, dir string, files []string, scan int64) (LogUse, error) {
+func (c *Summaries) PermitUse(ctx context.Context, files []string, scan int64) (LogUse, error) {
 	use := LogUse{used: map[[2]string]bool{}, Searched: []string{}, complete: true}
 	budget := scan
 	defer c.prune(files)
-	for i, name := range files {
+	for i, path := range files {
 		if budget <= 0 {
 			use.complete = false
 			break
@@ -87,7 +87,7 @@ func (c *Summaries) PermitUse(ctx context.Context, dir string, files []string, s
 		if i == 0 {
 			read = c.readActive
 		}
-		part, stopped, err := read(ctx, filepath.Join(dir, name), &budget)
+		part, stopped, err := read(ctx, path, &budget)
 		if errors.Is(err, os.ErrNotExist) {
 			continue // archived since it was listed
 		}
@@ -95,7 +95,7 @@ func (c *Summaries) PermitUse(ctx context.Context, dir string, files []string, s
 			return use, err
 		}
 		use.add(part)
-		use.Searched = append(use.Searched, name)
+		use.Searched = append(use.Searched, filepath.Base(path))
 		if stopped {
 			use.complete = false
 			break
@@ -258,8 +258,8 @@ func (c *Summaries) prune(files []string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	listed := make(map[string]bool, len(files))
-	for _, name := range files {
-		listed[name] = true
+	for _, path := range files {
+		listed[filepath.Base(path)] = true
 	}
 	for name := range c.files {
 		if !listed[name] {

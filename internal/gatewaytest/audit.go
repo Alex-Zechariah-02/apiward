@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -40,18 +41,34 @@ func (e *Env) AuditEvents() []map[string]any {
 }
 
 // RotatedAudit returns the paths of the rotated files of the audit log at
-// active, oldest first.
+// active, in its folder and in the default archive folder beside it, oldest
+// first.
 func RotatedAudit(t *testing.T, active string) []string {
 	t.Helper()
-	rotated, err := audit.RotatedFiles(active)
+	rotated, err := audit.RotatedFiles(active, filepath.Join(filepath.Dir(active), "archive"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	paths := make([]string, 0, len(rotated))
 	for _, file := range rotated {
-		paths = append(paths, filepath.Join(filepath.Dir(active), file.Name))
+		paths = append(paths, file.Path())
 	}
 	return paths
+}
+
+// ReadAudit reads an audit file's content, decompressing an archived one.
+func ReadAudit(t *testing.T, path string) []byte {
+	t.Helper()
+	reader, err := audit.OpenRecords(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+	data, err := io.ReadAll(reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return audit.Content(data)
 }
 
 // ParseAudit decodes the records of the audit file named file. The gateway
@@ -146,12 +163,8 @@ type AuditLine struct {
 // AuditLines reads every record of an audit file, up to its logical end.
 func AuditLines(t *testing.T, path string) []AuditLine {
 	t.Helper()
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
 	var events []AuditLine
-	for _, line := range strings.Split(strings.TrimSpace(string(audit.Content(data))), "\n") {
+	for _, line := range strings.Split(strings.TrimSpace(string(ReadAudit(t, path))), "\n") {
 		if line == "" {
 			continue
 		}

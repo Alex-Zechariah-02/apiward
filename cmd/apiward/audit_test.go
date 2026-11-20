@@ -36,7 +36,7 @@ func TestAuditVerify(t *testing.T) {
 	if err := log.Close(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	rotated, err := audit.RotatedFiles(path)
+	rotated, err := audit.RotatedFiles(path, "")
 	if err != nil {
 		t.Fatal(err)
 	}
