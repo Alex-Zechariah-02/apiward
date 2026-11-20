@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"os"
 	"sync/atomic"
+	"time"
 )
 
 // ArchiveState is the archiver's last measurement: the archive folder and
@@ -92,6 +93,9 @@ func (r *archiver) keepReserve() {
 		return
 	}
 	r.held.Store(0)
+	if time.Since(time.Unix(0, r.released.Load())) < r.pause {
+		return
+	}
 	d, err := diskOf(r.live)
 	if err != nil || (d.total > 0 && (d.below(r.minFree, 2*r.reserve) || d.free-r.reserve < int64(r.minFree*float64(d.total)))) {
 		return

@@ -16,6 +16,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -160,4 +161,47 @@ func Tombstones(active string) (map[string]bool, error) {
 		}
 	}
 	return names, nil
+}
+
+// freeName is the name a file rotated at at gets: later than the last name
+// used, and a millisecond later for each name taken in the log or archive
+// folder, plain or compressed, so a name never repeats and an eviction
+// record never names two files.
+func (a *AuditLog) freeName(at time.Time) (string, error) {
+	if !at.After(a.lastName) {
+		at = a.lastName.Add(time.Millisecond)
+	}
+	dirs := []string{filepath.Dir(a.path)}
+	if a.archive != nil {
+		dirs = append(dirs, a.archive.dir)
+	}
+	for {
+		name := rotatedName(a.path, at)
+		taken, err := anyExists(dirs, filepath.Base(name), filepath.Base(name)+packedSuffix)
+		if err != nil {
+			return "", err
+		}
+		if !taken {
+			a.lastName = at
+			return name, nil
+		}
+		at = at.Add(time.Millisecond)
+	}
+}
+
+// anyExists reports whether any of names exists in any of dirs.
+func anyExists(dirs []string, names ...string) (bool, error) {
+	for _, dir := range dirs {
+		for _, name := range names {
+			_, err := os.Lstat(filepath.Join(dir, name))
+			if err == nil {
+				return true, nil
+			}
+			// A folder that is missing, or is a file, holds no such name.
+			if !errors.Is(err, fs.ErrNotExist) && !errors.Is(err, syscall.ENOTDIR) {
+				return false, err
+			}
+		}
+	}
+	return false, nil
 }

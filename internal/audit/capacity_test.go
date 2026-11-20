@@ -98,8 +98,9 @@ func TestEvictionRecordsBeforeDeleting(t *testing.T) {
 		t.Fatal(err)
 	}
 	sum := sha256.Sum256(oldest)
-	for _, e := range records(t, path) {
-		if e.Kind == "audit.evicted" {
+	// The archiver keeps writing, so the record may be in a rotated file.
+	for _, e := range logRecords(t, path, archive) {
+		if e.Kind == "audit.evicted" && e.Reason == evictArchive && e.File == files[0].Plain() {
 			if e.File != files[0].Plain() || e.Bytes != int64(len(oldest)) || e.Digest != hex.EncodeToString(sum[:]) || !e.First.Equal(header.First) || !e.Last.Equal(header.Last) || e.Reason != evictArchive {
 				t.Fatalf("eviction record %+v does not describe the deleted file", e)
 			}

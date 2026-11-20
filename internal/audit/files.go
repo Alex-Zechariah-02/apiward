@@ -226,22 +226,6 @@ func (a *AuditLog) rotate() (string, error) {
 	return filepath.Base(rotated), nil
 }
 
-// freeName is the name a file rotated at at gets, a millisecond later for
-// each name already taken, so a rotation never replaces a file.
-func (a *AuditLog) freeName(at time.Time) (string, error) {
-	for {
-		name := rotatedName(a.path, at)
-		_, err := os.Lstat(name)
-		if errors.Is(err, fs.ErrNotExist) {
-			return name, nil
-		}
-		if err != nil {
-			return "", err
-		}
-		at = at.Add(time.Millisecond)
-	}
-}
-
 // Usage reports the active file's size and the number of files, each with
 // its limit, as last stored by the writer.
 func (a *AuditLog) Usage() (activeBytes, activeLimit, files, filesLimit int64) {

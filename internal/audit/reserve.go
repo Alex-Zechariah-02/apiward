@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/filecheck"
 )
@@ -37,6 +38,9 @@ func (a *AuditLog) releaseReserve() bool {
 		slog.Error("syncing the folder after releasing the audit reserve", "error", err)
 	}
 	slog.Warn("audit reserve released: the disk is full; the oldest security log files are evicted to make room", "reserve", a.reservePath)
+	if a.archive != nil {
+		a.archive.released.Store(time.Now().UnixNano())
+	}
 	a.archive.signal()
 	return true
 }

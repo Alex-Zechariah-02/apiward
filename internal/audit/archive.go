@@ -31,6 +31,11 @@ import (
 // kubelet's housekeeping interval).
 const archiveCheck = 10 * time.Second
 
+// reservePause is how long the reserve is not made again after a release,
+// so a disk near full does not release and rewrite it over and over (the
+// kubelet waits its eviction-pressure transition period the same way).
+var reservePause = time.Minute
+
 // recordWait bounds one wait for an archiver record; past it the file is
 // left for the next pass.
 const recordWait = 30 * time.Second
@@ -60,12 +65,16 @@ type archiver struct {
 	pressure               atomic.Int64
 	held                   atomic.Int64
 	failing                bool // the archive failed at the last pass; archiver only
+	// released is when the writer last released the reserve (Unix ns), and
+	// pause how long the reserve is not made again after that.
+	released atomic.Int64
+	pause    time.Duration
 }
 
 func newArchiver(log *AuditLog, s Settings) *archiver {
 	ctx, cancel := context.WithCancel(context.Background())
 	r := &archiver{log: log, live: filepath.Dir(log.path), dir: s.Archive, budget: s.ArchiveBytes, plain: s.Plain,
-		minFree: float64(s.MinFree) / 100, reserve: s.Reserve, wake: make(chan struct{}, 1), stop: make(chan struct{}),
+		minFree: float64(s.MinFree) / 100, reserve: s.Reserve, pause: reservePause, wake: make(chan struct{}, 1), stop: make(chan struct{}),
 		done: make(chan struct{}), ctx: ctx, cancel: cancel}
 	r.usable.Store(true)
 	r.freeLog.Store(-1)
@@ -181,9 +190,11 @@ func (r *archiver) over() bool {
 	return !r.log.evict && r.budget > 0 && r.stored.Load() >= r.budget
 }
 
-// record writes e through the writer and waits until it is synced.
+// record writes e through the writer and waits until it is synced. The
+// wait is not cancelled by halt: a record the writer already took is
+// written, so the deletion it announces must follow.
 func (r *archiver) record(e Event) error {
-	ctx, cancel := context.WithTimeout(r.ctx, recordWait)
+	ctx, cancel := context.WithTimeout(context.Background(), recordWait)
 	defer cancel()
 	return r.log.Commit(ctx, e)
 }

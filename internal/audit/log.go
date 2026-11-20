@@ -86,6 +86,9 @@ type AuditLog struct {
 	// only by the writer.
 	fresh    bool
 	replaced time.Time
+	// lastName is the time in the last rotated name, which only rises;
+	// used only by the writer.
+	lastName time.Time
 	// reservePath is the reserve file ("" for none), released by the
 	// writer when the file system has no space (reserve.go).
 	reservePath string
