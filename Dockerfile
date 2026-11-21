@@ -15,7 +15,7 @@ COPY dashboard/index.html dashboard/tsconfig.json dashboard/vite.config.ts ./
 COPY dashboard/src ./src
 RUN npm run build
 
-FROM golang:1.27.4-trixie@sha256:b54b2639de8c1bfe538ec5ffc45f29b1932235ac5f6d63c059853646677112d9 AS gateway
+FROM golang:1.27.4-trixie@sha256:f18c3d73a184fb0582828510722e723b63a93f7188d11dd223d9be6f6880e65d AS gateway
 # The toolchain is go.mod's toolchain line, so the build never downloads one.
 ENV GOTOOLCHAIN=local CGO_ENABLED=0
 WORKDIR /src
