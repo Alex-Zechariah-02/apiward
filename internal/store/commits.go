@@ -12,33 +12,6 @@ import (
 	"github.com/Alex-Zechariah-02/apiward/internal/fault"
 )
 
-// checkActivation requires the provisional base and the one unresolved
-// activation record to describe the same revision, deadline and rollback
-// target, and fills in the candidate. Any disagreement means the lifecycle
-// state cannot be trusted, so nothing is served.
-func checkActivation(ctx context.Context, q querier, a *Authority) error {
-	var revision, candidate, target, deadline int64
-	err := q.QueryRowContext(ctx, `
-		SELECT revision, candidate, rollback_target, deadline FROM activation WHERE disposition IS NULL`).
-		Scan(&revision, &candidate, &target, &deadline)
-	found := err == nil
-	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return fmt.Errorf("%w: reading activation: %v", ErrUnavailable, err)
-	}
-	consistent := found == (a.Provisional != 0)
-	if found {
-		consistent = consistent &&
-			revision == a.Provisional &&
-			deadline == a.Deadline.UnixMilli() &&
-			target == a.Confirmed
-	}
-	if !consistent {
-		return fmt.Errorf("%w: provisional base and activation record disagree", ErrUnavailable)
-	}
-	a.Candidate = candidate
-	return nil
-}
-
 func (s *DB) Transition(ctx context.Context, id string) (TransitionRecord, bool, error) {
 	var t TransitionRecord
 	var revision, candidate, audited sql.NullInt64
@@ -117,10 +90,17 @@ func (s *DB) CommitRevision(ctx context.Context, t TransitionRecord, change Revi
 	if err := insertCommitted(ctx, tx, t, now); err != nil {
 		return 0, err
 	}
-	if err := prune(ctx, tx, change.Keep); err != nil {
+	pruned, err := prune(ctx, tx, change.Keep)
+	if err != nil {
 		return 0, err
 	}
-	return revision, tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+	if pruned {
+		s.incrementalVacuum(ctx)
+	}
+	return revision, nil
 }
 
 // CommitResolution records the final disposition of the provisional base and

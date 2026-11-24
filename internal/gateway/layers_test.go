@@ -23,7 +23,7 @@ var layers = map[string][]string{
 	"policy":      nil,
 	"compile":     {"fault", "policy"},
 	"forward":     {"filecheck", "policy", "compile"},
-	"store":       {"fault", "filecheck", "policy"},
+	"store":       {"disk", "fault", "filecheck", "policy"},
 	"audit":       {"disk", "fault", "filecheck"},
 	"session":     nil,
 	"connections": nil,

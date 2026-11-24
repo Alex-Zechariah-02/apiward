@@ -7,12 +7,13 @@ import (
 	"testing"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/gatewaytest"
+	"github.com/Alex-Zechariah-02/apiward/internal/store"
 )
 
 // An installed database has exactly the current schema: the twelve STRICT
 // tables, their keys and constraints, the activation and override indexes
 // and triggers (with those that keep rows in use), WAL journaling and
-// user_version 8, and nothing else.
+// user_version DatabaseVersion, and nothing else.
 func TestInstalledSchema(t *testing.T) {
 	t.Parallel()
 	e := gatewaytest.NewEnv(t)
@@ -81,8 +82,8 @@ func TestInstalledSchema(t *testing.T) {
 			t.Errorf("table %s has %d foreign keys, want %d", table, n, want)
 		}
 	}
-	if n := gatewaytest.Count(t, db, `PRAGMA user_version`); n != 8 {
-		t.Fatalf("user_version %d", n)
+	if n := gatewaytest.Count(t, db, `PRAGMA user_version`); n != store.DatabaseVersion {
+		t.Fatalf("user_version %d, want %d", n, store.DatabaseVersion)
 	}
 	var journal string
 	if err := db.QueryRow(`PRAGMA journal_mode`).Scan(&journal); err != nil || journal != "wal" {

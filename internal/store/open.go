@@ -83,7 +83,7 @@ func OpenStore(path string) (*DB, error) {
 		db.Close()
 		return nil, err
 	}
-	return &DB{db: db}, nil
+	return &DB{db: db, path: path}, nil
 }
 
 // Verify refuses a database this build must not trust: foreign keys not
@@ -136,6 +136,10 @@ func CreateStore(ctx context.Context, path, installation string, first Enrolment
 	if err != nil {
 		return nil, err
 	}
+	if _, err := db.ExecContext(ctx, "PRAGMA auto_vacuum = INCREMENTAL; VACUUM"); err != nil {
+		db.Close()
+		return nil, err
+	}
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		db.Close()
@@ -173,7 +177,7 @@ func CreateStore(ctx context.Context, path, installation string, first Enrolment
 		db.Close()
 		return nil, err
 	}
-	return &DB{db: db}, nil
+	return &DB{db: db, path: path}, nil
 }
 
 // CreatePrivate creates an empty database file with mode 0600. Windows uses
@@ -256,4 +260,31 @@ func (s *DB) Load(ctx context.Context) (Authority, error) {
 		return Authority{}, fmt.Errorf("%w: revision %d checksum mismatch", ErrUnavailable, a.Revision)
 	}
 	return a, nil
+}
+
+// checkActivation requires the provisional base and the one unresolved
+// activation record to describe the same revision, deadline and rollback
+// target, and fills in the candidate. Any disagreement means the lifecycle
+// state cannot be trusted, so nothing is served.
+func checkActivation(ctx context.Context, q querier, a *Authority) error {
+	var revision, candidate, target, deadline int64
+	err := q.QueryRowContext(ctx, `
+		SELECT revision, candidate, rollback_target, deadline FROM activation WHERE disposition IS NULL`).
+		Scan(&revision, &candidate, &target, &deadline)
+	found := err == nil
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return fmt.Errorf("%w: reading activation: %v", ErrUnavailable, err)
+	}
+	consistent := found == (a.Provisional != 0)
+	if found {
+		consistent = consistent &&
+			revision == a.Provisional &&
+			deadline == a.Deadline.UnixMilli() &&
+			target == a.Confirmed
+	}
+	if !consistent {
+		return fmt.Errorf("%w: provisional base and activation record disagree", ErrUnavailable)
+	}
+	a.Candidate = candidate
+	return nil
 }

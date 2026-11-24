@@ -41,7 +41,8 @@ const (
 // mode keeps a second gateway process, or an operator command, from opening
 // the same database while it is in use.
 type DB struct {
-	db *sql.DB
+	db   *sql.DB
+	path string
 }
 
 // Authority is the committed state from which a generation is compiled.

@@ -255,8 +255,11 @@ BEGIN SELECT RAISE(ABORT, 'a transition without its audit record is kept'); END;
 	// they find by commit time.
 	`
 CREATE INDEX transition_committed ON transition (committed_at);
-`}
+`,
+	// Incremental auto-vacuum is enabled by Migrate before this transaction;
+	// bumping the schema version ensures every existing deployment migrates once.
+	`SELECT 1;`}
 
 // DatabaseVersion is the schema version this build reads and writes: the
 // number of migrations, which a test checks.
-const DatabaseVersion = 8
+const DatabaseVersion = 9

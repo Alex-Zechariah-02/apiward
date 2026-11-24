@@ -100,6 +100,7 @@ The settings file is described in [docs/settings.md](docs/settings.md).
 
 - All commands except `version` and `policy` take `--config <file>`.
 - Stop the gateway before `install`, `enrol`, `backup`, `restore` or `migrate`.
+- `migrate` also performs a one-time conversion of older databases to incremental auto-vacuum; it requires free space on the database volume of at least the database file size plus 64 MiB and takes time proportional to the database size.
 
 ## How it works
 

@@ -11,7 +11,23 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"log/slog"
 )
+
+// vacuumPages bounds each incremental vacuum pass after pruning commits.
+const vacuumPages = 256
+
+// incrementalVacuum returns up to vacuumPages freed pages to the file system
+// outside the transaction; errors are logged and never fail a committed change.
+func (s *DB) incrementalVacuum(ctx context.Context) {
+	if _, err := s.db.ExecContext(ctx, fmt.Sprintf("PRAGMA incremental_vacuum(%d)", vacuumPages)); err != nil {
+		slog.Error("incremental vacuum after pruning failed", "error", err)
+		return
+	}
+	if _, err := s.db.ExecContext(ctx, "PRAGMA wal_checkpoint(PASSIVE)"); err != nil {
+		slog.Error("wal checkpoint after incremental vacuum failed", "error", err)
+	}
+}
 
 // spareRevision holds for a revision r that no remaining row needs: not a
 // base, not named by an activation or an override, not the result of a kept
@@ -54,30 +70,36 @@ var pruning = []struct {
 }
 
 // prune keeps the newest keep revisions and deletes what only older ones
-// need; keep 0 deletes nothing. A row in use (the schema's *_kept triggers
-// name them) is never deleted, nor anything it references.
-func prune(ctx context.Context, tx *sql.Tx, keep int) error {
+// need; keep 0 deletes nothing. It reports whether any row was deleted. A row
+// in use (the schema's *_kept triggers name them) is never deleted, nor
+// anything it references.
+func prune(ctx context.Context, tx *sql.Tx, keep int) (bool, error) {
 	if keep <= 0 {
-		return nil
+		return false, nil
 	}
 	var oldest, created int64
 	err := tx.QueryRowContext(ctx, `SELECT id, created_at FROM revision ORDER BY id DESC LIMIT 1 OFFSET ?`, keep-1).Scan(&oldest, &created)
 	if errors.Is(err, sql.ErrNoRows) {
-		return nil
+		return false, nil
 	}
 	if err != nil {
-		return fmt.Errorf("pruning history: %w", err)
+		return false, fmt.Errorf("pruning history: %w", err)
 	}
+	deleted := false
 	for _, step := range pruning {
 		args := []any{oldest}
 		if step.byTime {
 			args = append(args, created)
 		}
-		if _, err := tx.ExecContext(ctx, step.query, args...); err != nil {
-			return fmt.Errorf("pruning history: %w", err)
+		res, err := tx.ExecContext(ctx, step.query, args...)
+		if err != nil {
+			return false, fmt.Errorf("pruning history: %w", err)
+		}
+		if n, err := res.RowsAffected(); err == nil && n > 0 {
+			deleted = true
 		}
 	}
-	return nil
+	return deleted, nil
 }
 
 // spareControl holds for a control transition (one that produced no revision
@@ -112,15 +134,26 @@ func (s *DB) PruneControls(ctx context.Context, keep int) error {
 	if err != nil {
 		return fmt.Errorf("pruning control history: %w", err)
 	}
+	deleted := false
 	for _, query := range []string{
 		`DELETE FROM control_result WHERE transition IN (SELECT id FROM transition WHERE` + spareControl + `)`,
 		`DELETE FROM transition WHERE` + spareControl,
 	} {
-		if _, err := tx.ExecContext(ctx, query, bound); err != nil {
+		res, err := tx.ExecContext(ctx, query, bound)
+		if err != nil {
 			return fmt.Errorf("pruning control history: %w", err)
 		}
+		if n, err := res.RowsAffected(); err == nil && n > 0 {
+			deleted = true
+		}
 	}
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	if deleted {
+		s.incrementalVacuum(ctx)
+	}
+	return nil
 }
 
 // MaxUnused is how many unused candidates (staged or withdrawn, never
