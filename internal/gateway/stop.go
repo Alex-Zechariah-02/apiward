@@ -30,20 +30,33 @@ func (g *nativeGateway) shutdown() error {
 	close(g.done)
 	ctx, cancel := context.WithTimeout(context.Background(), g.grace)
 	defer cancel()
+	// Close the data listener before withdrawing the policy so no client
+	// meets an open data socket answering 503 during shutdown.
+	if g.dataListener != nil {
+		g.dataListener.Close()
+	}
+	// Drain the data server while BeginStop marks the controller stopping so
+	// /admin/status and /admin/health report stopping during the drain.
+	dataErr := make(chan error, 1)
+	go func() {
+		if err := g.data.Shutdown(ctx); err != nil {
+			// Requests still running are cut off; their clients see their
+			// connections close.
+			dataErr <- errors.Join(fmt.Errorf("data listener shutdown: %w", err), g.data.Close())
+			return
+		}
+		dataErr <- nil
+	}()
+	g.controller.BeginStop()
 	var errs []error
-	// Stop accepting on the data plane before withdrawing the policy, so no
-	// client meets an open data socket answering 503 during shutdown.
-	if err := g.data.Shutdown(ctx); err != nil {
-		// Requests still running are cut off; their clients see their
-		// connections close.
-		errs = append(errs, fmt.Errorf("data listener shutdown: %w", err), g.data.Close())
+	if err := <-dataErr; err != nil {
+		errs = append(errs, err)
 	}
 	if g.redirect != nil {
 		if err := g.redirect.Shutdown(ctx); err != nil {
 			errs = append(errs, fmt.Errorf("redirect listener shutdown: %w", err), g.redirect.Close())
 		}
 	}
-	g.controller.BeginStop()
 	// The health and metrics listeners stop after the data plane drained,
 	// so /readyz keeps answering 503 throughout the drain; the controller
 	// stops last so no listener answers after the database and audit log close.

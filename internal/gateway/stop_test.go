@@ -55,7 +55,7 @@ func TestShutdownClosesDataBeforePolicy(t *testing.T) {
 	}
 	dataServer := &http.Server{Handler: d.enforcement}
 	g := &nativeGateway{
-		controller: d.controller, data: dataServer, metrics: d.metrics, health: d.health,
+		controller: d.controller, data: dataServer, dataListener: dataListener, metrics: d.metrics, health: d.health,
 		upstreams: d.upstreams, served: make(chan error, 1), done: make(chan struct{}),
 		draining: &d.draining, grace: 5 * time.Second,
 	}

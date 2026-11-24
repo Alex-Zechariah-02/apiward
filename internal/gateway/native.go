@@ -88,11 +88,12 @@ func runNative(configPath string, logger *slog.Logger) int {
 
 // nativeGateway is one running native gateway.
 type nativeGateway struct {
-	controller *controller.Controller
-	data       *http.Server
-	metrics    *http.Server
-	health     *http.Server // nil without a health listener
-	redirect   *http.Server // nil without a redirect listener
+	controller   *controller.Controller
+	data         *http.Server
+	dataListener net.Listener
+	metrics      *http.Server
+	health       *http.Server // nil without a health listener
+	redirect     *http.Server // nil without a redirect listener
 	// certificate is the data listener's; nil when it serves plain HTTP.
 	certificate *servingCertificate
 	upstreams   upstreams
@@ -156,7 +157,7 @@ func startNative(cfg nativeConfig, logger *slog.Logger) (*nativeGateway, error) 
 		ErrorLog:                     slog.NewLogLogger(logger.Handler(), slog.LevelWarn),
 	}
 	server.Apply(data)
-	g := &nativeGateway{controller: c, data: data, metrics: d.metrics, health: d.health, certificate: d.certificate, upstreams: d.upstreams, served: make(chan error, 1), done: make(chan struct{}),
+	g := &nativeGateway{controller: c, data: data, dataListener: listener, metrics: d.metrics, health: d.health, certificate: d.certificate, upstreams: d.upstreams, served: make(chan error, 1), done: make(chan struct{}),
 		draining: &d.draining, grace: d.config.shutdownGrace, delay: d.config.shutdownDelay}
 	// A second stop, from a signal or the run loop, returns the first's result.
 	g.stop = sync.OnceValue(g.shutdown)
