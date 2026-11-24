@@ -88,6 +88,9 @@ func WriteAudit(file *os.File, data []byte, offset int64, sync func(*os.File) er
 	case faultEnabled("audit-full-reserve") && reserveExists(file):
 		// A disk that is full until the reserve file is deleted.
 		return noSpace(file)
+	case faultEnabled("audit-full-evict-reserve") && evictReserveExists(file):
+		// A disk that is full until the eviction reserve file is deleted.
+		return noSpace(file)
 	case faultEnabled("audit-fail-outcome") && outcome:
 		return errors.New("injected audit failure writing an outcome")
 	case faultEnabled("audit-fail-published") && published:
@@ -127,6 +130,12 @@ func noSpace(file *os.File) error {
 func reserveExists(file *os.File) bool {
 	name := file.Name()
 	_, err := os.Stat(strings.TrimSuffix(name, filepath.Ext(name)) + ".reserve")
+	return err == nil
+}
+
+// evictReserveExists reports whether audit.evict.reserve beside file exists.
+func evictReserveExists(file *os.File) bool {
+	_, err := os.Stat(filepath.Join(filepath.Dir(file.Name()), "audit.evict.reserve"))
 	return err == nil
 }
 

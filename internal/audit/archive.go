@@ -41,19 +41,21 @@ var reservePause = time.Minute
 const recordWait = 30 * time.Second
 
 type archiver struct {
-	log     *AuditLog
-	live    string // the active file's folder
-	dir     string // the archive folder
-	budget  int64  // the archive folder's bound; 0 for none
-	plain   bool   // move rotated files uncompressed
-	minFree float64
-	reserve int64
-	wake    chan struct{}
-	stop    chan struct{}
-	done    chan struct{}
-	halted  sync.Once
-	ctx     context.Context
-	cancel  context.CancelFunc
+	log            *AuditLog
+	live           string // the active file's folder
+	dir            string // the archive folder
+	budget         int64  // the archive folder's bound; 0 for none
+	plain          bool   // move rotated files uncompressed
+	minFree        float64
+	reserve        int64
+	generalReserve int64
+	evictReserve   int64
+	wake           chan struct{}
+	stop           chan struct{}
+	done           chan struct{}
+	halted         sync.Once
+	ctx            context.Context
+	cancel         context.CancelFunc
 	// Published for the metrics and alerts: whether the archive folder
 	// took the last probe, its bytes, the rotated files not yet archived,
 	// the disks' free bytes (-1 unknown), pressure evictions and the
@@ -65,16 +67,17 @@ type archiver struct {
 	pressure               atomic.Int64
 	held                   atomic.Int64
 	failing                bool // the archive failed at the last pass; archiver only
-	// released is when the writer last released the reserve (Unix ns), and
-	// pause how long the reserve is not made again after that.
-	released atomic.Int64
-	pause    time.Duration
+	// released and evictReleased record when each reserve was last released (Unix ns).
+	released      atomic.Int64
+	evictReleased atomic.Int64
+	pause         time.Duration
 }
 
 func newArchiver(log *AuditLog, s Settings) *archiver {
 	ctx, cancel := context.WithCancel(context.Background())
+	general, evict := reserveSplit(s.Reserve)
 	r := &archiver{log: log, live: filepath.Dir(log.path), dir: s.Archive, budget: s.ArchiveBytes, plain: s.Plain,
-		minFree: float64(s.MinFree) / 100, reserve: s.Reserve, pause: reservePause, wake: make(chan struct{}, 1), stop: make(chan struct{}),
+		minFree: float64(s.MinFree) / 100, reserve: s.Reserve, generalReserve: general, evictReserve: evict, pause: reservePause, wake: make(chan struct{}, 1), stop: make(chan struct{}),
 		done: make(chan struct{}), ctx: ctx, cancel: cancel}
 	r.usable.Store(true)
 	r.freeLog.Store(-1)

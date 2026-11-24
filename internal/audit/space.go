@@ -8,6 +8,7 @@
 package audit
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -36,6 +37,72 @@ func (a *AuditLog) enterNoSpace(err error) {
 		a.spaceSince = time.Now()
 		slog.Error("audit log has no space; protected admission refused until space returns", "error", err)
 	}
+	a.archive.signal()
+}
+
+// commitEviction writes and syncs an audit.evicted record, using the eviction
+// reserve when the log is refusing admissions for want of space (noSpace).
+// Only eviction records call commitEviction.
+func (a *AuditLog) commitEviction(ctx context.Context, e Event) error {
+	if a.failed.Load() {
+		return errAuditFailed
+	}
+	a.mu.RLock()
+	if a.closing {
+		a.mu.RUnlock()
+		return errAuditFailed
+	}
+	entry := &auditEntry{event: a.stamp(e), done: make(chan error, 1)}
+	select {
+	case a.evictCh <- entry:
+		a.mu.RUnlock()
+	case <-ctx.Done():
+		a.mu.RUnlock()
+		return ctx.Err()
+	}
+	select {
+	case err := <-entry.done:
+		return err
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+// writeEviction runs on the writer goroutine for a single audit.evicted
+// record. Under noSpace it deletes and syncs the eviction reserve first, then
+// writes and syncs the record with its chain record without clearing noSpace.
+func (a *AuditLog) writeEviction(entry *auditEntry) error {
+	if a.failed.Load() {
+		return errAuditFailed
+	}
+	if a.down.Load() {
+		return errDown
+	}
+	if !a.noSpace.Load() {
+		err := a.writeBatch([]*auditEntry{entry})
+		if err == nil || !a.noSpace.Load() {
+			return err
+		}
+	}
+	a.releaseEvictReserve()
+	mark := a.seq
+	buffer := a.appendEvent(a.encoded[:0], entry.event)
+	buffer, head := a.chain(buffer, a.head)
+	if err := a.persist(buffer); err != nil {
+		a.seq = mark
+		if !a.prefill {
+			_ = a.file.Truncate(a.size)
+		}
+		return err
+	}
+	a.head = head
+	a.chainBatches.Add(1)
+	a.written.Add(1)
+	if cap(buffer) <= keptBatchBytes {
+		a.encoded = buffer
+	}
+	a.publishUsage()
+	return nil
 }
 
 // retrySpace writes an audit.recovered record naming how long the log had no

@@ -80,6 +80,7 @@ func OpenAudit(path string, s Settings) *AuditLog {
 		outcomeWindow: s.OutcomeWindow,
 		signer:        s.Signer,
 		queue:         make(chan *auditEntry, max(s.Queue, AuditQueueSize)),
+		evictCh:       make(chan *auditEntry, 1),
 		done:          make(chan struct{}),
 	}
 	incomplete, err := a.open()
@@ -106,6 +107,7 @@ func OpenAudit(path string, s Settings) *AuditLog {
 	}
 	if s.Reserve > 0 {
 		a.reservePath = reserveName(path)
+		a.evictReservePath = evictReserveName(path)
 	}
 	if s.Archive != "" {
 		a.archive = newArchiver(a, s)

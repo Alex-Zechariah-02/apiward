@@ -27,6 +27,8 @@ func (a *AuditLog) run() {
 	batch := make([]*auditEntry, 0, auditBatchSize)
 	for {
 		select {
+		case entry := <-a.evictCh:
+			entry.done <- a.writeEviction(entry)
 		case entry, open := <-a.queue:
 			if !open {
 				a.writeSummary()

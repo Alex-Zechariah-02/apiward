@@ -250,9 +250,13 @@ func TestReserveReleasedAndRemade(t *testing.T) {
 	a, path, _ := archiving(t, Settings{MaxBytes: 1 << 20, MaxFiles: 8, WhenFull: FullEvict, Storage: Storage{Reserve: 64 << 10}})
 	t.Cleanup(func() { a.Close(context.Background()) })
 	reserve := reserveName(path)
-	waitFor(t, time.Now().Add(10*time.Second), "the reserve", func() bool { return fileExists(reserve) })
-	if info, err := os.Stat(reserve); err != nil || info.Size() != 64<<10 {
-		t.Fatalf("reserve %v (%v)", info, err)
+	evictReserve := evictReserveName(path)
+	waitFor(t, time.Now().Add(10*time.Second), "both reserves", func() bool { return fileExists(reserve) && fileExists(evictReserve) })
+	if info, err := os.Stat(reserve); err != nil || info.Size() != 32<<10 {
+		t.Fatalf("general reserve %v (%v)", info, err)
+	}
+	if info, err := os.Stat(evictReserve); err != nil || info.Size() != 32<<10 {
+		t.Fatalf("eviction reserve %v (%v)", info, err)
 	}
 	if !a.releaseReserve() || fileExists(reserve) || a.releaseReserve() {
 		t.Fatal("the reserve was not released exactly once")

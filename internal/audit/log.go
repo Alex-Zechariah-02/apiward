@@ -69,6 +69,7 @@ type AuditLog struct {
 	window  time.Duration
 	openErr error // why openAudit could not open the file; never changes
 	queue   chan *auditEntry
+	evictCh chan *auditEntry
 	failed  atomic.Bool
 	full    atomic.Bool // the active folder is at its bound under FullRefuse
 	// noSpace is set while the file system has no space for a write; the
@@ -91,9 +92,10 @@ type AuditLog struct {
 	// lastName is the time in the last rotated name, which only rises;
 	// used only by the writer.
 	lastName time.Time
-	// reservePath is the reserve file ("" for none), released by the
-	// writer when the file system has no space (reserve.go).
-	reservePath string
+	// reservePath is the general reserve file ("" for none); evictReservePath
+	// is the eviction reserve file used only by commitEviction under noSpace.
+	reservePath      string
+	evictReservePath string
 	// archive moves, compresses and evicts rotated files; nil without an
 	// archive folder.
 	archive *archiver

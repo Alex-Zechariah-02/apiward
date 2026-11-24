@@ -80,31 +80,41 @@ func (r *archiver) measure() {
 	}
 }
 
-// keepReserve makes the reserve file when it is missing and the disk has
-// room for it above the free-space threshold.
+// keepReserve makes each reserve file when it is missing and the disk has
+// room for it above the free-space threshold, reporting the sum of both in
+// r.held.
 func (r *archiver) keepReserve() {
-	path := r.log.reservePath
-	if path == "" {
-		return
+	var held int64
+	for _, item := range []struct {
+		path     string
+		size     int64
+		released *atomic.Int64
+	}{
+		{r.log.reservePath, r.generalReserve, &r.released},
+		{r.log.evictReservePath, r.evictReserve, &r.evictReleased},
+	} {
+		if item.path == "" || item.size <= 0 {
+			continue
+		}
+		if _, err := os.Stat(item.path); err == nil {
+			held += item.size
+			continue
+		} else if !errors.Is(err, fs.ErrNotExist) {
+			slog.Error("checking the audit reserve", "path", item.path, "error", err)
+			continue
+		}
+		if time.Since(time.Unix(0, item.released.Load())) < r.pause {
+			continue
+		}
+		d, err := disk.Of(r.live)
+		if err != nil || (d.Total > 0 && (d.Below(r.minFree, 2*r.reserve) || d.Free-item.size < int64(r.minFree*float64(d.Total)))) {
+			continue
+		}
+		if err := makeReserve(item.path, item.size); err != nil {
+			slog.Error("making the audit reserve; retried at the next pass", "path", item.path, "error", err)
+			continue
+		}
+		held += item.size
 	}
-	if _, err := os.Stat(path); err == nil {
-		r.held.Store(r.reserve)
-		return
-	} else if !errors.Is(err, fs.ErrNotExist) {
-		slog.Error("checking the audit reserve", "error", err)
-		return
-	}
-	r.held.Store(0)
-	if time.Since(time.Unix(0, r.released.Load())) < r.pause {
-		return
-	}
-	d, err := disk.Of(r.live)
-	if err != nil || (d.Total > 0 && (d.Below(r.minFree, 2*r.reserve) || d.Free-r.reserve < int64(r.minFree*float64(d.Total)))) {
-		return
-	}
-	if err := makeReserve(path, r.reserve); err != nil {
-		slog.Error("making the audit reserve; retried at the next pass", "error", err)
-		return
-	}
-	r.held.Store(r.reserve)
+	r.held.Store(held)
 }

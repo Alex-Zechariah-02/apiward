@@ -10,6 +10,7 @@
 package audit
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -93,11 +94,14 @@ func oldestOver(files []RotatedFile, dir string, bound int64) int {
 }
 
 // underPressure picks the oldest file on a disk below its free-space
-// threshold, or -1. While the reserve is released a disk must also have
-// twice the reserve free.
+// threshold, or -1. While a reserve is released a disk must also have twice
+// the reserve free; while in noSpace the oldest file is evicted immediately.
 func (r *archiver) underPressure(files []RotatedFile) int {
+	if r.log.noSpace.Load() && len(files) > 0 {
+		return 0
+	}
 	floor := int64(0)
-	if r.reserve > 0 && r.held.Load() == 0 {
+	if r.reserve > 0 && r.held.Load() < r.reserve {
 		floor = 2 * r.reserve
 	}
 	for _, dir := range []string{r.live, r.dir} {
@@ -131,7 +135,7 @@ func (r *archiver) evict(files []RotatedFile, at int, reason string) error {
 		where = "archive"
 	}
 	e.Kind, e.File, e.Bytes, e.Digest, e.Reason, e.Target, e.Archived = "audit.evicted", f.Plain(), f.Bytes, digest, reason, where, 0
-	if err := r.record(e); err != nil {
+	if err := r.recordEviction(e); err != nil {
 		return err
 	}
 	if at > 0 {
@@ -147,6 +151,14 @@ func (r *archiver) evict(files []RotatedFile, at int, reason string) error {
 		r.pressure.Add(1)
 	}
 	return nil
+}
+
+// recordEviction writes an audit.evicted record through commitEviction so it
+// can use the eviction reserve while the log refuses other writes for noSpace.
+func (r *archiver) recordEviction(e Event) error {
+	ctx, cancel := context.WithTimeout(context.Background(), recordWait)
+	defer cancel()
+	return r.log.commitEviction(ctx, e)
 }
 
 // describeStored describes a file: from its gzip header when compressed,

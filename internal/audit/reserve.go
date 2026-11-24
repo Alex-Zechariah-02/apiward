@@ -24,6 +24,45 @@ func reserveName(active string) string {
 	return filepath.Join(dir, strings.TrimSuffix(base, filepath.Ext(base))+".reserve")
 }
 
+// evictReserveName is the dedicated eviction reserve beside the active file.
+func evictReserveName(active string) string {
+	return filepath.Join(filepath.Dir(active), "audit.evict.reserve")
+}
+
+// evictReserveCap is the dedicated eviction headroom taken out of the reserve
+// budget; at or below 1 MiB the budget is split evenly between both files.
+const evictReserveCap = 1 << 20
+
+func reserveSplit(budget int64) (general, evict int64) {
+	if budget <= 0 {
+		return 0, 0
+	}
+	if budget <= evictReserveCap {
+		evict = budget / 2
+		return budget - evict, evict
+	}
+	return budget - evictReserveCap, evictReserveCap
+}
+
+// releaseEvictReserve deletes the eviction reserve file and syncs its folder
+// so commitEviction can write an audit.evicted record while in noSpace.
+func (a *AuditLog) releaseEvictReserve() bool {
+	if a.evictReservePath == "" {
+		return false
+	}
+	if err := os.Remove(a.evictReservePath); err != nil {
+		return false
+	}
+	if err := filecheck.SyncDir(filepath.Dir(a.evictReservePath)); err != nil {
+		slog.Error("syncing the folder after releasing the eviction reserve", "error", err)
+	}
+	slog.Warn("audit eviction reserve released to record an eviction while the disk is full", "reserve", a.evictReservePath)
+	if a.archive != nil {
+		a.archive.evictReleased.Store(time.Now().UnixNano())
+	}
+	return true
+}
+
 // releaseReserve deletes the reserve file so a write that met no space can
 // be tried again, and reports whether one was deleted. Only the writer
 // calls it.

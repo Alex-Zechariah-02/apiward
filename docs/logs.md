@@ -79,7 +79,7 @@ What the gateway records, when a record is waited for, and how to read the log. 
 | `operator.backup` | `apiward backup` wrote a backup | Waited for |
 | `audit.rotated` | The active file was rotated | With its batch |
 | `audit.archived` | A rotated file was compressed and moved (`file`, `bytes` and `sha256` of the uncompressed file, `archived_bytes`, `first_record`, `last_record`, `target` `archive` or `live`) | Before the original is deleted |
-| `audit.evicted` | The oldest file was deleted (`file`, `bytes` and `sha256` as stored, `first_record`, `last_record`, `reason` `archive_budget`, `log_budget` or `disk_pressure`, `target`) | Before the deletion |
+| `audit.evicted` | The oldest file was deleted (`file`, `bytes` and `sha256` as stored, `first_record`, `last_record`, `reason` `archive_budget`, `log_budget` or `disk_pressure`, `target`); uses `audit.evict.reserve` when the log has no space | Before the deletion |
 | `audit.loss` | Records were dropped for lack of room since the last batch | With its batch |
 | `audit.recovered` | At start, the last record of the active file had been cut off (`file`, `offset`); with reason `storage_space`, writing resumed after the file system had no space (`duration_ms` how long, `lost` the records counted meanwhile); with reason `sync_failed` or `rotation_failed`, the active file was replaced (`file` the suspect file, `offset` the end of its last synced batch) | Queued |
 | `audit.chain` | Every written batch: `sha256` is the chain head after the batch | Ends its batch |
