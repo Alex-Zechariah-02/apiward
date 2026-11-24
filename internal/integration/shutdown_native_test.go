@@ -28,11 +28,25 @@ func draining(e *gatewaytest.Env) int {
 	return n
 }
 
-// refuse sends n requests that fail validation at BODY/VALIDATION and returns
-// their request identities. Their records are written in full; policy, route
-// and canonical-path refusals are recorded only up to a budget per client
-// address, and the rest are counted.
+// refuse sends n unrouted requests (404, within the 60/min address budget for
+// small test callers) and returns their request identities.
 func refuse(e *gatewaytest.Env, n int) []string {
+	e.T.Helper()
+	ids := make([]string, 0, n)
+	for range n {
+		resp, body := e.Exchange(http.MethodGet, "/nothing", "", "")
+		_, id := gatewaytest.RequestID(resp, body)
+		if resp.StatusCode != http.StatusNotFound || id == "" {
+			e.T.Fatalf("unrouted request: %d %s", resp.StatusCode, body)
+		}
+		ids = append(ids, id)
+	}
+	return ids
+}
+
+// refuseValidation sends n requests that fail validation (400, always recorded
+// in full) and returns their request identities.
+func refuseValidation(e *gatewaytest.Env, n int) []string {
 	e.T.Helper()
 	ids := make([]string, 0, n)
 	for range n {
@@ -127,7 +141,7 @@ func TestNativeStopDrainsQueuedEvents(t *testing.T) {
 			e.Interruptible = true
 			e.Start(gatewaytest.Binaries.Fault, "GATEWAY_AUDIT_HOLD="+filepath.Join(e.Dir, "audit-hold"))
 			hold, held := holdWriter(e)
-			ids := append([]string{held}, refuse(e, tc.queued)...)
+			ids := append([]string{held}, refuseValidation(e, tc.queued)...)
 
 			gatewaytest.Interrupt(t, e.Process)
 			e.WaitOutput(`"msg":"draining the audit log"`)
