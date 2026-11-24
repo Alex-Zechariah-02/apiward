@@ -60,7 +60,7 @@ type verifier struct {
 	boot       string
 	head       [sha256.Size]byte
 	pending    []byte
-	lines      int // records in pending
+	lines      int
 	needAnchor bool
 	anchorSeen bool
 	// evicted names the files audit.evicted records name; before the file

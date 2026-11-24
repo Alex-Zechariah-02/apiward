@@ -48,9 +48,6 @@ func (q *request) fail(stage int, reason string) {
 }
 
 // refuse records the stage result and the refusal, then answers with code.
-// Policy refusals (401, 403, 429) and unauthenticated route or canonical-path
-// refusals (404 or 405 at ROUTE, 400 at CANONICAL) are recorded in full within
-// their client address's budget and counted in the summary beyond it.
 func (q *request) refuse(stage int, result string, status int, code, recorded string) {
 	q.settle(stage, result, status, recorded)
 	if budgetedRefusal(stage, status) {

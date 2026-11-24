@@ -28,8 +28,7 @@ func draining(e *gatewaytest.Env) int {
 	return n
 }
 
-// refuse sends n unrouted requests (404, within the 60/min address budget for
-// small test callers) and returns their request identities.
+// n stays within the 60/min address budget so every refusal is recorded in full.
 func refuse(e *gatewaytest.Env, n int) []string {
 	e.T.Helper()
 	ids := make([]string, 0, n)
@@ -44,8 +43,6 @@ func refuse(e *gatewaytest.Env, n int) []string {
 	return ids
 }
 
-// refuseValidation sends n requests that fail validation (400, always recorded
-// in full) and returns their request identities.
 func refuseValidation(e *gatewaytest.Env, n int) []string {
 	e.T.Helper()
 	ids := make([]string, 0, n)
