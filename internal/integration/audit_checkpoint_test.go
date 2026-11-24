@@ -216,10 +216,16 @@ func TestStatusCarriesAuditCheckpoint(t *testing.T) {
 		t.Fatal("audit log never rotated")
 	}
 
-	cp, present = readStatusCheckpoint(t, e)
-	if !present || cp == nil {
-		t.Fatalf("audit_checkpoint after rotation = (%v, %v), want non-nil", cp, present)
-	}
+	var got *statusCheckpoint
+	gatewaytest.WaitFor(t, time.Now().Add(5*time.Second), "audit_checkpoint to be published after rotation", func() bool {
+		cp, present = readStatusCheckpoint(t, e)
+		if present && cp != nil {
+			got = cp
+			return true
+		}
+		return false
+	})
+	cp = got
 	if cp.Boot == "" || len(cp.SHA256) != 64 || cp.Kid == "" || cp.Signature == "" || cp.Time == "" {
 		t.Fatalf("incomplete audit_checkpoint: %+v", cp)
 	}
