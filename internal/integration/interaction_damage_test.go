@@ -80,7 +80,8 @@ func TestDamagedOverrideStateAndAuditFailures(t *testing.T) {
 		if code != http.StatusServiceUnavailable || outcome.Outcome != "committed" || outcome.Reason != "OUTCOME_AUDIT_PENDING" {
 			t.Fatalf("creation with a lost outcome event: %d %s", code, body)
 		}
-		// Admission stops until a restart records the missing event.
+		// Admission stops until the missing event is recorded; with the fault
+		// left on, only the restart below records it.
 		e.ResetReceivers()
 		if code := probe(e, "bob", http.MethodPost, "/a/item"); code != http.StatusServiceUnavailable {
 			t.Fatalf("admission with a failed audit log: %d", code)

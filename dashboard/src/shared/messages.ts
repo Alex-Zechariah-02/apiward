@@ -104,7 +104,7 @@ export const messages: Record<string, Message> = {
   },
   OUTCOME_AUDIT_PENDING: {
     title: 'Applied, but the security log could not record it',
-    action: 'The change is active. The gateway stops accepting requests until it restarts and records it.',
+    action: 'The change is active. The gateway refuses requests until the security log records it, and it retries by itself.',
   },
   UNKNOWN_FIELD: { title: 'The document has a field the gateway does not know', action: 'Remove or correct the field named under More details.' },
   DUPLICATE_MEMBER: { title: 'The document repeats a name', action: 'Each name may appear once in an object. Remove the repeat.' },

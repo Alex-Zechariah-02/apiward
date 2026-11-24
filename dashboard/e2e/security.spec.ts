@@ -160,7 +160,7 @@ test.describe.serial('dashboard', () => {
     const notice = admin.getByRole('alert').filter({ hasText: 'outcome_audit_pending' })
     await expect(notice).toHaveClass(/tone-pending/)
     await expect(notice).toContainText('Applied, but the security log could not record it')
-    await expect(notice).toContainText('The change is active. The gateway stops accepting requests until it restarts and records it.')
+    await expect(notice).toContainText('The change is active. The gateway refuses requests until the security log records it, and it retries by itself.')
     await expect(moreDetail(notice, 'HTTP status')).toHaveText('503')
     await expect(moreDetail(notice, 'Error code')).toHaveText('outcome_audit_pending')
     // The next status read truthfully announces that protected requests are

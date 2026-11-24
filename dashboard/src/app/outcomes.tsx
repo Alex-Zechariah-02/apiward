@@ -97,7 +97,7 @@ export function UnresolvedChanges(props: { admin: Admin; name: string; register:
           register.update(item.id, {
             settled: entry.audited_at
               ? { tone: 'ok', text: <>Applied: the gateway recorded it at {at}.</> }
-              : { tone: 'pending', text: <>Applied at {at}, but the security log has not recorded it yet, so the gateway refuses every request until it restarts.</> },
+              : { tone: 'pending', text: <>Applied at {at}, but the security log has not recorded it yet, so the gateway refuses every request until it is recorded; it retries by itself.</> },
           })
         } else {
           register.update(item.id, {
