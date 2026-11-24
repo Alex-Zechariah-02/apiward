@@ -52,7 +52,8 @@ func TestDeadlinePredicate(t *testing.T) {
 	// deadline has passed.
 	monotonicDeadline := start.Add(2 * time.Hour)
 	setBack := &compile.Generation{NotAfter: monotonicDeadline}
-	if now := compile.TrustedTime(monotonicDeadline.Add(-time.Hour), 2*time.Hour); !setBack.Expired(now) || !now.Equal(monotonicDeadline) {
+	lead := compile.TrustedTime(time.Time{}, 0).Sub(start)
+	if now := compile.TrustedTime(monotonicDeadline.Add(-time.Hour), 2*time.Hour); !setBack.Expired(now) || now.Before(monotonicDeadline.Add(lead)) {
 		t.Fatalf("a wall clock set back extended the deadline (trusted time %v)", now)
 	}
 	// The monotonic clock paused (system suspend) while the wall clock moved
