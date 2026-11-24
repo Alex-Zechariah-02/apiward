@@ -16,6 +16,7 @@ import (
 
 // layers lists, for each internal package, the internal packages it may import.
 var layers = map[string][]string{
+	"disk":        nil,
 	"fault":       nil,
 	"filecheck":   nil,
 	"adminui":     nil,
@@ -23,7 +24,7 @@ var layers = map[string][]string{
 	"compile":     {"fault", "policy"},
 	"forward":     {"filecheck", "policy", "compile"},
 	"store":       {"fault", "filecheck", "policy"},
-	"audit":       {"fault", "filecheck"},
+	"audit":       {"disk", "fault", "filecheck"},
 	"session":     nil,
 	"connections": nil,
 	"monitor":     {"policy", "compile", "audit"},

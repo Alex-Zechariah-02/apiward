@@ -10,6 +10,8 @@ import (
 	"os"
 	"sync/atomic"
 	"time"
+
+	"github.com/Alex-Zechariah-02/apiward/internal/disk"
 )
 
 // ArchiveState is the archiver's last measurement: the archive folder and
@@ -69,12 +71,12 @@ func (r *archiver) measure() {
 		dir         string
 		free, total *atomic.Int64
 	}{{r.live, &r.freeLog, &r.totalLog}, {r.dir, &r.freeArchive, &r.totalArchive}} {
-		d, err := diskOf(side.dir)
+		d, err := disk.Of(side.dir)
 		if err != nil {
-			d.free, d.total = -1, -1
+			d.Free, d.Total = -1, -1
 		}
-		side.free.Store(d.free)
-		side.total.Store(d.total)
+		side.free.Store(d.Free)
+		side.total.Store(d.Total)
 	}
 }
 
@@ -96,8 +98,8 @@ func (r *archiver) keepReserve() {
 	if time.Since(time.Unix(0, r.released.Load())) < r.pause {
 		return
 	}
-	d, err := diskOf(r.live)
-	if err != nil || (d.total > 0 && (d.below(r.minFree, 2*r.reserve) || d.free-r.reserve < int64(r.minFree*float64(d.total)))) {
+	d, err := disk.Of(r.live)
+	if err != nil || (d.Total > 0 && (d.Below(r.minFree, 2*r.reserve) || d.Free-r.reserve < int64(r.minFree*float64(d.Total)))) {
 		return
 	}
 	if err := makeReserve(path, r.reserve); err != nil {

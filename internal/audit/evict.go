@@ -19,6 +19,7 @@ import (
 	"path/filepath"
 	"slices"
 
+	"github.com/Alex-Zechariah-02/apiward/internal/disk"
 	"github.com/Alex-Zechariah-02/apiward/internal/filecheck"
 )
 
@@ -100,12 +101,12 @@ func (r *archiver) underPressure(files []RotatedFile) int {
 		floor = 2 * r.reserve
 	}
 	for _, dir := range []string{r.live, r.dir} {
-		d, err := diskOf(dir)
-		if err != nil || !d.below(r.minFree, floor) {
+		d, err := disk.Of(dir)
+		if err != nil || !d.Below(r.minFree, floor) {
 			continue
 		}
 		for i, f := range files {
-			if same, err := diskOf(f.Dir); err == nil && same.id == d.id {
+			if same, err := disk.Of(f.Dir); err == nil && same.ID == d.ID {
 				return i
 			}
 		}

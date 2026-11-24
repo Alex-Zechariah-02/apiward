@@ -17,6 +17,8 @@ import (
 	"runtime"
 	"testing"
 	"time"
+
+	"github.com/Alex-Zechariah-02/apiward/internal/disk"
 )
 
 // archiving opens a log under dir that archives into dir/archive.
@@ -219,7 +221,7 @@ func TestArchiveFinishesAfterCrash(t *testing.T) {
 // are evicted, each recorded with the disk-pressure reason; files holding
 // earlier eviction records are evicted too, so at least one record remains.
 func TestPressureEvictsOldest(t *testing.T) {
-	if _, err := diskOf(t.TempDir()); err != nil || runtime.GOOS != "linux" && runtime.GOOS != "windows" {
+	if _, err := disk.Of(t.TempDir()); err != nil || runtime.GOOS != "linux" && runtime.GOOS != "windows" {
 		t.Skip("free space is read on Linux and Windows only")
 	}
 	a, path, archive := archiving(t, Settings{MaxBytes: 4 << 10, MaxFiles: 8, WhenFull: FullEvict, Storage: Storage{MinFree: 100}})
