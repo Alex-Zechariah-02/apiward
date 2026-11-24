@@ -125,13 +125,13 @@ func (c *Controller) publish(ctx context.Context, t store.TransitionRecord, poli
 // finish durably records a committed mutation's outcome event and
 // returns the receipt. If the audit log cannot acknowledge it, the mutation
 // stays committed and is reported as such, with the outcome event pending;
-// the audit log is marked failed, so protected admission stops until a
-// restart, whose reconciliation records the missing outcome event.
+// the controller enters audit_reconcile_failed, refusing protected admission
+// until retry reconciliation records the missing outcome event.
 func (c *Controller) finish(ctx context.Context, result Outcome, event audit.Event) (Outcome, int) {
 	fault.CancelPoint(ctx, "cancel-before-outcome")
 	if err := c.commitAudit(ctx, event); err != nil {
 		c.logger.Error("outcome event not recorded", "transition", result.Transition, "error", err)
-		c.audit.Fail(err)
+		c.unavailable("audit_reconcile_failed", fmt.Sprintf("outcome event for %s not recorded: %v", result.Transition, err))
 		result.Reason = "OUTCOME_AUDIT_PENDING"
 		return result, http.StatusServiceUnavailable
 	}

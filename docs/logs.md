@@ -65,7 +65,7 @@ What the gateway records, when a record is waited for, and how to read the log. 
 - Temporary rules and a trial whose times run out by the same check end together: each keeps its own `transition.intent` and outcome record (`tpo.expired`, `cpa.timed_out`), and every outcome names the one policy generation published for them all.
 - At start, an outcome whose record is missing is written again under its own kind with reason `reconciled`.
 - So a `transition.intent` without an outcome record means the change was not committed: every committed change has its outcome record once the gateway has started again.
-- The state codes of `controller.unavailable`, also the `state` of `GET /admin/status`: `store_unavailable`, `audit_reconcile_failed`, `clock_regression`, `rollback_target_invalid`, `deadline_mismatch`, `transition_incomplete`, `policy_invalid`, or the stored mode that serves no policy. The detail stays in the log and the gateway's own output.
+- The state codes of `controller.unavailable`, also the `state` of `GET /admin/status`: `store_unavailable`, `audit_reconcile_failed` (the audit log refused a record the controller needs; retried until it is recorded), `clock_regression`, `rollback_target_invalid`, `deadline_mismatch`, `transition_incomplete`, `policy_invalid`, or the stored mode that serves no policy. The detail stays in the log and the gateway's own output.
 
 ## Gateway and operator records
 

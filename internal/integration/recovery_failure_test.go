@@ -142,7 +142,7 @@ func TestLifecycleAuditFailure(t *testing.T) {
 		if code != http.StatusServiceUnavailable || outcome.Outcome != "committed" || outcome.Reason != "OUTCOME_AUDIT_PENDING" {
 			t.Fatalf("%s with a failing outcome record: %d %s", step.action, code, body)
 		}
-		if s := e.Status(); !s.AuditFailed || s.Confirmed != step.confirmed {
+		if s := e.Status(); s.State != "audit_reconcile_failed" || s.Confirmed != step.confirmed {
 			t.Fatalf("status after %s: %+v", step.action, s)
 		}
 		e.ResetReceivers()

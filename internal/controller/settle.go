@@ -123,7 +123,8 @@ func (c *Controller) endDue(ctx context.Context, a store.Authority, now time.Tim
 	// per request in flight, which a burst of concurrent intents could take.
 	for _, t := range records {
 		if err := c.commitAudit(ctx, audit.Event{Kind: "transition.intent", Transition: t.ID, Actor: t.Actor, Override: t.Override}); err != nil {
-			return failed("audit unavailable")
+			c.unavailable("audit_reconcile_failed", fmt.Sprintf("%s not completed: audit unavailable", strings.Join(ids, ", ")))
+			return store.Authority{}, false
 		}
 	}
 	fault.CrashPoint(stage + "-before-commit")
@@ -152,6 +153,9 @@ func (c *Controller) endDue(ctx context.Context, a store.Authority, now time.Tim
 	}
 	fault.CrashPoint(stage + "-after-receipt")
 	c.finishDue(ctx, a, d, g)
+	if c.mode() != store.ModeNormal {
+		return store.Authority{}, false
+	}
 
 	if d.timeout.ID == "" {
 		a.Overrides = d.next

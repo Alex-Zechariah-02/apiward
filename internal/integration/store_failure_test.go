@@ -122,13 +122,12 @@ func TestOutcomeEventFailure(t *testing.T) {
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.ProtectedPolicy(), gatewaytest.SeedOptions{})
 	e.Start(gatewaytest.Binaries.Fault, "GATEWAY_FAULT=audit-fail-published")
-	before := e.Status()
 	header := []string{"Idempotency-Key", "outcome-event-fails"}
 	code, body, _ := e.HarnessCall("PUT", "/admin/blocked-accounts/alice", `{"reason":"contain"}`, header...)
 	if code != 503 {
 		t.Fatalf("unacknowledged outcome: %d %s", code, body)
 	}
-	if status := e.Status(); !status.AuditFailed || status.Generation != before.Generation {
+	if status := e.Status(); status.State != "audit_reconcile_failed" || status.Generation != "" {
 		t.Fatalf("status %+v", status)
 	}
 	if code, _ := e.Get("/a/x", gatewaytest.Bearer(t, "bob")...); code != 503 {
