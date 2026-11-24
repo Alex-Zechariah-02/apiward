@@ -25,6 +25,8 @@ const noticeMs = 8000
 
 const words: Record<NoticeTone, string> = { ok: 'Done', pending: 'In progress', neutral: 'Ended', refused: 'Problem' }
 
+const auditBlocked = (s: Status): boolean => s.audit_failed || s.state === 'audit_reconcile_failed'
+
 // statusNotices names what changed between two status reads: a trial that
 // started or ended, temporary rules added or ended, signing keys reloaded,
 // and a security log that stopped or started working again. It only reports
@@ -48,10 +50,10 @@ function statusNotices(before: Status, after: Status): Notice[] {
   if (before.jwt_key_sha256 && after.jwt_key_sha256 && before.jwt_key_sha256 !== after.jwt_key_sha256) {
     notices.push({ tone: 'neutral', text: 'The signing keys were reloaded.' })
   }
-  if (!before.audit_failed && after.audit_failed) {
+  if (!auditBlocked(before) && auditBlocked(after)) {
     notices.push({ tone: 'refused', text: 'The security log cannot be written, so every protected request is refused.', ends: 'audit' })
   }
-  if (before.audit_failed && !after.audit_failed) {
+  if (auditBlocked(before) && !auditBlocked(after)) {
     notices.push({ tone: 'ok', text: 'The security log is written again; protected requests are accepted.' })
   }
   return notices
@@ -73,7 +75,7 @@ export function Notifications(props: { status: Status | undefined; view: View })
     if (!before || !props.status) return
     const fresh = statusNotices(before, props.status).map((notice) => ({ ...notice, id: ++next.current, view: props.view }))
     // A security log that works again withdraws the problem it had raised.
-    const recovered = before.audit_failed && !props.status.audit_failed
+    const recovered = auditBlocked(before) && !auditBlocked(props.status)
     // The 5 newest stay: a burst of changes cannot stack notices over the whole page.
     if (fresh.length > 0 || recovered) setShown((list) => [...list.filter((notice) => !(recovered && notice.ends === 'audit')), ...fresh].slice(-5))
   }, [props.status])
