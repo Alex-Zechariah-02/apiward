@@ -37,6 +37,11 @@ func (g *nativeGateway) shutdown() error {
 			errs = append(errs, fmt.Errorf("redirect listener shutdown: %w", err), g.redirect.Close())
 		}
 	}
+	if g.health != nil {
+		if err := g.health.Shutdown(ctx); err != nil {
+			errs = append(errs, fmt.Errorf("health listener shutdown: %w", err), g.health.Close())
+		}
+	}
 	if err := g.metrics.Shutdown(ctx); err != nil {
 		errs = append(errs, fmt.Errorf("metrics listener shutdown: %w", err), g.metrics.Close())
 	}

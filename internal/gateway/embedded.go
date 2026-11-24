@@ -68,7 +68,7 @@ func (e *Embedded) Start() error {
 	case e.started:
 		return classify(ErrStarted, errors.New("the gateway was already started"))
 	}
-	auxiliary, err := e.deployment.listen(false, true)
+	metricsListener, healthListener, err := e.deployment.listen(false, true)
 	if err != nil {
 		e.stopping = true
 		ctx, cancel := context.WithTimeout(context.Background(), controller.ShutdownWait)
@@ -76,11 +76,12 @@ func (e *Embedded) Start() error {
 		return errors.Join(err, e.stop(ctx))
 	}
 	e.started = true
-	for _, l := range auxiliary {
-		go serveAuxiliary("metrics", e.deployment.metrics, l, e.logger)
+	go serveAuxiliary("metrics", e.deployment.metrics, metricsListener, e.logger)
+	if healthListener != nil {
+		go serveAuxiliary("health", e.deployment.health, healthListener, e.logger)
 	}
 	e.deployment.enforcement.Hold(false)
-	e.logger.Info("listening", "metrics", auxiliary[0].Addr().String(), "health", e.deployment.health, "admin", e.deployment.config.controller.AdminListen,
+	e.logger.Info("listening", "metrics", metricsListener.Addr().String(), "health", e.deployment.healthListen, "admin", e.deployment.config.controller.AdminListen,
 		"data", "served by the host program; data.listen is not bound")
 	e.deployment.logAdmission(e.logger)
 	return nil
@@ -157,6 +158,11 @@ func (e *Embedded) shutdown(ctx context.Context) error {
 	c := e.deployment.controller
 	c.BeginStop()
 	var errs []error
+	if e.deployment.health != nil {
+		if err := e.deployment.health.Shutdown(ctx); err != nil {
+			errs = append(errs, fmt.Errorf("health listener shutdown: %w", err), e.deployment.health.Close())
+		}
+	}
 	if err := e.deployment.metrics.Shutdown(ctx); err != nil {
 		errs = append(errs, fmt.Errorf("metrics listener shutdown: %w", err), e.deployment.metrics.Close())
 	}

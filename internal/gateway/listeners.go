@@ -246,21 +246,6 @@ func health(metrics http.Handler, ready func() bool) http.Handler {
 	return mux
 }
 
-// auxiliary is the handler of the auxiliary listeners: the metrics listener
-// serves health and metrics, the health listener health alone, so a load
-// balancer reads readiness without /metrics reaching its network.
-func (d *deployment) auxiliary(metrics http.Handler, ready func() bool) http.Handler {
-	full, alone := health(metrics, ready), health(http.NotFoundHandler(), ready)
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		local, _ := r.Context().Value(http.LocalAddrContextKey).(net.Addr)
-		if local != nil && d.health != "" && local.String() == d.health {
-			alone.ServeHTTP(w, r)
-			return
-		}
-		full.ServeHTTP(w, r)
-	})
-}
-
 // loopbackForm is the address a local health check dials for a listener:
 // the loopback address of its family when it listens on every interface.
 func loopbackForm(listen string) string {

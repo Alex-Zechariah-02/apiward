@@ -97,9 +97,10 @@ type deployment struct {
 	ui      fs.FS
 	logger  *slog.Logger
 	metrics *http.Server
-	// health is the health listener's address, set before it serves; empty
-	// when gateway.health_listen is unset.
-	health string
+	// health serves /livez and /readyz alone; nil when gateway.health_listen
+	// is unset. healthListen is its bound address for the start log.
+	health       *http.Server
+	healthListen string
 	// certificate is the data listener's; nil when it serves plain HTTP.
 	certificate *servingCertificate
 	upstreams   upstreams
@@ -150,17 +151,25 @@ func openDeployment(cfg nativeConfig, logger *slog.Logger) (*deployment, error) 
 		certificate: certificate,
 		upstreams:   proxy,
 	}
-	// The health and metrics reads are small and local: 5 s bounds a stuck
-	// scraper without failing a slow one; 30 s idle keeps a scraper's
-	// connection between scrapes (Prometheus scrapes every 15 s by default).
-	d.metrics = &http.Server{
-		Handler:           d.auxiliary(monitor.Metrics(c.Observations(), func() []monitor.Gauge { return gauges(c, proxy) }), func() bool { return !d.draining.Load() && ready(c, certificate) }),
+	readyFn := func() bool { return !d.draining.Load() && ready(c, certificate) }
+	d.metrics = auxiliaryServer(health(monitor.Metrics(c.Observations(), func() []monitor.Gauge { return gauges(c, proxy) }), readyFn))
+	if cfg.healthListen != "" {
+		d.health = auxiliaryServer(health(http.NotFoundHandler(), readyFn))
+	}
+	return d, nil
+}
+
+// auxiliaryServer returns an HTTP server with the bounds shared by the
+// metrics and health listeners: 5 s bounds a stuck scraper without failing a
+// slow one; 30 s idle keeps a scraper's connection between 15 s scrapes.
+func auxiliaryServer(handler http.Handler) *http.Server {
+	return &http.Server{
+		Handler:           handler,
 		ReadHeaderTimeout: 5 * time.Second,
 		WriteTimeout:      5 * time.Second,
 		IdleTimeout:       30 * time.Second,
 		MaxHeaderBytes:    defaultHeaderBytes,
 	}
-	return d, nil
 }
 
 // openController checks cfg, reads the dashboard files in ui (none when
@@ -189,37 +198,38 @@ func openController(cfg controller.Config, ui string, logger *slog.Logger) (*con
 }
 
 // listen binds the metrics address, and the health address when one is
-// configured, and starts the Admin API. It returns the auxiliary listeners,
-// metrics first, all served by d.metrics. plain is true when the gateway
+// configured, and starts the Admin API. It returns the capped metrics
+// listener and the optional capped health listener (nil when unset), served
+// by d.metrics and d.health respectively. plain is true when the gateway
 // serves the data plane itself, over plain HTTP; hostServed when a host
 // program serves it (library mode). On an error none stays bound; the
 // caller releases the deployment.
-func (d *deployment) listen(plain, hostServed bool) ([]net.Listener, error) {
-	metrics, err := net.Listen("tcp", d.config.metricsListen)
+func (d *deployment) listen(plain, hostServed bool) (metrics, health net.Listener, err error) {
+	metrics, err = net.Listen("tcp", d.config.metricsListen)
 	if err != nil {
-		return nil, classify(ErrListen, fmt.Errorf("metrics listener: %w", err))
+		return nil, nil, classify(ErrListen, fmt.Errorf("metrics listener: %w", err))
 	}
-	listeners := []net.Listener{connections.Cap(metrics, connections.Auxiliary, d.controller.Observations().Refuser("metrics"))}
+	metrics = connections.Cap(metrics, connections.Auxiliary, d.controller.Observations().Refuser("metrics"))
 	if d.config.healthListen != "" {
-		health, err := net.Listen("tcp", d.config.healthListen)
+		health, err = net.Listen("tcp", d.config.healthListen)
 		if err != nil {
 			metrics.Close()
-			return nil, classify(ErrListen, fmt.Errorf("health listener: %w", err))
+			return nil, nil, classify(ErrListen, fmt.Errorf("health listener: %w", err))
 		}
-		d.health = health.Addr().String()
-		listeners = append(listeners, connections.Cap(health, connections.Auxiliary, d.controller.Observations().Refuser("health")))
+		d.healthListen = health.Addr().String()
+		health = connections.Cap(health, connections.Auxiliary, d.controller.Observations().Refuser("health"))
 	}
 	var ui http.Handler // nil when no files are configured: the routes stay unregistered
 	if d.ui != nil {
 		ui = dashboard(d.ui)
 	}
 	if err := d.controller.Start(admin.New(admin.Deps{Control: d.controller, Limiter: d.limiter, UI: ui, Plain: plain, HostServed: hostServed, Logger: d.logger, JWKS: d.config.signer.JWKS()}).Handler()); err != nil {
-		closeListeners(listeners...)
-		return nil, classify(ErrListen, fmt.Errorf("admin listener: %w", err))
+		closeListeners(metrics, health)
+		return nil, nil, classify(ErrListen, fmt.Errorf("admin listener: %w", err))
 	}
 	// Every listener is bound by now: the native data listener before this.
 	recordStart(d.controller, d.config)
-	return listeners, nil
+	return metrics, health, nil
 }
 
 // logAdmission reports whether protected requests are admitted: listening

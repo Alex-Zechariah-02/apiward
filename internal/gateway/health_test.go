@@ -6,6 +6,7 @@ package gateway
 
 import (
 	"log/slog"
+	"net"
 	"net/http"
 	"strings"
 	"testing"
@@ -54,6 +55,58 @@ func TestHealthListener(t *testing.T) {
 	}
 	if checkHealth(e.Config, slog.New(slog.DiscardHandler)) != 0 {
 		t.Error("the health command did not find the gateway ready through the health listener")
+	}
+}
+
+// A health listener bound to a wildcard address serves /livez and /readyz
+// alone, never /metrics, even though connections arrive on a concrete IP.
+func TestHealthWildcardHidesMetrics(t *testing.T) {
+	t.Parallel()
+	e := gatewaytest.NewEnv(t)
+	gatewaytest.Seed(t, e.Database, e.Policy(e.A, false), gatewaytest.SeedOptions{})
+	probe, err := net.Listen("tcp", "0.0.0.0:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, port, err := net.SplitHostPort(probe.Addr().String())
+	probe.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	settings := e.NativeSettings()
+	gatewaytest.Section(settings, "gateway")["health_listen"] = "0.0.0.0:" + port
+	gatewaytest.Section(settings, "gateway")["health_listen_any"] = true
+	e.WriteNative(settings)
+	cfg, err := loadNativeConfig(e.Config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	g, err := startNative(cfg, slog.New(slog.NewJSONHandler(&gatewaytest.LogBuffer{}, nil)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { g.stop() })
+	status := func(address, path string) int {
+		reply, err := http.Get("http://" + address + path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		reply.Body.Close()
+		return reply.StatusCode
+	}
+	for _, c := range []struct {
+		address, path string
+		want          int
+	}{
+		{"127.0.0.1:" + port, "/livez", http.StatusOK},
+		{"127.0.0.1:" + port, "/readyz", http.StatusOK},
+		{"127.0.0.1:" + port, "/metrics", http.StatusNotFound},
+		{cfg.metricsListen, "/readyz", http.StatusOK},
+		{cfg.metricsListen, "/metrics", http.StatusOK},
+	} {
+		if got := status(c.address, c.path); got != c.want {
+			t.Errorf("%s%s: %d, want %d", c.address, c.path, got, c.want)
+		}
 	}
 }
 

@@ -91,6 +91,7 @@ type nativeGateway struct {
 	controller *controller.Controller
 	data       *http.Server
 	metrics    *http.Server
+	health     *http.Server // nil without a health listener
 	redirect   *http.Server // nil without a redirect listener
 	// certificate is the data listener's; nil when it serves plain HTTP.
 	certificate *servingCertificate
@@ -128,7 +129,7 @@ func startNative(cfg nativeConfig, logger *slog.Logger) (*nativeGateway, error) 
 		listener.Close()
 		return nil, errors.Join(err, c.Stop())
 	}
-	auxiliary, err := d.listen(d.certificate == nil, false)
+	metricsListener, healthListener, err := d.listen(d.certificate == nil, false)
 	if err != nil {
 		closeListeners(listener, redirectListener)
 		return nil, errors.Join(err, c.Stop())
@@ -155,13 +156,14 @@ func startNative(cfg nativeConfig, logger *slog.Logger) (*nativeGateway, error) 
 		ErrorLog:                     slog.NewLogLogger(logger.Handler(), slog.LevelWarn),
 	}
 	server.Apply(data)
-	g := &nativeGateway{controller: c, data: data, metrics: d.metrics, certificate: d.certificate, upstreams: d.upstreams, served: make(chan error, 1), done: make(chan struct{}),
+	g := &nativeGateway{controller: c, data: data, metrics: d.metrics, health: d.health, certificate: d.certificate, upstreams: d.upstreams, served: make(chan error, 1), done: make(chan struct{}),
 		draining: &d.draining, grace: d.config.shutdownGrace, delay: d.config.shutdownDelay}
 	// A second stop, from a signal or the run loop, returns the first's result.
 	g.stop = sync.OnceValue(g.shutdown)
 	go func() { g.served <- g.data.Serve(listener) }()
-	for _, l := range auxiliary {
-		go serveAuxiliary("metrics", g.metrics, l, logger)
+	go serveAuxiliary("metrics", g.metrics, metricsListener, logger)
+	if healthListener != nil {
+		go serveAuxiliary("health", g.health, healthListener, logger)
 	}
 	if redirectListener != nil {
 		g.redirect = redirectServer(cfg.redirect.Origin, c.Observations(), server)
@@ -175,7 +177,7 @@ func startNative(cfg nativeConfig, logger *slog.Logger) (*nativeGateway, error) 
 	if g.certificate != nil {
 		transport = "https"
 	}
-	logger.Info("listening", "data", listener.Addr().String(), "transport", transport, "http2", server.HTTP2, "admin", cfg.controller.AdminListen, "metrics", auxiliary[0].Addr().String(), "health", d.health)
+	logger.Info("listening", "data", listener.Addr().String(), "transport", transport, "http2", server.HTTP2, "admin", cfg.controller.AdminListen, "metrics", metricsListener.Addr().String(), "health", d.healthListen)
 	d.logAdmission(logger)
 	return g, nil
 }
