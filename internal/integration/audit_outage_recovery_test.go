@@ -144,3 +144,47 @@ func TestRevocationDuringAuditOutageStaysIncomplete(t *testing.T) {
 		t.Fatalf("protected request after audit recovery: %d, want 503", got)
 	}
 }
+
+// An override that ran out while the gateway was stopped ends at start. When
+// its outcome record fails there, start-up publishes nothing until a retry
+// has recorded it.
+func TestExpiryOutcomeFailureAtStartRecovers(t *testing.T) {
+	t.Parallel()
+	e := gatewaytest.NewEnv(t)
+	gatewaytest.Seed(t, e.Database, e.ProtectedPolicy(), gatewaytest.SeedOptions{})
+	e.Start(gatewaytest.Binaries.Plain)
+	e.Status()
+	harness := e.MustLogin(gatewaytest.HarnessAdmin, gatewaytest.HarnessPassword)
+	o := e.MustOverride(harness, permitOverride(store.OverrideException, "READER", "write-a", 2), `"r1"`, "expiry-outcome-at-start")
+	e.Stop()
+	time.Sleep(time.Until(o.Expires) + time.Second)
+
+	armed := filepath.Join(e.Dir, "fault-armed")
+	if err := os.WriteFile(armed, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	e.Start(gatewaytest.Binaries.Fault, "GATEWAY_FAULT=audit-fail-published", "GATEWAY_FAULT_ARMED="+armed)
+	if s := e.Status(); s.State != "audit_reconcile_failed" {
+		t.Fatalf("status after the expiry outcome failed at start: %+v", s)
+	}
+	if got := probe(e, "bob", http.MethodGet, "/a/x"); got != http.StatusServiceUnavailable {
+		t.Fatalf("protected request while the expiry outcome is unrecorded: %d, want 503", got)
+	}
+
+	if err := os.Remove(armed); err != nil {
+		t.Fatal(err)
+	}
+	gatewaytest.WaitFor(t, time.Now().Add(10*time.Second), "admission to resume once the outcome is recorded", func() bool {
+		return e.Status().State == store.ModeNormal && probe(e, "bob", http.MethodGet, "/a/x") == http.StatusOK
+	})
+	wantID := fmt.Sprintf("auto-expire:%d", o.Override)
+	count := 0
+	for _, ev := range e.AuditEvents() {
+		if ev["kind"] == "tpo.expired" && ev["transition"] == wantID {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Fatalf("tpo.expired count for %s = %d, want 1", wantID, count)
+	}
+}
