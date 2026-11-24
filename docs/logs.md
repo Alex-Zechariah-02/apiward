@@ -96,7 +96,7 @@ What the gateway records, when a record is waited for, and how to read the log. 
 
 - Each batch extends a SHA-256 chain: the head is SHA-256 of the previous head and the batch's bytes, starting from zero at each start of the gateway, and the batch ends with `audit.chain` naming it.
 - `audit.checkpoint` signs the head with the identity key (the key upstreams verify assertions with) once a minute and at rotation.
-- `apiward audit verify --jwks <key set> <files…>` recomputes the chain over the files, oldest first, and checks every checkpoint; it names each record altered, added or removed, each compressed file whose content does not match its header's SHA-256, and each missing file. Records after the last chain record of an unclean stop, or of a file replaced after a failed sync, are reported as unchained, not as altered.
+- `apiward audit verify --jwks <key set> <files…>` recomputes the chain over the files, oldest first, and checks every checkpoint; it names each record altered, added or removed, each compressed file whose content does not match its header's SHA-256, and each missing file. When a run's earlier files are not given, it anchors the run at the first file's signed checkpoint (listed in `anchored_files`), or reports one problem when that batch has no verifiable checkpoint while still checking later records. Records after the last chain record of an unclean stop, or of a file replaced after a failed sync, are reported as unchained, not as altered.
 - `apiward_audit_chain_head_info` on the metrics listener shows the current head; copy heads or checkpoints off the host regularly.
 - Limit: anyone with root on the host holds the identity key and can rewrite and re-sign the tail; only heads or checkpoints copied off the host bound that.
 
