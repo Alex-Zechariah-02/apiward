@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import type { Status } from '../shared/api'
 import { Glyph } from '../shared/ui'
 import { time } from '../shared/time'
+import { auditBlocked } from './state'
 import type { View } from './views'
 
 // Notifications: changes in the gateway's status since the last read, shown as notices.
@@ -24,8 +25,6 @@ interface Shown extends Notice {
 const noticeMs = 8000
 
 const words: Record<NoticeTone, string> = { ok: 'Done', pending: 'In progress', neutral: 'Ended', refused: 'Problem' }
-
-const auditBlocked = (s: Status): boolean => s.audit_failed || s.state === 'audit_reconcile_failed'
 
 // statusNotices names what changed between two status reads: a trial that
 // started or ended, temporary rules added or ended, signing keys reloaded,

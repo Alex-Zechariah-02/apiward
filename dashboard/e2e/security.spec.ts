@@ -168,6 +168,7 @@ test.describe.serial('dashboard', () => {
     const outage = 'The security log cannot be written, so every protected request is refused.'
     await expect(admin.locator('.notice.tone-refused').filter({ hasText: outage }).first()).toBeVisible()
     await expect(admin.locator('.notice.tone-refused').filter({ hasNotText: outage })).toHaveCount(0)
+    await expect(admin.locator('.banner.tone-refused')).toContainText(outage)
     const blocked = await adminCall('GET', '/admin/blocked-accounts')
     expect((blocked.body.items as { subject: string }[]).map((b) => b.subject)).toContain(subject)
     await shot(admin, '44-applied-audit-pending')

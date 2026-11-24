@@ -5,7 +5,7 @@ import { Alerts } from '../policy/tools'
 import { overrideChange } from '../deploy/rule'
 import { OverviewLive } from './activity'
 import { TrialDecision } from '../deploy/provisional'
-import { admissionText, AdmissionBadge } from '../app/state'
+import { admissionWords, AdmissionBadge } from '../app/state'
 import { Badge, MoreDetails } from '../shared/ui'
 import { PageHeader } from '../app/header'
 import { Problem } from '../shared/replies'
@@ -118,7 +118,7 @@ function Admission({ status }: { status: Status }) {
       <h2 id="admission-title" className="notice-title">
         The gateway is not accepting requests
       </h2>
-      <p>{status.audit_failed ? admissionText.audit_failed : (admissionText[status.admission] ?? 'Every protected request is refused.')}</p>
+      <p>{admissionWords(status)}</p>
       <MoreDetails facts={[['Controller state', status.state], ['Admission value', status.admission]]} />
     </section>
   )

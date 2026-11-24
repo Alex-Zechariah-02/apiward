@@ -19,7 +19,7 @@ import { UnresolvedChanges } from './outcomes'
 import { Time } from '../shared/time'
 import { TooltipLayer } from '../shared/overlays'
 import { usePageScrollbar } from '../shared/ui'
-import { admissionText } from './state'
+import { admissionWords } from './state'
 import { guideHidden, Overview } from '../monitor/overview'
 import { Notifications } from './notices'
 import { PolicyView } from '../policy/policy'
@@ -219,7 +219,7 @@ export function Shell(props: {
               says so at the top when the gateway refuses everything. */}
           {facts && view !== 'overview' && (facts.admission !== 'ready' || facts.audit_failed) ? (
             <p className="banner tone-refused" role="status">
-              <strong>The gateway is not accepting requests.</strong> {admissionText[facts.admission] ?? 'Every protected request is refused.'}{' '}
+              <strong>The gateway is not accepting requests.</strong> {admissionWords(facts)}{' '}
               <a href="#/overview">Open the Overview</a>
             </p>
           ) : null}
