@@ -28,17 +28,18 @@ func draining(e *gatewaytest.Env) int {
 	return n
 }
 
-// refuse sends n requests that no route matches and returns their request
-// identities. Their records are written in full; refusals of a policy are
-// recorded only up to a budget per client address, the rest are counted.
+// refuse sends n requests that fail validation at BODY/VALIDATION and returns
+// their request identities. Their records are written in full; policy, route
+// and canonical-path refusals are recorded only up to a budget per client
+// address, and the rest are counted.
 func refuse(e *gatewaytest.Env, n int) []string {
 	e.T.Helper()
 	ids := make([]string, 0, n)
 	for range n {
-		resp, body := e.Exchange(http.MethodGet, "/nothing", "", "")
+		resp, body := e.Exchange(http.MethodPost, "/a/item", "application/json", "[]")
 		_, id := gatewaytest.RequestID(resp, body)
-		if resp.StatusCode != http.StatusNotFound || id == "" {
-			e.T.Fatalf("unrouted request: %d %s", resp.StatusCode, body)
+		if resp.StatusCode != http.StatusBadRequest || id == "" {
+			e.T.Fatalf("validation refusal: %d %s", resp.StatusCode, body)
 		}
 		ids = append(ids, id)
 	}
