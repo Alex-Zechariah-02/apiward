@@ -196,3 +196,27 @@ func TestVerifyFindsAlterationAfterAnchor(t *testing.T) {
 		t.Fatalf("expected alteration problem, got %v", report.Problems)
 	}
 }
+
+func TestVerifyNamesFileWhereUnanchoredRunStarts(t *testing.T) {
+	dir := t.TempDir()
+	first := filepath.Join(dir, "audit-1.log")
+	second := filepath.Join(dir, "audit-2.log")
+	// The run starts in a rotated file that holds no chain record; the file
+	// that replaced it after a failed sync carries the run on.
+	records := map[string]string{
+		first:  `{"event_id":"aaaa-1","kind":"audit.rotated","file":"audit-0.log"}` + "\n" + `{"event_id":"aaaa-2","kind":"request.rejected"}` + "\n",
+		second: `{"event_id":"aaaa-3","kind":"audit.recovered"}` + "\n" + `{"event_id":"aaaa-4","kind":"audit.chain","sha256":"` + strings.Repeat("0", 64) + `"}` + "\n",
+	}
+	for path, text := range records {
+		if err := os.WriteFile(path, []byte(text), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	report, err := VerifyChain([]string{first, second}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Problems) != 1 || !strings.HasPrefix(report.Problems[0], first+": run aaaa starts here") {
+		t.Fatalf("problems %q, want one naming %s", report.Problems, first)
+	}
+}

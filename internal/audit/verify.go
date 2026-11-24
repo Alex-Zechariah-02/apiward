@@ -57,6 +57,7 @@ type verifier struct {
 	keys       map[string]crypto.PublicKey
 	report     ChainReport
 	file       string
+	origin     string // the file where the run awaiting its anchor starts
 	boot       string
 	head       [sha256.Size]byte
 	pending    []byte
@@ -168,6 +169,7 @@ func (v *verifier) line(line []byte, where string, head bool) {
 			v.report.Unchained += v.lines
 			v.boot, v.head, v.pending, v.lines = boot, [sha256.Size]byte{}, nil, 0
 			v.needAnchor = head && r.Kind == "audit.rotated"
+			v.origin = v.file
 			v.anchorSeen = false
 		}
 	}
@@ -221,11 +223,11 @@ func (v *verifier) anchor(r chainLine) {
 	}
 	v.head = head
 	v.needAnchor = false
-	v.report.Anchored = append(v.report.Anchored, v.file)
+	v.report.Anchored = append(v.report.Anchored, v.origin)
 }
 
 func (v *verifier) reportUnanchored() {
-	v.report.Problems = append(v.report.Problems, fmt.Sprintf("%s: run %s starts here without a verifiable checkpoint; earlier records of this run cannot be checked", v.file, v.boot))
+	v.report.Problems = append(v.report.Problems, fmt.Sprintf("%s: run %s starts here without a verifiable checkpoint; earlier records of this run cannot be checked", v.origin, v.boot))
 	v.needAnchor = false
 	v.anchorSeen = false
 }
