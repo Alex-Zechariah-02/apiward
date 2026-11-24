@@ -48,17 +48,30 @@ func (q *request) fail(stage int, reason string) {
 }
 
 // refuse records the stage result and the refusal, then answers with code.
-// A policy refusal (401, 403, 429) is recorded in full within its client
-// address's budget and counted in the summary beyond it.
+// Policy refusals (401, 403, 429) and unauthenticated route or canonical-path
+// refusals (404 or 405 at ROUTE, 400 at CANONICAL) are recorded in full within
+// their client address's budget and counted in the summary beyond it.
 func (q *request) refuse(stage int, result string, status int, code, recorded string) {
 	q.settle(stage, result, status, recorded)
-	switch status {
-	case http.StatusUnauthorized, http.StatusForbidden, http.StatusTooManyRequests:
+	if budgetedRefusal(stage, status) {
 		q.audit.RecordRefusal(q.event)
-	default:
+	} else {
 		q.audit.Record(q.event)
 	}
 	q.answer(status, code)
+}
+
+func budgetedRefusal(stage, status int) bool {
+	switch status {
+	case http.StatusUnauthorized, http.StatusForbidden, http.StatusTooManyRequests:
+		return true
+	case http.StatusNotFound, http.StatusMethodNotAllowed:
+		return stage == audit.StageRoute
+	case http.StatusBadRequest:
+		return stage == audit.StageCanonical
+	default:
+		return false
+	}
 }
 
 // summarise refuses at INGRESS a request no policy can act on. The security
