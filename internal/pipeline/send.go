@@ -19,15 +19,20 @@ import (
 	"github.com/Alex-Zechariah-02/apiward/internal/forward"
 )
 
-// send records the admission of a request that passed every stage, then
-// forwards it to destination and records the outcome.
-func (h *Handler) send(q *request, r *http.Request, g *compile.Generation, rule *compile.Rule, roles []string, destination compile.Destination, assertion string) {
+// send reserves the upstream slot, signs the identity assertion, records the
+// admission of a request that passed every stage, then forwards it to
+// destination and records the outcome.
+func (h *Handler) send(q *request, r *http.Request, g *compile.Generation, rule *compile.Rule, roles []string, destination compile.Destination) {
 	w := q.w
 	slot := h.takeUpstream(q, rule.Upstream())
 	if slot == nil {
 		return
 	}
 	defer slot.Add(-1)
+	assertion, ok := h.assert(q, rule, roles, r.Method, destination.Path())
+	if !ok {
+		return
+	}
 	// Admission requires a durable audit record before anything is forwarded.
 	// The record is written only when AUDIT passes, so it says so.
 	q.event.Kind, q.event.Stage, q.event.Decision = "request.admitted", audit.StageNames[audit.StageAudit], "admit"
@@ -56,7 +61,7 @@ func (h *Handler) send(q *request, r *http.Request, g *compile.Generation, rule 
 	if assertion != "" {
 		r.Header.Set(AssertionHeader, assertion)
 	}
-	r = r.WithContext(forward.Bind(r.Context(), destination))
+	r = r.WithContext(forward.Bind(r.Context(), destination, q.forwardedFor))
 	q.pass(audit.StageBind)
 
 	recorder := &statusRecorder{ResponseWriter: w}

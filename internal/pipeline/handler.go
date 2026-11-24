@@ -31,7 +31,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if peer, err := netip.ParseAddrPort(r.RemoteAddr); err == nil {
-		q.addr = h.clientAddress(peer.Addr().Unmap(), r.Header)
+		q.addr, q.forwardedFor = h.clientAddress(peer.Addr().Unmap(), r.Header)
 		q.event.ClientAddress = q.addr.String()
 		q.rateAddress = h.rateAddress(q.addr, q.event.ClientAddress)
 	}
@@ -235,10 +235,5 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		q.event.ForwardedPath = destination.Path()
 	}
 
-	assertion, ok := h.assert(q, rule, roles, r.Method, destination.Path())
-	if !ok {
-		return
-	}
-
-	h.send(q, r, g, rule, roles, destination, assertion)
+	h.send(q, r, g, rule, roles, destination)
 }

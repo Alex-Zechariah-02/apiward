@@ -36,7 +36,7 @@ func (h *Handler) preflight(q *request, g *compile.Generation, path string, in c
 		q.event.Operation = rule.Operation()
 	}
 	q.event.API, q.event.Upstream = api.API(), api.Upstream()
-	if !api.AddressAllowed(q.event.ClientAddress) {
+	if !api.Admits(q.addr) {
 		q.reject(audit.StageRoute, http.StatusForbidden, "address_not_allowed")
 		return true
 	}

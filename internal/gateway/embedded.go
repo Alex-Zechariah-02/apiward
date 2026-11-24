@@ -127,6 +127,7 @@ func hostIgnored(d dataSettings) []string {
 		{"data.tls", d.TLS != nil},
 		{"data.redirect_http", d.RedirectHTTP != nil},
 		{"data.max_connections", d.MaxConnections != nil},
+		{"data.max_connections_per_address", d.MaxConnectionsPerAddress != nil},
 		{"data.listen_all_interfaces", d.ListenAllInterfaces},
 	} {
 		if s.set {

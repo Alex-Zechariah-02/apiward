@@ -20,7 +20,7 @@ func (p *upstreamProxy) newReverseProxy() *httputil.ReverseProxy {
 	return &httputil.ReverseProxy{
 		Rewrite: func(pr *httputil.ProxyRequest) {
 			b := bindingOf(pr.In.Context())
-			rewriteToUpstream(pr, b.destination.Endpoint(), b.destination.Path())
+			rewriteToUpstream(pr, b.destination.Endpoint(), b.destination.Path(), b.forwardedFor)
 		},
 		Transport:  p,
 		ErrorLog:   p.errorLog,
@@ -58,7 +58,7 @@ func (p *upstreamProxy) modifyResponse(res *http.Response) error {
 // after removing the hop-by-hop fields, including every field the client
 // named in Connection, and the client's Forwarded and X-Forwarded-* fields,
 // so the client can neither remove nor supply anything set here.
-func rewriteToUpstream(pr *httputil.ProxyRequest, e *compile.Endpoint, path string) {
+func rewriteToUpstream(pr *httputil.ProxyRequest, e *compile.Endpoint, path, forwardedFor string) {
 	in := pr.In.URL
 	// The client's target as admitted: the query unparsed, unparsable
 	// parameters included, and the path in its received encoding unless the
@@ -82,7 +82,12 @@ func rewriteToUpstream(pr *httputil.ProxyRequest, e *compile.Endpoint, path stri
 		pr.Out.Host = e.Host()
 	}
 	// The direct peer's address, the inbound Host and the inbound protocol.
+	// When the peer is a trusted proxy, keep the validated chain with the peer
+	// appended instead of discarding it.
 	pr.SetXForwarded()
+	if forwardedFor != "" {
+		pr.Out.Header.Set("X-Forwarded-For", forwardedFor)
+	}
 	pr.Out.Header.Add("Via", via(pr.In.ProtoMajor, pr.In.ProtoMinor))
 }
 

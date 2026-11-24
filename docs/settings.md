@@ -26,13 +26,13 @@ The JSON settings file that `apiward run --config <file>` reads. Upstream TLS pr
 
 - Overload is bounded on the data listener: at most `data.max_connections` open connections (default 1,024; one more is accepted and closed at once, counted in `gateway_connections_refused_total`) and `data.max_in_flight` requests inside enforcement (default 1,024, as Envoy's per-upstream request limit; one more is answered `503 overloaded` with `Retry-After: 1` before any token check, and recorded at `INGRESS`).
 - `upstream.max_in_flight_per_upstream` (1 to `data.max_in_flight`, default three quarters of it: 768) bounds the requests in flight to one upstream, so one slow API cannot take every place; one more is answered `503 upstream_busy` with `Retry-After: 1` before admission and recorded at `AUDIT` with reason `upstream_busy` (Envoy's per-cluster circuit breaker, HAProxy's per-server `maxconn`).
-- `data.max_connections_per_address` (0 to `data.max_connections`, default 0: off) bounds one client address's open connections; one more is accepted and closed at once, as at `data.max_connections` (nginx `limit_conn`). Behind a proxy every client shares the proxy's address, so leave it off there.
+- `data.max_connections_per_address` (0 to `data.max_connections`, default 0: off) bounds one client address's open connections; one more is accepted and closed at once, as at `data.max_connections` (nginx `limit_conn`). Behind a proxy every client shares the proxy's address, so leave it off there (the start log warns when set with `data.trusted_proxies`).
 - At most 10,000 accounts and 1,024 address ranges can be blocked; one more is refused `LIMIT_EXCEEDED`. `GET /admin/limits` reports both.
 - Each request in flight holds about 140 KiB, so the default bounds overload memory to about 140 MiB (reached only when about a thousand requests wait at once, for example behind a stalled upstream); on a host with little memory lower `data.max_in_flight` and `upstream.max_idle_per_upstream` together. With 256 a one-core host refused requests from about 90 % CPU; with 1,024 only past its CPU limit.
 - A request body is read completely before the request takes an in-flight place, so a slow upload holds only its own connection: at most `data.max_body_bytes` (default 16 KiB, up to 1 MiB; a larger body is answered `413` at `INGRESS`) within `data.read_timeout`.
 - The 16 KiB default is four times the largest Fetch request body; nginx defaults to 1 MiB, Kong and Traefik set no ceiling. Raise it only for APIs whose bodies need it.
 - A connection reads one request body at a time, also across its HTTP/2 streams; another upload on the same connection waits its turn.
-- Worst-case memory for request bodies is therefore `data.max_connections` × `data.max_body_bytes`: 16 MiB at the defaults, 1 GiB with 1,024 connections and the 1 MiB maximum; lower `data.max_connections` on a small host before raising the body ceiling.
+- Worst-case memory for request bodies is therefore `data.max_connections` × `data.max_body_bytes` (buffers grow as payload bytes arrive, never reserved from `Content-Length` alone): 16 MiB at the defaults, 1 GiB with 1,024 connections and the 1 MiB maximum; lower `data.max_connections` on a small host before raising the body ceiling.
 - A response passes to the client as it arrives: the gateway flushes it at least every 100 ms (headers included), and event streams and responses without a length at once.
 
 ### Client addresses behind a proxy
@@ -40,7 +40,7 @@ The JSON settings file that `apiward run --config <file>` reads. Upstream TLS pr
 - `data.trusted_proxies` lists the load balancers or proxies in front of the gateway, as IP addresses or CIDR prefixes (up to 64; empty by default); an IPv4-mapped prefix such as `::ffff:192.0.2.0/120` is read as the IPv4 prefix it names.
 - Only a request whose connection comes from one of them may name its client in `X-Forwarded-For`: the gateway reads the field from the right, skips every trusted proxy, and takes the first other address.
 - When every entry is a trusted proxy, the leftmost entry is the client; an entry that is not an IP address stops the reading, and the address read before it is used.
-- That client address is used for blocked addresses, `allow_addresses`, address rate keys and the security log; upstreams still receive the direct peer in `X-Forwarded-For`.
+- That client address is used for blocked addresses, `allow_addresses`, address rate keys and the security log. When the peer is a trusted proxy, upstreams receive the validated `X-Forwarded-For` chain with the direct peer appended; from an untrusted peer, client-sent `X-Forwarded-For` headers stay stripped and upstreams receive only the direct peer.
 - Without the setting, a client's `X-Forwarded-For` is never trusted.
 
 ### Protocols

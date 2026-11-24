@@ -50,7 +50,9 @@ func TestUpstreamThatStopsReadingTimesOut(t *testing.T) {
 	body := bytes.NewReader(make([]byte, 32<<20))
 	r := httptest.NewRequest(http.MethodPost, "/x", body)
 	done := make(chan error, 1)
-	go func() { done <- proxy.Forward(httptest.NewRecorder(), r.WithContext(Bind(context.Background(), d))) }()
+	go func() {
+		done <- proxy.Forward(httptest.NewRecorder(), r.WithContext(Bind(context.Background(), d, "")))
+	}()
 	select {
 	case err := <-done:
 		status, code := ForwardFailure(err)
@@ -83,7 +85,7 @@ func TestSlowResponseStreams(t *testing.T) {
 		t.Fatal(err)
 	}
 	front := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		proxy.Forward(w, r.WithContext(Bind(r.Context(), d)))
+		proxy.Forward(w, r.WithContext(Bind(r.Context(), d, "")))
 	}))
 	t.Cleanup(front.Close)
 

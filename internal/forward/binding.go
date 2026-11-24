@@ -24,20 +24,22 @@ var (
 // which only the forwarder writes: one allocation per request instead of a
 // proxy, its closures and a client trace.
 type binding struct {
-	destination compile.Destination
-	connected   atomic.Bool   // a connection to the upstream was held
-	upstream    time.Duration // from sending the request to the response headers
-	cancel      context.CancelCauseFunc
-	failure     error // why the exchange failed before any response
+	destination  compile.Destination
+	forwardedFor string        // validated X-Forwarded-For chain from a trusted proxy; empty for untrusted peers
+	connected    atomic.Bool   // a connection to the upstream was held
+	upstream     time.Duration // from sending the request to the response headers
+	cancel       context.CancelCauseFunc
+	failure      error // why the exchange failed before any response
 }
 
 type bindingKey struct{}
 
 // Bind returns ctx carrying the destination the compiled rule chose: the one
-// upstream the request may reach and the path it is forwarded with. It is
-// the only way to attach a binding.
-func Bind(ctx context.Context, d compile.Destination) context.Context {
-	return context.WithValue(ctx, bindingKey{}, &binding{destination: d})
+// upstream the request may reach and the path it is forwarded with, plus the
+// validated X-Forwarded-For chain when the peer is a trusted proxy (empty
+// otherwise). It is the only way to attach a binding.
+func Bind(ctx context.Context, d compile.Destination, forwardedFor string) context.Context {
+	return context.WithValue(ctx, bindingKey{}, &binding{destination: d, forwardedFor: forwardedFor})
 }
 
 // Bound returns the destination ctx is bound to, if a binding is attached.

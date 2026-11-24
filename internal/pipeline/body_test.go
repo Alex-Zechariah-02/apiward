@@ -4,6 +4,10 @@ package pipeline
 
 import (
 	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -105,5 +109,29 @@ func TestMediaTypes(t *testing.T) {
 		if got := IsJSONMediaType(tc.fields); got != tc.ok {
 			t.Errorf("%q: %v, want %v", tc.fields, got, tc.ok)
 		}
+	}
+}
+
+type errBody struct{ err error }
+
+func (e errBody) Read([]byte) (int, error) { return 0, e.err }
+
+// A declared Content-Length must not reserve memory before payload bytes
+// arrive: a header-only request declaring 1 MiB allocates only a small
+// initial buffer.
+func TestBufferBodyGrowsWithBytes(t *testing.T) {
+	const limit = 1 << 20
+	req := httptest.NewRequest(http.MethodPost, "/a/item", errBody{err: io.ErrUnexpectedEOF})
+	req.ContentLength = limit
+	runtime.GC()
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
+	_, refused := bufferBody(req, limit)
+	runtime.ReadMemStats(&after)
+	if refused == nil || refused.status != http.StatusBadRequest {
+		t.Fatalf("truncated body: %+v, want 400", refused)
+	}
+	if got := after.TotalAlloc - before.TotalAlloc; got >= 64<<10 {
+		t.Fatalf("allocated %d bytes for 0 payload bytes with Content-Length %d; want < 64 KiB", got, limit)
 	}
 }

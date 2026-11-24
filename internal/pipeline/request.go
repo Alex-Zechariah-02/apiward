@@ -24,8 +24,9 @@ type request struct {
 	// addr is the client address, parsed once; the zero value when the
 	// peer's address did not parse. rateAddress keys the client's
 	// address-based rate counters: the address, or for IPv6 its prefix.
-	addr        netip.Addr
-	rateAddress string
+	addr         netip.Addr
+	rateAddress  string
+	forwardedFor string
 	// bodyPending is true while a declared HTTP/1 request body has not been
 	// consumed by validation. HTTP/2 needs no connection close for it: the
 	// server resets the stream, and "Connection: close" would end every

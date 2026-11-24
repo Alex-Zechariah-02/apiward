@@ -43,6 +43,9 @@ func unfinished(path string, end int64, window time.Duration) ([]scanned, bool, 
 		return nil, false, err
 	}
 	defer file.Close()
+	if closed, err := closedTail(file, end); err != nil || closed {
+		return nil, closed, err
+	}
 	var records []scanned
 	reader := bufio.NewReaderSize(io.LimitReader(file, end), MaxRecordBytes)
 	for {
@@ -93,6 +96,50 @@ func unfinished(path string, end int64, window time.Duration) ([]scanned, bool, 
 		}
 	}
 	return pending, false, nil
+}
+
+// closedTail checks whether file's first end bytes are empty or end with
+// audit.closed (followed only by audit.chain records), reading at most two
+// record windows from the tail so a clean stop skips decoding the file.
+func closedTail(file *os.File, end int64) (bool, error) {
+	if end <= 0 {
+		return true, nil
+	}
+	start := max(int64(0), end-2*MaxRecordBytes)
+	tail := make([]byte, end-start)
+	if _, err := file.ReadAt(tail, start); err != nil && err != io.EOF {
+		return false, err
+	}
+	if start > 0 {
+		cut := bytes.IndexByte(tail, '\n')
+		if cut < 0 {
+			return false, nil
+		}
+		tail = tail[cut+1:]
+	}
+	for len(tail) > 0 {
+		tail = bytes.TrimRight(tail, "\r\n")
+		if len(tail) == 0 {
+			break
+		}
+		var line []byte
+		if cut := bytes.LastIndexByte(tail, '\n'); cut >= 0 {
+			line, tail = tail[cut+1:], tail[:cut]
+		} else {
+			line, tail = tail, nil
+		}
+		var r struct {
+			Kind string `json:"kind"`
+		}
+		if json.Unmarshal(bytes.TrimSpace(line), &r) != nil {
+			return false, nil
+		}
+		if r.Kind == "audit.chain" {
+			continue
+		}
+		return r.Kind == closedKind, nil
+	}
+	return false, nil
 }
 
 // reconcile queues the records of an unclean stop: one outcome_unknown per

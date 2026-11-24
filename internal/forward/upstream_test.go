@@ -95,7 +95,7 @@ func send(t *testing.T, n *Network, u policy.Upstream, host string) (string, int
 	r := httptest.NewRequest(http.MethodGet, "/x", nil)
 	r.Host = host
 	rec := httptest.NewRecorder()
-	if err := proxy.Forward(rec, r.WithContext(Bind(context.Background(), destination(t, u, http.MethodGet)))); err != nil {
+	if err := proxy.Forward(rec, r.WithContext(Bind(context.Background(), destination(t, u, http.MethodGet), ""))); err != nil {
 		status, _ := ForwardFailure(err)
 		return FailureReason(err), status
 	}

@@ -69,26 +69,42 @@ func (h *Handler) trusted(addr netip.Addr) bool {
 // read from the right, past every trusted proxy, and the first address that
 // is not one is the client; when all are trusted, the leftmost is. An entry
 // that is not an IP address ends the walk at the address before it, which
-// the client cannot have written.
-func (h *Handler) clientAddress(peer netip.Addr, header http.Header) netip.Addr {
+// the client cannot have written. When the peer is a trusted proxy and at
+// least one entry was validated, the second return value is the validated
+// chain with the peer appended for the upstream X-Forwarded-For header;
+// otherwise it is empty so the proxy sends the direct peer alone.
+func (h *Handler) clientAddress(peer netip.Addr, header http.Header) (netip.Addr, string) {
 	if !h.trusted(peer) {
-		return peer
+		return peer, ""
 	}
 	client := peer
+	var hops []string
 	values := header.Values("X-Forwarded-For")
 	for _, value := range slices.Backward(values) {
 		for _, entry := range slices.Backward(strings.Split(value, ",")) {
 			addr, err := netip.ParseAddr(strings.TrimSpace(entry))
 			if err != nil || addr.Zone() != "" {
-				return client
+				return client, forwardedChain(hops, peer)
 			}
 			client = addr.Unmap()
+			hops = append(hops, client.String())
 			if !h.trusted(client) {
-				return client
+				return client, forwardedChain(hops, peer)
 			}
 		}
 	}
-	return client
+	return client, forwardedChain(hops, peer)
+}
+
+// forwardedChain formats the validated hops (collected right-to-left) in
+// left-to-right order with peer appended; empty when no hop was validated.
+func forwardedChain(hops []string, peer netip.Addr) string {
+	if len(hops) == 0 {
+		return ""
+	}
+	slices.Reverse(hops)
+	hops = append(hops, peer.String())
+	return strings.Join(hops, ", ")
 }
 
 // errMaxForwards is a Max-Forwards field that is not one decimal number.

@@ -58,6 +58,9 @@ func warnSettings(cfg nativeConfig, logger *slog.Logger) {
 	for _, w := range weakenings(cfg) {
 		logger.Warn(w.message, "setting", w.setting)
 	}
+	if cfg.perAddress > 0 && len(cfg.limits.TrustedProxies) > 0 {
+		logger.Warn("data.max_connections_per_address counts connections from the proxy address when data.trusted_proxies is set: every client behind a proxy shares that cap", "setting", "data.max_connections_per_address")
+	}
 	warnAudit(cfg.controller, logger)
 }
 

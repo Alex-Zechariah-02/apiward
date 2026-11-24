@@ -37,7 +37,7 @@ func forwarder(t *testing.T, n *Network, pool PoolSettings, u policy.Upstream) (
 	return proxy, func() string {
 		rec := httptest.NewRecorder()
 		r := httptest.NewRequest(http.MethodGet, "/x", nil)
-		if err := proxy.Forward(rec, r.WithContext(Bind(context.Background(), d))); err != nil {
+		if err := proxy.Forward(rec, r.WithContext(Bind(context.Background(), d, ""))); err != nil {
 			return FailureReason(err)
 		}
 		return ""
@@ -268,7 +268,7 @@ func TestPoolRetiresEarlierNetwork(t *testing.T) {
 	d := destination(t, policy.Upstream{ID: "u", Dial: s.Listener.Addr().String()}, http.MethodGet)
 	send := func() {
 		r := httptest.NewRequest(http.MethodGet, "/x", nil)
-		if err := proxy.Forward(httptest.NewRecorder(), r.WithContext(Bind(context.Background(), d))); err != nil {
+		if err := proxy.Forward(httptest.NewRecorder(), r.WithContext(Bind(context.Background(), d, ""))); err != nil {
 			t.Fatal(err)
 		}
 	}

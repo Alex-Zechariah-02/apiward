@@ -4,6 +4,7 @@ package gateway
 
 import (
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
 	"testing"
@@ -199,5 +200,79 @@ func TestConnectionCannotRemoveValidatedFields(t *testing.T) {
 	}
 	if e.A.Count() != len(forwarded) || e.B.Count()+e.C.Count() != 0 {
 		t.Fatalf("receipts A=%d B=%d C=%d, want %d at A only", e.A.Count(), e.B.Count(), e.C.Count(), len(forwarded))
+	}
+}
+
+// Behind a trusted proxy, upstreams receive the validated X-Forwarded-For
+// chain with the direct peer appended; untrusted peers keep their headers
+// stripped. Combining trusted_proxies with max_connections_per_address warns.
+func TestTrustedProxyForwardsValidatedChain(t *testing.T) {
+	t.Parallel()
+	e := gatewaytest.NewEnv(t)
+	gatewaytest.Seed(t, e.Database, e.Policy(e.A, false), gatewaytest.SeedOptions{})
+	settings := e.NativeSettings()
+	data := gatewaytest.Section(settings, "data")
+	data["trusted_proxies"] = []any{"127.0.0.0/8"}
+	data["max_connections_per_address"] = 32
+	e.WriteNative(settings)
+	cfg, err := loadNativeConfig(e.Config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var logs gatewaytest.LogBuffer
+	g, err := startNative(cfg, slog.New(slog.NewJSONHandler(&logs, nil)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { g.stop() })
+	if !strings.Contains(logs.String(), "data.max_connections_per_address") {
+		t.Errorf("start log did not warn about max_connections_per_address with trusted_proxies: %s", logs.String())
+	}
+
+	for _, tc := range []struct {
+		name, header, want string
+	}{
+		{"validated chain appended", "198.51.100.1, 203.0.113.9, 127.0.0.2", "203.0.113.9, 127.0.0.2, 127.0.0.1"},
+		{"single client", "203.0.113.9", "203.0.113.9, 127.0.0.1"},
+		{"all trusted", "127.0.0.2", "127.0.0.2, 127.0.0.1"},
+		{"junk ends walk", "203.0.113.9, junk", "127.0.0.1"},
+		{"no header", "", "127.0.0.1"},
+	} {
+		before := e.A.Count()
+		var headers []string
+		if tc.header != "" {
+			headers = []string{"X-Forwarded-For", tc.header}
+		}
+		resp, body := e.Exchange(http.MethodGet, "/a/x", "", "", headers...)
+		if resp.StatusCode != http.StatusOK || e.A.Count() != before+1 {
+			t.Fatalf("%s: %d %s", tc.name, resp.StatusCode, body)
+		}
+		got := strings.Join(e.A.Receipts()[before].Headers.Values("X-Forwarded-For"), "|")
+		if got != tc.want {
+			t.Errorf("%s: upstream X-Forwarded-For %q, want %q", tc.name, got, tc.want)
+		}
+	}
+
+	// Untrusted peer: client-sent X-Forwarded-For stays stripped.
+	e2 := gatewaytest.NewEnv(t)
+	gatewaytest.Seed(t, e2.Database, e2.Policy(e2.A, false), gatewaytest.SeedOptions{})
+	s2 := e2.NativeSettings()
+	gatewaytest.Section(s2, "data")["trusted_proxies"] = []any{"10.0.0.0/8"}
+	e2.WriteNative(s2)
+	cfg2, err := loadNativeConfig(e2.Config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	g2, err := startNative(cfg2, slog.New(slog.NewJSONHandler(&gatewaytest.LogBuffer{}, nil)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { g2.stop() })
+	resp, body := e2.Exchange(http.MethodGet, "/a/x", "", "", "X-Forwarded-For", "203.0.113.9")
+	if resp.StatusCode != http.StatusOK || e2.A.Count() != 1 {
+		t.Fatalf("untrusted peer: %d %s", resp.StatusCode, body)
+	}
+	if got := strings.Join(e2.A.Receipts()[0].Headers.Values("X-Forwarded-For"), "|"); got != "127.0.0.1" {
+		t.Errorf("untrusted peer: upstream X-Forwarded-For %q, want 127.0.0.1", got)
 	}
 }

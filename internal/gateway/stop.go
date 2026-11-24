@@ -16,9 +16,10 @@ type upstreams interface{ Close() }
 
 // shutdown stops the gateway gracefully. /readyz answers 503 first, for the
 // configured delay while every listener still serves, so a load balancer
-// stops sending requests; then admission ends, the data plane stops
-// accepting connections and its requests in progress finish, the idle
-// upstream connections close, then the controller stops its Admin API the
+// stops sending requests; then the data and redirect listeners stop accepting
+// connections and their requests in progress finish while the published policy
+// stays in force, admission ends, the health and metrics listeners stop, the
+// idle upstream connections close, then the controller stops its Admin API the
 // same way, writes the audit events queued until then and closes the
 // database. Requests in progress on every listener share one wait of grace;
 // the audit drain keeps its own AuditDrainWait. It returns nil only when
@@ -26,17 +27,26 @@ type upstreams interface{ Close() }
 func (g *nativeGateway) shutdown() error {
 	g.draining.Store(true)
 	time.Sleep(g.delay)
-	g.controller.BeginStop()
 	close(g.done)
 	ctx, cancel := context.WithTimeout(context.Background(), g.grace)
 	defer cancel()
 	var errs []error
-	// The controller stops last: no listener answers after the database and audit log close.
+	// Stop accepting on the data plane before withdrawing the policy, so no
+	// client meets an open data socket answering 503 during shutdown.
+	if err := g.data.Shutdown(ctx); err != nil {
+		// Requests still running are cut off; their clients see their
+		// connections close.
+		errs = append(errs, fmt.Errorf("data listener shutdown: %w", err), g.data.Close())
+	}
 	if g.redirect != nil {
 		if err := g.redirect.Shutdown(ctx); err != nil {
 			errs = append(errs, fmt.Errorf("redirect listener shutdown: %w", err), g.redirect.Close())
 		}
 	}
+	g.controller.BeginStop()
+	// The health and metrics listeners stop after the data plane drained,
+	// so /readyz keeps answering 503 throughout the drain; the controller
+	// stops last so no listener answers after the database and audit log close.
 	if g.health != nil {
 		if err := g.health.Shutdown(ctx); err != nil {
 			errs = append(errs, fmt.Errorf("health listener shutdown: %w", err), g.health.Close())
@@ -44,11 +54,6 @@ func (g *nativeGateway) shutdown() error {
 	}
 	if err := g.metrics.Shutdown(ctx); err != nil {
 		errs = append(errs, fmt.Errorf("metrics listener shutdown: %w", err), g.metrics.Close())
-	}
-	if err := g.data.Shutdown(ctx); err != nil {
-		// Requests still running are cut off; their clients see their
-		// connections close.
-		errs = append(errs, fmt.Errorf("data listener shutdown: %w", err), g.data.Close())
 	}
 	g.upstreams.Close()
 	errs = append(errs, g.controller.StopWithin(ctx))

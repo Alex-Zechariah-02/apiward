@@ -56,7 +56,7 @@ func bufferBody(r *http.Request, maxBytes int64) ([]byte, *rejection) {
 			return nil, &rejection{http.StatusBadRequest, "bad_request", "read_failed"}
 		}
 	}
-	body, err := readLimited(r.Body, r.ContentLength, maxBytes)
+	body, err := readLimited(r.Body, maxBytes)
 	if err != nil {
 		return nil, &rejection{http.StatusBadRequest, "bad_request", "read_failed"}
 	}
@@ -101,29 +101,12 @@ func readBody(r *http.Request, body []byte, rule *compile.BodyRule, globalMaxByt
 	return document, nil
 }
 
-// readLimited reads at most maxBytes+1 bytes, so a longer body is seen to be
-// too large. A body of declared length is read into one buffer of that size;
-// the server ends such a body at its declared length, and one more read
-// confirms it. The policy compiler bounds the ceiling, so maxBytes+1 cannot
-// overflow.
-func readLimited(body io.Reader, declared, maxBytes int64) ([]byte, error) {
-	limited := io.LimitReader(body, maxBytes+1)
-	if declared <= 0 {
-		return io.ReadAll(limited)
-	}
-	data := make([]byte, declared, declared+1)
-	if _, err := io.ReadFull(limited, data); err != nil {
-		return nil, err
-	}
-	var extra [1]byte
-	n, err := io.ReadFull(limited, extra[:])
-	if n == 1 {
-		return append(data, extra[0]), nil
-	}
-	if err != io.EOF {
-		return nil, err
-	}
-	return data, nil
+// readLimited reads at most maxBytes+1 bytes, growing the buffer as bytes
+// arrive so a declared Content-Length never reserves memory before the
+// payload is sent. The policy compiler bounds the ceiling, so maxBytes+1
+// cannot overflow.
+func readLimited(body io.Reader, maxBytes int64) ([]byte, error) {
+	return io.ReadAll(io.LimitReader(body, maxBytes+1))
 }
 
 // IsJSONMediaType accepts exactly one Content-Type field naming

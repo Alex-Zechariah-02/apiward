@@ -4,9 +4,11 @@
 package audit
 
 import (
+	"bytes"
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -64,5 +66,57 @@ func TestUncleanStopMarksUnknownOutcomes(t *testing.T) {
 	}
 	if count != 1 {
 		t.Fatalf("%d reconciliations after a clean stop", count)
+	}
+}
+
+// A clean-stopped active file ending in audit.closed (and its audit.chain)
+// skips decoding the whole file at startup.
+func TestCleanStopSkipsFullDecode(t *testing.T) {
+	dir := t.TempDir()
+	seed := filepath.Join(dir, "seed.log")
+	a := OpenAudit(seed, Settings{MaxBytes: 1 << 20, MaxFiles: 4, Append: true})
+	for range 4 {
+		if err := a.Commit(context.Background(), Event{Kind: "request.admitted", RequestID: "r1", Operation: "orders.list", API: "orders", Subject: "cust-001", Method: "GET", Path: "/orders/items", ClientAddress: "203.0.113.9"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := a.Close(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(seed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := bytes.Split(bytes.TrimSpace(data), []byte("\n"))
+	var block []byte
+	for _, l := range lines {
+		block = append(append(block, l...), '\n')
+	}
+	path := filepath.Join(dir, "audit.log")
+	out, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var size int64
+	for size < 4<<20 {
+		n, err := out.Write(block)
+		if err != nil {
+			out.Close()
+			t.Fatal(err)
+		}
+		size += int64(n)
+	}
+	out.Close()
+
+	runtime.GC()
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
+	pending, closed, err := unfinished(path, size, time.Minute)
+	runtime.ReadMemStats(&after)
+	if err != nil || !closed || len(pending) != 0 {
+		t.Fatalf("unfinished: pending %d closed %v err %v", len(pending), closed, err)
+	}
+	if got := after.TotalAlloc - before.TotalAlloc; got >= 1<<20 {
+		t.Fatalf("clean stop decoded the file: allocated %d bytes for %d MiB file; want < 1 MiB", got, size>>20)
 	}
 }

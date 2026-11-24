@@ -56,8 +56,8 @@ func (c *Controller) StopWithin(ctx context.Context) error {
 // published generation is withdrawn, so a request that has not captured one
 // yet is refused; mutations and the deadline timer change nothing any more;
 // Start is refused. A request that captured a generation earlier runs to its
-// end with it. Stop begins with it; the native gateway calls it before it
-// stops its data plane.
+// end with it. Stop begins with it; the native gateway calls it after its
+// data plane stops accepting connections.
 func (c *Controller) BeginStop() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
