@@ -17,11 +17,12 @@ import (
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request, who caller) {
 	state := s.control.State()
 	status := map[string]any{
-		"state":          state,
-		"admission":      s.control.Admission(),
-		"audit_failed":   s.audit.Failed(),
-		"jwt_key_sha256": s.control.Verifier().Fingerprint(),
-		"build":          runningBuild(),
+		"state":            state,
+		"admission":        s.control.Admission(),
+		"audit_failed":     s.audit.Failed(),
+		"audit_checkpoint": s.audit.Checkpoint(),
+		"jwt_key_sha256":   s.control.Verifier().Fingerprint(),
+		"build":            runningBuild(),
 	}
 	if g := s.control.Current(); g != nil {
 		status["revision"] = g.Revision

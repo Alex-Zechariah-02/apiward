@@ -195,10 +195,29 @@ func (a *AuditLog) writeBatch(batch []*auditEntry) error {
 		mark = a.seq
 		buffer = a.encode(buffer[:0], lost, batch)
 	}
+	var cp *Checkpoint
+	for _, entry := range batch {
+		if entry.event.Kind == "audit.checkpoint" {
+			cp = &Checkpoint{
+				Boot:      a.boot,
+				SHA256:    entry.event.Digest,
+				Kid:       entry.event.Target,
+				Signature: entry.event.Signature,
+				Time:      entry.event.Time,
+			}
+		}
+	}
 	if rotatedNow && a.marker != "" {
 		// The head of the file just closed, signed at rotation.
 		if e, ok := a.checkpoint(a.head); ok {
 			buffer = a.appendEvent(buffer, e)
+			cp = &Checkpoint{
+				Boot:      a.boot,
+				SHA256:    e.Digest,
+				Kid:       e.Target,
+				Signature: e.Signature,
+				Time:      e.Time,
+			}
 		}
 	}
 	buffer, head := a.chain(buffer, a.head)
@@ -220,7 +239,10 @@ func (a *AuditLog) writeBatch(batch []*auditEntry) error {
 	a.fresh = false
 	a.lossTotal.Add(lost)
 	a.head = head
-	a.published.Store(&head)
+	a.chainBatches.Add(1)
+	if cp != nil {
+		a.lastCheckpoint.Store(cp)
+	}
 	// A rare huge batch is not kept: memory stays bounded by ordinary batches.
 	if cap(buffer) <= keptBatchBytes {
 		a.encoded = buffer

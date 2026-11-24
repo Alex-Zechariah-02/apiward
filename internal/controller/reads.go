@@ -93,10 +93,14 @@ func (c *Controller) Gauges() []monitor.Gauge {
 		{Name: "gateway_control_store_failures_total", Value: c.failures.Load(), Counter: true},
 	}
 	gauges = append(gauges, auditGauges(c.audit)...)
-	// The chain head an operator copies off the host (tamper evidence).
-	if head := c.audit.ChainHead(); head != "" {
-		gauges = append(gauges, monitor.Gauge{Name: "apiward_audit_chain_head_info", Value: 1, Labels: []string{"sha256", head}})
+	var lastCheckpoint int64
+	if cp := c.audit.Checkpoint(); cp != nil {
+		lastCheckpoint = cp.Time.Unix()
 	}
+	gauges = append(gauges,
+		monitor.Gauge{Name: "gateway_audit_chain_batches_total", Value: int64(c.audit.ChainBatches()), Counter: true}, // #nosec G115 -- a count of batches, far below 2^63
+		monitor.Gauge{Name: "gateway_audit_last_checkpoint_timestamp_seconds", Value: lastCheckpoint},
+	)
 	return gauges
 }
 

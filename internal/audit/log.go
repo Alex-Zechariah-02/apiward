@@ -60,8 +60,10 @@ type AuditLog struct {
 	// signer signs its checkpoints (chain.go); used only by the writer.
 	head   [sha256.Size]byte
 	signer Signer
-	// published copies head for readers outside the writer (ChainHead).
-	published atomic.Pointer[[sha256.Size]byte]
+	// chainBatches counts synced audit.chain records since start; lastCheckpoint
+	// holds the last synced signed checkpoint for readers outside the writer.
+	chainBatches   atomic.Uint64
+	lastCheckpoint atomic.Pointer[Checkpoint]
 	// window is how long a batch with siblings waits for more events
 	// before its sync; 0 syncs each batch as soon as it is drained.
 	window  time.Duration

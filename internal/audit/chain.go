@@ -54,11 +54,19 @@ func (a *AuditLog) checkpoint(head [sha256.Size]byte) (Event, bool) {
 	return a.stamp(Event{Kind: "audit.checkpoint", Digest: digest, Target: kid, Signature: base64.RawURLEncoding.EncodeToString(signature)}), true
 }
 
-// ChainHead is the chain head after the last batch written, as hex, or ""
-// before the first; an operator copies it off the host to bound rewrites.
-func (a *AuditLog) ChainHead() string {
-	if head := a.published.Load(); head != nil {
-		return hex.EncodeToString(head[:])
-	}
-	return ""
+// Checkpoint is the last synced signed checkpoint, returned by GET /admin/status
+// for off-host anchoring.
+type Checkpoint struct {
+	Boot      string    `json:"boot"`
+	SHA256    string    `json:"sha256"`
+	Kid       string    `json:"kid"`
+	Signature string    `json:"signature"`
+	Time      time.Time `json:"time"`
 }
+
+// ChainBatches is the number of audit.chain records written and synced since start.
+func (a *AuditLog) ChainBatches() uint64 { return a.chainBatches.Load() }
+
+// Checkpoint returns the last synced signed checkpoint, or nil before the first
+// checkpoint or when signing is disabled.
+func (a *AuditLog) Checkpoint() *Checkpoint { return a.lastCheckpoint.Load() }
