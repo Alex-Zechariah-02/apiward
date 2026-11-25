@@ -96,13 +96,8 @@ func (a *AuditLog) writeEviction(entry *auditEntry) error {
 		}
 		return err
 	}
-	a.head = head
-	a.chainBatches.Add(1)
 	a.written.Add(1)
-	if cap(buffer) <= keptBatchBytes {
-		a.encoded = buffer
-	}
-	a.publishUsage()
+	a.finishBatch(buffer, head)
 	return nil
 }
 

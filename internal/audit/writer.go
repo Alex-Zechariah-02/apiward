@@ -3,6 +3,7 @@
 package audit
 
 import (
+	"crypto/sha256"
 	"errors"
 	"time"
 )
@@ -240,17 +241,23 @@ func (a *AuditLog) writeBatch(batch []*auditEntry) error {
 	a.marker = ""
 	a.fresh = false
 	a.lossTotal.Add(lost)
-	a.head = head
-	a.chainBatches.Add(1)
 	if cp != nil {
 		a.lastCheckpoint.Store(cp)
 	}
+	a.finishBatch(buffer, head)
+	return nil
+}
+
+// finishBatch updates the chain head, batch counter, kept buffer and usage
+// after a batch has been persisted and synced.
+func (a *AuditLog) finishBatch(buffer []byte, head [sha256.Size]byte) {
+	a.head = head
+	a.chainBatches.Add(1)
 	// A rare huge batch is not kept: memory stays bounded by ordinary batches.
 	if cap(buffer) <= keptBatchBytes {
 		a.encoded = buffer
 	}
 	a.publishUsage()
-	return nil
 }
 
 // publishUsage copies the writer's sizes and file count for other readers.
