@@ -8,7 +8,6 @@ import type { Limit } from '../shared/limits'
 import { ReadStamp } from '../shared/time'
 import type { ViewProps } from '../app/views'
 
-// One row per limit the gateway reports, in its words; a limit an older gateway does not report is left out.
 const limitRows: { id: string; name: string; atLimit: string; bytes?: boolean }[] = [
   { id: 'policy_bytes', name: 'Policy Document', atLimit: 'A larger draft change is refused when it is saved.', bytes: true },
   { id: 'temporary_rules', name: 'Active Temporary Rules', atLimit: 'New temporary rules are refused until one ends or is revoked.' },
@@ -58,7 +57,6 @@ export function LimitsView({ admin }: ViewProps) {
                           <span className="num">
                             {amount(limit.used, row.bytes)} of {amount(limit.max, row.bytes)}
                           </span>{' '}
-                          {/* Nearly full from 80 %: early enough to act before the limit; the meter turns at 80 % and 95 %. */}
                           {share >= 0.8 ? <Badge tone={share >= 1 ? 'refused' : 'unknown'}>{share >= 1 ? 'At the limit' : 'Nearly full'}</Badge> : null}
                           <meter className="limit-meter" min={0} max={limit.max} value={limit.used} low={limit.max * 0.8} high={limit.max * 0.95} optimum={0} aria-label={`${row.name} in use`} />
                         </td>

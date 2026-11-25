@@ -259,7 +259,6 @@ CREATE INDEX transition_committed ON transition (committed_at);
 	// Incremental auto-vacuum is enabled by Migrate before this transaction;
 	// bumping the schema version ensures every existing deployment migrates once.
 	`SELECT 1;`,
-	// Bounded-window permission-use tracking for unused-permission advice.
 	`
 CREATE TABLE permit_use (
 	role TEXT NOT NULL,

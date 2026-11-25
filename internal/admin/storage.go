@@ -57,8 +57,6 @@ func size(bytes int64) string {
 	return fmt.Sprintf("%.0f MiB", float64(bytes)/(1<<20))
 }
 
-// certAlerts lists A5 findings for the data listener certificate and each
-// upstream TLS profile client certificate expiring within CertWarnDays.
 func (s *Server) certAlerts(now time.Time) []monitor.Finding {
 	var items []monitor.Finding
 	if s.config.DataCertificateExpiry != nil {

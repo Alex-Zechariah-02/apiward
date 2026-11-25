@@ -32,7 +32,6 @@ type permitTracker struct {
 	requests  int
 }
 
-// record marks every verified (role, operation) pair of an admitted request.
 func (p *permitTracker) record(event audit.Event) {
 	if event.Kind != "request.forwarded" {
 		return
@@ -63,7 +62,6 @@ func (p *permitTracker) record(event audit.Event) {
 	}
 }
 
-// setPermitted bounds the tracked map to the published policy's permitted pairs.
 func (p *permitTracker) setPermitted(g *compile.Generation) {
 	if g == nil {
 		return
@@ -87,8 +85,6 @@ func (p *permitTracker) setPermitted(g *compile.Generation) {
 	}
 }
 
-// load initializes the tracker from persisted state, dropping rows older than
-// PermitUseWindowDays.
 func (p *permitTracker) load(snap PermitSnapshot, now time.Time) {
 	cutoff := now.Add(-permitUseWindow)
 	p.mu.Lock()
@@ -109,8 +105,6 @@ func (p *permitTracker) load(snap PermitSnapshot, now time.Time) {
 	}
 }
 
-// snapshot returns a copy of the tracked window, omitting entries older than
-// PermitUseWindowDays.
 func (p *permitTracker) snapshot(now time.Time) PermitSnapshot {
 	cutoff := now.Add(-permitUseWindow)
 	p.mu.Lock()

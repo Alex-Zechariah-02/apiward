@@ -59,8 +59,6 @@ func TestConfigurationWarnings(t *testing.T) {
 	}
 }
 
-// Unused permissions are withheld until tracking covers enough time and
-// admitted requests, then list each permit not used in the last 30 days.
 func TestUnusedPermissions(t *testing.T) {
 	g := adviceGeneration(t)
 	now := time.Date(2026, 11, 2, 12, 0, 0, 0, time.UTC)

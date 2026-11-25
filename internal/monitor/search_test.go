@@ -222,7 +222,6 @@ func TestScanAllowsRotation(t *testing.T) {
 	}
 }
 
-// A search whose client has gone stops reading.
 func TestSearchStopsWhenCancelled(t *testing.T) {
 	dir := t.TempDir()
 	writeAuditFile(t, filepath.Join(dir, "audit.log"), 1, 4, "")

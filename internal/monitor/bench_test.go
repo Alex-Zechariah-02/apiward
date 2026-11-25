@@ -89,7 +89,6 @@ func benchLog(b *testing.B, size int) string {
 	return path
 }
 
-// BenchmarkPermitUse reads the tracked permission-use snapshot for advice.
 func BenchmarkPermitUse(b *testing.B) {
 	o := New(policy.DefaultWindow, policy.DefaultAPIs)
 	now := time.Now()

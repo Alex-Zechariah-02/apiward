@@ -72,7 +72,6 @@ func TestPermitUseTracksAdmittedPairs(t *testing.T) {
 	if code, body := e.Get("/a/x", "Authorization", "Bearer "+token); code != http.StatusOK {
 		t.Fatalf("GET /a/x: %d %s", code, body)
 	}
-	// Refused request (bob has READER, not WRITER) must not count as admitted.
 	if code, _ := e.Request(http.MethodPost, "/a/item", "application/json", `{"n":1}`, "Authorization", "Bearer "+gatewaytest.Issuer.TokenFor(t, "bob")); code != http.StatusForbidden {
 		t.Fatalf("POST /a/item as bob: %d, want 403", code)
 	}
@@ -101,11 +100,9 @@ func TestPermitUseSurvivesRestart(t *testing.T) {
 	seedPermitWindow(t, e.Database, time.Now().Add(-2*time.Hour), 500)
 	e.Start(gatewaytest.Binaries.Plain)
 
-	// bob (READER) uses read-a.
 	if code, body := e.Get("/a/x", "Authorization", "Bearer "+gatewaytest.Issuer.TokenFor(t, "bob")); code != http.StatusOK {
 		t.Fatalf("GET /a/x: %d %s", code, body)
 	}
-	// Clean shutdown flushes permit_use to SQLite.
 	e.Shutdown()
 
 	e.Start(gatewaytest.Binaries.Plain)

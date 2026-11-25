@@ -22,8 +22,6 @@ import (
 	"github.com/Alex-Zechariah-02/apiward/internal/gatewaytest"
 )
 
-// writeTestCert generates a self-signed P-256 certificate valid from 1 hour
-// ago until now+validFor and writes its PEM cert and PKCS #8 key to dir.
 func writeTestCert(t *testing.T, dir, prefix string, validFor time.Duration) (string, string, time.Time) {
 	t.Helper()
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)

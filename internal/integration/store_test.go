@@ -10,10 +10,6 @@ import (
 	"github.com/Alex-Zechariah-02/apiward/internal/store"
 )
 
-// An installed database has exactly the current schema: the fourteen STRICT
-// tables, their keys and constraints, the activation and override indexes
-// and triggers (with those that keep rows in use), WAL journaling and
-// user_version DatabaseVersion, and nothing else.
 func TestInstalledSchema(t *testing.T) {
 	t.Parallel()
 	e := gatewaytest.NewEnv(t)

@@ -125,12 +125,11 @@ type Event struct {
 	Last     time.Time         `json:"last_record,omitzero"`
 	Counts   map[string]uint64 `json:"counts,omitempty"`
 	// Signature signs an audit.checkpoint's chain head (base64url).
-	Signature string         `json:"signature,omitempty"`
-	Addresses []AddressCount `json:"addresses,omitempty"`
-	// Clock recovery fields on operator.clock_reset.
-	OldHighWater time.Time `json:"old_high_water,omitzero"`
-	NewHighWater time.Time `json:"new_high_water,omitzero"`
-	Ended        []string  `json:"ended_transitions,omitempty"`
+	Signature    string         `json:"signature,omitempty"`
+	Addresses    []AddressCount `json:"addresses,omitempty"`
+	OldHighWater time.Time      `json:"old_high_water,omitzero"`
+	NewHighWater time.Time      `json:"new_high_water,omitzero"`
+	Ended        []string       `json:"ended_transitions,omitempty"`
 	// Private replay context; neither the durable envelope nor the public Event
 	// exposes this flag or retains the credential that led to it.
 	identityKnown bool

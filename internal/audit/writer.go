@@ -246,8 +246,6 @@ func (a *AuditLog) checkpointFrom(e Event) *Checkpoint {
 	}
 }
 
-// finishBatch updates the chain head, batch counter, kept buffer and usage
-// after a batch has been persisted and synced.
 func (a *AuditLog) finishBatch(buffer []byte, head [sha256.Size]byte) {
 	a.head = head
 	a.chainBatches.Add(1)

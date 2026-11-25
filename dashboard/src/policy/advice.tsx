@@ -64,8 +64,6 @@ interface AdviceAnswer {
   }
 }
 
-// AdviceView shows the gateway's fixed checks: settings worth a second look
-// and permissions no request has used. They advise only.
 export function AdviceView({ admin }: ViewProps) {
   const id = useId()
   const [candidate, setCandidate] = useState('')

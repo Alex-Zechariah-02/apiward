@@ -102,7 +102,6 @@ func TestReloadIdentityKey(t *testing.T) {
 	admin := e.MustLogin(gatewaytest.HarnessAdmin, gatewaytest.HarnessPassword)
 	token := gatewaytest.Issuer.TokenFor(t, "alice")
 
-	// Initial assertion uses kid1.
 	e.ResetReceivers()
 	if code, body := e.Get("/a/x", "Authorization", "Bearer "+token); code != http.StatusOK {
 		t.Fatalf("initial GET /a/x: %d %s", code, body)
@@ -111,7 +110,6 @@ func TestReloadIdentityKey(t *testing.T) {
 		t.Fatalf("initial assertion kid = %q, want %q", got, kid1)
 	}
 
-	// Switch to priv2 with pub1 retiring and reload.
 	gatewaytest.Section(settings, "upstream")["identity_key"] = priv2
 	gatewaytest.Section(settings, "upstream")["retiring_identity_key"] = pub1
 	e.WriteNative(settings)
@@ -120,13 +118,11 @@ func TestReloadIdentityKey(t *testing.T) {
 		t.Fatalf("reload keys: %d %s", code, body)
 	}
 
-	// JWKS lists both kid2 and kid1.
 	kids := fetchJWKSKids(t, e)
 	if len(kids) != 2 || kids[0] != kid2 || kids[1] != kid1 {
 		t.Fatalf("JWKS kids = %v, want [%s %s]", kids, kid2, kid1)
 	}
 
-	// Assertions after reload carry kid2.
 	e.ResetReceivers()
 	if code, body := e.Get("/a/x", "Authorization", "Bearer "+token); code != http.StatusOK {
 		t.Fatalf("reloaded GET /a/x: %d %s", code, body)
@@ -154,7 +150,6 @@ func TestReloadIdentityKey(t *testing.T) {
 		t.Fatalf("checkpoint after reload = %+v, want kid %q", st.AuditCheckpoint, kid2)
 	}
 
-	// Setting retiring_identity_key to a private key file is refused on reload.
 	gatewaytest.Section(settings, "upstream")["retiring_identity_key"] = priv1
 	e.WriteNative(settings)
 	code, _, _ = e.As(admin, http.MethodPost, "/admin/keys/reload", "", "Idempotency-Key", "reload-identity-key-bad")
@@ -162,7 +157,6 @@ func TestReloadIdentityKey(t *testing.T) {
 		t.Fatalf("reload with private key as retiring_identity_key: %d, want 422", code)
 	}
 
-	// Removing retiring_identity_key and reloading leaves only kid2 in JWKS.
 	delete(gatewaytest.Section(settings, "upstream"), "retiring_identity_key")
 	e.WriteNative(settings)
 	code, body, _ = e.As(admin, http.MethodPost, "/admin/keys/reload", "", "Idempotency-Key", "reload-identity-key-02")
