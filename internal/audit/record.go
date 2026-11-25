@@ -209,5 +209,17 @@ func appendRecord(b []byte, e *Event) []byte {
 		b = append(b, `,"addresses":`...)
 		b = appendAddresses(b, e.Addresses)
 	}
+	if !e.OldHighWater.IsZero() {
+		b = append(b, `,"old_high_water":`...)
+		b = appendTime(b, e.OldHighWater)
+	}
+	if !e.NewHighWater.IsZero() {
+		b = append(b, `,"new_high_water":`...)
+		b = appendTime(b, e.NewHighWater)
+	}
+	if len(e.Ended) > 0 {
+		b = append(b, `,"ended_transitions":`...)
+		b = appendStrings(b, e.Ended)
+	}
 	return append(b, '}')
 }

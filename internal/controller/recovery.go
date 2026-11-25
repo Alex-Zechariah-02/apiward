@@ -33,7 +33,7 @@ func (c *Controller) reconcile(now time.Time) {
 		c.unavailable(a.Mode, "")
 		return
 	}
-	if now.Before(a.HighWater.Add(-clockTolerance)) {
+	if now.Before(a.HighWater.Add(-store.ClockTolerance)) {
 		c.unavailable("clock_regression", "")
 		return
 	}

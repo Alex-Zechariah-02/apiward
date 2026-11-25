@@ -256,6 +256,8 @@ func Run(command string, cfg Config, flags map[string]string) (int, error) {
 		return runBackup(o, flags)
 	case "restore":
 		return runRestore(o, flags)
+	case "recover-clock":
+		return runRecoverClock(o)
 	}
 	return 1, errors.New("unknown operator command")
 }

@@ -25,6 +25,7 @@ const nativeUsage = `usage: apiward run --config <file>
   apiward jwks --config <file>
   apiward backup --config <file> --output <file>
   apiward restore --config <file> --backup <file>
+  apiward recover-clock --config <file>
   apiward policy import-openapi --spec <file> --api <id> --upstream <id> --base <file> --out <file> --report <file> [--config <file>]
   apiward policy export-openapi --policy <file> --api <id> --out <file> --report <file> [--config <file>]
   apiward policy validate --policy <file> [--config <file>]
@@ -53,7 +54,7 @@ func Main(args []string) int {
 	}
 	options := []string{"config"}
 	switch command {
-	case "run", "migrate", "health", "jwks":
+	case "run", "migrate", "health", "jwks", "recover-clock":
 	case "install":
 		options = append(options, "admin")
 	case "enrol":

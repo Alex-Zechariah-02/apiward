@@ -90,6 +90,7 @@ The settings file is described in [docs/settings.md](docs/settings.md).
 | `install` | Create the first administrator and the identity key |
 | `enrol` | Add or reset an administrator |
 | `backup`, `restore` | Back up or restore the database |
+| `recover-clock` | Reset a forward clock high-water mark offline |
 | `migrate` | Upgrade a database from an earlier version |
 | `health` | Exit 0 when the gateway is ready |
 | `jwks` | Print the public key of the signed identity |
@@ -99,7 +100,7 @@ The settings file is described in [docs/settings.md](docs/settings.md).
 | `version` | Print the version and compiled-in checks |
 
 - All commands except `version` and `policy` take `--config <file>`.
-- Stop the gateway before `install`, `enrol`, `backup`, `restore` or `migrate`.
+- Stop the gateway before `install`, `enrol`, `backup`, `restore`, `recover-clock` or `migrate`.
 - `migrate` also performs a one-time conversion of older databases to incremental auto-vacuum; it requires free space on the database volume of at least the database file size plus 64 MiB and takes time proportional to the database size.
 
 ## How it works

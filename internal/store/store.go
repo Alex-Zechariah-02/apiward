@@ -12,6 +12,12 @@ import (
 	"time"
 )
 
+// ClockTolerance is how far the wall clock may sit behind the highest time
+// recorded by a committed transition before startup refuses to trust persisted
+// deadlines. Five seconds covers an ordinary clock correction; a larger step
+// back would make stored deadlines look further away.
+const ClockTolerance = 5 * time.Second
+
 // Deployment modes. Only normal may serve traffic; the other two allow only
 // the administrator flows that establish a new confirmed base.
 const (

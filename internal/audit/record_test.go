@@ -28,6 +28,7 @@ func TestRecordMatchesEncodingJSON(t *testing.T) {
 			Revision: -1, Candidate: 2, Provisional: 3, RollbackTarget: 4, Deadline: at, Override: 5, Target: "x", Expires: at,
 			Reason: "r", Lost: 9, File: "f", Offset: 10, Bytes: 11, Digest: "h", First: at, Last: at.Add(time.Hour),
 			Counts: map[string]uint64{"z": 1, "a": 2}, Signature: "sig", Addresses: []AddressCount{{"192.0.2.1", 3}, {odd, 4}},
+			OldHighWater: at.Add(time.Hour), NewHighWater: at, Ended: []string{"t1", odd},
 			DurationMS: 1e21, Status: -3},
 		{DurationMS: 123456.789, UpstreamMS: 3e-9},
 	}

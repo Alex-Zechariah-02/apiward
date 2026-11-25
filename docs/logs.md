@@ -65,7 +65,7 @@ What the gateway records, when a record is waited for, and how to read the log. 
 - Temporary rules and a trial whose times run out by the same check end together: each keeps its own `transition.intent` and outcome record (`tpo.expired`, `cpa.timed_out`), and every outcome names the one policy generation published for them all.
 - At start, an outcome whose record is missing is written again under its own kind with reason `reconciled`.
 - So a `transition.intent` without an outcome record means the change was not committed: every committed change has its outcome record once the gateway has started again.
-- The state codes of `controller.unavailable`, also the `state` of `GET /admin/status`: `store_unavailable`, `audit_reconcile_failed` (the audit log refused a record the controller needs; retried until it is recorded), `clock_regression`, `rollback_target_invalid`, `deadline_mismatch`, `transition_incomplete`, `policy_invalid`, or the stored mode that serves no policy. The detail stays in the log and the gateway's own output.
+- The state codes of `controller.unavailable`, also the `state` of `GET /admin/status`: `store_unavailable`, `audit_reconcile_failed` (the audit log refused a record the controller needs; retried until it is recorded), `clock_regression` (reset offline with `apiward recover-clock --config <file>` after fixing the host clock), `rollback_target_invalid`, `deadline_mismatch`, `transition_incomplete`, `policy_invalid`, or the stored mode that serves no policy. The detail stays in the log and the gateway's own output.
 
 ## Gateway and operator records
 
@@ -77,6 +77,7 @@ What the gateway records, when a record is waited for, and how to read the log. 
 | `tls.reload_failed` | A listener certificate reload failed; the old certificate stays | Queued |
 | `tls.certificate_expiring` | Daily while the listener certificate expires within 14 days | Queued |
 | `operator.backup` | `apiward backup` wrote a backup | Waited for |
+| `operator.clock_reset` | `apiward recover-clock` reset `high_water` (`old_high_water`, `new_high_water`, `ended_transitions`) | Waited for |
 | `audit.rotated` | The active file was rotated | With its batch |
 | `audit.archived` | A rotated file was compressed and moved (`file`, `bytes` and `sha256` of the uncompressed file, `archived_bytes`, `first_record`, `last_record`, `target` `archive` or `live`) | Before the original is deleted |
 | `audit.evicted` | The oldest file was deleted (`file`, `bytes` and `sha256` as stored, `first_record`, `last_record`, `reason` `archive_budget`, `log_budget` or `disk_pressure`, `target`); uses `audit.evict.reserve` when the log has no space | Before the deletion |
@@ -90,7 +91,7 @@ What the gateway records, when a record is waited for, and how to read the log. 
 | `audit.unwritable` | A record would exceed 64 KiB; it stands in for that record | In its place |
 | `audit.ingress_summary` | Refusals before any policy applied were counted | Once a minute |
 
-- Operator commands (`install`, `enrol`, `migrate`, `restore`) write `transition.intent` and `transition.committed` around their change.
+- Operator commands (`install`, `enrol`, `migrate`, `restore`) write `transition.intent` and `transition.committed` around their change; `recover-clock` writes `transition.intent` and `operator.clock_reset`.
 
 ## Tamper evidence
 

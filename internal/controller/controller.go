@@ -24,11 +24,6 @@ import (
 )
 
 const (
-	// clockTolerance is how far the wall clock may sit behind the highest
-	// time recorded by a committed transition before startup refuses to trust
-	// persisted deadlines. Five seconds covers an ordinary clock correction;
-	// a larger step back would make stored deadlines look further away.
-	clockTolerance = 5 * time.Second
 	// maxTransitionID bounds a caller-chosen transition ID: it becomes a
 	// store key, an audit field and the retry identity.
 	maxTransitionID = 128
