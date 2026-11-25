@@ -20,7 +20,7 @@ import (
 
 // benchEvent is a forwarded request of a signed-in account with two roles.
 func benchEvent(i int) audit.Event {
-	e := audit.Event{RequestID: fmt.Sprintf("%032x", i), Time: time.Now(), Method: "GET", Path: "/orders/1001/items",
+	e := audit.Event{Kind: "request.forwarded", RequestID: fmt.Sprintf("%032x", i), Time: time.Now(), Method: "GET", Path: "/orders/1001/items",
 		Operation: "orders.read", API: "orders", Subject: "user-1", Roles: []string{"reader", "support"},
 		ClientAddress: "192.0.2.10", Decision: "forwarded", Stage: "FORWARD", Status: 200, Generation: "g-1", DurationMS: 1.2, UpstreamMS: 0.8}
 	e.Stages[audit.StageCanonical] = audit.StagePass
