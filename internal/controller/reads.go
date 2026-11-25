@@ -26,6 +26,9 @@ func (c *Controller) Verifier() *pipeline.Verifier { return c.verifier.Load() }
 // Network returns the published upstream network settings.
 func (c *Controller) Network() *forward.Network { return c.network.Load() }
 
+// Signer returns the published identity assertion signer, or nil when unsigned.
+func (c *Controller) Signer() *pipeline.Signer { return c.signer.Load() }
+
 // Blocked returns the published blocked accounts.
 func (c *Controller) Blocked() *store.BlockedAccounts { return c.blocked.Load() }
 

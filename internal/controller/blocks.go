@@ -103,7 +103,7 @@ func (c *Controller) reloadKeys(ctx context.Context, t store.TransitionRecord) (
 	if c.config.ReloadCertificate != nil {
 		c.config.ReloadCertificate()
 	}
-	loaded, network, warnings, err := c.readKeys()
+	loaded, network, signer, warnings, err := c.readKeys()
 	if err != nil {
 		c.logger.Warn("keys not reloaded", "error", err)
 		c.observations.KeyReloadFailed()
@@ -119,34 +119,37 @@ func (c *Controller) reloadKeys(ctx context.Context, t store.TransitionRecord) (
 		loaded.AdoptUses(c.verifier.Load())
 		c.verifier.Store(loaded)
 		c.network.Store(network)
+		if signer != nil {
+			c.signer.Store(signer)
+		}
 		if c.config.Reloaded != nil {
 			c.audit.Record(c.config.Reloaded())
 		}
 	}, now)
 }
 
-// readKeys reads the trust and upstream network settings again and checks
-// that they may replace the running ones: the issuer and audience unchanged,
-// and every upstream the served generation uses still reachable.
-func (c *Controller) readKeys() (*pipeline.Verifier, *forward.Network, []string, error) {
+// readKeys reads the trust, upstream network and identity key settings again
+// and checks that they may replace the running ones: the issuer and audience
+// unchanged, and every upstream the served generation uses still reachable.
+func (c *Controller) readKeys() (*pipeline.Verifier, *forward.Network, *pipeline.Signer, []string, error) {
 	if c.config.ReloadKeys == nil {
-		return nil, nil, nil, errors.New("this gateway has no settings file to reload")
+		return nil, nil, nil, nil, errors.New("this gateway has no settings file to reload")
 	}
-	trust, network, warnings, err := c.config.ReloadKeys()
+	trust, network, signer, warnings, err := c.config.ReloadKeys()
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 	if g := c.current.Load(); g != nil {
 		if err := g.CheckNetwork(network); err != nil {
-			return nil, nil, nil, err
+			return nil, nil, nil, nil, err
 		}
 	}
 	current := c.verifier.Load()
 	if trust.Issuer != current.Issuer() || trust.Audience != current.Audience() {
-		return nil, nil, nil, errors.New("the issuer and audience take effect only at a restart")
+		return nil, nil, nil, nil, errors.New("the issuer and audience take effect only at a restart")
 	}
 	loaded, err := pipeline.LoadVerifier(trust)
-	return loaded, network, warnings, err
+	return loaded, network, signer, warnings, err
 }
 
 func (c *Controller) changeBlock(ctx context.Context, t store.TransitionRecord, reason string) (json.RawMessage, int) {

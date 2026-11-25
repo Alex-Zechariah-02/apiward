@@ -179,6 +179,9 @@ type upstreamSettings struct {
 	// assertion with for each forwarded request; omitted, identity.pem
 	// beside the database, which apiward install creates.
 	IdentityKey *string `json:"identity_key"`
+	// RetiringIdentityKey is an optional second public key published in the
+	// JWK Set during a key rotation, never used to sign.
+	RetiringIdentityKey *string `json:"retiring_identity_key"`
 	// UnsignedIdentity turns the assertion off: upstreams then receive only
 	// the unsigned identity headers.
 	UnsignedIdentity bool `json:"unsigned_identity"`
@@ -219,7 +222,8 @@ type nativeConfig struct {
 	reloaded *atomic.Pointer[audit.Event]
 	// identityKey is the signing key's file (upstream.identity_key, else
 	// identity.pem beside the database); empty when unsigned is set.
-	identityKey string
+	identityKey         string
+	retiringIdentityKey string
 	// unsigned is upstream.unsigned_identity: no assertion, by choice.
 	unsigned bool
 	// tls is the data listener's TLS; nil serves plain HTTP. redirect is

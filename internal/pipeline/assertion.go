@@ -58,6 +58,7 @@ type Signer struct {
 	// prefix is the encoded JOSE header and the dot after it, the same for
 	// every assertion of this key.
 	prefix string
+	key    jwk
 	jwks   []byte
 	kid    string
 }
@@ -142,7 +143,7 @@ func keySigner(kid, algorithm string, key jwk) (*Signer, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Signer{prefix: base64.RawURLEncoding.EncodeToString(header) + ".", jwks: set, kid: kid}, nil
+	return &Signer{prefix: base64.RawURLEncoding.EncodeToString(header) + ".", key: key, jwks: set, kid: kid}, nil
 }
 
 // newSigner derives the key ID, the JOSE header and the published key set
@@ -230,14 +231,18 @@ func (s *Signer) signature(input []byte) ([]byte, error) {
 // and path are the request's as forwarded, so the upstream can refuse the
 // assertion on any other request.
 func (h *Handler) assert(q *request, rule *compile.Rule, roles []string, method, path string) (assertion string, ok bool) {
-	if h.signer == nil {
+	var signer *Signer
+	if h.signer != nil {
+		signer = h.signer()
+	}
+	if signer == nil {
 		return "", true
 	}
 	c := claims{Audience: rule.API(), ID: q.event.RequestID, Method: method, Path: path}
 	if !rule.Public() {
 		c.Subject, c.Roles = q.event.Subject, roles
 	}
-	assertion, err := h.signer.sign(c, time.Now())
+	assertion, err := signer.sign(c, time.Now())
 	if err != nil {
 		q.reject(audit.StageBind, http.StatusServiceUnavailable, "gateway_unavailable")
 		return "", false

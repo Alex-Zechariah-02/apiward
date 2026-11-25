@@ -88,10 +88,13 @@ type Config struct {
 	// address and defines no TLS profile.
 	Network *forward.Network
 
-	// ReloadKeys reads the trust and upstream network settings again from
-	// the startup configuration, never from HTTP; nil refuses every key
-	// reload.
-	ReloadKeys func() (pipeline.TrustConfig, *forward.Network, []string, error)
+	// Signer signs identity assertions and audit checkpoints; nil when unsigned.
+	Signer *pipeline.Signer
+
+	// ReloadKeys reads the trust, upstream network and identity key settings
+	// again from the startup configuration, never from HTTP; nil refuses
+	// every key reload.
+	ReloadKeys func() (pipeline.TrustConfig, *forward.Network, *pipeline.Signer, []string, error)
 	// Reloaded is the gateway.reloaded record of the settings the last
 	// successful ReloadKeys read; nil records none.
 	Reloaded func() audit.Event
@@ -119,6 +122,7 @@ type Controller struct {
 	// Trust and account containment are published independently of policy.
 	verifier atomic.Pointer[pipeline.Verifier]
 	network  atomic.Pointer[forward.Network]
+	signer   atomic.Pointer[pipeline.Signer]
 	blocked  atomic.Pointer[store.BlockedAccounts]
 	// addresses is the blocked address list; nil until read from the store.
 	// addressIndex is its lookup for the pipeline, published with it.
@@ -194,6 +198,7 @@ func Prepare(cfg Config, logger *slog.Logger) (*Controller, error) {
 	}
 	c.verifier.Store(verifier)
 	c.network.Store(cfg.Network)
+	c.signer.Store(cfg.Signer)
 	return c, nil
 }
 
@@ -224,7 +229,13 @@ func (c *Controller) Open() error {
 		ownership.Close()
 		return err
 	}
-	log := audit.OpenAudit(cfg.AuditLog, audit.Settings{MaxBytes: cfg.AuditMaxBytes, MaxFiles: cfg.AuditMaxFiles, WhenFull: cfg.AuditWhenFull, Queue: cfg.AuditQueue, Window: cfg.AuditSyncWindow, Append: cfg.AuditAppend, Privacy: cfg.AuditPrivacy, OutcomeWindow: cfg.AuditOutcomeWindow, Signer: cfg.AuditSigner, Storage: cfg.AuditStorage})
+	auditSigner := cfg.AuditSigner
+	if auditSigner == nil && c.signer.Load() != nil {
+		auditSigner = func(message []byte) (string, []byte, error) {
+			return c.signer.Load().Checkpoint(message)
+		}
+	}
+	log := audit.OpenAudit(cfg.AuditLog, audit.Settings{MaxBytes: cfg.AuditMaxBytes, MaxFiles: cfg.AuditMaxFiles, WhenFull: cfg.AuditWhenFull, Queue: cfg.AuditQueue, Window: cfg.AuditSyncWindow, Append: cfg.AuditAppend, Privacy: cfg.AuditPrivacy, OutcomeWindow: cfg.AuditOutcomeWindow, Signer: auditSigner, Storage: cfg.AuditStorage})
 
 	c.mu.Lock()
 	defer c.mu.Unlock()

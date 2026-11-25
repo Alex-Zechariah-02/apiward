@@ -28,7 +28,7 @@ var exported = []string{
 	"Controller.Enrol", "Controller.EstablishBase", "Controller.Expired", "Controller.Gauges", "Controller.Network",
 	"Controller.Observations", "Controller.Open", "Controller.Publish", "Controller.Reads",
 	"Controller.ReloadKeys", "Controller.Resolve", "Controller.RevokeOverride", "Controller.Sessions",
-	"Controller.Settings", "Controller.StageCandidate", "Controller.Start", "Controller.State",
+	"Controller.Settings", "Controller.Signer", "Controller.StageCandidate", "Controller.Start", "Controller.State",
 	"Controller.Stop", "Controller.StopWithin", "Controller.Unblock", "Controller.UnblockAddress",
 	"Controller.ValidateOverride", "Controller.Verifier", "Controller.WithdrawCandidate",
 	"DefaultAuditWait", "DefaultHistory", "DefaultIdle", "DefaultIgnoredReads", "DefaultLifetime", "MaxAuditBytes", "MaxAuditFiles",

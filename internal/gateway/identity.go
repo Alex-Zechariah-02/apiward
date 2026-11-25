@@ -29,6 +29,9 @@ func (cfg *nativeConfig) identity(u upstreamSettings) error {
 	if u.IdentityKey != nil {
 		cfg.identityKey = *u.IdentityKey
 	}
+	if u.RetiringIdentityKey != nil {
+		cfg.retiringIdentityKey = *u.RetiringIdentityKey
+	}
 	if _, err := os.Lstat(cfg.identityKey); errors.Is(err, fs.ErrNotExist) {
 		return nil
 	}
@@ -36,8 +39,14 @@ func (cfg *nativeConfig) identity(u upstreamSettings) error {
 	if err != nil {
 		return fmt.Errorf("upstream.identity_key %s: %w", cfg.identityKey, err)
 	}
+	if cfg.retiringIdentityKey != "" {
+		signer, err = signer.WithRetiringKey(cfg.retiringIdentityKey)
+		if err != nil {
+			return fmt.Errorf("upstream.retiring_identity_key %s: %w", cfg.retiringIdentityKey, err)
+		}
+	}
 	cfg.signer = signer
-	cfg.controller.AuditSigner = signer.Checkpoint
+	cfg.controller.Signer = signer
 	return nil
 }
 

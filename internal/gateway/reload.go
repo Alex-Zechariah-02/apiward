@@ -18,35 +18,44 @@ import (
 // reloadable are the settings a keys reload applies; every other setting
 // takes effect only at a restart. The listener certificate is read again from
 // the files named at start.
-var reloadable = []string{"gateway.jwt", "upstream.allow_public_addresses", "upstream.tls_profiles", "upstream.tls_session_lifetime"}
+var reloadable = []string{"gateway.jwt", "upstream.allow_public_addresses", "upstream.tls_profiles", "upstream.tls_session_lifetime", "upstream.identity_key", "upstream.retiring_identity_key"}
 
 // reloadKeys reads the configuration file again, with the checks of a start,
-// and returns its trust and upstream network settings. The identity signing
-// key is not read: it takes effect only at a restart (docs/keys.md). Every
+// and returns its trust, upstream network and identity key settings. Every
 // other setting the file now holds differently is named in the warnings: a
 // reload does not apply it, and refusing the whole reload for it would keep
 // a compromised key in force.
-func (cfg nativeConfig) reloadKeys() (pipeline.TrustConfig, *forward.Network, []string, error) {
+func (cfg nativeConfig) reloadKeys() (pipeline.TrustConfig, *forward.Network, *pipeline.Signer, []string, error) {
 	reloaded, err := readNativeConfig(cfg.source.path)
 	if err == nil {
 		err = reloaded.loadNetwork()
+	}
+	if err == nil && !cfg.unsigned {
+		err = reloaded.identity(reloaded.file.Upstream)
+		if err == nil {
+			err = reloaded.requireIdentity()
+		}
 	}
 	if err == nil {
 		err = operator.CheckPaths(reloaded.source.path, operatorConfig(reloaded), "run", nil)
 	}
 	if err != nil {
-		return pipeline.TrustConfig{}, nil, nil, err
+		return pipeline.TrustConfig{}, nil, nil, nil, err
 	}
 	changed, err := restartOnly(cfg.file, reloaded.file)
 	if err != nil {
-		return pipeline.TrustConfig{}, nil, nil, err
+		return pipeline.TrustConfig{}, nil, nil, nil, err
 	}
 	cfg.reloaded.Store(&audit.Event{Kind: "gateway.reloaded", File: reloaded.source.path, Digest: reloaded.source.digest, ResolvedDigest: resolvedDigest(reloaded.file)})
 	var warnings []string
 	if len(changed) > 0 {
 		warnings = []string{"changed settings take effect only at a restart: " + strings.Join(changed, ", ")}
 	}
-	return reloaded.controller.JWT, reloaded.controller.Network, warnings, nil
+	var signer *pipeline.Signer
+	if !cfg.unsigned {
+		signer = reloaded.signer
+	}
+	return reloaded.controller.JWT, reloaded.controller.Network, signer, warnings, nil
 }
 
 // restartOnly names the settings other than the reloadable ones that differ

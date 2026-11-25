@@ -70,7 +70,7 @@ type Server struct {
 	ui            http.Handler  // the dashboard files; nil when none are configured
 	plain         bool          // the gateway serves the data plane itself over plain HTTP
 	hostServed    bool          // a host program serves the data plane (library mode)
-	jwks          []byte        // the identity assertion's public key set; nil when none is signed
+	jwks          func() []byte // returns the identity assertion's public key set; nil when none is signed
 	logger        *slog.Logger
 }
 
@@ -87,7 +87,7 @@ type Deps struct {
 	UI         http.Handler
 	Plain      bool
 	Logger     *slog.Logger
-	JWKS       []byte
+	JWKS       func() []byte
 	HostServed bool
 }
 

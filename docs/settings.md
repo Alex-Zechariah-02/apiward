@@ -90,10 +90,11 @@ The JSON settings file that `apiward run --config <file>` reads. Upstream TLS pr
 
 - Upstreams can verify that a request passed the gateway; the gateway signs by default.
 - The key is `upstream.identity_key`, or `identity.pem` beside `gateway.database` when that setting is absent: an Ed25519 or ECDSA P-256 private key as one PKCS #8 `PRIVATE KEY` PEM block, readable only by its owner. The key's type fixes the algorithm: Ed25519 signs `EdDSA` (RFC 8037), P-256 signs `ES256`.
+- `upstream.retiring_identity_key` (optional, absolute path) names a second PEM `PUBLIC KEY` (Ed25519 or ECDSA P-256) published in `GET /.well-known/apiward/jwks.json` and `apiward jwks` during a rotation and never used to sign. Both `upstream.identity_key` and `upstream.retiring_identity_key` reload live on `POST /admin/keys/reload`.
 - `apiward install` creates an Ed25519 key when the file is missing and keeps a key already there; `openssl genpkey -algorithm ED25519` makes one by hand. A deployment with a P-256 key keeps signing `ES256` until the key is replaced; give the upstreams a key set with both keys first.
 - `install` refuses an existing database before it writes any key. An installed deployment whose key file is lost needs that file restored: a new key has a new key ID, which its upstreams do not trust.
 - Without the key file the gateway refuses to start, naming the file.
-- `"upstream": {"unsigned_identity": true}` turns signing off: upstreams then receive only the plain headers, and the start log says so. It cannot be combined with `identity_key`.
+- `"upstream": {"unsigned_identity": true}` turns signing off: upstreams then receive only the plain headers, and the start log says so. It cannot be combined with `identity_key` or `retiring_identity_key`.
 - Signed or not, an upstream must accept requests only from the gateway (client certificates or a firewall), as NIST SP 800-207 requires of a policy enforcement point.
 - Every forwarded request carries `X-Gateway-Assertion`: a JWT signed with `EdDSA` or `ES256` (by the key's type), with `iss` `apiward`, `aud` the API's ID, `sub` and `roles` as in `X-Gateway-Subject` and `X-Gateway-Roles` (both absent on a public operation), `method` and `path` the request's method and its path as the upstream receives it (after the API's forward rule, decoded, without the query), `jti` the request ID, `iat`, and `exp` 30 seconds later.
 - Its `kid` is the key's RFC 7638 thumbprint.

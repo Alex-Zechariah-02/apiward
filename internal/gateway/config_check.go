@@ -62,6 +62,7 @@ func (f nativeFile) check() (nativeConfig, error) {
 		{"gateway.audit_log", &g.AuditLog},
 		{"gateway.admin_ui", g.AdminUI},
 		{"upstream.identity_key", u.IdentityKey},
+		{"upstream.retiring_identity_key", u.RetiringIdentityKey},
 	} {
 		if file.value != nil && !filepath.IsAbs(*file.value) {
 			return nativeConfig{}, fmt.Errorf("%s must be an absolute path", file.name)
@@ -194,6 +195,9 @@ func (f nativeFile) check() (nativeConfig, error) {
 	}
 	if u.UnsignedIdentity && u.IdentityKey != nil {
 		return nativeConfig{}, errors.New("upstream.identity_key and upstream.unsigned_identity exclude each other")
+	}
+	if u.UnsignedIdentity && u.RetiringIdentityKey != nil {
+		return nativeConfig{}, errors.New("upstream.retiring_identity_key and upstream.unsigned_identity exclude each other")
 	}
 
 	if g.AdminUI != nil {

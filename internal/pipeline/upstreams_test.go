@@ -50,7 +50,7 @@ func TestUpstreamSlotBeforeAssertion(t *testing.T) {
 		Clock:        NewClock(),
 		AuditTimeout: time.Second,
 		Limits:       Limits{MaxInFlightPerUpstream: 1},
-		Signer:       signer,
+		Signer:       func() *Signer { return signer },
 		Forward: func(w http.ResponseWriter, r *http.Request) error {
 			if r.URL.Path == "/a/held" {
 				close(held)

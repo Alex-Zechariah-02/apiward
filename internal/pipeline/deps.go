@@ -90,9 +90,8 @@ type Handler struct {
 	// proxies are the trusted proxies (Limits.TrustedProxies).
 	proxies []netip.Prefix
 	forward Forward
-	// signer signs the identity assertion of each forwarded request; nil
-	// sends none.
-	signer *Signer
+	// signer returns the current identity assertion signer; nil sends none.
+	signer func() *Signer
 	// held is set while an embedded gateway has not started its own
 	// listeners; every request is then refused at capture, so nothing is
 	// admitted before the Admin API and metrics can observe it.
@@ -137,8 +136,8 @@ type Deps struct {
 	Limits       Limits
 	// Forward is called only for admitted requests.
 	Forward Forward
-	// Signer, when set, signs an identity assertion for each of them.
-	Signer *Signer
+	// Signer, when set, returns the current identity assertion signer.
+	Signer func() *Signer
 }
 
 // New returns the enforcement handler for the policy d.Authority

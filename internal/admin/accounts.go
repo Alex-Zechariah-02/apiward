@@ -20,7 +20,7 @@ import (
 // signs for upstreams (RFC 7517). It holds public keys only.
 func (s *Server) handleJWKS(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/jwk-set+json")
-	_, _ = w.Write(s.jwks)
+	_, _ = w.Write(s.jwks())
 }
 
 // handleKeys lists the trusted keys with how many tokens each verified since

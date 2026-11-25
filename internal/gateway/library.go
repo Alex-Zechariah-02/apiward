@@ -138,7 +138,7 @@ func openDeployment(cfg nativeConfig, logger *slog.Logger) (*deployment, error) 
 		return nil, errors.Join(classify(ErrStorage, fmt.Errorf("audit log: %w", c.Audit().OpenErr())), c.Stop())
 	}
 	limiter := pipeline.NewLimiter(c.Settings().Limits.RateCounters)
-	enforcement, err := newHandler(c, limiter, cfg.limits, proxy.Forward, cfg.signer)
+	enforcement, err := newHandler(c, limiter, cfg.limits, proxy.Forward)
 	if err != nil {
 		return nil, errors.Join(classify(ErrConfig, err), c.Stop())
 	}
@@ -224,7 +224,11 @@ func (d *deployment) listen(plain, hostServed bool) (metrics, health net.Listene
 	if d.ui != nil {
 		ui = dashboard(d.ui)
 	}
-	if err := d.controller.Start(admin.New(admin.Deps{Control: d.controller, Limiter: d.limiter, UI: ui, Plain: plain, HostServed: hostServed, Logger: d.logger, JWKS: d.config.signer.JWKS()}).Handler()); err != nil {
+	var jwksFn func() []byte
+	if d.controller.Signer() != nil {
+		jwksFn = func() []byte { return d.controller.Signer().JWKS() }
+	}
+	if err := d.controller.Start(admin.New(admin.Deps{Control: d.controller, Limiter: d.limiter, UI: ui, Plain: plain, HostServed: hostServed, Logger: d.logger, JWKS: jwksFn}).Handler()); err != nil {
 		closeListeners(metrics, health)
 		return nil, nil, classify(ErrListen, fmt.Errorf("admin listener: %w", err))
 	}
@@ -248,12 +252,13 @@ func (d *deployment) logAdmission(logger *slog.Logger) {
 // counting rates in limiter, within limits (a zero member selects its
 // default). forward is called only for admitted requests, each carrying an
 // identity assertion when signer is set.
-func newHandler(c *controller.Controller, limiter *pipeline.Limiter, limits pipeline.Limits, forward pipeline.Forward, signer *pipeline.Signer) (*pipeline.Handler, error) {
-	d := pipeline.Deps{Limiter: limiter, Clock: pipeline.NewClock(), Limits: limits, Forward: forward, Signer: signer}
+func newHandler(c *controller.Controller, limiter *pipeline.Limiter, limits pipeline.Limits, forward pipeline.Forward) (*pipeline.Handler, error) {
+	d := pipeline.Deps{Limiter: limiter, Clock: pipeline.NewClock(), Limits: limits, Forward: forward}
 	// A nil controller leaves its dependencies unset, which pipeline.New refuses.
 	if c != nil {
 		d.Authority, d.Audit, d.Observations = c, c.Audit(), c.Observations()
 		d.AuditTimeout = c.Settings().AuditTimeout
+		d.Signer = c.Signer
 	}
 	return pipeline.New(d)
 }

@@ -61,7 +61,7 @@ func exchange(t *testing.T, s setup, requests ...*http.Request) (*httptest.Respo
 			return nil
 		}
 	}
-	h, err := New(Deps{Authority: fixedAuthority{g}, Audit: log, Observations: monitor.New(policy.DefaultWindow, policy.DefaultAPIs), Limiter: NewLimiter(policy.DefaultRateCounters), Clock: NewClock(), AuditTimeout: time.Second, Limits: s.limits, Signer: s.signer, Forward: s.forward})
+	h, err := New(Deps{Authority: fixedAuthority{g}, Audit: log, Observations: monitor.New(policy.DefaultWindow, policy.DefaultAPIs), Limiter: NewLimiter(policy.DefaultRateCounters), Clock: NewClock(), AuditTimeout: time.Second, Limits: s.limits, Signer: func() *Signer { return s.signer }, Forward: s.forward})
 	if err != nil {
 		t.Fatal(err)
 	}
