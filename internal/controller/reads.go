@@ -101,6 +101,26 @@ func (c *Controller) Gauges() []monitor.Gauge {
 		monitor.Gauge{Name: "gateway_audit_chain_batches_total", Value: int64(c.audit.ChainBatches()), Counter: true}, // #nosec G115 -- a count of batches, far below 2^63
 		monitor.Gauge{Name: "gateway_audit_last_checkpoint_timestamp_seconds", Value: lastCheckpoint},
 	)
+	if c.config.DataCertificateExpiry != nil {
+		if exp, ok := c.config.DataCertificateExpiry(); ok {
+			gauges = append(gauges, monitor.Gauge{
+				Name:   "gateway_tls_certificate_not_after_seconds",
+				Value:  exp.Unix(),
+				Labels: []string{"role", "data", "profile", ""},
+			})
+		}
+	}
+	if net := c.Network(); net != nil {
+		for _, p := range net.Profiles() {
+			if p.ClientCertificate && p.ExpiresAt != nil {
+				gauges = append(gauges, monitor.Gauge{
+					Name:   "gateway_tls_certificate_not_after_seconds",
+					Value:  p.ExpiresAt.Unix(),
+					Labels: []string{"role", "upstream", "profile", p.ID},
+				})
+			}
+		}
+	}
 	return gauges
 }
 

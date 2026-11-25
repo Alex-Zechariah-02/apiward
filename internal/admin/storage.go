@@ -6,6 +6,7 @@ package admin
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/audit"
 	"github.com/Alex-Zechariah-02/apiward/internal/monitor"
@@ -54,4 +55,51 @@ func size(bytes int64) string {
 		return fmt.Sprintf("%.1f GiB", float64(bytes)/(1<<30))
 	}
 	return fmt.Sprintf("%.0f MiB", float64(bytes)/(1<<20))
+}
+
+// certAlerts lists A5 findings for the data listener certificate and each
+// upstream TLS profile client certificate expiring within CertWarnDays.
+func (s *Server) certAlerts(now time.Time) []monitor.Finding {
+	var items []monitor.Finding
+	if s.config.DataCertificateExpiry != nil {
+		if exp, ok := s.config.DataCertificateExpiry(); ok {
+			if f := certAlert("data", "", exp, now); f != nil {
+				items = append(items, *f)
+			}
+		}
+	}
+	if network := s.control.Network(); network != nil {
+		for _, p := range network.Profiles() {
+			if p.ClientCertificate && p.ExpiresAt != nil {
+				if f := certAlert("upstream", p.ID, *p.ExpiresAt, now); f != nil {
+					items = append(items, *f)
+				}
+			}
+		}
+	}
+	return items
+}
+
+func certAlert(role, profile string, exp, now time.Time) *monitor.Finding {
+	left := exp.Sub(now)
+	if left >= monitor.CertWarnDays {
+		return nil
+	}
+	severity := "medium"
+	if left < monitor.CertCriticalDays {
+		severity = "critical"
+	}
+	object := "tls:" + role
+	subject := "The data listener TLS certificate"
+	if profile != "" {
+		object = "tls:" + role + ":" + profile
+		subject = fmt.Sprintf("The upstream TLS profile %q client certificate", profile)
+	}
+	var msg string
+	if left <= 0 {
+		msg = fmt.Sprintf("%s expired at %s. Replace it and reload keys.", subject, exp.UTC().Format(time.RFC3339))
+	} else {
+		msg = fmt.Sprintf("%s expires in %s (%s). Replace it and reload keys.", subject, about(left.Seconds()), exp.UTC().Format(time.RFC3339))
+	}
+	return &monitor.Finding{ID: "A5", Severity: severity, Object: object, Message: msg}
 }

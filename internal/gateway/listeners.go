@@ -125,6 +125,17 @@ func (s *servingCertificate) valid(now time.Time) bool {
 	return !now.Before(leaf.NotBefore) && now.Before(leaf.NotAfter)
 }
 
+func (s *servingCertificate) expiresAt() (time.Time, bool) {
+	if s == nil {
+		return time.Time{}, false
+	}
+	c := s.current.Load()
+	if c == nil || c.Leaf == nil {
+		return time.Time{}, false
+	}
+	return c.Leaf.NotAfter.UTC(), true
+}
+
 // watchExpiry records tls.certificate_expiring at once and then daily while
 // the certificate is within expiryWarning of its expiry, until done closes.
 func (s *servingCertificate) watchExpiry(done <-chan struct{}) {

@@ -12,7 +12,7 @@ import (
 	"github.com/Alex-Zechariah-02/apiward/internal/compile"
 )
 
-// The fixed checks, rule set version "checks-0.7": static
+// The fixed checks, rule set version "checks-0.8": static
 // configuration warnings, unused permissions from observed traffic, and
 // alerts. They advise only: nothing here blocks, changes or activates
 // anything, and nothing runs on the request path. Each answer names the
@@ -20,7 +20,12 @@ import (
 // The values below are the published rule set AdviceRules; changing one is a
 // new rule set version, never a setting.
 const (
-	AdviceRules = "checks-0.7"
+	AdviceRules = "checks-0.8"
+
+	// Alert A5 warns before a TLS certificate expires: medium below 14 days,
+	// critical below 3 days or already expired.
+	CertWarnDays     = 14 * 24 * time.Hour
+	CertCriticalDays = 3 * 24 * time.Hour
 
 	// The security log also raises an alert when, at the active file's recent
 	// write rate, its remaining budget lasts less than FillingTime (medium) or

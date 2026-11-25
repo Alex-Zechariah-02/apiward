@@ -119,6 +119,7 @@ func openDeployment(cfg nativeConfig, logger *slog.Logger) (*deployment, error) 
 	warnSettings(cfg, logger)
 	if certificate != nil {
 		cfg.controller.ReloadCertificate = certificate.reload
+		cfg.controller.DataCertificateExpiry = certificate.expiresAt
 	}
 	c, ui, err := openController(cfg.controller, cfg.adminUI, logger)
 	if err != nil {

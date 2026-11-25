@@ -109,6 +109,7 @@ func (s *Server) handleAlerts(w http.ResponseWriter, r *http.Request, who caller
 		items = append(items, *alert)
 	}
 	items = append(items, storageAlerts(s.audit.Archive())...)
+	items = append(items, s.certAlerts(now)...)
 	if float64(s.limiter.Size()) >= monitor.NearlyFull*float64(s.limiter.Capacity()) {
 		items = append(items, monitor.Finding{ID: "A4", Severity: "medium", Object: "rate_counters", Message: "Rate limit counters are nearly full. When they run out, requests that need a new counter are refused."})
 	}

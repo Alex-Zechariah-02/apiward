@@ -99,6 +99,9 @@ type Config struct {
 	// on every key reload, whatever its result; it records its own failure.
 	// nil when the data listener has no certificate.
 	ReloadCertificate func()
+	// DataCertificateExpiry returns the data listener leaf certificate's
+	// NotAfter time, or false when the data listener has no TLS certificate.
+	DataCertificateExpiry func() (time.Time, bool)
 }
 
 // Controller is the only component that changes the effective policy. It owns
