@@ -15,7 +15,7 @@ import (
 // When another writer takes the space the general reserve freed, the gateway
 // enters noSpace and refuses admissions; the archiver records audit.evicted
 // through the eviction reserve before deleting the evicted file, then
-// admission resumes.
+// admission resumes. One refused write costs one file, not the whole history.
 func TestEvictionReserveRecoversFullDisk(t *testing.T) {
 	t.Parallel()
 	e := gatewaytest.NewEnv(t)
@@ -32,27 +32,20 @@ func TestEvictionReserveRecoversFullDisk(t *testing.T) {
 	dir := filepath.Dir(e.AuditLog)
 	generalReserve := filepath.Join(dir, "audit.reserve")
 	evictReserve := filepath.Join(dir, "audit.evict.reserve")
-	archiveDir := filepath.Join(dir, "archive")
 
-	for range 100 {
+	stored := func() int { return len(gatewaytest.RotatedAudit(t, e.AuditLog)) }
+	for range 300 {
 		if code, body := e.Get("/a/x"); code != http.StatusOK {
 			t.Fatalf("GET /a/x before fault: %d %s", code, body)
 		}
-		if len(gatewaytest.RotatedAudit(t, e.AuditLog)) >= 1 {
+		if stored() >= 3 {
 			break
 		}
 	}
-	gatewaytest.WaitFor(t, time.Now().Add(10*time.Second), "both reserve files and a rotated or archived file", func() bool {
+	gatewaytest.WaitFor(t, time.Now().Add(10*time.Second), "both reserve files and three rotated or archived files", func() bool {
 		_, err1 := os.Stat(generalReserve)
 		_, err2 := os.Stat(evictReserve)
-		if err1 != nil || err2 != nil {
-			return false
-		}
-		if len(gatewaytest.RotatedAudit(t, e.AuditLog)) >= 1 {
-			return true
-		}
-		entries, _ := os.ReadDir(archiveDir)
-		return len(entries) >= 1
+		return err1 == nil && err2 == nil && stored() >= 3
 	})
 
 	metrics := scrapeMetrics(t, e.Metrics)
@@ -71,21 +64,32 @@ func TestEvictionReserveRecoversFullDisk(t *testing.T) {
 		code, _ := e.Get("/a/x")
 		return code == http.StatusOK
 	})
+	// Stop kills the process: wait until the archiver has moved every rotated
+	// file, so its records no longer rotate the active file under the kill.
+	gatewaytest.WaitFor(t, time.Now().Add(10*time.Second), "the archiver to finish", func() bool {
+		for _, f := range gatewaytest.RotatedAudit(t, e.AuditLog) {
+			if filepath.Dir(f) == dir {
+				return false
+			}
+		}
+		_, err := os.Stat(e.AuditLog)
+		return err == nil
+	})
 	metricsAfter := scrapeMetrics(t, e.Metrics)
 	evictionsMetric, _ := metricValue(t, metricsAfter, "gateway_audit_evictions_total")
 	e.Stop()
 
 	evicted, recovered := 0, 0
 	for _, ev := range auditRecords(e) {
-		if ev["kind"] == "audit.evicted" {
+		if ev["kind"] == "audit.evicted" && ev["reason"] == "disk_pressure" {
 			evicted++
 		}
 		if ev["kind"] == "audit.recovered" && ev["reason"] == "storage_space" {
 			recovered++
 		}
 	}
-	if evicted < 1 {
-		t.Fatalf("no audit.evicted record written (gateway_audit_evictions_total=%v)", evictionsMetric)
+	if evicted != 1 {
+		t.Fatalf("%d disk_pressure audit.evicted records, want 1 (gateway_audit_evictions_total=%v)", evicted, evictionsMetric)
 	}
 	if recovered < 1 {
 		t.Fatal("no audit.recovered (storage_space) record written")

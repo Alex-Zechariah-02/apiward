@@ -95,22 +95,25 @@ func oldestOver(files []RotatedFile, dir string, bound int64) int {
 
 // underPressure picks the oldest file on a disk below its free-space
 // threshold, or -1. While a reserve is released a disk must also have twice
-// the reserve free; while in noSpace the oldest file is evicted immediately.
+// the reserve free. Each write refused for want of space also picks one file
+// on the log disk, whatever its free space reads (a quota or inode limit).
 func (r *archiver) underPressure(files []RotatedFile) int {
-	if r.log.noSpace.Load() && len(files) > 0 {
-		return 0
-	}
+	fails := r.log.spaceFails.Load()
 	floor := int64(0)
 	if r.reserve > 0 && r.held.Load() < r.reserve {
 		floor = 2 * r.reserve
 	}
 	for _, dir := range []string{r.live, r.dir} {
 		d, err := disk.Of(dir)
-		if err != nil || !d.Below(r.minFree, floor) {
+		full := dir == r.live && r.log.noSpace.Load() && fails != r.spaceSeen
+		if err != nil || !full && !d.Below(r.minFree, floor) {
 			continue
 		}
 		for i, f := range files {
 			if same, err := disk.Of(f.Dir); err == nil && same.ID == d.ID {
+				if full {
+					r.spaceSeen = fails
+				}
 				return i
 			}
 		}

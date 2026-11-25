@@ -75,6 +75,9 @@ type AuditLog struct {
 	// noSpace is set while the file system has no space for a write; the
 	// writer clears it once a retried write and its sync succeed.
 	noSpace atomic.Bool
+	// spaceFails counts writes refused for want of space; the archiver evicts
+	// one file on the log disk for each.
+	spaceFails atomic.Uint64
 	// down is set while the active file is being replaced after a failed
 	// sync or write (recover.go); the writer clears it.
 	down atomic.Bool

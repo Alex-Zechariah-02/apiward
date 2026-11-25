@@ -37,6 +37,7 @@ func (a *AuditLog) enterNoSpace(err error) {
 		a.spaceSince = time.Now()
 		slog.Error("audit log has no space; protected admission refused until space returns", "error", err)
 	}
+	a.spaceFails.Add(1)
 	a.archive.signal()
 }
 

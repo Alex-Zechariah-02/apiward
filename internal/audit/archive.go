@@ -67,6 +67,8 @@ type archiver struct {
 	pressure               atomic.Int64
 	held                   atomic.Int64
 	failing                bool // the archive failed at the last pass; archiver only
+	// spaceSeen is the spaceFails count last answered by an eviction; archiver only.
+	spaceSeen uint64
 	// released and evictReleased record when each reserve was last released (Unix ns).
 	released      atomic.Int64
 	evictReleased atomic.Int64
