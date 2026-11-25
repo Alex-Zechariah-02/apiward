@@ -1,7 +1,7 @@
 import type { Activation, OverridesView, Page, Revision, Status } from '../shared/api'
 import { useContext } from 'react'
 import { useGatewayState, useRemembered, useResource, ViewMemory } from '../shared/hooks'
-import { Alerts } from '../policy/tools'
+import { Alerts } from '../policy/advice'
 import { overrideChange } from '../deploy/rule'
 import { OverviewLive } from './activity'
 import { TrialDecision } from '../deploy/provisional'
