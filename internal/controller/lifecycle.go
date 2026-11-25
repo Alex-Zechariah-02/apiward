@@ -39,9 +39,7 @@ func (c *Controller) Start(admin http.Handler) error {
 func (c *Controller) startPermitUseSaver() {
 	stop := make(chan struct{})
 	c.permitStop = stop
-	c.permitWG.Add(1)
-	go func() {
-		defer c.permitWG.Done()
+	c.permitWG.Go(func() {
 		ticker := time.NewTicker(time.Minute)
 		defer ticker.Stop()
 		for {
@@ -52,7 +50,7 @@ func (c *Controller) startPermitUseSaver() {
 				c.savePermitUse()
 			}
 		}
-	}()
+	})
 }
 
 func (c *Controller) savePermitUse() {
