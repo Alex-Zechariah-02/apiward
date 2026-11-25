@@ -10,7 +10,7 @@ import (
 	"github.com/Alex-Zechariah-02/apiward/internal/store"
 )
 
-// An installed database has exactly the current schema: the twelve STRICT
+// An installed database has exactly the current schema: the fourteen STRICT
 // tables, their keys and constraints, the activation and override indexes
 // and triggers (with those that keep rows in use), WAL journaling and
 // user_version DatabaseVersion, and nothing else.
@@ -42,7 +42,7 @@ func TestInstalledSchema(t *testing.T) {
 		t.Fatal(err)
 	}
 	rows.Close()
-	want := []string{"activation", "administrator", "base", "blocked_account", "blocked_address", "candidate", "control_result", "deployment", "enrolment", "override", "revision", "transition"}
+	want := []string{"activation", "administrator", "base", "blocked_account", "blocked_address", "candidate", "control_result", "deployment", "enrolment", "override", "permit_use", "permit_use_window", "revision", "transition"}
 	if !slices.Equal(tables, want) {
 		t.Fatalf("tables %v, want %v", tables, want)
 	}
