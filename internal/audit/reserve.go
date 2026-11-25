@@ -24,7 +24,6 @@ func reserveName(active string) string {
 	return filepath.Join(dir, strings.TrimSuffix(base, filepath.Ext(base))+".reserve")
 }
 
-// evictReserveName is the dedicated eviction reserve beside the active file.
 func evictReserveName(active string) string {
 	return filepath.Join(filepath.Dir(active), "audit.evict.reserve")
 }

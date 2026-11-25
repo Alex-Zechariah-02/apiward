@@ -133,7 +133,6 @@ func reserveExists(file *os.File) bool {
 	return err == nil
 }
 
-// evictReserveExists reports whether audit.evict.reserve beside file exists.
 func evictReserveExists(file *os.File) bool {
 	_, err := os.Stat(filepath.Join(filepath.Dir(file.Name()), "audit.evict.reserve"))
 	return err == nil

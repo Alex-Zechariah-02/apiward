@@ -36,8 +36,6 @@ func OpenForMigration(path string) (*DB, int, error) {
 	return &DB{db: db, path: path}, version, nil
 }
 
-// vacuumHeadroom is the extra free space required beyond the database file
-// size before running VACUUM to enable incremental auto-vacuum.
 const vacuumHeadroom = 64 << 20
 
 // enableIncrementalVacuum converts an existing database to incremental
@@ -82,8 +80,6 @@ func (s *DB) enableIncrementalVacuum(ctx context.Context, from int) error {
 	return nil
 }
 
-// validateMigration runs the schema migration and integrity checks inside a
-// transaction that always rolls back, leaving the database file untouched.
 func (s *DB) validateMigration(ctx context.Context, from int) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {

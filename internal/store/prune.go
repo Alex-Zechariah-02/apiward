@@ -14,7 +14,6 @@ import (
 	"log/slog"
 )
 
-// vacuumPages bounds each incremental vacuum pass after pruning commits.
 const vacuumPages = 256
 
 // incrementalVacuum returns up to vacuumPages freed pages to the file system

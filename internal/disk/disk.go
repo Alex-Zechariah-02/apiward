@@ -21,7 +21,6 @@ func (d Space) Below(share float64, floor int64) bool {
 	return float64(d.Free) < share*float64(d.Total) || d.Free < floor
 }
 
-// bytesOf converts a file system's byte count, capped at the largest int64.
 func bytesOf(n uint64) int64 {
 	if n > math.MaxInt64 {
 		return math.MaxInt64
