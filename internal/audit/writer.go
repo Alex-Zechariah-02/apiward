@@ -201,26 +201,14 @@ func (a *AuditLog) writeBatch(batch []*auditEntry) error {
 	var cp *Checkpoint
 	for _, entry := range batch {
 		if entry.event.Kind == "audit.checkpoint" {
-			cp = &Checkpoint{
-				Boot:      a.boot,
-				SHA256:    entry.event.Digest,
-				Kid:       entry.event.Target,
-				Signature: entry.event.Signature,
-				Time:      entry.event.Time,
-			}
+			cp = a.checkpointFrom(entry.event)
 		}
 	}
 	if rotatedNow && a.marker != "" {
 		// The head of the file just closed, signed at rotation.
 		if e, ok := a.checkpoint(a.head); ok {
 			buffer = a.appendEvent(buffer, e)
-			cp = &Checkpoint{
-				Boot:      a.boot,
-				SHA256:    e.Digest,
-				Kid:       e.Target,
-				Signature: e.Signature,
-				Time:      e.Time,
-			}
+			cp = a.checkpointFrom(e)
 		}
 	}
 	buffer, head := a.chain(buffer, a.head)
@@ -246,6 +234,16 @@ func (a *AuditLog) writeBatch(batch []*auditEntry) error {
 	}
 	a.finishBatch(buffer, head)
 	return nil
+}
+
+func (a *AuditLog) checkpointFrom(e Event) *Checkpoint {
+	return &Checkpoint{
+		Boot:      a.boot,
+		SHA256:    e.Digest,
+		Kid:       e.Target,
+		Signature: e.Signature,
+		Time:      e.Time,
+	}
 }
 
 // finishBatch updates the chain head, batch counter, kept buffer and usage
