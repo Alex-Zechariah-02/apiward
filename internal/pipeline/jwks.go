@@ -54,6 +54,9 @@ func (s *Signer) WithRetiringKey(path string) (*Signer, error) {
 	return &out, nil
 }
 
+// publicJWK is the published JWK of an Ed25519 or P-256 public key. Its ID is
+// the key's JWK thumbprint: RFC 7638 section 3.2 (RFC 8037 section 2 for
+// Ed25519), the required members in lexicographic order.
 func publicJWK(pub any) (jwk, error) {
 	switch k := pub.(type) {
 	case ed25519.PublicKey:
@@ -69,6 +72,7 @@ func publicJWK(pub any) (jwk, error) {
 		if err != nil {
 			return jwk{}, err
 		}
+		// The uncompressed point is 0x04, X, Y.
 		point := encoded[1:]
 		x := base64.RawURLEncoding.EncodeToString(point[:coordinateBytes])
 		y := base64.RawURLEncoding.EncodeToString(point[coordinateBytes:])

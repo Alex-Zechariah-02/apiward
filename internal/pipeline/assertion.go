@@ -19,7 +19,6 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"errors"
-	"fmt"
 	"net/http"
 	"time"
 
@@ -119,12 +118,9 @@ func LoadSigner(path string) (*Signer, error) {
 }
 
 // newEdSigner derives the key ID, the JOSE header and the published key set
-// of an Ed25519 key. The key ID is the key's JWK thumbprint (RFC 7638
-// section 3.2, RFC 8037 section 2: the required members in order).
+// of an Ed25519 key.
 func newEdSigner(key ed25519.PrivateKey) (*Signer, error) {
-	x := base64.RawURLEncoding.EncodeToString(key.Public().(ed25519.PublicKey))
-	thumbprint := sha256.Sum256(fmt.Appendf(nil, `{"crv":"Ed25519","kty":"OKP","x":"%s"}`, x))
-	s, err := keySigner(base64.RawURLEncoding.EncodeToString(thumbprint[:]), "EdDSA", jwk{Type: "OKP", Curve: "Ed25519", X: x})
+	s, err := keySigner(key.Public())
 	if err != nil {
 		return nil, err
 	}
@@ -133,12 +129,16 @@ func newEdSigner(key ed25519.PrivateKey) (*Signer, error) {
 }
 
 // keySigner builds the header and key set shared by both key types.
-func keySigner(kid, algorithm string, key jwk) (*Signer, error) {
-	header, err := json.Marshal(map[string]string{"alg": algorithm, "kid": kid, "typ": "JWT"})
+func keySigner(public any) (*Signer, error) {
+	key, err := publicJWK(public)
 	if err != nil {
 		return nil, err
 	}
-	key.ID, key.Use, key.Algorithm = kid, "sig", algorithm
+	kid := key.ID
+	header, err := json.Marshal(map[string]string{"alg": key.Algorithm, "kid": kid, "typ": "JWT"})
+	if err != nil {
+		return nil, err
+	}
 	set, err := json.Marshal(map[string][]jwk{"keys": {key}})
 	if err != nil {
 		return nil, err
@@ -147,19 +147,9 @@ func keySigner(kid, algorithm string, key jwk) (*Signer, error) {
 }
 
 // newSigner derives the key ID, the JOSE header and the published key set
-// of a P-256 key. The key ID is the key's JWK thumbprint (RFC 7638).
+// of a P-256 key.
 func newSigner(key *ecdsa.PrivateKey) (*Signer, error) {
-	encoded, err := key.PublicKey.Bytes()
-	if err != nil {
-		return nil, err
-	}
-	// The uncompressed point is 0x04, X, Y.
-	point := encoded[1:]
-	x := base64.RawURLEncoding.EncodeToString(point[:coordinateBytes])
-	y := base64.RawURLEncoding.EncodeToString(point[coordinateBytes:])
-	// RFC 7638, section 3.2: the required members in lexicographic order.
-	thumbprint := sha256.Sum256(fmt.Appendf(nil, `{"crv":"P-256","kty":"EC","x":"%s","y":"%s"}`, x, y))
-	s, err := keySigner(base64.RawURLEncoding.EncodeToString(thumbprint[:]), "ES256", jwk{Type: "EC", Curve: "P-256", X: x, Y: y})
+	s, err := keySigner(&key.PublicKey)
 	if err != nil {
 		return nil, err
 	}
