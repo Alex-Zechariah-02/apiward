@@ -127,7 +127,7 @@ func (c *Controller) endProvisional(ctx context.Context, t store.TransitionRecor
 	}
 	fault.CrashPoint(stage + "-after-commit")
 
-	c.current.Store(g)
+	c.publishGeneration(g)
 	c.state.Store(store.ModeNormal)
 	c.scheduleDeadline(g)
 	c.warn(g)

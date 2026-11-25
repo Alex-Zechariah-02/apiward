@@ -106,8 +106,8 @@ What the gateway records, when a record is waited for, and how to read the log. 
 - The files are plain JSON lines: `jq` or any log shipper reads them.
 - `GET /admin/security-log` (permission `read_history`) searches the request records of the active, rotated and archived files, newest first, by request ID, account, operation, decision and time.
 - `format=csv` or `format=json` exports up to 10,000 rows within 256 MiB of reading; the CSV escapes values a spreadsheet would run as formulas.
-- Searches, exports and the unused-permission advice read the files one at a time and stop when the client leaves.
-- `GET /admin/advice` reads the files for unused permissions; `GET /admin/alerts` reads the active file's last 1 MiB for its write rate.
+- Searches and exports read the files one at a time and stop when the client leaves.
+- `GET /admin/alerts` reads the active file's last 1 MiB for its write rate; `GET /admin/advice` reads tracked permission use from the database instead of scanning log files.
 - The Dashboard's Security Log page uses these endpoints; its live views read the gateway's memory, not the files.
 - `gateway_audit_bytes` and `gateway_audit_budget_bytes` on the metrics listener show how full the log is.
 - `gateway_key_reload_failures_total` counts key reloads refused because the keys or the settings beside them were invalid.

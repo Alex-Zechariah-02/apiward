@@ -170,7 +170,7 @@ test.describe.serial('dashboard', () => {
     // enough traffic and say why.
     await go(admin, 'Advice')
     await expect(admin.getByRole('heading', { name: 'Settings to Review' })).toBeVisible()
-    await expect(admin.getByText(/Shown once the security log covers 60 minutes/)).toBeVisible()
+    await expect(admin.getByText(/Shown once tracking covers 60 minutes/)).toBeVisible()
     await expect(admin.getByText(/Checked with rule set checks-0\.8/)).toBeVisible()
     await shot(admin, '47-advice')
 

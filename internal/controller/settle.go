@@ -139,7 +139,7 @@ func (c *Controller) endDue(ctx context.Context, a store.Authority, now time.Tim
 	}
 	fault.CrashPoint(stage + "-after-commit")
 
-	c.current.Store(g)
+	c.publishGeneration(g)
 	c.state.Store(store.ModeNormal)
 	c.scheduleDeadline(g)
 	if d.timeout.ID != "" {

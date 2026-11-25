@@ -165,6 +165,11 @@ type Controller struct {
 	// transient failure (see recover.go); both are guarded by mu.
 	retry     *time.Timer
 	retryWait time.Duration
+
+	// permitStop and permitWG own the once-a-minute permit-use persistence
+	// worker started by Start and drained by shutdown.
+	permitStop chan struct{}
+	permitWG   sync.WaitGroup
 }
 
 // Prepare checks cfg and builds the controller, opening nothing; its errors
@@ -276,6 +281,15 @@ func (c *Controller) Open() error {
 		return nil
 	}
 	c.publishAddresses(addresses)
+	if used, err := st.LoadPermitUse(context.Background()); err != nil {
+		c.logger.Error("loading persisted permission use", "error", err)
+	} else {
+		snap := monitor.PermitSnapshot{Since: used.Since, Requests: used.Requests, Used: make(map[[2]string]time.Time, len(used.Used))}
+		for _, r := range used.Used {
+			snap.Used[[2]string{r.Role, r.Operation}] = r.LastUsed
+		}
+		c.observations.LoadPermitUse(snap, compile.TrustedNow())
+	}
 	c.reconcile(compile.TrustedNow())
 	return nil
 }

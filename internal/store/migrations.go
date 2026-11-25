@@ -258,8 +258,22 @@ CREATE INDEX transition_committed ON transition (committed_at);
 `,
 	// Incremental auto-vacuum is enabled by Migrate before this transaction;
 	// bumping the schema version ensures every existing deployment migrates once.
-	`SELECT 1;`}
+	`SELECT 1;`,
+	// Bounded-window permission-use tracking for unused-permission advice.
+	`
+CREATE TABLE permit_use (
+	role TEXT NOT NULL,
+	operation TEXT NOT NULL,
+	last_used INTEGER NOT NULL,
+	PRIMARY KEY (role, operation)
+) STRICT;
+CREATE TABLE permit_use_window (
+	id INTEGER PRIMARY KEY CHECK (id = 1),
+	since INTEGER NOT NULL,
+	requests INTEGER NOT NULL
+) STRICT;
+`}
 
 // DatabaseVersion is the schema version this build reads and writes: the
 // number of migrations, which a test checks.
-const DatabaseVersion = 9
+const DatabaseVersion = 10

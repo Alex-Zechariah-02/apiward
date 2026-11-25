@@ -20,6 +20,11 @@ import (
 	"github.com/Alex-Zechariah-02/apiward/internal/store"
 )
 
+func (c *Controller) publishGeneration(g *compile.Generation) {
+	c.observations.SetPermitted(g)
+	c.current.Store(g)
+}
+
 // publishAuthority compiles committed authority, the active base with its
 // active overrides, and swaps it in.
 func (c *Controller) publishAuthority(a store.Authority) bool {
@@ -28,7 +33,7 @@ func (c *Controller) publishAuthority(a store.Authority) bool {
 		c.unavailable("policy_invalid", fmt.Sprintf("stored revision %d with overrides %v: %v", a.Revision, overrideIDs(a.Overrides), err))
 		return false
 	}
-	c.current.Store(g)
+	c.publishGeneration(g)
 	c.state.Store(store.ModeNormal)
 	c.scheduleDeadline(g)
 	c.warn(g)
@@ -101,7 +106,7 @@ func (c *Controller) publish(ctx context.Context, t store.TransitionRecord, poli
 	fault.CrashPoint("after-commit")
 
 	g := unlabelled.Relabel(revision, unlabelled.Overrides)
-	c.current.Store(g)
+	c.publishGeneration(g)
 	c.state.Store(store.ModeNormal)
 	c.scheduleDeadline(g)
 	c.warn(g)

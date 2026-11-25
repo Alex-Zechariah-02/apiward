@@ -211,7 +211,7 @@ func (c *Controller) publishOverrides(ctx context.Context, t store.TransitionRec
 	}
 	fault.CrashPoint(stage + "-after-commit")
 
-	c.current.Store(g)
+	c.publishGeneration(g)
 	c.state.Store(store.ModeNormal)
 	c.scheduleDeadline(g)
 	fault.CrashPoint(stage + "-after-swap")

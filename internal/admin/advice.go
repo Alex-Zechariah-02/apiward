@@ -4,7 +4,6 @@
 package admin
 
 import (
-	"context"
 	"fmt"
 	"math"
 	"net/http"
@@ -12,7 +11,6 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/Alex-Zechariah-02/apiward/internal/compile"
 	"github.com/Alex-Zechariah-02/apiward/internal/monitor"
 	"github.com/Alex-Zechariah-02/apiward/internal/pipeline"
 )
@@ -43,21 +41,8 @@ func (s *Server) handleAdvice(w http.ResponseWriter, r *http.Request, who caller
 		adminError(w, http.StatusServiceUnavailable, "gateway_unavailable", "")
 		return
 	}
-	if !s.scanLog(w) {
-		return
-	}
-	defer s.scanDone()
-	// The warnings need no log file, so an unreadable log withholds only the
-	// unused permissions.
-	unused, err := s.unusedPermits(r.Context(), g)
-	if r.Context().Err() != nil {
-		return // the client has gone
-	}
-	if err != nil {
-		s.logger.Error("reading the security log for advice", "error", err)
-		s.observations.AdminFailed(monitor.FailLog)
-		unused = monitor.UnreadLog()
-	}
+	now := time.Now()
+	unused := monitor.UnusedPermissions(g, s.observations.PermitUseSnapshot(now), now)
 	warnings := monitor.ConfigurationWarnings(g, s.plain)
 	if s.hostServed {
 		warnings = append(warnings, monitor.HostTransport())
@@ -70,19 +55,6 @@ func (s *Server) handleAdvice(w http.ResponseWriter, r *http.Request, who caller
 		"warnings":       warnings,
 		"unused_permits": unused,
 	})
-}
-
-// unusedPermits reads the security log files for the unused-permission advice.
-func (s *Server) unusedPermits(ctx context.Context, g *compile.Generation) (monitor.UnusedReport, error) {
-	files, missing, err := monitor.LogFiles(s.audit.Path(), s.audit.ArchivePath())
-	if err != nil {
-		return monitor.UnusedReport{}, err
-	}
-	use, err := s.summaries.PermitUse(ctx, files, monitor.ExportScan)
-	if err != nil {
-		return monitor.UnusedReport{}, err
-	}
-	return monitor.UnusedPermissions(g, use, missing, time.Now()), nil
 }
 
 // handleAlerts evaluates the alert rules when read; nothing is evaluated per

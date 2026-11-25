@@ -29,7 +29,50 @@ func (c *Controller) Start(admin http.Handler) error {
 	case c.admin != nil:
 		return errors.New("controller already started")
 	}
-	return c.startAdmin(admin)
+	if err := c.startAdmin(admin); err != nil {
+		return err
+	}
+	c.startPermitUseSaver()
+	return nil
+}
+
+func (c *Controller) startPermitUseSaver() {
+	stop := make(chan struct{})
+	c.permitStop = stop
+	c.permitWG.Add(1)
+	go func() {
+		defer c.permitWG.Done()
+		ticker := time.NewTicker(time.Minute)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-stop:
+				return
+			case <-ticker.C:
+				c.savePermitUse()
+			}
+		}
+	}()
+}
+
+func (c *Controller) savePermitUse() {
+	c.mu.Lock()
+	st := c.store
+	c.mu.Unlock()
+	if st == nil {
+		return
+	}
+	now := time.Now()
+	snap := c.observations.PermitUseSnapshot(now)
+	state := store.PermitUseState{Since: snap.Since, Requests: snap.Requests, Used: make([]store.PermitUseRow, 0, len(snap.Used))}
+	for pair, at := range snap.Used {
+		state.Used = append(state.Used, store.PermitUseRow{Role: pair[0], Operation: pair[1], LastUsed: at})
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), ShutdownWait)
+	defer cancel()
+	if err := st.ReplacePermitUse(ctx, state, now.Add(-30*24*time.Hour)); err != nil {
+		c.logger.Error("saving permission use", "error", err)
+	}
 }
 
 // Stop begins the stop (see BeginStop), shuts the Admin API down, waiting at
@@ -72,6 +115,10 @@ func (c *Controller) BeginStop() {
 		c.timer.Stop()
 	}
 	c.stopRetry()
+	if c.permitStop != nil {
+		close(c.permitStop)
+		c.permitStop = nil
+	}
 }
 
 func (c *Controller) shutdown(ctx context.Context) error {
@@ -82,6 +129,8 @@ func (c *Controller) shutdown(ctx context.Context) error {
 	// Admin requests in progress may need the lock to finish, so the listener
 	// is shut down without holding it.
 	err := stopAdmin(ctx, admin)
+	c.permitWG.Wait()
+	c.savePermitUse()
 
 	c.mu.Lock()
 	defer c.mu.Unlock()

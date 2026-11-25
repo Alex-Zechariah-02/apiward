@@ -34,7 +34,7 @@ What the gateway reports about its own traffic: the metrics listener, the Admin 
 - `GET /admin/policy` sends an `ETag`; a request with `If-None-Match` naming it is answered `304` without the document.
 - `GET /admin/alerts` raises A1 (refusal spike) only when the window still holds every request of the 16 minutes the rule compares; after the window dropped requests from that time, A1 is withheld.
 - In library mode (a host program serves the data plane) `GET /admin/advice` lists W6 (severity `info`): the gateway cannot confirm the host's transport is HTTPS.
-- `GET /admin/advice` keeps a summary of the active security log file's part already read and reads only what was written since; a rotation, a shorter file or a new gateway start reads the file again.
+- `GET /admin/advice` evaluates unused permissions (`U1`) from admitted `(role, operation)` use tracked in memory and persisted to SQLite once a minute and at stop, over a 30-day sliding window (`window_days: 30`), withheld until tracking covers at least 60 minutes and 500 admitted requests.
 - `gateway_upstream_connections_idle`, `gateway_upstream_dials_total` and `gateway_upstream_reuses_total` show the upstream connection pool: idle connections now, and connections dialled and reused since the start.
 - `gateway_listener_failures_total` counts metrics and redirect listeners that stopped on an error; the data plane keeps serving.
 - `gateway_audit_records_lost_total`, `gateway_audit_evictions_total` and `gateway_blocked_addresses` count refused audit records written in loss records, security log files evicted (each after its `audit.evicted` record), and the blocked address ranges; the security log's archive, disk and save-wait metrics are in [settings.md](settings.md#security-log).

@@ -3,7 +3,6 @@
 package monitor
 
 import (
-	"path/filepath"
 	"slices"
 	"testing"
 	"time"
@@ -60,66 +59,31 @@ func TestConfigurationWarnings(t *testing.T) {
 	}
 }
 
-// Permission use is read from the security log files, newest first, within
-// a scan budget, and says how far back it reached.
-func TestPermitUseFromSecurityLog(t *testing.T) {
-	dir := t.TempDir()
-	active := filepath.Join(dir, "audit.log")
-	writeAuditFile(t, active+".1", 1, 4, "")
-	writeAuditFile(t, active, 5, 8, "")
-	files, _, err := LogFiles(active, "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	use, err := (&Summaries{}).PermitUse(t.Context(), files, ExportScan)
-	// Odd records are forwarded (allowed) read-a requests carrying READER.
-	if err != nil || !use.used[[2]string{"READER", "read-a"}] || use.used[[2]string{"WRITER", "read-a"}] {
-		t.Fatalf("used: %v (%v)", use.used, err)
-	}
-	if use.requests != 8 || !use.complete || !slices.Equal(use.Searched, []string{"audit.log", "audit.log.1"}) || !use.oldest.Equal(time.Date(2026, 11, 2, 9, 0, 1, 0, time.UTC)) {
-		t.Errorf("coverage: %+v", use)
-	}
-	short, err := (&Summaries{}).PermitUse(t.Context(), files, 300)
-	if err != nil || short.complete || short.requests >= 8 {
-		t.Errorf("a small budget stops early and says so: %+v (%v)", short, err)
-	}
-	// A request refused after the role check (here by the service) used its
-	// permission; one refused at the role check did not.
-	refused := filepath.Join(t.TempDir(), "audit.log")
-	writeAuditFile(t, refused, 1, 1, `{"event_id":"t1","kind":"request.rejected","time":"2026-11-02T09:00:30Z","request_id":"t1","stage":"FORWARD","decision":"reject","operation":"write-b","roles":["WRITER"]}`+"\n"+
-		`{"event_id":"t2","kind":"request.rejected","time":"2026-11-02T09:00:31Z","request_id":"t2","stage":"RBAC","decision":"reject","operation":"write-c","roles":["WRITER"]}`+"\n")
-	use, err = (&Summaries{}).PermitUse(t.Context(), []string{refused}, ExportScan)
-	if err != nil || !use.used[[2]string{"WRITER", "write-b"}] || use.used[[2]string{"WRITER", "write-c"}] {
-		t.Errorf("refused after the role check: %v (%v)", use.used, err)
-	}
-}
-
-// Unused permissions are withheld until the log covers enough time and
-// requests and was read to its oldest record, then list each permit no
-// request used.
+// Unused permissions are withheld until tracking covers enough time and
+// admitted requests, then list each permit not used in the last 30 days.
 func TestUnusedPermissions(t *testing.T) {
 	g := adviceGeneration(t)
 	now := time.Date(2026, 11, 2, 12, 0, 0, 0, time.UTC)
-	few := LogUse{used: map[[2]string]bool{}, requests: 10, oldest: now.Add(-2 * time.Hour), complete: true}
-	if report := UnusedPermissions(g, few, nil, now); report.Withheld == nil || len(report.Items) != 0 {
+	few := PermitSnapshot{Used: map[[2]string]time.Time{}, Requests: 10, Since: now.Add(-2 * time.Hour)}
+	if report := UnusedPermissions(g, few, now); report.Withheld == nil || len(report.Items) != 0 || report.WindowDays != PermitUseWindowDays {
 		t.Errorf("too few requests: %+v", report)
 	}
-	recent := LogUse{used: map[[2]string]bool{}, requests: unusedMinRequests, oldest: now.Add(-time.Minute), complete: true}
-	if report := UnusedPermissions(g, recent, nil, now); report.Withheld == nil {
+	recent := PermitSnapshot{Used: map[[2]string]time.Time{}, Requests: unusedMinRequests, Since: now.Add(-time.Minute)}
+	if report := UnusedPermissions(g, recent, now); report.Withheld == nil {
 		t.Errorf("too short a span: %+v", report)
 	}
-	partial := LogUse{used: map[[2]string]bool{}, requests: unusedMinRequests, oldest: now.Add(-2 * time.Hour), complete: false, Searched: []string{"audit.log"}}
-	if report := UnusedPermissions(g, partial, nil, now); report.Withheld == nil || len(report.Items) != 0 || report.Complete {
-		t.Errorf("a read cut by the scan budget: %+v", report)
-	}
-	enough := LogUse{used: map[[2]string]bool{}, requests: unusedMinRequests, oldest: now.Add(-2 * time.Hour), complete: true, Searched: []string{"audit.log"}}
-	report := UnusedPermissions(g, enough, []string{"audit.log.1"}, now)
-	if report.Withheld != nil || !slices.Equal(ids(report.Items), []string{"U1:READER → read"}) || !report.Complete || !slices.Equal(report.FilesMissing, []string{"audit.log.1"}) {
+	enough := PermitSnapshot{Used: map[[2]string]time.Time{}, Requests: unusedMinRequests, Since: now.Add(-2 * time.Hour)}
+	report := UnusedPermissions(g, enough, now)
+	if report.Withheld != nil || !slices.Equal(ids(report.Items), []string{"U1:READER → read"}) || report.WindowDays != PermitUseWindowDays {
 		t.Errorf("unused: %+v", report)
 	}
-	enough.used[[2]string{"READER", "read"}] = true
-	if report := UnusedPermissions(g, enough, nil, now); len(report.Items) != 0 {
-		t.Errorf("an allowed request uses it: %+v", report)
+	enough.Used[[2]string{"READER", "read"}] = now.Add(-31 * 24 * time.Hour)
+	if report := UnusedPermissions(g, enough, now); len(report.Items) != 1 {
+		t.Errorf("older than 30 days should still be unused: %+v", report)
+	}
+	enough.Used[[2]string{"READER", "read"}] = now.Add(-time.Hour)
+	if report := UnusedPermissions(g, enough, now); len(report.Items) != 0 {
+		t.Errorf("an admitted request in the last 30 days uses it: %+v", report)
 	}
 }
 

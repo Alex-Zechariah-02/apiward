@@ -89,15 +89,18 @@ func benchLog(b *testing.B, size int) string {
 	return path
 }
 
-// BenchmarkPermitUse is a repeated advice read of an unchanged 32 MiB active file.
+// BenchmarkPermitUse reads the tracked permission-use snapshot for advice.
 func BenchmarkPermitUse(b *testing.B) {
-	path := benchLog(b, 32<<20)
-	var c Summaries
+	o := New(policy.DefaultWindow, policy.DefaultAPIs)
+	now := time.Now()
+	used := make(map[[2]string]time.Time, 64)
+	for i := range 64 {
+		used[[2]string{"reader", fmt.Sprintf("orders.op%d", i)}] = now
+	}
+	o.LoadPermitUse(PermitSnapshot{Since: now.Add(-2 * time.Hour), Requests: 1000, Used: used}, now)
 	b.ReportAllocs()
 	for b.Loop() {
-		if _, err := c.PermitUse(context.Background(), []string{path}, ExportScan); err != nil {
-			b.Fatal(err)
-		}
+		_ = o.PermitUseSnapshot(now)
 	}
 }
 

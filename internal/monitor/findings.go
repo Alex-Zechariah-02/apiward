@@ -129,66 +129,46 @@ func HostTransport() Finding {
 }
 
 type UnusedReport struct {
-	Requests      int       `json:"requests"`
-	Since         *string   `json:"since"`
-	Complete      bool      `json:"complete"`
-	FilesSearched []string  `json:"files_searched"`
-	FilesMissing  []string  `json:"files_missing"`
-	Withheld      *string   `json:"withheld"`
-	Items         []Finding `json:"items"`
-	MinMinute     int       `json:"min_minutes"`
-	MinCount      int       `json:"min_requests"`
+	Requests   int       `json:"requests"`
+	Since      *string   `json:"since"`
+	WindowDays int       `json:"window_days"`
+	Withheld   *string   `json:"withheld"`
+	Items      []Finding `json:"items"`
+	MinMinute  int       `json:"min_minutes"`
+	MinCount   int       `json:"min_requests"`
 }
 
-// UnusedPermissions lists permits no request in the security log used, once
-// the records read cover enough time and requests and the read reached the
-// oldest retained record. missing names log files moved away, which were
-// not read.
-func UnusedPermissions(g *compile.Generation, use LogUse, missing []string, now time.Time) UnusedReport {
+// UnusedPermissions lists permits with no admitted request in the last
+// PermitUseWindowDays (or since tracking began, when shorter), once tracking
+// covers at least unusedMinSpan and unusedMinRequests admitted requests.
+func UnusedPermissions(g *compile.Generation, snap PermitSnapshot, now time.Time) UnusedReport {
 	report := UnusedReport{
-		Requests: use.requests, Complete: use.complete, FilesSearched: use.Searched, FilesMissing: missing, Items: []Finding{},
+		Requests: snap.Requests, WindowDays: PermitUseWindowDays, Items: []Finding{},
 		MinMinute: int(unusedMinSpan / time.Minute), MinCount: unusedMinRequests,
 	}
-	if report.FilesSearched == nil {
-		report.FilesSearched = []string{}
-	}
-	if report.FilesMissing == nil {
-		report.FilesMissing = []string{}
-	}
-	if use.requests > 0 {
-		since := use.oldest.UTC().Format(time.RFC3339)
+	if !snap.Since.IsZero() {
+		since := snap.Since.UTC().Format(time.RFC3339)
 		report.Since = &since
 	}
-	if use.requests < unusedMinRequests || now.Sub(use.oldest) < unusedMinSpan {
+	if snap.Requests < unusedMinRequests || snap.Since.IsZero() || now.Sub(snap.Since) < unusedMinSpan {
 		reason := "Not enough traffic has been recorded yet."
 		report.Withheld = &reason
 		return report
 	}
-	if !use.complete {
-		reason := "The security log is larger than one advice read covers, so a permission used only in older records would be listed as unused."
-		report.Withheld = &reason
-		return report
-	}
+	cutoff := now.Add(-permitUseWindow)
 	for _, r := range g.Rules() {
 		if r.Public() || !r.Permitted() {
 			continue
 		}
 		for _, role := range r.Roles() {
-			if !use.used[[2]string{role, r.Operation()}] {
-				report.Items = append(report.Items, Finding{"U1", "low", role + " → " + r.Operation(), "No request in the security log used this permission. Review whether the role still needs it."})
+			last, ok := snap.Used[[2]string{role, r.Operation()}]
+			if !ok || last.Before(cutoff) {
+				report.Items = append(report.Items, Finding{"U1", "low", role + " → " + r.Operation(), "No admitted request in the last 30 days used this permission. Review whether the role still needs it."})
 			}
 		}
 	}
 	SortFindings(report.Items)
 	return report
-}
-
-// UnreadLog is the unused-permission report when the security log files
-// could not be read: nothing is listed, and withheld says why.
-func UnreadLog() UnusedReport {
-	reason := "The security log files could not be read."
-	return UnusedReport{FilesSearched: []string{}, FilesMissing: []string{}, Withheld: &reason, Items: []Finding{},
-		MinMinute: int(unusedMinSpan / time.Minute), MinCount: unusedMinRequests}
 }
 
 // RefusalSpike applies the spike rule to the retained observations. It

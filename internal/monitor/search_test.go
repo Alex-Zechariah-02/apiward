@@ -222,7 +222,7 @@ func TestScanAllowsRotation(t *testing.T) {
 	}
 }
 
-// A search or permission scan whose client has gone stops reading.
+// A search whose client has gone stops reading.
 func TestSearchStopsWhenCancelled(t *testing.T) {
 	dir := t.TempDir()
 	writeAuditFile(t, filepath.Join(dir, "audit.log"), 1, 4, "")
@@ -231,9 +231,10 @@ func TestSearchStopsWhenCancelled(t *testing.T) {
 	if _, err := Search(gone, []string{filepath.Join(dir, "audit.log")}, nil, Query{}, 100, PageScan); !errors.Is(err, context.Canceled) {
 		t.Fatalf("search: %v", err)
 	}
-	if _, err := (&Summaries{}).PermitUse(gone, []string{filepath.Join(dir, "audit.log")}, ExportScan); !errors.Is(err, context.Canceled) {
-		t.Fatalf("permission scan: %v", err)
-	}
+}
+
+func requestLine(boot string, n int, role string) string {
+	return fmt.Sprintf(`{"schema":8,"event_id":"%s-%d","time":"2026-11-02T09:00:%02dZ","kind":"request.forwarded","request_id":"r%d","stage":"FORWARD","decision":"forwarded","status":200,"operation":"read","roles":[%q]}`+"\n", boot, n, n%60, n, role)
 }
 
 // A record of a newer schema than this gateway writes is counted as

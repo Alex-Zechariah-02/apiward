@@ -59,7 +59,6 @@ type Server struct {
 	store        store.Reads
 	audit        *audit.AuditLog
 	observations *monitor.Observations
-	summaries    monitor.Summaries // security log files read for advice
 	// confirmedSize is the confirmed document's size for the limits view.
 	confirmedSize atomic.Pointer[revisionSize]
 	limiter       *pipeline.Limiter

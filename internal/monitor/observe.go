@@ -41,6 +41,7 @@ type Observations struct {
 	done    chan struct{}
 	closed  bool
 	metrics requestMetrics
+	permits permitTracker
 	// redirects counts the redirect listener's 308 answers, refused the
 	// data connections closed at the connection cap, and auxiliary the
 	// connections each other listener closed at its cap (keys fixed by New);
@@ -73,6 +74,7 @@ func New(window, apis int) *Observations {
 func (o *Observations) Record(event audit.Event) {
 	entry := newEntry(event)
 	o.metrics.Record(event)
+	o.permits.record(event)
 	// One lock keeps the window and the live feeds consistent with each other.
 	o.mu.Lock()
 	defer o.mu.Unlock()
