@@ -3,7 +3,6 @@
 package pipeline
 
 import (
-	"container/heap"
 	"net/http"
 	"strconv"
 	"sync"
@@ -40,32 +39,6 @@ type counter struct {
 // ended, so its estimate is zero: now/window >= bucket+2.
 func (c *counter) removable() int64 {
 	return (c.bucket + 2) * c.window
-}
-
-// expiryQueue orders counters by the time they become removable, so a sweep
-// visits only counters it removes. It implements heap.Interface.
-type expiryQueue []*counter
-
-func (q expiryQueue) Len() int           { return len(q) }
-func (q expiryQueue) Less(i, j int) bool { return q[i].removable() < q[j].removable() }
-
-func (q expiryQueue) Swap(i, j int) {
-	q[i], q[j] = q[j], q[i]
-	q[i].index, q[j].index = i, j
-}
-
-func (q *expiryQueue) Push(x any) {
-	c := x.(*counter)
-	c.index = len(*q)
-	*q = append(*q, c)
-}
-
-func (q *expiryQueue) Pop() any {
-	old := *q
-	c := old[len(old)-1]
-	old[len(old)-1] = nil
-	*q = old[:len(old)-1]
-	return c
 }
 
 // roll moves the counter to the bucket containing now. A time before the
@@ -158,7 +131,7 @@ func (l *Limiter) admit(key counterKey, rule *compile.RateRule, now int64) (rate
 		c = &counter{window: rule.Window(), bucket: now / rule.Window(), key: key}
 		l.counters[key] = c
 		l.size.Store(int64(len(l.counters)))
-		heap.Push(&l.expiry, c)
+		l.expiry.push(c)
 	}
 
 	removable := c.removable()
@@ -170,7 +143,7 @@ func (l *Limiter) admit(key counterKey, rule *compile.RateRule, now int64) (rate
 		c.window, c.bucket, c.current, c.previous = rule.Window(), now/rule.Window(), used, 0
 	}
 	if c.removable() != removable {
-		heap.Fix(&l.expiry, c.index)
+		l.expiry.fix(c.index)
 	}
 
 	if c.usage(now)+rule.Window() > rule.Count()*rule.Window() {
@@ -192,7 +165,7 @@ func (l *Limiter) admit(key counterKey, rule *compile.RateRule, now int64) (rate
 // together from stalling the one request that triggers the sweep.
 func (l *Limiter) sweep(now int64, budget int) {
 	for ; budget > 0 && len(l.expiry) > 0 && l.expiry[0].removable() <= now; budget-- {
-		c := heap.Pop(&l.expiry).(*counter)
+		c := l.expiry.pop()
 		delete(l.counters, c.key)
 	}
 	l.size.Store(int64(len(l.counters)))

@@ -27,7 +27,10 @@ func (s *upstreamSlots) take(upstream string) *atomic.Int64 {
 	if !ok {
 		value, _ = s.counts.LoadOrStore(upstream, new(atomic.Int64))
 	}
-	count := value.(*atomic.Int64)
+	count, ok := value.(*atomic.Int64)
+	if !ok {
+		return nil
+	}
 	if count.Add(1) > s.max {
 		count.Add(-1)
 		return nil
