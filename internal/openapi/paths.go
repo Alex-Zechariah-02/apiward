@@ -285,7 +285,7 @@ func follow(root map[string]any, node any, pointer string) (any, *refusal) {
 			return node, nil
 		}
 		var refused *refusal
-		if node, refused = resolve(root, ref, pointer); refused != nil {
+		if _, node, refused = resolve(root, ref, pointer); refused != nil {
 			return nil, refused
 		}
 	}

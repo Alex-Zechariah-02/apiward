@@ -125,11 +125,10 @@ func (s *schemas) reference(object map[string]any, ref any, pointer, field strin
 			return nil, refuse(CodeKeyword, pointer+"/"+escape(keyword), "The keyword %q beside $ref is not supported.", policy.Clip(keyword))
 		}
 	}
-	target, refused := resolve(s.root, ref, pointer)
+	name, target, refused := resolve(s.root, ref, pointer)
 	if refused != nil {
 		return nil, refused
 	}
-	name := ref.(string)
 	// One name twice on the chain is a cycle, refused here instead of by the value budget.
 	if slices.Contains(refs, name) {
 		return nil, refuse(CodeCycle, pointer, "The schema refers to itself through %s.", policy.Clip(name))
@@ -139,14 +138,14 @@ func (s *schemas) reference(object map[string]any, ref any, pointer, field strin
 
 // resolve finds the target of an internal reference ("#/…"). References to
 // other files or URLs are refused and never fetched.
-func resolve(root map[string]any, ref any, pointer string) (any, *refusal) {
+func resolve(root map[string]any, ref any, pointer string) (string, any, *refusal) {
 	name, ok := ref.(string)
 	if !ok {
-		return nil, refuse(CodeRefInvalid, pointer, "$ref is not a string.")
+		return "", nil, refuse(CodeRefInvalid, pointer, "$ref is not a string.")
 	}
 	path, internal := strings.CutPrefix(name, "#/")
 	if !internal {
-		return nil, refuse(CodeExternalRef, pointer, "The reference %s points outside this file; nothing is fetched.", policy.Clip(name))
+		return "", nil, refuse(CodeExternalRef, pointer, "The reference %s points outside this file; nothing is fetched.", policy.Clip(name))
 	}
 	var node any = root
 	for _, part := range strings.Split(path, "/") {
@@ -165,10 +164,10 @@ func resolve(root map[string]any, ref any, pointer string) (any, *refusal) {
 			ok = false
 		}
 		if !ok {
-			return nil, refuse(CodeRefInvalid, pointer, "The reference %s does not exist in this file.", policy.Clip(name))
+			return "", nil, refuse(CodeRefInvalid, pointer, "The reference %s does not exist in this file.", policy.Clip(name))
 		}
 	}
-	return node, nil
+	return name, node, nil
 }
 
 func hasType(value any, name string) bool {

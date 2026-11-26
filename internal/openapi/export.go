@@ -72,7 +72,7 @@ func Export(p policy.Policy, options ExportOptions) (map[string]any, *ExportRepo
 		return nil, nil, fmt.Errorf("api %q is not in the policy", policy.Clip(options.API))
 	}
 	report := &ExportReport{API: options.API, Exported: []Exported{}, Changed: []Changed{}, Omitted: []string{}, Limits: limitsOf(limits)}
-	roles := map[string][]any{}
+	roles := map[string][]string{}
 	for _, permit := range p.Permits {
 		roles[permit.Operation] = append(roles[permit.Operation], permit.Role)
 	}
@@ -137,7 +137,7 @@ func Export(p policy.Policy, options ExportOptions) (map[string]any, *ExportRepo
 
 // describe returns one operation's path and OpenAPI form, or a nil form
 // when it cannot be described; either way the report says what changed.
-func describe(op policy.Operation, roles []any, report *ExportReport) (string, map[string]any) {
+func describe(op policy.Operation, roles []string, report *ExportReport) (string, map[string]any) {
 	if strings.ContainsAny(op.Target, "{}") {
 		report.Changed = append(report.Changed, Changed{Operation: op.ID, Field: "target",
 			Note: "Not exported: OpenAPI reads braces in a path as a template, which would widen the target."})
@@ -164,9 +164,14 @@ func describe(op policy.Operation, roles []any, report *ExportReport) (string, m
 			Note: "In OpenAPI {rest} is one path segment; the gateway also matches deeper paths under " + prefix + "."})
 	}
 	if op.Auth == "required" { // the compiler permits only signed-in operations
-		slices.SortFunc(roles, func(a, b any) int { return strings.Compare(a.(string), b.(string)) })
+		sorted := slices.Clone(roles)
+		slices.Sort(sorted)
+		list := make([]any, len(sorted))
+		for i, role := range sorted {
+			list[i] = role
+		}
 		operation["security"] = []any{map[string]any{scheme: []any{}}}
-		operation["x-apiward-roles"] = append([]any{}, roles...)
+		operation["x-apiward-roles"] = list
 	}
 	parameters = append(parameters, headerParameters(op)...)
 	if len(parameters) > 0 {
