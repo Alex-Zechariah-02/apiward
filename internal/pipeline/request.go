@@ -112,10 +112,6 @@ func (q *request) answer(status int, code string) {
 // record of the same request holds them, and the decision tells FORWARD's.
 func (q *request) forwarded(status int, decision, code string) {
 	q.event.Kind, q.event.Stage = "request.forwarded", audit.StageNames[audit.StageForward]
-	q.event.Stages[audit.StageForward] = audit.StagePass
-	if decision != "forwarded" {
-		q.event.Stages[audit.StageForward] = audit.StageFail
-	}
 	q.event.Decision, q.event.Status, q.event.Error = decision, status, code
 	q.event.DurationMS = float64(time.Since(q.started)) / float64(time.Millisecond)
 	outcome := q.event
