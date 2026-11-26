@@ -163,7 +163,7 @@ func (q *request) recoverPanic() {
 		panic(recovered)
 	}
 	slog.Error("panic in request", "request_id", q.event.RequestID, "panic", fmt.Sprint(recovered), "stack", string(debug.Stack()))
-	if q.event.Kind != "" && q.event.Kind != "request.admitted" {
+	if q.event.Kind != "" {
 		panic(http.ErrAbortHandler)
 	}
 	q.event.Kind, q.event.Decision = "request.rejected", "failed"

@@ -34,11 +34,13 @@ func (h *Handler) send(q *request, r *http.Request, g *compile.Generation, rule 
 		return
 	}
 	// Admission requires a durable audit record before anything is forwarded.
-	// The record is written only when AUDIT passes, so it says so.
-	q.event.Kind, q.event.Stage, q.event.Decision = "request.admitted", audit.StageNames[audit.StageAudit], "admit"
-	q.pass(audit.StageAudit)
+	// The record is written only when AUDIT passes, so it says so; q.event
+	// keeps its outcome empty until forwarding or refusal settles it.
+	admitted := q.event
+	admitted.Kind, admitted.Stage, admitted.Decision = "request.admitted", audit.StageNames[audit.StageAudit], "admit"
+	admitted.Stages[audit.StageAudit] = audit.StagePass
 	ctx, cancel := context.WithTimeout(r.Context(), h.auditTimeout)
-	err := q.audit.Commit(ctx, q.event)
+	err := q.audit.Commit(ctx, admitted)
 	cancel()
 	if err != nil {
 		// A timed-out admission was withdrawn, or is written and superseded
@@ -49,6 +51,7 @@ func (h *Handler) send(q *request, r *http.Request, g *compile.Generation, rule 
 		q.reject(audit.StageAudit, http.StatusServiceUnavailable, "gateway_unavailable")
 		return
 	}
+	q.pass(audit.StageAudit)
 
 	r.Header.Set("X-Request-Id", q.event.RequestID)
 	r.Header.Set("X-Gateway-Generation", g.ID)
