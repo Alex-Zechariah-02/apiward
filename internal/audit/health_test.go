@@ -173,6 +173,47 @@ func TestAuditHealthTransitions(t *testing.T) {
 	wg.Wait()
 }
 
+// underPressure evicts one file on the live disk per unseen space failure only
+// while health is healthNoSpace or healthDown, including when no archive
+// folder is configured (r.dir == "").
+func TestUnderPressureEvictsOnSpaceFails(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	log := &AuditLog{}
+	r := &archiver{live: dir, log: log}
+	files := []RotatedFile{{Name: "audit-2026-01-01T00-00-00.000.log", Dir: dir, Bytes: 1}}
+
+	// Healthy log with no space failures never triggers space-failure eviction.
+	if at := r.underPressure(files); at != -1 {
+		t.Fatalf("healthy log with 0 spaceFails: picked %d, want -1", at)
+	}
+	// Healthy log even with an unseen spaceFail does not evict once writing resumed.
+	log.spaceFails.Store(1)
+	if at := r.underPressure(files); at != -1 {
+		t.Fatalf("healthy log with stale spaceFails: picked %d, want -1", at)
+	}
+	// healthNoSpace with r.dir == "" evicts once per unseen spaceFail.
+	log.health.Store(int32(healthNoSpace))
+	if at := r.underPressure(files); at != 0 {
+		t.Fatalf("healthNoSpace with unseen spaceFail and no archive: picked %d, want 0", at)
+	}
+	if at := r.underPressure(files); at != -1 {
+		t.Fatalf("healthNoSpace with already-seen spaceFail: picked %d, want -1", at)
+	}
+	// healthDown with a new spaceFail (replace() hit ENOSPC) evicts once.
+	log.health.Store(int32(healthDown))
+	if at := r.underPressure(files); at != -1 {
+		t.Fatalf("healthDown with seen spaceFail: picked %d, want -1", at)
+	}
+	log.spaceFails.Store(2)
+	if at := r.underPressure(files); at != 0 {
+		t.Fatalf("healthDown with unseen spaceFail and no archive: picked %d, want 0", at)
+	}
+	if at := r.underPressure(files); at != -1 {
+		t.Fatalf("healthDown after spaceFail seen: picked %d, want -1", at)
+	}
+}
+
 func BenchmarkAuditHealth(b *testing.B) {
 	path := filepath.Join(b.TempDir(), "audit.log")
 	a := OpenAudit(path, Settings{MaxBytes: 1 << 20, MaxFiles: 4})
