@@ -37,6 +37,7 @@ func (a *AuditLog) failWrite(err error, reason string) error {
 		return errDown
 	}
 	a.down.Store(true)
+	a.noSpace.Store(false)
 	a.downSince, a.downReason = time.Now(), reason
 	a.suspect, a.suspectEnd = filepath.Base(a.path), a.size
 	slog.Error("audit file failed; replacing it, protected admission refused until the new file is written", "reason", reason, "error", err)

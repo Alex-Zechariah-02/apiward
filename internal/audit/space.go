@@ -33,7 +33,7 @@ func (a *AuditLog) enterNoSpace(err error) {
 			return
 		}
 	}
-	if a.noSpace.CompareAndSwap(false, true) {
+	if !a.down.Load() && a.noSpace.CompareAndSwap(false, true) {
 		a.spaceSince = time.Now()
 		slog.Error("audit log has no space; protected admission refused until space returns", "error", err)
 	}

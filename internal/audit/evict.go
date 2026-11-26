@@ -105,7 +105,7 @@ func (r *archiver) underPressure(files []RotatedFile) int {
 	}
 	for _, dir := range []string{r.live, r.dir} {
 		d, err := disk.Of(dir)
-		full := dir == r.live && r.log.noSpace.Load() && fails != r.spaceSeen
+		full := dir == r.live && (r.log.noSpace.Load() || r.log.down.Load()) && fails != r.spaceSeen
 		if err != nil || !full && !d.Below(r.minFree, floor) {
 			continue
 		}
