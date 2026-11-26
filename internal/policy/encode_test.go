@@ -1,3 +1,6 @@
+// Policy encoding: canonical member order, schema bounds, module members and
+// required lists that are not all names.
+
 package policy
 
 import (
@@ -124,5 +127,38 @@ func TestEncodeSchemaBound(t *testing.T) {
 	}
 	if err := encode(MaxJSONValues); err == nil {
 		t.Fatal("schema past the value bound encoded")
+	}
+}
+
+// An operation's module members follow its own members in ID order, each
+// value with sorted members; an invalid value of its own is an error, not a
+// panic, even with module members.
+func TestEncodeModuleMembers(t *testing.T) {
+	op := Operation{ID: "x", API: "a", Method: "GET", Target: "/a/x",
+		Modules: map[string]json.RawMessage{"m_b": json.RawMessage(`{"z":1,"a":2}`), "m_a": json.RawMessage(`"on"`)}}
+	data, err := json.Marshal(op)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasSuffix(string(data), `,"m_a":"on","m_b":{"a":2,"z":1}}`) {
+		t.Fatalf("encoded %s, want the module members last in ID order", data)
+	}
+	op.Headers = json.RawMessage(`{`)
+	if _, err := json.Marshal(op); err == nil {
+		t.Fatal("an invalid header schema was encoded")
+	}
+}
+
+// A schema's required list is sorted only when every entry is a name; one
+// with another value is kept as written.
+func TestEncodeKeepsMixedRequired(t *testing.T) {
+	p := Policy{SchemaVersion: SchemaVersion, Profile: ProfileCore, Operations: []Operation{{ID: "x", API: "a", Method: "POST", Target: "/a/x",
+		Body: &BodyRule{MaxBytes: 10, Schema: json.RawMessage(`{"type":"object","required":["b",1,"a"]}`)}}}}
+	data, err := Encode(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if compact := strings.Join(strings.Fields(string(data)), ""); !strings.Contains(compact, `"required":["b",1,"a"]`) {
+		t.Fatalf("encoded %s, want the mixed required list as written", data)
 	}
 }
