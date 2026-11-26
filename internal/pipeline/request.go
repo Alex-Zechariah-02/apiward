@@ -65,7 +65,8 @@ func budgetedRefusal(stage, status int) bool {
 	case http.StatusNotFound, http.StatusMethodNotAllowed:
 		return stage == audit.StageRoute
 	case http.StatusBadRequest:
-		return stage == audit.StageCanonical
+		// At ROUTE only an invalid Max-Forwards field is refused 400.
+		return stage == audit.StageCanonical || stage == audit.StageRoute
 	default:
 		return false
 	}

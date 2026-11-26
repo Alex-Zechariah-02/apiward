@@ -31,7 +31,7 @@ What the gateway records, when a record is waited for, and how to read the log. 
 - A request whose identity assertion would exceed 4,096 bytes (a very long path or many roles) is refused `400` at `BIND` with reason `assertion_too_large`, since upstreams may refuse a longer header.
 - A failure inside the gateway while forwarding is recorded as `request.forwarded` with decision `failed` and code `internal_error`, answered `500` when nothing was sent yet.
 - Refusals before any policy applies (overload, oversized or malformed requests, tunnels, upgrades) write no request record; they are counted per reason and address in `audit.ingress_summary` once a minute.
-- Policy refusals (`401`, `403`, `429`) and unauthenticated route or canonical-path refusals (`404` or `405` at `ROUTE`, `400` at `CANONICAL`) are recorded in full up to 60 per client address per minute; further ones from that address in the same minute are counted in the same summary under `<stage>/<reason>/<operation>`, with exact counts, so a flood cannot push older records out of the log. Other refusals, admissions and outcomes are always recorded in full.
+- Policy refusals (`401`, `403`, `429`) and unauthenticated route or canonical-path refusals (`404` or `405` at `ROUTE`, `400` at `CANONICAL`, and `400` at `ROUTE` for an invalid `Max-Forwards`) are recorded in full up to 60 per client address per minute; further ones from that address in the same minute are counted in the same summary under `<stage>/<reason>/<operation>`, with exact counts, so a flood cannot push older records out of the log. Other refusals, admissions and outcomes are always recorded in full.
 
 ## Administrator records
 

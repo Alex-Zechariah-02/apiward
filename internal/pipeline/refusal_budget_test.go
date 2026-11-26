@@ -151,6 +151,15 @@ func TestCanonicalRefusalsShareAddressBudget(t *testing.T) {
 	assertBudgeted(t, rejected, summary, "CANONICAL", "bad_request", "CANONICAL/bad_request/")
 }
 
+func TestBadMaxForwardsRefusalsShareAddressBudget(t *testing.T) {
+	rejected, summary := runBudgetRequests(t, nil, 70, func() *http.Request {
+		req := httptest.NewRequest(http.MethodOptions, "/a/item", nil)
+		req.Header.Set("Max-Forwards", "1, 2")
+		return req
+	}, http.StatusBadRequest)
+	assertBudgeted(t, rejected, summary, "ROUTE", "bad_request", "ROUTE/max_forwards/")
+}
+
 func TestValidationRefusalsStayFull(t *testing.T) {
 	iss := issuertest.New(2048)
 	v, err := LoadVerifier(testTrust(issuertest.Name, issuertest.Audience, keyFile(t, iss)))
