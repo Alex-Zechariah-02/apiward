@@ -6,6 +6,7 @@ package controller
 import (
 	"bytes"
 	"context"
+	"errors"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -149,5 +150,40 @@ func TestStoppedControllerRefuses(t *testing.T) {
 		if err != nil || !bytes.Contains(data, []byte(`"actor":"admin","transition":"`+id+`","reason":"UNAVAILABLE"`)) {
 			t.Fatalf("no record of the refused mutation %s (%v):\n%s", id, err, data)
 		}
+	}
+}
+
+// Permission use from the last 30 days survives a stop: a pair used two days
+// ago is written back at the stop and read again at the next start.
+func TestPermitUseKeptThirtyDays(t *testing.T) {
+	e := newEnv(t)
+	storetest.Seed(t, e.database, storetest.Protected(), storetest.Options{})
+	ctx := context.Background()
+	now := time.Now()
+	st, err := store.OpenStore(e.database)
+	if err != nil {
+		t.Fatal(err)
+	}
+	used := store.PermitUseState{Since: now.Add(-72 * time.Hour), Requests: 1,
+		Used: []store.PermitUseRow{{Role: "READER", Operation: "read-a", LastUsed: now.Add(-48 * time.Hour)}}}
+	err = errors.Join(st.ReplacePermitUse(ctx, used, time.Time{}), st.Close())
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := e.own(e.controllerConfig())
+	if err := c.Stop(); err != nil {
+		t.Fatal(err)
+	}
+	st, err = store.OpenStore(e.database)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	kept, err := st.LoadPermitUse(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(kept.Used) != 1 || kept.Used[0].Role != "READER" || kept.Used[0].Operation != "read-a" {
+		t.Fatalf("after a stop: %+v, want READER on read-a kept", kept.Used)
 	}
 }
