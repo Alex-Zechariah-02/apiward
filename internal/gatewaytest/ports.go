@@ -11,8 +11,9 @@ import (
 	"testing"
 )
 
-// issuedPorts are the ports FreeAddr has returned in this test process, from
-// the block first-last that the package's TestMain gave Main.
+// issuedPorts are the ports FreeAddr has returned to tests of this process
+// that have not ended, from the block first-last that the package's TestMain
+// gave Main.
 var issuedPorts = struct {
 	sync.Mutex
 	first, last int
@@ -24,7 +25,7 @@ var issuedPorts = struct {
 // below the ranges Linux (32768-60999) and Windows (49152-65535) give to
 // outgoing connections, so a connection the tests open cannot take the port
 // in the meantime. Test packages run at the same time, so each has its own
-// block, and no port is returned twice.
+// block, and no port is returned again before the test that took it ends.
 func FreeAddr(t testing.TB) string {
 	t.Helper()
 	issuedPorts.Lock()
@@ -45,6 +46,11 @@ func FreeAddr(t testing.TB) string {
 		}
 		l.Close()
 		issuedPorts.seen[port] = true
+		t.Cleanup(func() {
+			issuedPorts.Lock()
+			defer issuedPorts.Unlock()
+			delete(issuedPorts.seen, port)
+		})
 		return fmt.Sprintf("127.0.0.1:%d", port)
 	}
 	t.Fatalf("no free loopback port in %d-%d", first, last)
