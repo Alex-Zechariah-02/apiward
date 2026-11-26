@@ -67,6 +67,7 @@ func TestOverrideConflictWithCandidate(t *testing.T) {
 			p.Permits = slices.DeleteFunc(p.Permits, func(x policy.Permit) bool { return x == policy.Permit{Role: "WRITER", Operation: "read-a"} })
 		}, 0},
 		{"unrelated operation re-routed outside every prefix", func(p *policy.Policy) { p.Operations[2].Target = "/dd" }, 0},
+		{"unrelated operation re-routed into a contained prefix", func(p *policy.Policy) { p.Operations[2].Target = "/b/moved" }, 4},
 		{"rate rule added to an overridden operation, an independent control", func(p *policy.Policy) { p.Operations[1].Rate = storetest.Rate(9, 60) }, 0},
 		{"less specific operation added above an overridden prefix", func(p *policy.Policy) {
 			p.Operations = append(p.Operations, policy.Operation{ID: "all", API: "d", Method: "GET", Target: "/*", Access: "allow", Auth: "none"})
