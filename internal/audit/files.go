@@ -23,6 +23,10 @@ const (
 	DefaultAuditFiles = 8
 )
 
+// MaxAuditBytes is the largest file size gateway.audit_max_bytes accepts, and
+// so the largest uncompressed size a compressed file's header may state.
+const MaxAuditBytes = 1 << 30
+
 // Settings bound the log: the size of each file, how many files the log
 // folder holds, what it does when its storage is full (FullRefuse or
 // FullEvict), how many

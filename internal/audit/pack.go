@@ -15,13 +15,13 @@ import (
 	"compress/gzip"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -161,7 +161,11 @@ func ReadPacked(path string) (Packed, error) {
 		case "sha256":
 			p.Digest = value
 		case "bytes":
-			_ = json.Unmarshal([]byte(value), &p.Bytes)
+			size, err := strconv.ParseInt(value, 10, 64)
+			if err != nil || size < 0 || size > MaxAuditBytes {
+				return Packed{}, fmt.Errorf("%s: the size in its gzip header is not 0 to %d bytes", filepath.Base(path), MaxAuditBytes)
+			}
+			p.Bytes = size
 		}
 	}
 	if p.Digest == "" {

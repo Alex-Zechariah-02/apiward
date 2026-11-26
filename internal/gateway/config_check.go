@@ -133,7 +133,7 @@ func (f nativeFile) check() (nativeConfig, error) {
 	cfg.controller.AuditOutcomeWindow = cfg.readHeaderTimeout + cfg.writeTimeout
 	cfg.limits.ModuleTimeout = cfg.writeTimeout
 
-	if cfg.controller.AuditMaxBytes, err = numberSetting("gateway.audit_max_bytes", g.AuditMaxBytes, audit.DefaultAuditBytes, controller.MinAuditBytes, controller.MaxAuditBytes); err != nil {
+	if cfg.controller.AuditMaxBytes, err = numberSetting("gateway.audit_max_bytes", g.AuditMaxBytes, audit.DefaultAuditBytes, controller.MinAuditBytes, audit.MaxAuditBytes); err != nil {
 		return nativeConfig{}, err
 	}
 	if cfg.controller.AuditMaxFiles, err = numberSetting("gateway.audit_max_files", g.AuditMaxFiles, audit.DefaultAuditFiles, 2, controller.MaxAuditFiles); err != nil {
