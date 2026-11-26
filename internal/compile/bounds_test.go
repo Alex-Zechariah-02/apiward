@@ -1,6 +1,6 @@
 // Exact bounds of policy compilation: request-body schema keywords, upstream
-// URLs, access-check questions and targets, each limit's last accepted value
-// and first refused one.
+// URLs, access-check questions and targets, and rate rules, each limit's last
+// accepted value and first refused one.
 
 package compile
 
@@ -142,6 +142,29 @@ func TestTargetBounds(t *testing.T) {
 	} {
 		if _, got := parseTarget(target); got != ok {
 			t.Errorf("%.20s: accepted %v, want %v", target, got, ok)
+		}
+	}
+}
+
+// A token role of exactly MaxIDLength bytes is asked about; one byte more
+// refuses the question at its roles.
+func TestQuestionRoleAtBound(t *testing.T) {
+	if _, field := NewQuestion("GET", "/a/x", "", nil, []string{strings.Repeat("r", policy.MaxIDLength)}); field != "" {
+		t.Fatalf("role of %d bytes: refused at %q", policy.MaxIDLength, field)
+	}
+	if _, field := NewQuestion("GET", "/a/x", "", nil, []string{strings.Repeat("r", policy.MaxIDLength+1)}); field != "roles" {
+		t.Fatalf("role of %d bytes: field %q, want roles", policy.MaxIDLength+1, field)
+	}
+}
+
+// A rate rule takes the largest count and the shortest window.
+func TestRateRuleAtBounds(t *testing.T) {
+	for _, rule := range []policy.RateRule{
+		{Algorithm: RateAlgorithm, Count: MaxRateCount, WindowSeconds: 60, Key: RateKeySubject},
+		{Algorithm: RateAlgorithm, Count: 10, WindowSeconds: 1, Key: RateKeySubject},
+	} {
+		if _, err := CompileRate(rule, "rate"); err != nil {
+			t.Errorf("count %d, window %d s: %v", rule.Count, rule.WindowSeconds, err)
 		}
 	}
 }
