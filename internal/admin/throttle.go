@@ -142,22 +142,31 @@ func (t *throttle) prune(now time.Time) {
 	}
 }
 
+type attemptOutcome uint8
+
+const (
+	outcomeAbandoned attemptOutcome = iota
+	outcomeFailed
+	outcomeSucceeded
+)
+
 // failed settles the attempt as a wrong password or enrolment secret.
-func (a attempt) failed(now time.Time) { a.settle(true, false, now) }
+func (a attempt) failed(now time.Time) { a.settle(outcomeFailed, now) }
 
 // succeeded settles a verified attempt: the name's failures are cleared.
-func (a attempt) succeeded() { a.settle(false, true, time.Now()) }
+func (a attempt) succeeded() { a.settle(outcomeSucceeded, time.Now()) }
 
 // abandoned settles an attempt the gateway could not check.
-func (a attempt) abandoned() { a.settle(false, false, time.Now()) }
+func (a attempt) abandoned() { a.settle(outcomeAbandoned, time.Now()) }
 
-func (a attempt) settle(failed, verified bool, now time.Time) {
+func (a attempt) settle(outcome attemptOutcome, now time.Time) {
 	t := a.throttle
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	failed := outcome == outcomeFailed
 	if c := t.names[a.name]; c != nil {
 		c.settle(failed, maxNameFailures, now)
-		if verified {
+		if outcome == outcomeSucceeded {
 			c.failures = 0
 		}
 	}
