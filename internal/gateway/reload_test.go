@@ -75,7 +75,7 @@ func TestKeysReloadScope(t *testing.T) {
 
 // A reload reads the identity signing key too, so a damaged key file refuses
 // the reload instead of switching to bad material.
-func TestKeysReloadSkipsIdentityKey(t *testing.T) {
+func TestKeysReloadChecksIdentityKey(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
