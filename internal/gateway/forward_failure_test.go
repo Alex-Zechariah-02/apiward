@@ -207,11 +207,12 @@ func (timeoutError) Timeout() bool { return true }
 
 func (timeoutError) Temporary() bool { return true }
 
-// A request whose response is lost is sent once only. A write the upstream
-// applied before closing the connection is applied once and recorded as of
-// unknown outcome; reads and body-less writes carrying an Idempotency-Key,
-// which a transport with idle connections would resend after a reused
-// connection fails, are not resent either.
+// A write whose response is lost is sent once only: one the upstream applied
+// before closing the connection is applied once and recorded as of unknown
+// outcome, also a body-less write carrying an Idempotency-Key, which a
+// transport with idle connections would resend after a reused connection
+// fails. A read lost on a reused connection before any response byte is sent
+// once more on a new connection, and no more.
 func TestNativeForwardingNeverResends(t *testing.T) {
 	t.Parallel()
 	e := gatewaytest.NewEnv(t)
@@ -234,11 +235,12 @@ func TestNativeForwardingNeverResends(t *testing.T) {
 	requests := []struct {
 		name, method, path, ctype, body string
 		header                          []string
+		sent                            int
 		writes                          int64
 	}{
-		{"write with a body", http.MethodPost, "/a/item", "application/json", `{"n":1}`, []string{"Idempotency-Key", "write-0001"}, 1},
-		{"read", http.MethodGet, "/a/lost", "", "", nil, 0},
-		{"body-less write with an idempotency key", http.MethodDelete, "/a/item", "", "", []string{"Idempotency-Key", "delete-0001"}, 1},
+		{"write with a body", http.MethodPost, "/a/item", "application/json", `{"n":1}`, []string{"Idempotency-Key", "write-0001"}, 1, 1},
+		{"read", http.MethodGet, "/a/lost", "", "", nil, 2, 0},
+		{"body-less write with an idempotency key", http.MethodDelete, "/a/item", "", "", []string{"Idempotency-Key", "delete-0001"}, 1, 1},
 	}
 	for _, tc := range requests {
 		// A completed exchange first: a transport keeping idle connections
@@ -252,8 +254,8 @@ func TestNativeForwardingNeverResends(t *testing.T) {
 		if resp.StatusCode != http.StatusBadGateway || !failedOutcome(outcomeOf(e, id), http.StatusBadGateway, "upstream_unavailable", "outcome_unknown") {
 			t.Errorf("%s: %d %s, outcome %v", tc.name, resp.StatusCode, body, outcomeOf(e, id))
 		}
-		if got, done := e.A.Count()-received, applied.Load()-writes; got != 1 || done != tc.writes {
-			t.Errorf("%s: the upstream received it %d times and applied %d writes, want once and %d", tc.name, got, done, tc.writes)
+		if got, done := e.A.Count()-received, applied.Load()-writes; got != tc.sent || done != tc.writes {
+			t.Errorf("%s: the upstream received it %d times and applied %d writes, want %d and %d", tc.name, got, done, tc.sent, tc.writes)
 		}
 	}
 }
