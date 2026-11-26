@@ -48,6 +48,20 @@ func TestDenyAllCountsAllowedPermits(t *testing.T) {
 	}
 }
 
+// An allowed public operation admits requests with no permit at all, so its
+// policy is not deny-all; an allowed operation that needs a token is not
+// enough without a permit.
+func TestDenyAllPublicOperation(t *testing.T) {
+	p := policy.Policy{Operations: []policy.Operation{{ID: "x", Access: "allow", Auth: "required"}}}
+	if !DenyAll(p) {
+		t.Fatal("an allowed operation with no permit admitted traffic")
+	}
+	p.Operations[0].Auth = "none"
+	if DenyAll(p) {
+		t.Fatal("an allowed public operation was not counted")
+	}
+}
+
 // The compiler warns of a prefix target without its exact path and of plain
 // http to an address other than loopback, and of nothing else.
 func TestWarnings(t *testing.T) {
