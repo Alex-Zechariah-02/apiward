@@ -72,8 +72,8 @@ func bufferBody(r *http.Request, maxBytes int64) ([]byte, *rejection) {
 
 // readBody enforces the operation's body declaration on the body bufferBody
 // read (nil when none was declared): no body for a bodyless operation;
-// otherwise the operation's size ceiling, a JSON media type and a bounded,
-// unambiguous JSON document. The request body is replaced with the bytes
+// otherwise the operation's size ceiling, a JSON media type without a
+// content coding and a bounded, unambiguous JSON document. The request body is replaced with the bytes
 // read, so nothing unchecked can stream upstream. It returns the decoded
 // document.
 func readBody(r *http.Request, body []byte, rule *compile.BodyRule, globalMaxBytes int64) (any, *rejection) {
@@ -88,6 +88,9 @@ func readBody(r *http.Request, body []byte, rule *compile.BodyRule, globalMaxByt
 	}
 	if !IsJSONMediaType(r.Header.Values("Content-Type")) {
 		return nil, &rejection{http.StatusUnsupportedMediaType, "unsupported_media_type", "media_type"}
+	}
+	if !identityCoded(r.Header.Values("Content-Encoding")) {
+		return nil, &rejection{http.StatusUnsupportedMediaType, "unsupported_media_type", "content_encoding"}
 	}
 	document, reason := policy.DecodeBounded(body, policy.MaxJSONDepth, policy.BodyValues(rule.MaxBytes()))
 	if reason != "" {
@@ -107,6 +110,14 @@ func readBody(r *http.Request, body []byte, rule *compile.BodyRule, globalMaxByt
 // cannot overflow.
 func readLimited(body io.Reader, maxBytes int64) ([]byte, error) {
 	return io.ReadAll(io.LimitReader(body, maxBytes+1))
+}
+
+// identityCoded accepts no Content-Encoding field or one naming only
+// identity: the body is checked as the bytes received, so a coded one would
+// be checked as something other than what the upstream decodes (RFC 9110
+// section 15.5.16).
+func identityCoded(fields []string) bool {
+	return len(fields) == 0 || len(fields) == 1 && strings.EqualFold(strings.TrimSpace(fields[0]), "identity")
 }
 
 // IsJSONMediaType accepts exactly one Content-Type field naming

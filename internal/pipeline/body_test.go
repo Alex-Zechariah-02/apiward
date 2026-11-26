@@ -1,4 +1,4 @@
-// Request body decoding and JSON media types.
+// Request body decoding, JSON media types and content codings.
 
 package pipeline
 
@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Alex-Zechariah-02/apiward/internal/issuertest"
 	"github.com/Alex-Zechariah-02/apiward/internal/policy"
 )
 
@@ -133,5 +134,51 @@ func TestBufferBodyGrowsWithBytes(t *testing.T) {
 	}
 	if got := after.TotalAlloc - before.TotalAlloc; got >= 64<<10 {
 		t.Fatalf("allocated %d bytes for 0 payload bytes with Content-Length %d; want < 64 KiB", got, limit)
+	}
+}
+
+// A checked JSON body is read as the bytes received, so a body under a
+// content coding is refused 415 rather than checked as something else; an
+// operation without a body check is unchanged.
+func TestEncodedJSONBodyRefused415(t *testing.T) {
+	iss := issuertest.New(2048)
+	v, err := LoadVerifier(testTrust(issuertest.Name, issuertest.Audience, keyFile(t, iss)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	token := iss.Token(t, issuertest.Changed(issuertest.ValidClaims("cust-01"), map[string]any{"roles": []string{"customer"}}))
+	cases := []struct {
+		name, method, path string
+		encoding           []string
+		want               int
+	}{
+		{"gzip", http.MethodPost, "/items", []string{"gzip"}, http.StatusUnsupportedMediaType},
+		{"identity", http.MethodPost, "/items", []string{"identity"}, http.StatusOK},
+		{"gzip then identity", http.MethodPost, "/items", []string{"gzip, identity"}, http.StatusUnsupportedMediaType},
+		{"two fields", http.MethodPost, "/items", []string{"identity", "gzip"}, http.StatusUnsupportedMediaType},
+		{"no body check", http.MethodGet, "/a/x", []string{"gzip"}, http.StatusOK},
+	}
+	for _, tc := range cases {
+		codes, events := serveRecorded(t, budgetPolicy(), v, 1, func() *http.Request {
+			var body io.Reader
+			if tc.method == http.MethodPost {
+				body = strings.NewReader(`{"name":"a"}`)
+			}
+			req := httptest.NewRequest(tc.method, tc.path, body)
+			req.Header.Set("Authorization", "Bearer "+token)
+			if body != nil {
+				req.Header.Set("Content-Type", "application/json")
+			}
+			for _, value := range tc.encoding {
+				req.Header.Add("Content-Encoding", value)
+			}
+			return req
+		})
+		if codes[0] != tc.want {
+			t.Errorf("%s: status %d, want %d", tc.name, codes[0], tc.want)
+		}
+		if rejected := kindOf(events, "request.rejected"); tc.want == http.StatusUnsupportedMediaType && (len(rejected) != 1 || rejected[0]["reason"] != "content_encoding") {
+			t.Errorf("%s: rejection records %v, want one with reason content_encoding", tc.name, rejected)
+		}
 	}
 }
