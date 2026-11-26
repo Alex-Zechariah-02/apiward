@@ -222,8 +222,8 @@ func TestNativeForwardingBodies(t *testing.T) {
 			first.Body, first.Headers.Get("Content-Length"), first.Trailer, first.Headers.Get("Trailer"))
 	}
 
-	// The client receives the gateway's 100 Continue, then the upstream's,
-	// relayed, then the final response, as with the legacy runtime.
+	// The client receives the gateway's 100 Continue and then the final
+	// response; the upstream gets the buffered body without the expectation.
 	resp, conn := e.OpenResponse("POST /a/item HTTP/1.1\r\nHost: gw\r\nConnection: close\r\nContent-Type: application/json\r\nExpect: 100-continue\r\nContent-Length: 7\r\n\r\n")
 	if resp.StatusCode != http.StatusContinue {
 		t.Fatalf("interim response %d", resp.StatusCode)
@@ -236,10 +236,10 @@ func TestNativeForwardingBodies(t *testing.T) {
 		interims++
 		final, err = http.ReadResponse(reader, nil)
 	}
-	if err != nil || final.StatusCode != http.StatusOK || interims != 2 {
+	if err != nil || final.StatusCode != http.StatusOK || interims != 1 {
 		t.Fatalf("final response %v after %d interim responses: %v", final, interims, err)
 	}
-	if second := e.A.Receipts()[1]; second.Body != body || second.Headers.Get("Expect") != "100-continue" {
+	if second := e.A.Receipts()[1]; second.Body != body || second.Headers.Get("Expect") != "" {
 		t.Errorf("upstream received body %q with Expect %q", second.Body, second.Headers.Get("Expect"))
 	}
 

@@ -47,6 +47,7 @@ The JSON settings file that `apiward run --config <file>` reads. Upstream TLS pr
 
 - A request target may be in absolute form (`GET http://shop.example.com/orders`): the host comes from the target and `Host` is ignored (RFC 9112 section 3.2.2). A target with credentials or a scheme other than `http` or `https` is refused `400`.
 - `Upgrade` is ignored, and not forwarded, in an HTTP/1.0 request; in HTTP/1.1 it is refused `400`.
+- `Expect: 100-continue` is answered by the gateway, which reads the whole body before forwarding, and is not forwarded (RFC 9110 section 10.1.1).
 - `OPTIONS` with `Max-Forwards: 0` is answered by the gateway itself (`204`, `Allow` naming the target's methods) after the route's admission checks pass; a larger value is lowered by one before forwarding, and a value that is not one number is refused `400` (RFC 9110 section 7.6.2).
 
 - HTTP/2 protocol errors (malformed frames, flow-control or stream errors) are counted in `gateway_http2_errors_total`.

@@ -154,11 +154,11 @@ func TestRequestTrailersAndExpectContinue(t *testing.T) {
 		interims++
 		final, err = http.ReadResponse(reader, nil)
 	}
-	if err != nil || final.StatusCode != http.StatusOK || interims != 2 {
+	if err != nil || final.StatusCode != http.StatusOK || interims != 1 {
 		t.Fatalf("final response %v after %d interim responses: %v", final, interims, err)
 	}
 	second := e.A.Receipts()[1]
-	if second.Body != body || second.Headers.Get("Expect") != "100-continue" {
+	if second.Body != body || second.Headers.Get("Expect") != "" {
 		t.Errorf("forwarded body %q with Expect %q", second.Body, second.Headers.Get("Expect"))
 	}
 	e.AssertReceipts(2, 0, 0)

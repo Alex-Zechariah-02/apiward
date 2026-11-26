@@ -89,6 +89,10 @@ func rewriteToUpstream(pr *httputil.ProxyRequest, e *compile.Endpoint, path, for
 		pr.Out.Header.Set("X-Forwarded-For", forwardedFor)
 	}
 	pr.Out.Header.Add("Via", via(pr.In.ProtoMajor, pr.In.ProtoMinor))
+	// The pipeline reads the whole body before forwarding, so the client's
+	// 100-continue expectation is already met (RFC 9110 section 10.1.1); an
+	// upstream asked again would send the client a second 100 Continue.
+	pr.Out.Header.Del("Expect")
 }
 
 // via is the Via entry for a message of the given protocol version: HTTP/2
