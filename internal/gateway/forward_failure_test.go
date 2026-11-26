@@ -259,3 +259,26 @@ func TestNativeForwardingNeverResends(t *testing.T) {
 		}
 	}
 }
+
+// A forwarded request whose upstream pauses records a positive upstream_ms
+// within duration_ms, pinning the timing propagation on coarse clocks too.
+func TestNativeForwardingRecordsUpstreamTime(t *testing.T) {
+	t.Parallel()
+	e := gatewaytest.NewEnv(t)
+	serveNative(e, e.Policy(e.A, false), forwardTimeouts)
+	e.A.Handle = func(w http.ResponseWriter, r *http.Request) bool {
+		time.Sleep(35 * time.Millisecond)
+		w.WriteHeader(http.StatusOK)
+		return true
+	}
+	resp, body := e.Exchange(http.MethodGet, "/a/x", "", "")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status %d %s", resp.StatusCode, body)
+	}
+	ev := outcomeOf(e, e.A.Receipts()[0].RequestID)
+	upstream, ok := ev["upstream_ms"].(float64)
+	duration, durOK := ev["duration_ms"].(float64)
+	if !ok || !durOK || upstream <= 0 || upstream > duration {
+		t.Fatalf("upstream_ms=%v (%v) duration_ms=%v (%v), want 0 < upstream_ms <= duration_ms", ev["upstream_ms"], ok, ev["duration_ms"], durOK)
+	}
+}

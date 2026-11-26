@@ -1,5 +1,7 @@
 //go:build faultinject
 
+// Fault injection for testfixture: drops the response after a state write.
+
 package testfixture
 
 import (
@@ -13,7 +15,11 @@ func dropAfterWrite(w http.ResponseWriter) bool {
 	if os.Getenv("FIXTURE_FAULT") != "drop-after-write" {
 		return false
 	}
-	connection, _, err := w.(http.Hijacker).Hijack()
+	hijacker, ok := w.(http.Hijacker)
+	if !ok {
+		panic(http.ErrAbortHandler)
+	}
+	connection, _, err := hijacker.Hijack()
 	if err != nil {
 		panic(http.ErrAbortHandler)
 	}

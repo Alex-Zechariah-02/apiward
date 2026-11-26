@@ -54,28 +54,32 @@ func Seed(t testing.TB, path string, p policy.Policy, opts Options) {
 	}
 	installation := make([]byte, 16)
 	rand.Read(installation)
-	statements := [][]any{
+	type statement struct {
+		query string
+		args  []any
+	}
+	statements := []statement{
 		{`INSERT INTO deployment (id, installation, mode, recovery_episode, high_water) VALUES (1, ?, ?, NULL, ?)`,
-			hex.EncodeToString(installation), store.ModeNormal, time.Now().UnixMilli()},
-		append([]any{`INSERT INTO revision VALUES (1, NULL, 'genesis', ?, ?, 'seed', ?)`}, revision(p)...),
-		{`INSERT INTO base VALUES (1, 1, NULL, NULL)`},
+			[]any{hex.EncodeToString(installation), store.ModeNormal, time.Now().UnixMilli()}},
+		{`INSERT INTO revision VALUES (1, NULL, 'genesis', ?, ?, 'seed', ?)`, revision(p)},
+		{`INSERT INTO base VALUES (1, 1, NULL, NULL)`, nil},
 	}
 	if opts.Administrator != "" {
-		statements = append(statements, []any{`INSERT INTO administrator VALUES (?, ?, '$argon2id$unusable', 'active', 1, ?)`,
-			opts.Administrator, store.PermAll, time.Now().UnixMilli()})
+		statements = append(statements, statement{`INSERT INTO administrator VALUES (?, ?, '$argon2id$unusable', 'active', 1, ?)`,
+			[]any{opts.Administrator, store.PermAll, time.Now().UnixMilli()}})
 	}
 	if opts.Provisional != nil {
 		deadline := opts.Deadline.UnixMilli()
 		statements = append(statements,
-			append([]any{`INSERT INTO candidate VALUES (1, 1, ?, ?, 0, 'established', 'seed', ?)`}, revision(*opts.Provisional)...),
-			append([]any{`INSERT INTO revision VALUES (2, 1, 'publish', ?, ?, 'seed', ?)`}, revision(*opts.Provisional)...),
-			[]any{`INSERT INTO activation (revision, candidate, rollback_target, deadline, activated_at, actor) VALUES (2, 1, 1, ?, ?, 'seed')`,
-				deadline, deadline - time.Minute.Milliseconds()},
-			[]any{`UPDATE base SET provisional = 2, deadline = ? WHERE id = 1`, deadline},
+			statement{`INSERT INTO candidate VALUES (1, 1, ?, ?, 0, 'established', 'seed', ?)`, revision(*opts.Provisional)},
+			statement{`INSERT INTO revision VALUES (2, 1, 'publish', ?, ?, 'seed', ?)`, revision(*opts.Provisional)},
+			statement{`INSERT INTO activation (revision, candidate, rollback_target, deadline, activated_at, actor) VALUES (2, 1, 1, ?, ?, 'seed')`,
+				[]any{deadline, deadline - time.Minute.Milliseconds()}},
+			statement{`UPDATE base SET provisional = 2, deadline = ? WHERE id = 1`, []any{deadline}},
 		)
 	}
 	for _, s := range statements {
-		if _, err := tx.ExecContext(ctx, s[0].(string), s[1:]...); err != nil {
+		if _, err := tx.ExecContext(ctx, s.query, s.args...); err != nil {
 			t.Fatalf("seeding database: %v", err)
 		}
 	}

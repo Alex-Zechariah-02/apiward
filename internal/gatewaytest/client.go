@@ -206,7 +206,11 @@ func (e *Env) RawExchange(request string, halfClose bool) (int, string) {
 		e.T.Fatal(err)
 	}
 	if halfClose {
-		conn.(*net.TCPConn).CloseWrite()
+		tcpConn, ok := conn.(*net.TCPConn)
+		if !ok {
+			e.T.Fatalf("half-close requires a TCP connection, got %T", conn)
+		}
+		tcpConn.CloseWrite()
 	}
 	resp, err := http.ReadResponse(bufio.NewReader(conn), nil)
 	if err != nil {

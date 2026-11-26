@@ -99,8 +99,22 @@ func RunScenarios(t *testing.T, e *Env, fixtures map[string]*FixtureProcess, c f
 		}
 		// The upstream's share of the request, in milliseconds; a coarse
 		// monotonic clock (Windows) may read a fast local exchange as 0.
-		upstream, _ := forwarded["upstream_ms"].(float64)
-		duration, _ := forwarded["duration_ms"].(float64)
+		var upstream float64
+		if raw, present := forwarded["upstream_ms"]; present {
+			var ok bool
+			upstream, ok = raw.(float64)
+			if !ok {
+				t.Errorf("%s: upstream_ms has type %T, want number", sc.Name, raw)
+			}
+		}
+		var duration float64
+		if raw, present := forwarded["duration_ms"]; present {
+			var ok bool
+			duration, ok = raw.(float64)
+			if !ok {
+				t.Errorf("%s: duration_ms has type %T, want number", sc.Name, raw)
+			}
+		}
 		if upstream < 0 || upstream > duration {
 			t.Errorf("%s: upstream_ms %v, want 0 to duration_ms %v", sc.Name, upstream, duration)
 		}
