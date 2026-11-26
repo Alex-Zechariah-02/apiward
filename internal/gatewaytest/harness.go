@@ -51,12 +51,15 @@ var fetchFolder = filepath.Join("..", "fetch")
 
 // Main builds the binaries, runs the tests and removes the binaries.
 // Each test package's TestMain calls it with its own block of test ports,
-// first-last within 20000-29999, apart from every other package's block.
+// first-last within 20000-29999, apart from every other package's block;
+// the process draws from one share of it (claimPorts).
 func Main(m *testing.M, first, last int) {
 	if first < 20000 || first > last || last > 29999 {
 		panic(fmt.Sprintf("test port block %d-%d is not within 20000-29999", first, last))
 	}
-	issuedPorts.first, issuedPorts.last = first, last
+	if err := claimPorts(first, last); err != nil {
+		panic(err)
+	}
 	dir, err := os.MkdirTemp("", "apiward-bin")
 	if err != nil {
 		panic(err)
@@ -106,6 +109,7 @@ func Main(m *testing.M, first, last int) {
 	}
 	code := m.Run()
 	os.RemoveAll(dir)
+	portLock.Close()
 	os.Exit(code)
 }
 
