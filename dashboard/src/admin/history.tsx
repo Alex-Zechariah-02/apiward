@@ -58,6 +58,7 @@ export const kinds: Record<string, { label: string; area: Area }> = {
   'admin.password': { label: 'Password Changed', area: 'administrators' },
   'operator.install': { label: 'Installed by the Operator', area: 'operator' },
   'operator.enrol': { label: 'Enrolment Issued by the Operator', area: 'operator' },
+  'operator.disable': { label: 'Administrator Disabled by the Operator', area: 'operator' },
   'operator.restore': { label: 'Restored from a Backup by the Operator', area: 'operator' },
   'operator.migrate': { label: 'Database Migrated by the Operator', area: 'operator' },
 }

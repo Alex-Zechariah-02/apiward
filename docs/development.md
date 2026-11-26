@@ -44,7 +44,7 @@ Internal packages, in import order:
 | `internal/pipeline` | The request pipeline and its built-in checks |
 | `internal/controller` | The only code that publishes policy; activation, rollback, overrides |
 | `internal/admin` | The Admin API |
-| `internal/operator` | The local commands: install, enrol, migrate, backup, restore |
+| `internal/operator` | The local commands: install, enrol, disable, migrate, backup, restore |
 | `internal/openapi` | OpenAPI import and export |
 | `internal/gateway` | The gateway program, built from the packages above |
 | `internal/issuertest`, `internal/storetest`, `internal/gatewaytest` | Test support only |

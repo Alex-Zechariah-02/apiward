@@ -82,7 +82,9 @@ func (s *DB) Enrolment(ctx context.Context, secretHash string) (Enrolment, bool,
 }
 
 // IssueEnrolment replaces any pending enrolment for the administrator and
-// records the operator transition, in one transaction.
+// records the operator transition, in one transaction. A reset of an existing
+// administrator disables its password and sessions at once; consuming the
+// new enrolment makes it active again.
 func (s *DB) IssueEnrolment(ctx context.Context, t TransitionRecord, e Enrolment, now time.Time) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -90,12 +92,42 @@ func (s *DB) IssueEnrolment(ctx context.Context, t TransitionRecord, e Enrolment
 	}
 	defer tx.Rollback()
 
+	if _, err := tx.ExecContext(ctx, disableAdministrator, now.UnixMilli(), e.Name); err != nil {
+		return err
+	}
 	_, err = tx.ExecContext(ctx, `
 		INSERT INTO enrolment (administrator, secret, permissions, expires_at, created_at) VALUES (?, ?, ?, ?, ?)
 		ON CONFLICT (administrator) DO UPDATE SET secret = excluded.secret, permissions = excluded.permissions,
 			expires_at = excluded.expires_at, created_at = excluded.created_at`,
 		e.Name, e.Secret, e.Permissions, e.ExpiresAt.UnixMilli(), now.UnixMilli())
 	if err != nil {
+		return err
+	}
+	if err := insertCommitted(ctx, tx, t, now); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// disableAdministrator quarantines one administrator: its status refuses
+// sign-in, and the new credential ends every session issued before.
+const disableAdministrator = `UPDATE administrator SET status = 'quarantined', credential = credential + 1, updated_at = ? WHERE name = ?`
+
+// DisableAdministrator disables an administrator's password and sessions at
+// once, deletes its pending enrolment and records the operator transition,
+// in one transaction. Only a new enrolment makes it active again. It returns
+// ErrNotUpdated when no administrator has the name.
+func (s *DB) DisableAdministrator(ctx context.Context, t TransitionRecord, name string, now time.Time) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	if err := updateOne(ctx, tx, disableAdministrator, now.UnixMilli(), name); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM enrolment WHERE administrator = ?`, name); err != nil {
 		return err
 	}
 	if err := insertCommitted(ctx, tx, t, now); err != nil {

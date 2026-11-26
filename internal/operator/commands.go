@@ -1,4 +1,5 @@
-// Operator commands: install, enrol, migrate and dispatch.
+// Operator commands: install, migrate and dispatch (administrator commands
+// in admins.go).
 
 package operator
 
@@ -13,7 +14,6 @@ import (
 	"os"
 	"os/signal"
 	"os/user"
-	"strings"
 	"syscall"
 	"time"
 
@@ -155,43 +155,6 @@ func runInstall(o *operatorContext, flags map[string]string) (int, error) {
 	return 0, nil
 }
 
-func runEnrol(o *operatorContext, flags map[string]string) (int, error) {
-	name := flags["admin"]
-	if !store.IsAdminName(name) {
-		return 1, fmt.Errorf("administrator name %q is not valid", name)
-	}
-	permissions, err := store.ParsePermissions(flags["permissions"])
-	if err != nil {
-		return 1, err
-	}
-	st, err := store.OpenStore(o.config.Database)
-	if err != nil {
-		return 1, err
-	}
-	defer st.Close()
-	o.openAudit()
-
-	now := time.Now()
-	secret := session.NewToken()
-	e := store.Enrolment{Name: name, Secret: session.Hash(secret), Permissions: permissions, ExpiresAt: now.Add(enrolmentLifetime)}
-	t := store.TransitionRecord{ID: fmt.Sprintf("operator:enrol:%s:%s", name, randomHex(8)), Kind: "operator.enrol", Actor: o.actor, Target: name, Digest: "operator"}
-	granted := name + " (" + strings.Join(permissions.Names(), ", ") + ")"
-	if err := o.record(audit.Event{Kind: "transition.intent", Transition: t.ID, Target: granted}); err != nil {
-		return 1, err
-	}
-	if err := st.IssueEnrolment(o.ctx, t, e, now); err != nil {
-		return 1, err
-	}
-	if err := o.record(audit.Event{Kind: "transition.committed", Transition: t.ID}); err != nil {
-		return 1, err
-	}
-	if err := st.MarkAudited(o.ctx, t.ID, time.Now()); err != nil {
-		return 1, err
-	}
-	fmt.Printf("enrolment secret for %s (%v), valid until %s: %s\n", name, permissions.Names(), e.ExpiresAt.UTC().Format(time.RFC3339), secret)
-	return 0, nil
-}
-
 func runMigrate(o *operatorContext) (int, error) {
 	st, from, err := store.OpenForMigration(o.config.Database)
 	if err != nil {
@@ -250,6 +213,8 @@ func Run(command string, cfg Config, flags map[string]string) (int, error) {
 		return runInstall(o, flags)
 	case "enrol":
 		return runEnrol(o, flags)
+	case "disable":
+		return runDisable(o, flags)
 	case "migrate":
 		return runMigrate(o)
 	case "backup":

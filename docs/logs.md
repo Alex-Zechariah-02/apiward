@@ -91,7 +91,7 @@ What the gateway records, when a record is waited for, and how to read the log. 
 | `audit.unwritable` | A record would exceed 64 KiB; it stands in for that record | In its place |
 | `audit.ingress_summary` | Refusals before any policy applied were counted | Once a minute |
 
-- Operator commands (`install`, `enrol`, `migrate`, `restore`) write `transition.intent` and `transition.committed` around their change; `recover-clock` writes `transition.intent` and `operator.clock_reset`.
+- Operator commands (`install`, `enrol`, `disable`, `migrate`, `restore`) write `transition.intent` and `transition.committed` around their change; `recover-clock` writes `transition.intent` and `operator.clock_reset`.
 
 ## Tamper evidence
 

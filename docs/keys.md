@@ -38,8 +38,9 @@ Every key, certificate and secret the gateway uses: what it protects, its algori
 - **Identity assertion key**: publish the new public key to every upstream; set `upstream.retiring_identity_key` to the old public key and `upstream.identity_key` to the new private key; call `POST /admin/keys/reload` (assertions and audit checkpoints now sign with the new key while `GET /.well-known/apiward/jwks.json` publishes both); after every upstream accepts the new key, remove `upstream.retiring_identity_key` and reload again.
 - **Listener certificate**: replace the files, then send `SIGHUP` (not on Windows) or call `POST /admin/keys/reload`; new file paths need a restart.
 - **Upstream TLS profiles**: replace the files, then call `POST /admin/keys/reload`; a reload that would remove a profile the policy uses is refused.
-- **Administrator password**: change it on the My Account page; a forgotten password is reset with `apiward enrol` while the gateway is stopped.
-- A password change or enrolment ends every session of that administrator.
+- **Administrator password**: change it on the My Account page; a forgotten password is reset with `apiward enrol` while the gateway is stopped, which stops the old password at once.
+- `apiward disable --config <file> --admin <name>` stops one administrator's password and sessions at once, for someone who has left; a new `apiward enrol` restores access.
+- A password change, enrolment, reset or `apiward disable` ends every session of that administrator.
 
 ## Sign-in rules
 

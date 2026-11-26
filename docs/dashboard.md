@@ -44,7 +44,7 @@ The administrator Dashboard: a React and TypeScript single-page application that
 
 - **History:** every administrative transition, filtered by area, outcome and administrator, read page by page or all at once.
 - **Policy as Code:** the policy in force as one JSON document to copy or download, and the Admin API requests a script uses to read it and to save a draft change from a file.
-- **Team:** administrators and their permissions; trusted token signing keys, with a reload from the operator's settings; the running build (version, Go toolchain, every compiled-in control with its phase). Adding an administrator stays an operator command (`apiward enrol`).
+- **Team:** administrators and their permissions; trusted token signing keys, with a reload from the operator's settings; the running build (version, Go toolchain, every compiled-in control with its phase). Adding or disabling an administrator stays an operator command (`apiward enrol`, `apiward disable`).
 - **My Account:** session details, your permissions in plain words, the gateway's address, password change.
 
 ## Common behaviour
