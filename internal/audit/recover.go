@@ -81,7 +81,7 @@ func (a *AuditLog) reopen() error {
 		return err
 	}
 	// 0600 keeps a new audit file readable and writable only by the gateway's user.
-	file, err := os.OpenFile(a.path, os.O_CREATE|os.O_EXCL|os.O_RDWR, 0o600)
+	file, err := a.openFile(a.path, os.O_CREATE|os.O_EXCL|os.O_RDWR, 0o600)
 	if err != nil {
 		return err
 	}

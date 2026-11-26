@@ -246,11 +246,10 @@ func TestPressureEvictsOldest(t *testing.T) {
 }
 
 func TestReserveReleasedAndRemade(t *testing.T) {
-	// Not parallel: the pause is a package value, set before the log opens.
-	pause := reservePause
-	reservePause = 0
-	t.Cleanup(func() { reservePause = pause })
-	a, path, _ := archiving(t, Settings{MaxBytes: 1 << 20, MaxFiles: 8, WhenFull: FullEvict, Storage: Storage{Reserve: 64 << 10}})
+	t.Parallel()
+	dir := t.TempDir()
+	path, archive := filepath.Join(dir, "audit.log"), filepath.Join(dir, "archive")
+	a := openAuditWith(path, Settings{MaxBytes: 1 << 20, MaxFiles: 8, WhenFull: FullEvict, Storage: Storage{Archive: archive, Reserve: 64 << 10}}, withReservePause(0))
 	t.Cleanup(func() { a.Close(context.Background()) })
 	reserve := reserveName(path)
 	evictReserve := evictReserveName(path)

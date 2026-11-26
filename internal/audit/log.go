@@ -34,6 +34,7 @@ type AuditLog struct {
 	path     string
 	maxBytes int64
 	maxFiles int
+	opener   func(string, int, os.FileMode) (*os.File, error)
 	file     *os.File // used only by the writer, which closes it as it ends
 	size     int64    // logical size of the active file; used only by the writer
 	// prefill zero-fills the active file ahead of the writer up to filled,

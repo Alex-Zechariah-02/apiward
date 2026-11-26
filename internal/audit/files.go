@@ -69,14 +69,38 @@ type Storage struct {
 	Reserve      int64
 }
 
+type auditConfig struct {
+	reservePause time.Duration
+	opener       func(string, int, os.FileMode) (*os.File, error)
+}
+
+type auditOption func(*auditConfig)
+
+func withReservePause(d time.Duration) auditOption {
+	return func(c *auditConfig) { c.reservePause = d }
+}
+
+func withOpener(fn func(string, int, os.FileMode) (*os.File, error)) auditOption {
+	return func(c *auditConfig) { c.opener = fn }
+}
+
 // OpenAudit never fails: an unusable file yields a log in the failed state,
 // which refuses every acknowledgement and therefore every admission.
 func OpenAudit(path string, s Settings) *AuditLog {
+	return openAuditWith(path, s)
+}
+
+func openAuditWith(path string, s Settings, opts ...auditOption) *AuditLog {
+	cfg := auditConfig{reservePause: defaultReservePause, opener: os.OpenFile}
+	for _, opt := range opts {
+		opt(&cfg)
+	}
 	a := &AuditLog{
 		boot:          NewRequestID()[:16],
 		path:          path,
 		maxBytes:      s.MaxBytes,
 		maxFiles:      s.MaxFiles,
+		opener:        cfg.opener,
 		evict:         s.WhenFull == FullEvict && s.Archive != "",
 		window:        s.Window,
 		prefill:       prefillSupported && !s.Append,
@@ -115,10 +139,18 @@ func OpenAudit(path string, s Settings) *AuditLog {
 	}
 	if s.Archive != "" {
 		a.archive = newArchiver(a, s)
+		a.archive.pause = cfg.reservePause
 		go a.archive.run()
 	}
 	go a.run()
 	return a
+}
+
+func (a *AuditLog) openFile(name string, flag int, perm os.FileMode) (*os.File, error) {
+	if a.opener != nil {
+		return a.opener(name, flag, perm)
+	}
+	return os.OpenFile(name, flag, perm)
 }
 
 // open checks and opens the active file and finds the rotated files. It
@@ -145,7 +177,7 @@ func (a *AuditLog) open() (int64, error) {
 	// 0600 keeps the audit file readable and writable only by the gateway's
 	// user: set on creation, and again on a file an earlier version or an
 	// operator left with a wider mode.
-	file, err := os.OpenFile(a.path, os.O_CREATE|os.O_RDWR, 0o600)
+	file, err := a.openFile(a.path, os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
 		return -1, err
 	}
@@ -218,7 +250,7 @@ func (a *AuditLog) rotate() (string, error) {
 	}
 	fault.CrashPoint("audit-after-rename")
 	// 0600 keeps a new audit file readable and writable only by the gateway's user.
-	file, err := os.OpenFile(a.path, os.O_CREATE|os.O_EXCL|os.O_RDWR, 0o600)
+	file, err := a.openFile(a.path, os.O_CREATE|os.O_EXCL|os.O_RDWR, 0o600)
 	if err != nil {
 		return "", err
 	}

@@ -31,10 +31,10 @@ import (
 // kubelet's housekeeping interval).
 const archiveCheck = 10 * time.Second
 
-// reservePause is how long the reserve is not made again after a release,
-// so a disk near full does not release and rewrite it over and over (the
-// kubelet waits its eviction-pressure transition period the same way).
-var reservePause = time.Minute
+// defaultReservePause is how long the reserve is not made again after a
+// release, so a disk near full does not release and rewrite it over and over
+// (the kubelet waits its eviction-pressure transition period the same way).
+const defaultReservePause = time.Minute
 
 // recordWait bounds one wait for an archiver record; past it the file is
 // left for the next pass.
@@ -78,7 +78,7 @@ func newArchiver(log *AuditLog, s Settings) *archiver {
 	ctx, cancel := context.WithCancel(context.Background())
 	general, evict := reserveSplit(s.Reserve)
 	r := &archiver{log: log, live: filepath.Dir(log.path), dir: s.Archive, budget: s.ArchiveBytes, plain: s.Plain,
-		minFree: float64(s.MinFree) / 100, reserve: s.Reserve, generalReserve: general, evictReserve: evict, pause: reservePause, wake: make(chan struct{}, 1), stop: make(chan struct{}),
+		minFree: float64(s.MinFree) / 100, reserve: s.Reserve, generalReserve: general, evictReserve: evict, pause: defaultReservePause, wake: make(chan struct{}, 1), stop: make(chan struct{}),
 		done: make(chan struct{}), ctx: ctx, cancel: cancel}
 	r.usable.Store(true)
 	r.freeLog.Store(-1)

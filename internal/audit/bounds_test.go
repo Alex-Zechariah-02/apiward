@@ -20,31 +20,50 @@ import (
 // Record lengths vary with their time and sequence, so each batch aims at
 // the bound with the last record's length.
 func TestRotationAtSizeBound(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "audit.log")
-	a := OpenAudit(path, Settings{MaxBytes: 1 << 20, MaxFiles: 64})
-	t.Cleanup(func() { a.Close(context.Background()) })
-	if commitN(a, 1) != 1 {
-		t.Fatal("the first commit was refused")
-	}
-	record := lastRecordBytes(t, path)
 	for range 20 {
-		start, rotations := a.size, len(rotated(t, path))
-		bound := start + record
-		a.maxBytes = bound // the writer is idle between commits
+		dir := t.TempDir()
+		path := filepath.Join(dir, "audit.log")
+		seed := OpenAudit(path, Settings{MaxBytes: 1 << 20, MaxFiles: 64})
+		if commitN(seed, 1) != 1 {
+			t.Fatal("the first commit was refused")
+		}
+		if err := seed.Close(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		info, err := os.Stat(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		record := lastRecordBytes(t, path)
+		a := OpenAudit(path, Settings{MaxBytes: info.Size() + record, MaxFiles: 64})
 		if commitN(a, 1) != 1 {
+			a.Close(context.Background())
 			t.Fatal("a commit was refused")
 		}
+		rotations := len(rotated(t, path))
 		written := lastRecordBytes(t, path)
-		if len(rotated(t, path)) == rotations && written == record {
+		if err := a.Close(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		if rotations == 0 && written == record {
 			return
 		}
-		record = written
 	}
 	t.Fatal("no batch ended exactly at the bound in 20 tries")
 }
 
+func TestOpenAuditOpenerErrorFails(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "audit.log")
+	a := openAuditWith(path, Settings{MaxBytes: 1 << 20, MaxFiles: 4}, withOpener(func(string, int, os.FileMode) (*os.File, error) {
+		return nil, os.ErrPermission
+	}))
+	if !a.Failed() || a.OpenErr() == nil {
+		t.Fatalf("failed=%v openErr=%v, want failed log", a.Failed(), a.OpenErr())
+	}
+}
+
 // lastRecordBytes is the length, newline included, of the active file's
-// last record other than a chain record.
+// last request record (skipping chain and close bookkeeping records).
 func lastRecordBytes(t *testing.T, path string) int64 {
 	t.Helper()
 	data, err := os.ReadFile(path)
@@ -53,7 +72,7 @@ func lastRecordBytes(t *testing.T, path string) int64 {
 	}
 	lines := strings.Split(strings.TrimRight(string(Content(data)), "\n"), "\n")
 	for _, line := range slices.Backward(lines) {
-		if !strings.Contains(line, `"kind":"audit.chain"`) {
+		if !strings.Contains(line, `"kind":"audit.chain"`) && !strings.Contains(line, `"kind":"audit.closed"`) {
 			return int64(len(line) + 1)
 		}
 	}
