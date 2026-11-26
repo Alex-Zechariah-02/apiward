@@ -113,7 +113,24 @@ func (s *Server) handleEventStream(w http.ResponseWriter, r *http.Request, who c
 	var frame bytes.Buffer
 	encoder := json.NewEncoder(&frame)
 	checked := time.Now()
+	ended := func() bool {
+		select {
+		case <-r.Context().Done():
+			return true
+		case <-s.observations.Closing():
+			return true
+		case <-who.session.Closed():
+			return true
+		case <-expiry.C:
+			return true
+		default:
+			return false
+		}
+	}
 	for {
+		if ended() {
+			return
+		}
 		select {
 		case <-r.Context().Done():
 			return
@@ -124,13 +141,17 @@ func (s *Server) handleEventStream(w http.ResponseWriter, r *http.Request, who c
 		case <-expiry.C:
 			return
 		case <-heartbeat.C:
-			if !s.sessions.Active(who.token, time.Now()) {
+			if ended() || !s.sessions.Active(who.token, time.Now()) {
 				return
 			}
 			if !write([]byte(": heartbeat\n\n")) {
 				return
 			}
 		case event := <-viewer.Feed():
+			// Stop channels take priority over buffered events when both are ready.
+			if ended() {
+				return
+			}
 			// A revoked session ends the stream through Closed and an expired
 			// one through the timer; idle expiry is checked at most once a
 			// second, not for every event, as the check takes the session lock.
