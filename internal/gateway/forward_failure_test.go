@@ -175,21 +175,21 @@ func TestNativeForwardingFailureClassification(t *testing.T) {
 	}
 	headerTimeout := &url.Error{Op: "Get", URL: "http://" + addr, Err: timeoutError{}}
 	cases := []struct {
-		name                  string
-		err                   error
-		connected, clientGone bool
-		status                int
-		code, reason          string
+		name         string
+		err          error
+		delivery     forward.Delivery
+		status       int
+		code, reason string
 	}{
-		{"connection refused", refused, false, false, 502, "upstream_unavailable", "not_sent"},
-		{"dial timeout", timedOut, false, false, 502, "upstream_unavailable", "not_sent"},
-		{"client left before a connection", context.Canceled, false, true, 502, "upstream_unavailable", "not_sent"},
-		{"client left once connected", context.Canceled, true, true, 502, "upstream_unavailable", "client_cancelled"},
-		{"connection closed", io.EOF, true, false, 502, "upstream_unavailable", "outcome_unknown"},
-		{"response-header timeout", headerTimeout, true, false, 504, "upstream_timeout", "outcome_unknown"},
+		{"connection refused", refused, forward.DeliveryNone, 502, "upstream_unavailable", "not_sent"},
+		{"dial timeout", timedOut, forward.DeliveryNone, 502, "upstream_unavailable", "not_sent"},
+		{"client left before a connection", context.Canceled, forward.DeliveryNone, 502, "upstream_unavailable", "not_sent"},
+		{"client left once connected", context.Canceled, forward.DeliveryCancelled, 502, "upstream_unavailable", "client_cancelled"},
+		{"connection closed", io.EOF, forward.DeliveryUnknown, 502, "upstream_unavailable", "outcome_unknown"},
+		{"response-header timeout", headerTimeout, forward.DeliveryUnknown, 504, "upstream_timeout", "outcome_unknown"},
 	}
 	for _, tc := range cases {
-		err := forward.ExchangeFailure(tc.err, tc.connected, tc.clientGone)
+		err := forward.ExchangeFailure(tc.err, tc.delivery)
 		status, code := forward.ForwardFailure(err)
 		if status != tc.status || code != tc.code || forward.FailureReason(err) != tc.reason || !errors.Is(err, tc.err) {
 			t.Errorf("%s: %v gives %d %s (%s), want %d %s (%s)", tc.name, err, status, code, forward.FailureReason(err), tc.status, tc.code, tc.reason)

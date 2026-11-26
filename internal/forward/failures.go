@@ -24,14 +24,29 @@ func ForwardFailure(err error) (int, string) {
 	return http.StatusBadGateway, "upstream_unavailable"
 }
 
+// Delivery states what is known about whether an exchange reached an upstream
+// connection before it failed without a response.
+type Delivery uint8
+
+const (
+	// DeliveryNone means no upstream connection existed.
+	DeliveryNone Delivery = iota
+	// DeliveryUnknown means the exchange had an upstream connection and the
+	// upstream may have acted on the request.
+	DeliveryUnknown
+	// DeliveryCancelled means the client went away after the exchange had an
+	// upstream connection.
+	DeliveryCancelled
+)
+
 // ExchangeFailure classifies an exchange that failed before any response by
 // what is known about delivery and, for the gateway's answer, whether the
 // upstream timed out.
-func ExchangeFailure(err error, connected, clientGone bool) error {
-	switch {
-	case !connected:
+func ExchangeFailure(err error, delivery Delivery) error {
+	switch delivery {
+	case DeliveryNone:
 		return fmt.Errorf("%w: %w", errNotSent, err)
-	case clientGone:
+	case DeliveryCancelled:
 		return fmt.Errorf("%w: %w", errClientGone, err)
 	}
 	// Once connected, only the response-header timeout ends the exchange

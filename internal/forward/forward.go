@@ -205,7 +205,15 @@ func (p *upstreamProxy) Forward(w http.ResponseWriter, r *http.Request) error {
 	if b.failure == nil {
 		return nil
 	}
-	return ExchangeFailure(b.failure, b.connected.Load(), r.Context().Err() != nil)
+	delivery := DeliveryNone
+	if b.connected.Load() {
+		if r.Context().Err() != nil {
+			delivery = DeliveryCancelled
+		} else {
+			delivery = DeliveryUnknown
+		}
+	}
+	return ExchangeFailure(b.failure, delivery)
 }
 
 // connected records that b's exchange holds a connection: a probe of an
