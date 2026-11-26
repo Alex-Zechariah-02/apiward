@@ -110,22 +110,27 @@ func forwardedChain(hops []string, peer netip.Addr) string {
 // errMaxForwards is a Max-Forwards field that is not one decimal number.
 var errMaxForwards = errors.New("invalid Max-Forwards")
 
-// maxForwards applies RFC 9110 section 7.6.2 to an OPTIONS request: with
-// Max-Forwards 0 the gateway answers it itself, as the final recipient,
-// naming the methods of the target in Allow; a larger value is decremented
-// for the upstream. A field that is not one number is refused. It reports
-// whether the request was answered.
-func maxForwards(q *request, r *http.Request, allow string) bool {
+// parseMaxForwards reads Max-Forwards on an OPTIONS request (RFC 9110
+// section 7.6.2). A malformed field is refused 400 at ROUTE; a valid value is
+// applied only after the route's admission checks pass.
+func parseMaxForwards(q *request, r *http.Request) (uint64, bool, bool) {
 	values := r.Header.Values("Max-Forwards")
 	if len(values) == 0 {
-		return false
+		return 0, false, false
 	}
 	remaining, err := forwardsLeft(values)
 	if err != nil {
 		q.event.Reason = "max_forwards"
 		q.reject(audit.StageRoute, http.StatusBadRequest, "bad_request")
-		return true
+		return 0, false, true
 	}
+	return remaining, true, false
+}
+
+// applyMaxForwards finishes an admitted OPTIONS request that carried
+// Max-Forwards: 0 is answered locally with Allow, and a larger value is
+// decremented for forwarding. It reports whether the request was answered.
+func applyMaxForwards(q *request, r *http.Request, remaining uint64, allow string) bool {
 	if remaining > 0 {
 		r.Header.Set("Max-Forwards", strconv.FormatUint(remaining-1, 10))
 		return false

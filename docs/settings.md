@@ -47,7 +47,7 @@ The JSON settings file that `apiward run --config <file>` reads. Upstream TLS pr
 
 - A request target may be in absolute form (`GET http://shop.example.com/orders`): the host comes from the target and `Host` is ignored (RFC 9112 section 3.2.2). A target with credentials or a scheme other than `http` or `https` is refused `400`.
 - `Upgrade` is ignored, and not forwarded, in an HTTP/1.0 request; in HTTP/1.1 it is refused `400`.
-- `OPTIONS` with `Max-Forwards: 0` is answered by the gateway itself (`204`, `Allow` naming the target's methods); a larger value is lowered by one before forwarding, and a value that is not one number is refused `400` (RFC 9110 section 7.6.2).
+- `OPTIONS` with `Max-Forwards: 0` is answered by the gateway itself (`204`, `Allow` naming the target's methods) after the route's admission checks pass; a larger value is lowered by one before forwarding, and a value that is not one number is refused `400` (RFC 9110 section 7.6.2).
 
 - HTTP/2 protocol errors (malformed frames, flow-control or stream errors) are counted in `gateway_http2_errors_total`.
 - It speaks TLS 1.2 or later with HTTP/2 and HTTP/1.1 chosen by ALPN (`"http2": false` under `data` keeps HTTP/1.1 only; at most 100 concurrent streams and 64 KiB of buffered request body per connection), and upstreams then receive `X-Forwarded-Proto: https` and `Via: 2 gateway` for HTTP/2 requests; upstream connections stay HTTP/1.1.

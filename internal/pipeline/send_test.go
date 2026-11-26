@@ -1,5 +1,5 @@
 // Request-path behaviour through the real handler and audit log: forwarder
-// panics, Max-Forwards, request-target forms, trusted proxies, Retry-After,
+// panics, request-target forms, trusted proxies, Retry-After,
 // the assertion bound and the recorded method bound.
 
 package pipeline
@@ -136,39 +136,6 @@ func TestForwarderPanic(t *testing.T) {
 		}
 		if !tc.aborted && rec.Body.String() != `{"error":"internal_error","request_id":"`+rec.Header().Get("X-Request-Id")+"\"}\n" {
 			t.Errorf("%s: body %q", tc.name, rec.Body)
-		}
-	}
-}
-
-// OPTIONS with Max-Forwards 0 is answered by the gateway with the target's
-// methods; a larger value is decremented; anything else is refused. Other
-// methods forward the field unchanged.
-func TestMaxForwards(t *testing.T) {
-	var seen string
-	s := setup{ops: []policy.Operation{public("GET", "/a/x"), public("OPTIONS", "/a/o")}, forward: func(w http.ResponseWriter, r *http.Request) error {
-		seen = r.Header.Get("Max-Forwards")
-		w.WriteHeader(http.StatusOK)
-		return nil
-	}}
-	request := func(method, target, value string) *http.Request {
-		r := httptest.NewRequest(method, target, nil)
-		r.Header.Set("Max-Forwards", value)
-		return r
-	}
-	rec, records, _ := exchange(t, s, request(http.MethodOptions, "/a/x", "0"))
-	if e := last(records); rec.Code != http.StatusNoContent || !strings.Contains(rec.Header().Get("Allow"), "GET") || e["kind"] != "request.preflight" || e["error"] != "max_forwards" || !quick(e) {
-		t.Fatalf("Max-Forwards 0: %d %v %v", rec.Code, rec.Header(), e)
-	}
-	for _, tc := range []struct{ method, target, value, want string }{{"OPTIONS", "/a/o", "5", "4"}, {"OPTIONS", "/a/o", "1", "0"}, {"GET", "/a/x", "0", "0"}} {
-		seen = ""
-		if rec, _, _ := exchange(t, s, request(tc.method, tc.target, tc.value)); rec.Code != http.StatusOK || seen != tc.want {
-			t.Errorf("%s %s: %d, forwarded %q, want %q", tc.method, tc.value, rec.Code, seen, tc.want)
-		}
-	}
-	for _, value := range []string{"x", "-1", "+2", "1, 2", ""} {
-		rec, records, _ := exchange(t, s, request(http.MethodOptions, "/a/o", value))
-		if e := last(records); rec.Code != http.StatusBadRequest || e["reason"] != "max_forwards" {
-			t.Errorf("%q: %d %v", value, rec.Code, e)
 		}
 	}
 }

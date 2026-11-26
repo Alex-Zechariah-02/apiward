@@ -116,8 +116,13 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		q.reject(audit.StageRoute, http.StatusNotFound, code)
 		return
 	}
-	if r.Method == http.MethodOptions && maxForwards(q, r, t.Allow()) {
-		return
+	var mfLeft uint64
+	var hasMF, mfRefused bool
+	if r.Method == http.MethodOptions {
+		mfLeft, hasMF, mfRefused = parseMaxForwards(q, r)
+		if mfRefused {
+			return
+		}
 	}
 	if code == "method_not_allowed" {
 		w.Header().Set("Allow", t.Allow())
@@ -233,6 +238,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if destination.Path() != path {
 		q.event.ForwardedPath = destination.Path()
+	}
+
+	if hasMF && applyMaxForwards(q, r, mfLeft, t.Allow()) {
+		return
 	}
 
 	h.send(q, r, g, rule, roles, destination)
