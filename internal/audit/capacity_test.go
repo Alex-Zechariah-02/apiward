@@ -94,6 +94,10 @@ func TestEvictionRecordsBeforeDeleting(t *testing.T) {
 	if fileExists(files[0].Path()) {
 		t.Fatal("the evicted file is still present")
 	}
+	// Only a file newer than another still present needs a tombstone.
+	if names, err := Tombstones(path); err != nil || names[files[0].Plain()] {
+		t.Fatalf("evicting the oldest file left a tombstone (%v)", err)
+	}
 	if err := a.Close(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -101,7 +105,7 @@ func TestEvictionRecordsBeforeDeleting(t *testing.T) {
 	// The archiver keeps writing, so the record may be in a rotated file.
 	for _, e := range logRecords(t, path, archive) {
 		if e.Kind == "audit.evicted" && e.Reason == evictArchive && e.File == files[0].Plain() {
-			if e.File != files[0].Plain() || e.Bytes != int64(len(oldest)) || e.Digest != hex.EncodeToString(sum[:]) || !e.First.Equal(header.First) || !e.Last.Equal(header.Last) || e.Reason != evictArchive {
+			if e.File != files[0].Plain() || e.Bytes != int64(len(oldest)) || e.Digest != hex.EncodeToString(sum[:]) || !e.First.Equal(header.First) || !e.Last.Equal(header.Last) || e.Reason != evictArchive || e.Target != "archive" {
 				t.Fatalf("eviction record %+v does not describe the deleted file", e)
 			}
 			return
