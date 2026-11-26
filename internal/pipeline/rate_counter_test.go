@@ -1,4 +1,5 @@
-// Rate counter transitions, reclamation and concurrency.
+// Rate counter transitions, reclamation and concurrency, and the limiter's
+// clock.
 
 package pipeline
 
@@ -8,6 +9,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/compile"
 	"github.com/Alex-Zechariah-02/apiward/internal/policy"
@@ -177,4 +179,19 @@ func TestWaitIsExact(t *testing.T) {
 func decision(l *Limiter, key counterKey, rule *compile.RateRule, now int64) rateDecision {
 	d, _ := l.admit(key, rule, now)
 	return d
+}
+
+// The limiter's clock starts at the wall clock and moves forward with
+// monotonic time, so a rate window ends once real time passes it.
+func TestClockMovesForward(t *testing.T) {
+	t.Parallel()
+	clock := NewClock()
+	first := clock.now()
+	if wall := time.Now().UnixMilli(); first < wall-1000 || first > wall+1000 {
+		t.Fatalf("clock reads %d, wall clock %d", first, wall)
+	}
+	time.Sleep(20 * time.Millisecond)
+	if later := clock.now(); later < first+20 {
+		t.Fatalf("20 ms later the clock reads %d, want at least %d", later, first+20)
+	}
 }
