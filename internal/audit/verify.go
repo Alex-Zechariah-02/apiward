@@ -14,15 +14,11 @@ import (
 	"bufio"
 	"bytes"
 	"crypto"
-	"crypto/ecdsa"
-	"crypto/ed25519"
 	"crypto/sha256"
-	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
-	"math/big"
 	"os"
 	"path/filepath"
 	"strings"
@@ -54,18 +50,23 @@ type chainLine struct {
 
 // verifier is the state carried from line to line, across files.
 type verifier struct {
-	keys       map[string]crypto.PublicKey
-	report     ChainReport
-	file       string
-	origin     string // the file where the run awaiting its anchor starts
-	boot       string
-	head       [sha256.Size]byte
-	pending    []byte
-	lines      int
-	needAnchor bool
-	anchorSeen bool
-	// evicted names the files audit.evicted records name; before the file
-	// each given file's first audit.rotated record names.
+	keys          map[string]crypto.PublicKey
+	report        ChainReport
+	file          string
+	origin        string // the file where the current run starts
+	boot          string
+	head          [sha256.Size]byte
+	pending       []byte
+	lines         int
+	needAnchor    bool
+	anchorSeen    bool
+	runRecords    bool
+	runVerified   bool
+	runUnanchored bool
+	runEvicted    []string
+	// evicted names the files audit.evicted records name (covered by a
+	// verified checkpoint when keys are given); before names each file's
+	// predecessor from its first audit.rotated record.
 	evicted map[string]bool
 	before  []string
 }
@@ -100,9 +101,7 @@ func VerifyChain(paths []string, keys map[string]crypto.PublicKey) (ChainReport,
 			}
 		}
 	}
-	if v.needAnchor {
-		v.reportUnanchored()
-	}
+	v.finishRun()
 	v.report.Unchained += v.lines
 	// The first file's predecessor is not checked: a subset may be given.
 	for i, name := range v.before {
@@ -157,20 +156,28 @@ func (v *verifier) line(line []byte, where string, head bool) {
 		}
 		v.before = append(v.before, before)
 	}
-	if parsed && r.Kind == "audit.evicted" {
-		v.evicted[r.File] = true
-	}
 	if parsed {
 		if boot, _, found := strings.Cut(r.ID, "-"); found && boot != v.boot {
-			if v.needAnchor {
-				v.reportUnanchored()
-			}
+			v.finishRun()
 			// A new run: what the last one left unchained is not its.
 			v.report.Unchained += v.lines
 			v.boot, v.head, v.pending, v.lines = boot, [sha256.Size]byte{}, nil, 0
 			v.needAnchor = head && r.Kind == "audit.rotated"
 			v.origin = v.file
 			v.anchorSeen = false
+		}
+	}
+	if !v.runRecords {
+		v.runRecords = true
+		if v.origin == "" {
+			v.origin = v.file
+		}
+	}
+	if parsed && r.Kind == "audit.evicted" {
+		if len(v.keys) == 0 {
+			v.evicted[r.File] = true
+		} else {
+			v.runEvicted = append(v.runEvicted, r.File)
 		}
 	}
 	if parsed && r.Kind == "audit.chain" {
@@ -202,73 +209,4 @@ func (v *verifier) line(line []byte, where string, head bool) {
 	}
 	v.pending = append(v.pending, line...)
 	v.lines++
-}
-
-// anchor verifies the first checkpoint of a mid-run rotated file by signature
-// only so later chain records of the run can be checked from its digest.
-func (v *verifier) anchor(r chainLine) {
-	v.report.Checkpoints++
-	if v.anchorSeen {
-		return
-	}
-	v.anchorSeen = true
-	head, ok := parseDigest(r.Digest)
-	if !ok {
-		return
-	}
-	signature, err := base64.RawURLEncoding.DecodeString(r.Signature)
-	key := v.keys[r.Target]
-	if key == nil || err != nil || !checkpointSigned(key, checkpointMessage(v.boot, r.Digest), signature) {
-		return
-	}
-	v.head = head
-	v.needAnchor = false
-	v.report.Anchored = append(v.report.Anchored, v.origin)
-}
-
-func (v *verifier) reportUnanchored() {
-	v.report.Problems = append(v.report.Problems, fmt.Sprintf("%s: run %s starts here without a verifiable checkpoint; earlier records of this run cannot be checked", v.origin, v.boot))
-	v.needAnchor = false
-	v.anchorSeen = false
-}
-
-func parseDigest(text string) ([sha256.Size]byte, bool) {
-	var out [sha256.Size]byte
-	raw, err := hex.DecodeString(text)
-	if err != nil || len(raw) != sha256.Size {
-		return out, false
-	}
-	copy(out[:], raw)
-	return out, true
-}
-
-// checkpoint checks a checkpoint names the head so far and is signed by its key.
-func (v *verifier) checkpoint(r chainLine, where string) {
-	v.report.Checkpoints++
-	signature, err := base64.RawURLEncoding.DecodeString(r.Signature)
-	key := v.keys[r.Target]
-	switch {
-	case r.Digest != hex.EncodeToString(v.head[:]):
-		v.report.Problems = append(v.report.Problems, where+": the checkpoint does not name the chain head before it")
-	case key == nil:
-		v.report.Problems = append(v.report.Problems, where+": the checkpoint's key "+r.Target+" is not among the keys given")
-	case err != nil || !checkpointSigned(key, checkpointMessage(v.boot, r.Digest), signature):
-		v.report.Problems = append(v.report.Problems, where+": the checkpoint's signature does not verify")
-	}
-}
-
-// checkpointSigned verifies a raw signature: Ed25519 over the message, or
-// ES256 (P-256, two 32-byte integers) over its SHA-256.
-func checkpointSigned(key crypto.PublicKey, message, signature []byte) bool {
-	switch k := key.(type) {
-	case ed25519.PublicKey:
-		return ed25519.Verify(k, message, signature)
-	case *ecdsa.PublicKey:
-		if len(signature) != 64 {
-			return false
-		}
-		digest := sha256.Sum256(message)
-		return ecdsa.Verify(k, digest[:], new(big.Int).SetBytes(signature[:32]), new(big.Int).SetBytes(signature[32:]))
-	}
-	return false
 }

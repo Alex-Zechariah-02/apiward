@@ -81,4 +81,16 @@ func TestAuditVerify(t *testing.T) {
 	if code, out, _ := verify(jwks); code != 1 || !strings.Contains(out, "altered") {
 		t.Fatalf("altered log: exit %d, %s", code, out)
 	}
+	young := filepath.Join(dir, "young.log")
+	short := audit.OpenAudit(young, audit.Settings{MaxBytes: 1 << 20, MaxFiles: 4, Append: true, Signer: signer})
+	if err := short.Commit(context.Background(), audit.Event{Kind: "request.admitted", RequestID: "r-short", Subject: "cust-001"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := short.Close(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	var stdout, stderr bytes.Buffer
+	if code := auditCommand([]string{"verify", "--jwks", jwks, young}, &stdout, &stderr); code != 1 || !strings.Contains(stdout.String(), "no verifiable checkpoint") {
+		t.Fatalf("young log without checkpoint: exit %d, %s %s", code, stdout.String(), stderr.String())
+	}
 }
