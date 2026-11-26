@@ -62,9 +62,21 @@ func refuseValidation(e *gatewaytest.Env, n int) []string {
 // writer then holds.
 func holdWriter(e *gatewaytest.Env) (string, string) {
 	e.T.Helper()
-	// The startup events are written first, so the held batch is the
-	// refusal's.
-	e.EventsWhen(func(events []map[string]any) bool { return gatewaytest.CountKind(events, "controller.reconciled") > 0 })
+	// Every startup record (controller.reconciled, gateway.started, any
+	// gateway.weakened, verification key, and assertion key last) must be
+	// written before the hold file appears, or the held batch can trap
+	// queued startup records and inflate the pending count at drain.
+	e.EventsWhen(func(events []map[string]any) bool {
+		if gatewaytest.CountKind(events, "controller.reconciled") == 0 {
+			return false
+		}
+		for _, ev := range events {
+			if ev["kind"] == "gateway.key" && ev["reason"] == "assertion" {
+				return true
+			}
+		}
+		return false
+	})
 	hold := filepath.Join(e.Dir, "audit-hold")
 	if err := os.WriteFile(hold, nil, 0o600); err != nil {
 		e.T.Fatal(err)
