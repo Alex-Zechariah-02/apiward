@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/audit"
+	"github.com/Alex-Zechariah-02/apiward/internal/monitor"
 	"github.com/Alex-Zechariah-02/apiward/internal/store"
 )
 
@@ -68,7 +69,7 @@ func (c *Controller) savePermitUse() {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), ShutdownWait)
 	defer cancel()
-	if err := st.ReplacePermitUse(ctx, state, now.Add(-30*24*time.Hour)); err != nil {
+	if err := st.ReplacePermitUse(ctx, state, now.Add(-monitor.PermitUseWindowDays*24*time.Hour)); err != nil {
 		c.logger.Error("saving permission use", "error", err)
 	}
 }
