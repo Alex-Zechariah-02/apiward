@@ -19,6 +19,14 @@ import (
 	"github.com/Alex-Zechariah-02/apiward/internal/pipeline"
 )
 
+type embedState uint8
+
+const (
+	embedOpened embedState = iota
+	embedStarted
+	embedStopped
+)
+
 // Embedded is one gateway whose data plane a host program serves. Its
 // methods are safe for concurrent use.
 type Embedded struct {
@@ -26,9 +34,8 @@ type Embedded struct {
 	logger     *slog.Logger
 	calls      calls
 
-	mu       sync.Mutex
-	started  bool
-	stopping bool
+	mu    sync.Mutex
+	state embedState
 
 	stopOnce sync.Once
 	stopErr  error
@@ -62,20 +69,20 @@ func OpenEmbedded(settings Settings, logger *slog.Logger) (*Embedded, error) {
 func (e *Embedded) Start() error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	switch {
-	case e.stopping:
+	switch e.state {
+	case embedStopped:
 		return classify(ErrStopped, errors.New("the gateway was stopped"))
-	case e.started:
+	case embedStarted:
 		return classify(ErrStarted, errors.New("the gateway was already started"))
 	}
 	metricsListener, healthListener, err := e.deployment.listen(false, true)
 	if err != nil {
-		e.stopping = true
+		e.state = embedStopped
 		ctx, cancel := context.WithTimeout(context.Background(), controller.ShutdownWait)
 		defer cancel()
 		return errors.Join(err, e.stop(ctx))
 	}
-	e.started = true
+	e.state = embedStarted
 	go serveAuxiliary("metrics", e.deployment.metrics, metricsListener, e.logger)
 	if healthListener != nil {
 		go serveAuxiliary("health", e.deployment.health, healthListener, e.logger)
@@ -145,7 +152,7 @@ func hostIgnored(d dataSettings) []string {
 // releases a gateway that was never started.
 func (e *Embedded) Stop(ctx context.Context) error {
 	e.mu.Lock()
-	e.stopping = true
+	e.state = embedStopped
 	e.mu.Unlock()
 	return e.stop(ctx)
 }
@@ -180,19 +187,26 @@ func (e *Embedded) shutdown(ctx context.Context) error {
 	return nil
 }
 
+type callsState int32
+
+const (
+	callsOpen callsState = iota
+	callsDraining
+	callsClosed
+)
+
 // calls counts ServeHTTP calls in progress so that Stop can wait for them.
 type calls struct {
-	active   atomic.Int64
-	draining atomic.Bool
-	closed   atomic.Bool   // set once wait found no call in progress; later calls are refused
-	idle     chan struct{} // buffered; signalled when active reaches zero while draining
+	active atomic.Int64
+	state  atomic.Int32  // callsState: open -> draining -> closed
+	idle   chan struct{} // buffered; signalled when active reaches zero once draining
 }
 
 // enter counts a call in, or refuses it once the calls are closed. A call
 // that counted itself before closed was set is one wait still waits for.
 func (q *calls) enter() bool {
 	q.active.Add(1)
-	if q.closed.Load() {
+	if callsState(q.state.Load()) == callsClosed {
 		q.leave()
 		return false
 	}
@@ -200,7 +214,7 @@ func (q *calls) enter() bool {
 }
 
 func (q *calls) leave() {
-	if q.active.Add(-1) == 0 && q.draining.Load() {
+	if q.active.Add(-1) == 0 && callsState(q.state.Load()) != callsOpen {
 		select {
 		case q.idle <- struct{}{}:
 		default:
@@ -213,11 +227,11 @@ func (q *calls) leave() {
 // pipeline; wait waits for it too, then closes the calls and waits again for
 // any that counted itself in before seeing them closed.
 func (q *calls) wait(ctx context.Context) error {
-	q.draining.Store(true)
+	q.state.CompareAndSwap(int32(callsOpen), int32(callsDraining))
 	if err := q.drain(ctx); err != nil {
 		return err
 	}
-	q.closed.Store(true)
+	q.state.CompareAndSwap(int32(callsDraining), int32(callsClosed))
 	return q.drain(ctx)
 }
 
