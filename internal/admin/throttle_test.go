@@ -135,4 +135,59 @@ func TestThrottle(t *testing.T) {
 			}
 		}
 	})
+	// One failure while the rest of the limit is still being checked locks
+	// the name, even if those attempts are then abandoned.
+	t.Run("a failure locks with attempts in progress", func(t *testing.T) {
+		th := newThrottle()
+		var open []attempt
+		for range maxNameFailures {
+			try, reason := th.begin("alice", local, now)
+			if reason != "" {
+				t.Fatalf("attempt refused early: %s", reason)
+			}
+			open = append(open, try)
+		}
+		open[0].failed(now)
+		for _, try := range open[1:] {
+			try.abandoned()
+		}
+		if _, reason := th.begin("alice", local, now); reason != "locked" {
+			t.Fatalf("after a failure with %d attempts in progress: %q", len(open)-1, reason)
+		}
+	})
+
+	// An address is counted without its port, so new connections do not
+	// escape its limit.
+	t.Run("ports share their address's count", func(t *testing.T) {
+		th := newThrottle()
+		for i := range maxSourceFailures {
+			r := httptest.NewRequest(http.MethodPost, "/admin/session", nil)
+			r.RemoteAddr = fmt.Sprintf("127.0.0.1:%d", 40000+i)
+			fail(t, th, fmt.Sprintf("name-%d", i), r, 1)
+		}
+		r := httptest.NewRequest(http.MethodPost, "/admin/session", nil)
+		r.RemoteAddr = "127.0.0.1:50000"
+		if _, reason := th.begin("alice", r, now); reason != "throttled" {
+			t.Fatalf("a new port after %d failures from the address: %q", maxSourceFailures, reason)
+		}
+	})
+
+	// A table holding maxEntries-1 idle counters drops them before it would
+	// refuse, so only live counters can fill it.
+	t.Run("a full table is pruned before it refuses", func(t *testing.T) {
+		th := newThrottle()
+		for i := range maxEntries - 2 {
+			try, reason := th.begin("", from(fmt.Sprintf("10.%d.%d.%d", i>>16&255, i>>8&255, i&255)), now)
+			if reason != "" {
+				t.Fatalf("entry %d refused while filling: %s", i, reason)
+			}
+			try.abandoned()
+		}
+		if size := len(th.names) + len(th.sources); size != maxEntries-1 {
+			t.Fatalf("filled to %d entries, want %d", size, maxEntries-1)
+		}
+		if _, reason := th.begin("alice", from("192.0.2.1"), now.Add(failureWindow)); reason != "" {
+			t.Fatalf("a full table of idle counters refused: %q", reason)
+		}
+	})
 }
