@@ -5,13 +5,17 @@
 package pipeline
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/pem"
 	"fmt"
+	"math/big"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"strings"
@@ -168,5 +172,75 @@ func TestRetryAfterRounding(t *testing.T) {
 	}
 	if got, wait := l.admit(key, rule, 3_001); got != rateExceeded || wait != 1 {
 		t.Fatalf("%v: retry after %d s at 999 ms before, want 1", got, wait)
+	}
+}
+
+// An assertion of exactly MaxAssertionBytes is sent; the path that makes it
+// one byte longer is refused. The path grows until the first refusal.
+func TestAssertionAtBound(t *testing.T) {
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	signer, err := newSigner(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var sent string
+	s := setup{ops: []policy.Operation{public("GET", "/a/*")}, signer: signer, forward: func(w http.ResponseWriter, r *http.Request) error {
+		sent = r.Header.Get(AssertionHeader)
+		w.WriteHeader(http.StatusOK)
+		return nil
+	}}
+	exchange(t, s, httptest.NewRequest(http.MethodGet, "/a/x", nil))
+	// Each path byte adds four thirds of a byte to the encoded assertion.
+	start := max((MaxAssertionBytes-len(sent))*3/4-8, 1)
+	atBound := false
+	for n := start; n < start+64; n++ {
+		sent = ""
+		rec, _, _ := exchange(t, s, httptest.NewRequest(http.MethodGet, "/a/"+strings.Repeat("x", n), nil))
+		if rec.Code != http.StatusOK {
+			if !atBound {
+				t.Fatalf("path of %d bytes refused before an assertion of exactly %d bytes was sent", n, MaxAssertionBytes)
+			}
+			return
+		}
+		atBound = len(sent) == MaxAssertionBytes
+	}
+	t.Fatal("no path was refused for its assertion's size")
+}
+
+// A verification key whose modulus has exactly maxRSABits bits is accepted;
+// one bit more is refused.
+func TestVerificationKeyAtBound(t *testing.T) {
+	for _, tc := range []struct {
+		bits int
+		ok   bool
+	}{{maxRSABits, true}, {maxRSABits + 1, false}} {
+		modulus := new(big.Int).Lsh(big.NewInt(1), uint(tc.bits-1))
+		modulus.SetBit(modulus, 0, 1)
+		der, err := x509.MarshalPKIXPublicKey(&rsa.PublicKey{N: modulus, E: 65537})
+		if err != nil {
+			t.Fatal(err)
+		}
+		path := filepath.Join(t.TempDir(), "key.pem")
+		if err := os.WriteFile(path, pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: der}), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if _, _, err := readVerificationKey(path, 2048); (err == nil) != tc.ok {
+			t.Errorf("%d-bit key: %v, want accepted %v", tc.bits, err, tc.ok)
+		}
+	}
+}
+
+// An IPv4-mapped proxy prefix of exactly 96 bits names every IPv4 address;
+// a shorter one also covers IPv6 addresses and is refused.
+func TestMappedProxyPrefixAtBound(t *testing.T) {
+	prefixes, err := ParseProxies([]string{"::ffff:0.0.0.0/96"})
+	if err != nil || len(prefixes) != 1 || prefixes[0] != netip.MustParsePrefix("0.0.0.0/0") {
+		t.Fatalf("::ffff:0.0.0.0/96: %v %v, want 0.0.0.0/0", prefixes, err)
+	}
+	if _, err := ParseProxies([]string{"::ffff:0.0.0.0/95"}); err == nil {
+		t.Fatal("::ffff:0.0.0.0/95 was accepted")
 	}
 }
