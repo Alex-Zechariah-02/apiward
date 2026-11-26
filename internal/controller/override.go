@@ -87,10 +87,10 @@ func (r OverrideRequest) check() (store.Override, error) {
 // overrideConflict returns the active override that replacing the policy
 // before with after would change or invalidate, or nil. That is the case when
 // the change touches one of the override's dependencies, or when it adds,
-// changes or removes another operation whose target lies inside the
-// override's operation's path prefix: such an operation takes requests from
-// that prefix, or gives them back, so the override would no longer govern the
-// requests it was created for.
+// changes or removes another operation whose target matches or lies inside
+// the override's operation's target: such an operation takes requests from
+// that target, or gives them back, so the override would no longer govern
+// the requests it was created for.
 func overrideConflict(before, after policy.Policy, overrides []store.Override) *store.Override {
 	changed := map[string]bool{}
 	var movedTargets []string
@@ -141,13 +141,15 @@ func findOperation(p policy.Policy, id string) (policy.Operation, bool) {
 	return p.Operations[index], true
 }
 
-// narrows reports whether an operation at target other is matched in
-// preference to one at target governed for some of governed's paths. Only a
-// prefix target can lose paths, and only to a more specific target beneath
-// it, because matching always takes the most specific target.
+// narrows reports whether an operation at target other can take requests
+// from one at target governed: either on the exact same target (such as a
+// conditioned sibling) or on a more specific target beneath a prefix target.
 func narrows(governed, other string) bool {
+	if other == governed {
+		return true
+	}
 	prefix, isPrefix := strings.CutSuffix(governed, "*")
-	if !isPrefix || other == governed {
+	if !isPrefix {
 		return false
 	}
 	path := strings.TrimSuffix(other, "*")

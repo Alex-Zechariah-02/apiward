@@ -90,3 +90,43 @@ func TestOverrideConflictWithCandidate(t *testing.T) {
 		t.Error("narrows does not follow most-specific matching")
 	}
 }
+
+// Adding a conditioned operation on the exact same target as an overridden
+// operation (prefix or exact) steals matching requests from it, so the
+// candidate must conflict with the active override.
+func TestOverrideConflictSameTargetConditioned(t *testing.T) {
+	before := storetest.Protected()
+	before.Operations = append(slices.Clone(before.Operations), policy.Operation{
+		ID: "exact-b", API: "b", Method: "GET", Target: "/b/exact", Access: "allow", Auth: "none",
+	})
+	cases := []struct {
+		name     string
+		override store.Override
+		added    policy.Operation
+	}{
+		{
+			name:     "same prefix target",
+			override: store.Override{ID: 4, Type: store.OverrideContainment, Control: store.ControlOperation, Operation: "read-b", Target: "operation:read-b"},
+			added: policy.Operation{
+				ID: "read-b-v2", API: "b", Method: "GET", Target: "/b/*", Access: "allow", Auth: "required",
+				When: &policy.When{Headers: []policy.HeaderCondition{{Name: "X-Bypass", Value: "1"}}},
+			},
+		},
+		{
+			name:     "same exact target",
+			override: store.Override{ID: 6, Type: store.OverrideContainment, Control: store.ControlOperation, Operation: "exact-b", Target: "operation:exact-b"},
+			added: policy.Operation{
+				ID: "exact-b-v2", API: "b", Method: "GET", Target: "/b/exact", Access: "allow", Auth: "required",
+				When: &policy.When{Headers: []policy.HeaderCondition{{Name: "X-Bypass", Value: "1"}}},
+			},
+		},
+	}
+	for _, tc := range cases {
+		after := before
+		after.Operations = append(slices.Clone(before.Operations), tc.added)
+		got := overrideConflict(before, after, []store.Override{tc.override})
+		if got == nil || got.ID != tc.override.ID {
+			t.Errorf("%s: conflict = %v, want override %d", tc.name, got, tc.override.ID)
+		}
+	}
+}
