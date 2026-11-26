@@ -52,7 +52,10 @@ func DecodeBounded(data []byte, maxDepth, maxValues int) (any, string) {
 		}
 		if top != nil && top.members != nil && !top.named {
 			if delim, ok := token.(json.Delim); !ok || delim != '}' {
-				name := token.(string)
+				name, ok := token.(string)
+				if !ok {
+					return nil, "malformed_json"
+				}
 				if _, exists := top.members[name]; exists {
 					return nil, "duplicate_member"
 				}

@@ -157,8 +157,13 @@ func sortRequired(value any) {
 	if !ok {
 		return
 	}
-	if list, ok := schema["required"].([]any); ok && allStrings(list) {
-		slices.SortFunc(list, func(a, b any) int { return strings.Compare(a.(string), b.(string)) })
+	if list, ok := schema["required"].([]any); ok {
+		if names, ok := stringItems(list); ok {
+			slices.Sort(names)
+			for i, name := range names {
+				list[i] = name
+			}
+		}
 	}
 	properties, _ := schema["properties"].(map[string]any)
 	for _, property := range properties {
@@ -167,11 +172,14 @@ func sortRequired(value any) {
 	sortRequired(schema["items"])
 }
 
-func allStrings(list []any) bool {
-	for _, item := range list {
-		if _, ok := item.(string); !ok {
-			return false
+func stringItems(list []any) ([]string, bool) {
+	names := make([]string, len(list))
+	for i, item := range list {
+		name, ok := item.(string)
+		if !ok {
+			return nil, false
 		}
+		names[i] = name
 	}
-	return true
+	return names, true
 }

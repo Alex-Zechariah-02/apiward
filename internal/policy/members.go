@@ -74,7 +74,11 @@ func checkMembers(data []byte, maxDepth int, modules []string) error {
 		}
 
 		if parent != nil && parent.object && parent.wantName {
-			if err := parent.member(token.(string)); err != nil {
+			name, ok := token.(string)
+			if !ok {
+				return Invalid("SCHEMA_INVALID", "")
+			}
+			if err := parent.member(name); err != nil {
 				return err
 			}
 			continue
