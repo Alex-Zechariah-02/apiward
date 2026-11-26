@@ -25,8 +25,8 @@ func Regular(path string) (os.FileInfo, error) {
 	return info, nil
 }
 
-// Read reads the regular file at path, at most limit bytes, after check,
-// when given, accepted the opened file's information.
+// Read reads the regular file at path, refusing one larger than limit bytes
+// unread, after check, when given, accepted the opened file's information.
 func Read(path string, limit int64, check func(os.FileInfo) error) ([]byte, error) {
 	named, err := Regular(path)
 	if err != nil {
@@ -48,6 +48,10 @@ func Read(path string, limit int64, check func(os.FileInfo) error) ([]byte, erro
 		if err := check(info); err != nil {
 			return nil, err
 		}
+	}
+	// Refused before any read; the bounded read still stops a file that grows.
+	if info.Size() > limit {
+		return nil, fmt.Errorf("the file is larger than %d bytes", limit)
 	}
 	data, err := io.ReadAll(io.LimitReader(file, limit+1))
 	if err != nil {

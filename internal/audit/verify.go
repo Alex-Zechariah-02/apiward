@@ -19,9 +19,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/Alex-Zechariah-02/apiward/internal/filecheck"
 )
 
 // ChainReport is what VerifyChain found.
@@ -114,12 +115,16 @@ func VerifyChain(paths []string, keys map[string]crypto.PublicKey) (ChainReport,
 	return v.report, nil
 }
 
-// content reads a file's records: a compressed file whole through gzip,
-// with a changed or damaged one reported and read as empty.
+// content reads a file's records: a plain one of at most MaxAuditBytes, a
+// compressed one whole through gzip, with a changed or damaged one reported
+// and read as empty. Anything but a regular file is refused unopened.
 func (v *verifier) content(path string) ([]byte, error) {
 	if !strings.HasSuffix(path, packedSuffix) {
-		data, err := os.ReadFile(path)
+		data, err := filecheck.Read(path, MaxAuditBytes, nil)
 		return Content(data), err
+	}
+	if _, err := filecheck.Regular(path); err != nil {
+		return nil, err
 	}
 	header, err := ReadPacked(path)
 	if err != nil {

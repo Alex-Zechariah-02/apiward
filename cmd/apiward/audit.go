@@ -15,9 +15,9 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"os"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/audit"
+	"github.com/Alex-Zechariah-02/apiward/internal/filecheck"
 	"github.com/go-jose/go-jose/v4"
 )
 
@@ -61,17 +61,9 @@ func auditCommand(args []string, stdout, stderr io.Writer) int {
 // readKeySet reads a JSON Web Key Set of public Ed25519 and P-256 keys, each
 // with a distinct key ID, as the gateway publishes it.
 func readKeySet(path string) (map[string]crypto.PublicKey, error) {
-	file, err := os.Open(path)
+	data, err := filecheck.Read(path, maxKeySet, nil)
 	if err != nil {
 		return nil, err
-	}
-	defer file.Close()
-	data, err := io.ReadAll(io.LimitReader(file, maxKeySet+1))
-	if err != nil {
-		return nil, err
-	}
-	if len(data) > maxKeySet {
-		return nil, fmt.Errorf("larger than %d bytes", maxKeySet)
 	}
 	var keySet jose.JSONWebKeySet
 	if err := json.Unmarshal(data, &keySet); err != nil {
