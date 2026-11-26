@@ -163,7 +163,8 @@ An API's `"response_headers": {"hsts": true, "nosniff": true, "frame": "deny", "
 - Upstream connections are kept and reused: up to `upstream.max_idle_per_upstream` idle connections per upstream (default 1,024, the default of `data.max_in_flight`, so a connection is never closed for lack of room while that cap holds: raise both together; 0 opens a new connection for every request and closes it after the response), each closed after `upstream.idle_conn_timeout` idle (default `30s`, `1s` to `5m`; keep it below the upstream server's own idle timeout).
 - After a reload of the TLS profiles, the next request closes the idle connections made under the earlier settings, so the idle limit is never doubled.
 - A response body has no size limit, as in Caddy, nginx and Traefik: it streams to the client as it arrives, and `upstream.read_idle_timeout` ends a response that stops sending, while the data listener's `write_timeout` bounds the whole answer.
-- A request is sent once: one that fails on a reused connection is never sent again, and is answered like any exchange that may have reached the upstream (security log reason `outcome_unknown`).
+- A `GET`, `HEAD` or `OPTIONS` without a body that fails on a reused connection before any response byte is sent once more on a new connection, as Go's transport and Caddy do.
+- Any other request is sent once: one that fails on a reused connection is never sent again, and is answered like any exchange that may have reached the upstream (security log reason `outcome_unknown`). Requests that may change data are never retried.
 - TLS sessions to https upstreams are resumed for at most `upstream.tls_session_lifetime` (default `1h`, `1m` to `24h`), with one session cache per TLS profile that a reload replaces; on a resumed session the upstream relies on the client certificate it verified in the first handshake.
 
 ### TLS profiles

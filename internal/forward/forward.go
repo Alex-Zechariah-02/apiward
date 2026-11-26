@@ -124,7 +124,8 @@ func NewUpstreamProxy(timeouts UpstreamTimeouts, pool PoolSettings, network func
 		// replayable (GET, HEAD, OPTIONS, or any request with an
 		// Idempotency-Key and no body) when a reused connection fails,
 		// though the upstream may already have acted on it; the pool reuses
-		// connections without that resend.
+		// connections with a narrower resend (exchange.go) that never repeats
+		// a request with a body or one that may change data.
 		DisableKeepAlives: true,
 		// The upstream receives the client's Accept-Encoding, not one the
 		// transport adds, and the client receives the upstream's bytes.

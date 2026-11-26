@@ -19,7 +19,7 @@ func TestEjectionAfterConnectFailures(t *testing.T) {
 	}
 	address := listener.Addr().String()
 	listener.Close() // connections to it are now refused
-	_, send := forwarder(t, closed(), PoolSettings{EjectAfter: 2}, policy.Upstream{ID: "u", Dial: address})
+	_, send := forwarder(t, closed(), PoolSettings{EjectAfter: 2}, policy.Upstream{ID: "u", Dial: address}, http.MethodGet)
 	for i := range 2 {
 		if reason := send(); reason != "not_sent" {
 			t.Fatalf("failure %d: %q, want not_sent", i+1, reason)

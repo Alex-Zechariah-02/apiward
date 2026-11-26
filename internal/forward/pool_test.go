@@ -1,5 +1,6 @@
 // The upstream connection pool and TLS session resumption: connections are
-// reused, a request that fails on a reused connection is never sent again,
+// reused, a request that fails on a reused connection is sent again only
+// when it changes no data and no response byte arrived,
 // a connection the upstream closed while idle is not used, one it closes as
 // a request takes it never hangs the pool, and sessions are resumed only
 // within their lifetime and never across a reload.
@@ -23,20 +24,20 @@ import (
 	"github.com/Alex-Zechariah-02/apiward/internal/policy"
 )
 
-// forwarder returns a function that forwards GET /x to u through one proxy
-// with pool settings and network n, giving the failure reason ("" when
-// forwarded).
-func forwarder(t *testing.T, n *Network, pool PoolSettings, u policy.Upstream) (*upstreamProxy, func() string) {
+// forwarder returns a function that forwards method /x to u through one
+// proxy with pool settings and network n, giving the failure reason (""
+// when forwarded).
+func forwarder(t *testing.T, n *Network, pool PoolSettings, u policy.Upstream, method string) (*upstreamProxy, func() string) {
 	t.Helper()
 	proxy, err := NewUpstreamProxy(bounds, pool, func() *Network { return n }, slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(proxy.Close)
-	d := destination(t, u, http.MethodGet)
+	d := destination(t, u, method)
 	return proxy, func() string {
 		rec := httptest.NewRecorder()
-		r := httptest.NewRequest(http.MethodGet, "/x", nil)
+		r := httptest.NewRequest(method, "/x", nil)
 		if err := proxy.Forward(rec, r.WithContext(Bind(context.Background(), d, ""))); err != nil {
 			return FailureReason(err)
 		}
@@ -68,7 +69,7 @@ func TestOversizeResponseHeaderFails(t *testing.T) {
 		w.Header().Set("X-Large", strings.Repeat("a", MaxResponseHeaderBytes))
 	}))
 	t.Cleanup(s.Close)
-	_, send := forwarder(t, closed(), testPool, policy.Upstream{ID: "u", Dial: s.Listener.Addr().String()})
+	_, send := forwarder(t, closed(), testPool, policy.Upstream{ID: "u", Dial: s.Listener.Addr().String()}, http.MethodGet)
 	if reason := send(); reason == "" {
 		t.Fatal("a response header over the bound was forwarded")
 	}
@@ -86,7 +87,7 @@ func TestPoolReusesLiveConnections(t *testing.T) {
 	}
 	s.Start()
 	t.Cleanup(s.Close)
-	proxy, send := forwarder(t, closed(), testPool, policy.Upstream{ID: "u", Dial: s.Listener.Addr().String()})
+	proxy, send := forwarder(t, closed(), testPool, policy.Upstream{ID: "u", Dial: s.Listener.Addr().String()}, http.MethodGet)
 	for range 2 {
 		if reason := send(); reason != "" {
 			t.Fatalf("request: %q", reason)
@@ -103,52 +104,66 @@ func TestPoolReusesLiveConnections(t *testing.T) {
 	}
 }
 
-// A request that fails on a reused connection after it was written is
-// reported as maybe delivered and never sent again, though GET is a method
-// the standard transport would resend.
+// A request that fails on a reused connection after it was written, before
+// any response byte, is reported as maybe delivered and never sent again
+// when it may change data; a bodyless GET is sent once more on a new
+// connection.
 func TestPoolNeverResends(t *testing.T) {
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
+	cases := []struct {
+		method   string
+		reason   string
+		accepted int64
+		requests int64
+	}{
+		{http.MethodPost, "outcome_unknown", 1, 2},
+		{http.MethodGet, "", 2, 3},
 	}
-	t.Cleanup(func() { listener.Close() })
-	var accepted, requests atomic.Int64
-	go func() {
-		for {
-			conn, err := listener.Accept()
+	for _, tc := range cases {
+		t.Run(tc.method, func(t *testing.T) {
+			listener, err := net.Listen("tcp", "127.0.0.1:0")
 			if err != nil {
-				return
+				t.Fatal(err)
 			}
-			accepted.Add(1)
+			t.Cleanup(func() { listener.Close() })
+			var accepted, requests atomic.Int64
 			go func() {
-				defer conn.Close()
-				reader := bufio.NewReader(conn)
-				// Answers the first request and closes after reading the
-				// second without answering it.
-				for i := 0; ; i++ {
-					if _, err := http.ReadRequest(reader); err != nil {
+				for {
+					conn, err := listener.Accept()
+					if err != nil {
 						return
 					}
-					requests.Add(1)
-					if i == 1 {
-						return
-					}
-					conn.Write([]byte("HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n"))
+					accepted.Add(1)
+					go func() {
+						defer conn.Close()
+						reader := bufio.NewReader(conn)
+						// Answers the first request and closes after reading the
+						// second without answering it.
+						for i := 0; ; i++ {
+							if _, err := http.ReadRequest(reader); err != nil {
+								return
+							}
+							requests.Add(1)
+							if i == 1 {
+								return
+							}
+							conn.Write([]byte("HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n"))
+						}
+					}()
 				}
 			}()
-		}
-	}()
-	proxy, send := forwarder(t, closed(), testPool, policy.Upstream{ID: "u", Dial: listener.Addr().String()})
-	if reason := send(); reason != "" {
-		t.Fatalf("first request: %q", reason)
-	}
-	waitIdle(t, proxy.pool, 1)
-	if reason := send(); reason != "outcome_unknown" {
-		t.Fatalf("request failing on a reused connection: %q, want outcome_unknown", reason)
-	}
-	time.Sleep(100 * time.Millisecond) // time for a resend to arrive, if one were made
-	if accepted.Load() != 1 || requests.Load() != 2 {
-		t.Fatalf("%d connections and %d requests reached the upstream, want 1 and 2", accepted.Load(), requests.Load())
+			proxy, send := forwarder(t, closed(), testPool, policy.Upstream{ID: "u", Dial: listener.Addr().String()}, tc.method)
+			if reason := send(); reason != "" {
+				t.Fatalf("first request: %q", reason)
+			}
+			waitIdle(t, proxy.pool, 1)
+			if reason := send(); reason != tc.reason {
+				t.Fatalf("request failing on a reused connection: %q, want %q", reason, tc.reason)
+			}
+			time.Sleep(100 * time.Millisecond) // time for a further resend to arrive, if one were made
+			if accepted.Load() != tc.accepted || requests.Load() != tc.requests {
+				t.Fatalf("%d connections and %d requests reached the upstream, want %d and %d", accepted.Load(), requests.Load(), tc.accepted, tc.requests)
+			}
+		})
 	}
 }
 
@@ -199,7 +214,7 @@ func TestSessionResumption(t *testing.T) {
 		{"after a reload", 0, []bool{false}},
 	} {
 		network := load()
-		_, send := forwarder(t, network, noPool, u)
+		_, send := forwarder(t, network, noPool, u, http.MethodGet)
 		for i, want := range step.want {
 			if reason := send(); reason != "" {
 				t.Fatalf("%s: %q", step.name, reason)
@@ -236,7 +251,7 @@ func TestPoolSurvivesCloseRace(t *testing.T) {
 			}()
 		}
 	}()
-	_, send := forwarder(t, closed(), testPool, policy.Upstream{ID: "u", Dial: listener.Addr().String()})
+	_, send := forwarder(t, closed(), testPool, policy.Upstream{ID: "u", Dial: listener.Addr().String()}, http.MethodGet)
 	done := make(chan struct{})
 	go func() {
 		defer close(done)

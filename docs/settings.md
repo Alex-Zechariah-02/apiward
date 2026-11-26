@@ -125,7 +125,7 @@ The JSON settings file that `apiward run --config <file>` reads. Upstream TLS pr
 - A directory is read so that no name or link in it leads to a file outside it.
 - The page is never stored (`Cache-Control: no-store`); the files under `assets/` are cached by the browser for a year (their names change with their content) and the build's gzip copies of the scripts and style sheets are sent as they are, or inflated while they are sent for a client that does not accept gzip. A weight that is not a valid `q` value refuses its encoding.
 
-- `upstream.idle_conn_timeout` (default 30 s) must stay below each upstream server's own idle timeout, so the gateway, not the upstream, closes an idle connection; otherwise a request written just as the upstream closes the connection fails (it is never resent).
+- `upstream.idle_conn_timeout` (default 30 s) must stay below each upstream server's own idle timeout, so the gateway, not the upstream, closes an idle connection; otherwise a request written just as the upstream closes the connection fails (only a `GET`, `HEAD` or `OPTIONS` without a body is sent again, once, on a new connection).
 
 ## Security log
 

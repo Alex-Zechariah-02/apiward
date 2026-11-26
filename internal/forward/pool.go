@@ -1,9 +1,6 @@
 // The upstream connection pool: idle keep-alive connections per endpoint,
-// each carrying one request at a time. A request is sent once: only
-// ClientConn.RoundTrip sends, which has no retry, so the transport's resend
-// of a replayable request on a failed reused connection never runs, and a
-// request that fails on a reused connection fails like any exchange that had
-// a connection.
+// each carrying one request at a time, lent to requests (exchange.go) and
+// taken back, retired on a network reload and closed at shutdown.
 
 package forward
 
@@ -70,43 +67,6 @@ func newConnPool(settings PoolSettings, base *http.Transport, network func() *Ne
 	transport := base.Clone()
 	transport.DisableKeepAlives = false
 	return &connPool{settings: settings, transport: transport, network: network, connected: connected, idle: map[poolKey][]*pooledConn{}}
-}
-
-// RoundTrip sends req once, on an idle connection to its bound endpoint or
-// a new one. Forward has checked the binding. Once a connection is held the
-// binding is marked connected: from then on a failure may have reached the
-// upstream.
-func (p *connPool) RoundTrip(req *http.Request) (*http.Response, error) {
-	b := bindingOf(req.Context())
-	e := b.destination.Endpoint()
-	key := poolKey{network: p.network(), scheme: e.Scheme(), address: e.Address(), profile: e.Profile()}
-	p.retire(key.network)
-	c := p.take(key)
-	if c != nil {
-		p.reuses.Add(1)
-	} else {
-		p.dials.Add(1)
-		conn, err := p.transport.NewClientConn(req.Context(), key.scheme, key.address)
-		if err != nil {
-			return nil, err
-		}
-		if err := conn.Reserve(); err != nil {
-			conn.Close()
-			return nil, err
-		}
-		c = &pooledConn{conn: conn, key: key}
-		c.timer = time.AfterFunc(p.settings.IdleTimeout, func() {
-			if p.unlist(c) {
-				c.conn.Close()
-			}
-		})
-		c.timer.Stop()
-		// Called when the exchange ends (the connection is available again)
-		// or the connection fails.
-		conn.SetStateHook(func(*http.ClientConn) { p.changed(c) })
-	}
-	p.connected(b)
-	return c.conn.RoundTrip(req)
 }
 
 // take returns an idle connection to key, reserved for one request, or nil.
