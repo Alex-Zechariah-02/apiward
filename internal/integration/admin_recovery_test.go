@@ -94,7 +94,8 @@ func TestInterruptedBootstrap(t *testing.T) {
 }
 
 // A password change and a local recovery enrolment replace the
-// credential and end every session based on the old one.
+// credential and end every session based on the old one; the recovery
+// enrolment stops the old password as soon as the operator issues it.
 func TestCredentialRotationAndRecovery(t *testing.T) {
 	t.Parallel()
 	e, secret := installEnv(t, gatewaytest.Binaries.Plain)
@@ -139,14 +140,13 @@ func TestCredentialRotationAndRecovery(t *testing.T) {
 	}
 	recovery := gatewaytest.EnrolmentSecret(t, out)
 	e.Start(gatewaytest.Binaries.Plain)
-	current := e.MustLogin("root", changed) // valid until the enrolment is consumed
+	if _, code := e.Login("root", changed); code != http.StatusUnauthorized {
+		t.Fatalf("old password after the reset: %d", code)
+	}
 
 	recovered := testPassword()
 	if code, body := enrol(e, "root", recovery, recovered); code != http.StatusCreated || !strings.Contains(body, `["read"]`) {
 		t.Fatalf("recovery enrolment: %d %s", code, body)
-	}
-	if code, _, _ := e.As(current, http.MethodGet, "/admin/session", ""); code != http.StatusUnauthorized {
-		t.Fatalf("session after recovery: %d", code)
 	}
 	if _, code := e.Login("root", changed); code != http.StatusUnauthorized {
 		t.Fatalf("replaced password after recovery: %d", code)
