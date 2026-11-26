@@ -77,6 +77,9 @@ const (
 	AddressesExtension       = "x-apiward-addresses"
 )
 
+// MappedBits is the leading bit length of an IPv4-mapped IPv6 address (::ffff:0:0/96).
+const MappedBits = 96
+
 // ParseRange parses a CIDR range whose host bits are zero. An
 // IPv4-mapped IPv6 range becomes the IPv4 range it covers; callers that need
 // the canonical text compare it with the returned prefix's String.
@@ -86,10 +89,10 @@ func ParseRange(text string) (netip.Prefix, bool) {
 		return netip.Prefix{}, false
 	}
 	if addr := prefix.Addr(); addr.Is4In6() {
-		if prefix.Bits() < 96 {
+		if prefix.Bits() < MappedBits {
 			return netip.Prefix{}, false
 		}
-		prefix = netip.PrefixFrom(addr.Unmap(), prefix.Bits()-96)
+		prefix = netip.PrefixFrom(addr.Unmap(), prefix.Bits()-MappedBits)
 	}
 	return prefix, true
 }

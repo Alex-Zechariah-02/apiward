@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/audit"
+	"github.com/Alex-Zechariah-02/apiward/internal/policy"
 )
 
 // MaxProxies bounds data.trusted_proxies: a deployment names a few load
@@ -41,10 +42,10 @@ func ParseProxies(entries []string) ([]netip.Prefix, error) {
 		// Peers are compared unmapped, and an IPv4 address never matches an
 		// IPv6 prefix: an IPv4-mapped prefix becomes the IPv4 one it names.
 		if prefix.Addr().Is4In6() {
-			if prefix.Bits() < 96 {
+			if prefix.Bits() < policy.MappedBits {
 				return nil, fmt.Errorf("%q covers more than IPv4-mapped addresses", entry)
 			}
-			prefix = netip.PrefixFrom(prefix.Addr().Unmap(), prefix.Bits()-96)
+			prefix = netip.PrefixFrom(prefix.Addr().Unmap(), prefix.Bits()-policy.MappedBits)
 		}
 		prefixes = append(prefixes, prefix)
 	}
