@@ -68,8 +68,7 @@ func TestRateCounterTransitions(t *testing.T) {
 // Expired counters are removed without changing any decision, and a full
 // table refuses new keys rather than evicting a live counter.
 func TestCounterReclamationAndCapacity(t *testing.T) {
-	l := NewLimiter(policy.DefaultRateCounters)
-	l.capacity = 3
+	l := NewLimiter(3)
 	rule := quota(1, 1000)
 	for i := range 3 {
 		if decision(l, counterKey{"op", "subject", strconv.Itoa(i)}, rule, 0) != rateAdmitted {

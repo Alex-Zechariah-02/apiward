@@ -67,8 +67,12 @@ func TestSweepIsBounded(t *testing.T) {
 	if got, want := len(l.counters), keys-compile.SweepInterval+1; got != want {
 		t.Fatalf("a full table kept %d counters after making room, want %d", got, want)
 	}
-	l.admissions = compile.SweepInterval - 1
-	decision(l, counterKey{"search", compile.RateKeyAddress, "new"}, rule, later)
+	high := quota(compile.SweepInterval+10, 1_000)
+	for range compile.SweepInterval - 1 {
+		if got := decision(l, counterKey{"search", compile.RateKeyAddress, "new"}, high, later); got != rateAdmitted {
+			t.Fatalf("periodic sweep setup admission refused: %v", got)
+		}
+	}
 	if got, want := len(l.counters), keys-2*compile.SweepInterval+1; got != want {
 		t.Fatalf("a periodic sweep left %d counters, want %d", got, want)
 	}
@@ -81,8 +85,8 @@ func TestLimiterMatchesReference(t *testing.T) {
 	for seed := range uint64(40) {
 		random := rand.New(rand.NewPCG(seed, 99))
 		capacity := []int{4, 16, 4096}[seed%3]
-		l, reference := NewLimiter(policy.DefaultRateCounters), newReferenceLimiter()
-		l.capacity, reference.capacity = capacity, capacity
+		l, reference := NewLimiter(capacity), newReferenceLimiter()
+		reference.capacity = capacity
 		now := int64(random.IntN(5_000))
 		for step := range 6_000 {
 			// Occasionally steps back; limiter time is Unix milliseconds, never negative.
