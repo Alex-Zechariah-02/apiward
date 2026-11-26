@@ -14,7 +14,6 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"slices"
@@ -148,46 +147,14 @@ func loadProfile(s ProfileSettings) (*profile, error) {
 	return p, nil
 }
 
-// ReadPEM reads a bounded regular file at an absolute path, after check,
-// when given, accepted the opened file's information. The path is checked
-// before it is opened, since opening a pipe or device can block a start or a
-// reload, and again once open, so a file swapped in between is refused.
+// ReadPEM reads a PEM file at an absolute path, at most maxPEMBytes, after
+// check, when given, accepted the opened file's information
+// (filecheck.Read).
 func ReadPEM(path string, check func(os.FileInfo) error) ([]byte, error) {
 	if !filepath.IsAbs(path) {
 		return nil, errors.New("the path must be absolute")
 	}
-	named, err := os.Stat(path)
-	if err != nil {
-		return nil, err
-	}
-	if !named.Mode().IsRegular() {
-		return nil, errors.New("the path must name a regular file")
-	}
-	file, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	defer file.Close()
-	info, err := file.Stat()
-	if err != nil {
-		return nil, err
-	}
-	if !os.SameFile(named, info) {
-		return nil, errors.New("the file was replaced while it was opened")
-	}
-	if check != nil {
-		if err := check(info); err != nil {
-			return nil, err
-		}
-	}
-	data, err := io.ReadAll(io.LimitReader(file, maxPEMBytes+1))
-	if err != nil {
-		return nil, err
-	}
-	if len(data) > maxPEMBytes {
-		return nil, fmt.Errorf("the file is larger than %d bytes", maxPEMBytes)
-	}
-	return data, nil
+	return filecheck.Read(path, maxPEMBytes, check)
 }
 
 func loadRoots(path string) (*x509.CertPool, error) {
