@@ -36,7 +36,10 @@ func TestChainFindsTampering(t *testing.T) {
 	if err != nil || !report.Valid() || report.Chains == 0 || report.Checkpoints == 0 || report.Unchained != 0 {
 		t.Fatalf("untouched log: %+v %v", report, err)
 	}
-	data, err := os.ReadFile(path)
+	// Tamper a file carrying request records: the clean-stop checkpoint can
+	// rotate the active file so path holds only stop records.
+	target := files[0]
+	data, err := os.ReadFile(target)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -48,7 +51,7 @@ func TestChainFindsTampering(t *testing.T) {
 		if bytes.Equal(altered, data) {
 			t.Fatalf("%s: the fixture did not change the file", name)
 		}
-		if err := os.WriteFile(path, altered, 0o600); err != nil {
+		if err := os.WriteFile(target, altered, 0o600); err != nil {
 			t.Fatal(err)
 		}
 		if report, err := VerifyChain(files, keys); err != nil || report.Valid() {

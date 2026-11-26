@@ -33,9 +33,14 @@ func (a *AuditLog) run() {
 		case entry, open := <-a.queue:
 			if !open {
 				a.writeSummary()
-				// The last record of a clean stop; after it nothing is
-				// written, so a start that finds another reconciles.
-				a.write([]*auditEntry{{event: a.stamp(Event{Kind: closedKind}), done: make(chan error, 1)}})
+				// The checkpoint and audit.closed share one final batch so
+				// audit.closed stays last before the final audit.chain.
+				stop := make([]*auditEntry, 0, 2)
+				if e, ok := a.checkpoint(a.head); ok {
+					stop = append(stop, &auditEntry{event: e, done: make(chan error, 1)})
+				}
+				stop = append(stop, &auditEntry{event: a.stamp(Event{Kind: closedKind}), done: make(chan error, 1)})
+				a.write(stop)
 				if a.file != nil {
 					a.fileErr = a.closeFile()
 				}
@@ -204,7 +209,7 @@ func (a *AuditLog) writeBatch(batch []*auditEntry) error {
 			cp = a.checkpointFrom(entry.event)
 		}
 	}
-	if rotatedNow && a.marker != "" {
+	if rotatedNow && a.marker != "" && cp == nil {
 		// The head of the file just closed, signed at rotation.
 		if e, ok := a.checkpoint(a.head); ok {
 			buffer = a.appendEvent(buffer, e)

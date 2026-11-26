@@ -1,12 +1,12 @@
 // The tamper-evident chain. Each written batch extends a SHA-256 chain,
 // h(n) = SHA-256(h(n-1) || the batch's bytes), and ends with an audit.chain
 // record carrying h(n); the chain starts again at zero at each start of the
-// gateway. Once a minute and at each rotation an audit.checkpoint record
-// carries the head signed with the gateway's identity key, so a copy of a
-// checkpoint kept off the host bounds what anyone could later rewrite (AWS
-// CloudTrail digest files, RFC 5848 signed syslog). Someone with root on the
-// host holds the key and can rewrite and re-sign the tail; only checkpoints
-// copied off the host bound that.
+// gateway. Once a minute, at each rotation and at a clean stop an
+// audit.checkpoint record carries the head signed with the gateway's identity
+// key, so a copy of a checkpoint kept off the host bounds what anyone could
+// later rewrite (AWS CloudTrail digest files, RFC 5848 signed syslog). Someone
+// with root on the host holds the key and can rewrite and re-sign the tail;
+// only checkpoints copied off the host bound that.
 
 package audit
 
