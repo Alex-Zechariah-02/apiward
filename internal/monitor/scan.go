@@ -274,16 +274,21 @@ func EncodeCursor(c Cursor) string {
 	return base64.RawURLEncoding.EncodeToString(data)
 }
 
+const (
+	maxCursor = 512
+	maxFirst  = 128
+)
+
 func DecodeCursor(text string) *Cursor {
 	data, err := base64.RawURLEncoding.DecodeString(text)
 	var c Cursor
 	// A cursor (file name, record ID, offset) is under 200 bytes; a larger
 	// one is refused before it is decoded.
 	// The checks below keep the file a bare name, so a cursor cannot point outside the directory.
-	if err != nil || len(data) > 512 || policy.DecodeStrict(data, &c) != nil {
+	if err != nil || len(data) > maxCursor || policy.DecodeStrict(data, &c) != nil {
 		return nil
 	}
-	if c.File == "" || filepath.Base(c.File) != c.File || strings.ContainsAny(c.File, `/\`) || c.Offset < -1 || len(c.First) > 128 {
+	if c.File == "" || filepath.Base(c.File) != c.File || strings.ContainsAny(c.File, `/\`) || c.Offset < -1 || len(c.First) > maxFirst {
 		return nil
 	}
 	return &c

@@ -49,13 +49,18 @@ const programs = "github.com/Alex-Zechariah-02/apiward/cmd/"
 // fetchFolder is the Fetch checkout beside this repository, as in CI.
 var fetchFolder = filepath.Join("..", "fetch")
 
+const (
+	minPort = 20000
+	maxPort = 29999
+)
+
 // Main builds the binaries, runs the tests and removes the binaries.
 // Each test package's TestMain calls it with its own block of test ports,
 // first-last within 20000-29999, apart from every other package's block;
 // the process draws from one share of it (claimPorts).
 func Main(m *testing.M, first, last int) {
-	if first < 20000 || first > last || last > 29999 {
-		panic(fmt.Sprintf("test port block %d-%d is not within 20000-29999", first, last))
+	if first < minPort || first > last || last > maxPort {
+		panic(fmt.Sprintf("test port block %d-%d is not within %d-%d", first, last, minPort, maxPort))
 	}
 	if err := claimPorts(first, last); err != nil {
 		panic(err)

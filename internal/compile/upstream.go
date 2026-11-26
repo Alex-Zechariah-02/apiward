@@ -189,6 +189,12 @@ func compileUpstream(u policy.Upstream, i, version int) (*Endpoint, error) {
 	return e, nil
 }
 
+const (
+	maxPort  = 65535
+	maxDNS   = 253
+	maxLabel = 63
+)
+
 // parseUpstreamURL accepts http://<literal IP>[:port] and
 // https://<literal IP or DNS name>[:port] with nothing after the origin
 // but an optional "/". Literal IPs must not be refused addresses.
@@ -206,7 +212,7 @@ func parseUpstreamURL(raw string) (*Endpoint, bool) {
 	if port == "" {
 		port = defaultPorts[u.Scheme]
 	}
-	if n, err := strconv.Atoi(port); err != nil || n < 1 || n > 65535 || strconv.Itoa(n) != port {
+	if n, err := strconv.Atoi(port); err != nil || n < 1 || n > maxPort || strconv.Itoa(n) != port {
 		return nil, false
 	}
 	e := &Endpoint{scheme: u.Scheme, name: name, address: net.JoinHostPort(name, port)}
@@ -223,11 +229,11 @@ func parseUpstreamURL(raw string) (*Endpoint, bool) {
 
 // isDNSName accepts lower-case LDH names of at least two labels.
 func isDNSName(name string) bool {
-	if len(name) > 253 || !strings.Contains(name, ".") {
+	if len(name) > maxDNS || !strings.Contains(name, ".") {
 		return false
 	}
 	for label := range strings.SplitSeq(name, ".") {
-		if label == "" || len(label) > 63 || label[0] == '-' || label[len(label)-1] == '-' {
+		if label == "" || len(label) > maxLabel || label[0] == '-' || label[len(label)-1] == '-' {
 			return false
 		}
 		for _, c := range label {

@@ -23,7 +23,11 @@ import (
 
 // blockSize is the uncompressed size of one member: big enough that the
 // lost 32 KiB of deflate history at each boundary costs little ratio.
-const blockSize = 1 << 20
+// minBlock is the shortest valid member: 20-byte header plus 8-byte trailer.
+const (
+	blockSize = 1 << 20
+	minBlock  = 28
+)
 
 // blockField is the extra subfield naming a member's compressed length:
 // ID "AW", 4 data bytes, little-endian; Go's writer puts it at bytes 16-20.
@@ -117,7 +121,7 @@ func (p *packedLog) index() error {
 			return errors.New("not a block-compressed audit file")
 		}
 		length := int64(binary.LittleEndian.Uint32(head[16:20]))
-		if length < 28 || at+length > info.Size() {
+		if length < minBlock || at+length > info.Size() {
 			return errors.New("a compressed block's length is out of range")
 		}
 		if _, err := p.file.ReadAt(head[:4], at+length-4); err != nil {

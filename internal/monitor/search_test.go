@@ -249,3 +249,25 @@ func TestSecurityLogNewerSchema(t *testing.T) {
 		t.Fatalf("newer schema: ok %t, unreadable %d", ok, result.Unreadable)
 	}
 }
+
+func TestDecodeCursorBounds(t *testing.T) {
+	baseRaw, err := json.Marshal(Cursor{File: "", First: "a", Offset: 0})
+	if err != nil {
+		t.Fatal(err)
+	}
+	baseLen := len(baseRaw)
+	exact := EncodeCursor(Cursor{File: strings.Repeat("a", maxCursor-baseLen), First: "a", Offset: 0})
+	if DecodeCursor(exact) == nil {
+		t.Fatalf("cursor at %d bytes refused", maxCursor)
+	}
+	over := EncodeCursor(Cursor{File: strings.Repeat("a", maxCursor-baseLen+1), First: "a", Offset: 0})
+	if DecodeCursor(over) != nil {
+		t.Fatalf("cursor at %d bytes accepted", maxCursor+1)
+	}
+	if DecodeCursor(EncodeCursor(Cursor{File: "audit.log", First: strings.Repeat("x", maxFirst)})) == nil {
+		t.Fatalf("cursor with %d-byte first ID refused", maxFirst)
+	}
+	if DecodeCursor(EncodeCursor(Cursor{File: "audit.log", First: strings.Repeat("x", maxFirst+1)})) != nil {
+		t.Fatalf("cursor with %d-byte first ID accepted", maxFirst+1)
+	}
+}

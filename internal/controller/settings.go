@@ -21,6 +21,7 @@ const (
 	MinAuditWait  = 100 * time.Millisecond
 	MaxAuditWait  = 30 * time.Second
 	MinAuditBytes = 4 << 10
+	MinAuditFiles = 2
 	MaxAuditFiles = 1000
 	// History bounds: 100 revisions keep every rollback made by hand in
 	// reach; 100,000 at the 64 KiB policy ceiling is 6.5 GiB of documents.
@@ -89,8 +90,8 @@ func (cfg *Config) applyDefaults() error {
 	if cfg.AuditMaxBytes < MinAuditBytes || cfg.AuditMaxBytes > audit.MaxAuditBytes {
 		return fmt.Errorf("audit_max_bytes must be %d to %d", MinAuditBytes, audit.MaxAuditBytes)
 	}
-	if cfg.AuditMaxFiles < 2 || cfg.AuditMaxFiles > MaxAuditFiles {
-		return fmt.Errorf("audit_max_files must be 2 to %d", MaxAuditFiles)
+	if cfg.AuditMaxFiles < MinAuditFiles || cfg.AuditMaxFiles > MaxAuditFiles {
+		return fmt.Errorf("audit_max_files must be %d to %d", MinAuditFiles, MaxAuditFiles)
 	}
 	if cfg.HistoryKeep < MinHistory || cfg.HistoryKeep > MaxHistory {
 		return fmt.Errorf("history_keep must be %d to %d", MinHistory, MaxHistory)

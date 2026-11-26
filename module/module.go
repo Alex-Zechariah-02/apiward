@@ -116,10 +116,15 @@ var codeFormat = regexp.MustCompile(`^[a-z][a-z0-9_]{0,63}$`)
 // Pass lets the request continue.
 func Pass() Result { return Result{outcome: pass} }
 
+const (
+	minRefusal = 400
+	maxRefusal = 499
+)
+
 // Refuse ends the request with status (400-499) and the error code code. A
 // status outside that range or a malformed code becomes a failure.
 func Refuse(status int, code string) Result {
-	if status < 400 || status > 499 || !codeFormat.MatchString(code) {
+	if status < minRefusal || status > maxRefusal || !codeFormat.MatchString(code) {
 		return Fail("invalid refusal")
 	}
 	return Result{outcome: refuse, status: status, code: code}
