@@ -124,4 +124,22 @@ func TestSignIn(t *testing.T) {
 			}
 		}
 	})
+	// The rule takes minPasswordBytes to maxPasswordBytes of valid UTF-8.
+	t.Run("length and encoding bounds", func(t *testing.T) {
+		text := strings.Repeat("Vq7#Zx9!", maxPasswordBytes/8+1)
+		for _, c := range []struct {
+			candidate string
+			want      bool
+		}{
+			{text[:minPasswordBytes-1], false},
+			{text[:minPasswordBytes], true},
+			{text[:maxPasswordBytes], true},
+			{text[:maxPasswordBytes+1], false},
+			{text[:minPasswordBytes] + "\xff", false},
+		} {
+			if got := validPassword(c.candidate); got != c.want {
+				t.Errorf("validPassword of %d bytes = %v, want %v", len(c.candidate), got, c.want)
+			}
+		}
+	})
 }
