@@ -30,6 +30,5 @@ func TestScheduleRetryArmsOnce(t *testing.T) {
 	if c.retry != first || c.retryWait != pause {
 		t.Fatalf("a second request replaced the pending retry (pause %v, then %v)", pause, c.retryWait)
 	}
-	first.Stop()
-	c.retry = nil
+	c.stopRetry()
 }
