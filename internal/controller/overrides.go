@@ -71,6 +71,13 @@ func (c *Controller) ValidateOverride(ctx context.Context, actor string, expecte
 		return c.storeFailure("", err)
 	}
 	o, code, field, holder := proposeOverride(a, expected, request, actor, now)
+	if code == "" && len(a.Overrides) > 0 {
+		// An override must compile on its own against the active base so that
+		// revoking or expiring another override cannot invalidate it.
+		if _, err := authorityGeneration(c.network.Load(), a, []store.Override{o}, c.config.Limits); err != nil {
+			code, field = policyRejection(err)
+		}
+	}
 	if code == "" {
 		if _, err := authorityGeneration(c.network.Load(), a, append(slices.Clone(a.Overrides), o), c.config.Limits); err != nil {
 			code, field = policyRejection(err)
@@ -180,6 +187,13 @@ func (c *Controller) publishOverrides(ctx context.Context, t store.TransitionRec
 
 	next := slices.DeleteFunc(slices.Clone(a.Overrides), func(active store.Override) bool { return active.ID == o.ID })
 	if status == store.OverrideActive {
+		if len(next) > 0 {
+			if _, err := authorityGeneration(c.network.Load(), a, []store.Override{o}, c.config.Limits); err != nil {
+				t.Override = 0
+				code, field := policyRejection(err)
+				return c.reject(ctx, t, code, field, now)
+			}
+		}
 		next = append(next, o)
 	}
 	g, err := authorityGeneration(c.network.Load(), a, next, c.config.Limits)

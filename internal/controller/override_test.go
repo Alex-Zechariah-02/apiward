@@ -3,7 +3,10 @@
 package controller
 
 import (
+	"context"
+	"database/sql"
 	"math/rand/v2"
+	"net/http"
 	"slices"
 	"strings"
 	"testing"
@@ -235,5 +238,54 @@ func TestApplyOverrides(t *testing.T) {
 	tooMany := make([]store.Override, store.MaxActiveOverrides+1)
 	if _, err := effectiveGeneration(closedNetwork(t), basePolicy, 7, deadline, tooMany, policy.Limits{}); overrideErrorCode(err) != "LIMIT_EXCEEDED@overrides" {
 		t.Errorf("too many overrides: %v", err)
+	}
+}
+
+// Each override must compile on its own against the active base, so revoking
+// or expiring another active override can never leave the remaining overrides
+// unable to compile.
+func TestOverrideCheckedAloneAgainstBase(t *testing.T) {
+	base := storetest.Protected()
+	base.Roles = append(slices.Clone(base.Roles), policy.Role{ID: "EXTRA"})
+	base.Operations = append(slices.Clone(base.Operations), policy.Operation{
+		ID: "read-a-v2", API: "a", Method: "GET", Target: "/a/*", Access: "allow", Auth: "required",
+		When: &policy.When{Headers: []policy.HeaderCondition{{Name: "X-Version", Value: "2"}}},
+	})
+	base.Permits = append(slices.Clone(base.Permits), policy.Permit{Role: "READER", Operation: "read-a-v2"})
+
+	e := newEnv(t)
+	storetest.Seed(t, e.database, base, storetest.Options{Administrator: "admin"})
+	c := e.own(e.controllerConfig())
+	ctx, rev1 := context.Background(), sql.NullInt64{Int64: 1, Valid: true}
+
+	o1, code := c.CreateOverride(ctx, store.TransitionRecord{ID: "t1", Kind: "tpo.create", Actor: "admin", Target: "permit:EXTRA:read-a", Expected: rev1, Digest: "d1"}, permitOverride(store.OverrideException, "EXTRA", "read-a", 60))
+	if code != http.StatusOK {
+		t.Fatalf("create o1: %d %+v", code, o1)
+	}
+	v2Req := permitOverride(store.OverrideException, "EXTRA", "read-a-v2", 300)
+	if val, valCode := c.ValidateOverride(ctx, "admin", 1, v2Req); valCode == http.StatusOK || val.Reason != "CONDITION_WEAKER" {
+		t.Fatalf("validate dependent exception: %d %+v, want CONDITION_WEAKER", valCode, val)
+	}
+	if o2, o2Code := c.CreateOverride(ctx, store.TransitionRecord{ID: "t2", Kind: "tpo.create", Actor: "admin", Target: "permit:EXTRA:read-a-v2", Expected: rev1, Digest: "d2"}, v2Req); o2Code == http.StatusOK || o2.Reason != "CONDITION_WEAKER" {
+		t.Fatalf("create dependent exception: %d %+v, want CONDITION_WEAKER", o2Code, o2)
+	}
+	if rev, revCode := c.RevokeOverride(ctx, store.TransitionRecord{ID: "t3", Kind: "tpo.revoke", Actor: "admin", Target: "override", Expected: rev1, Digest: "d3"}, o1.Override); revCode != http.StatusOK || c.State() != store.ModeNormal {
+		t.Fatalf("revoke o1: %d %+v state=%q", revCode, rev, c.State())
+	}
+
+	// Containment on a conditioned sibling must not enable containment on its base.
+	c1, c1Code := c.CreateOverride(ctx, store.TransitionRecord{ID: "t4", Kind: "tpo.create", Actor: "admin", Target: "operation:read-a-v2", Expected: rev1, Digest: "d4"}, operationContainment("read-a-v2", 60))
+	if c1Code != http.StatusOK {
+		t.Fatalf("create containment on variant: %d %+v", c1Code, c1)
+	}
+	if c2, c2Code := c.CreateOverride(ctx, store.TransitionRecord{ID: "t5", Kind: "tpo.create", Actor: "admin", Target: "operation:read-a", Expected: rev1, Digest: "d5"}, operationContainment("read-a", 300)); c2Code == http.StatusOK || c2.Reason != "CONDITION_WEAKER" {
+		t.Fatalf("create dependent containment: %d %+v, want CONDITION_WEAKER", c2Code, c2)
+	}
+	if rev, revCode := c.RevokeOverride(ctx, store.TransitionRecord{ID: "t5r", Kind: "tpo.revoke", Actor: "admin", Target: "override", Expected: rev1, Digest: "d5r"}, c1.Override); revCode != http.StatusOK || c.State() != store.ModeNormal {
+		t.Fatalf("revoke c1: %d %+v state=%q", revCode, rev, c.State())
+	}
+	// An exception on the conditioned sibling valid against the base alone still succeeds.
+	if okOut, okCode := c.CreateOverride(ctx, store.TransitionRecord{ID: "t6", Kind: "tpo.create", Actor: "admin", Target: "permit:WRITER:read-a-v2", Expected: rev1, Digest: "d6"}, permitOverride(store.OverrideException, "WRITER", "read-a-v2", 60)); okCode != http.StatusOK {
+		t.Fatalf("create independent variant exception: %d %+v", okCode, okOut)
 	}
 }
