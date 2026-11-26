@@ -114,7 +114,8 @@ Every request goes through these checks in this order; the first that refuses an
 ### Preflight requests
 
 - The gateway answers a preflight (`OPTIONS` with `Origin` and `Access-Control-Request-Method`) on such an API itself and never forwards it: `204` with the CORS headers when the origin, the method and every requested header are allowed, `204` without them otherwise.
-- Preflights are recorded as `request.preflight` events (decision `allowed` or `refused`, code `cors_preflight` or `cors_refused`) and, when one of the API's public operations has a rate rule, limited per client address by the first such rule on a counter of their own.
+- Preflights are recorded as `request.preflight` events (decision `allowed` or `refused`, code `cors_preflight` or `cors_refused`); refused ones within the client address's refusal budget ([logs.md](logs.md)).
+- Preflights are limited per client address on a counter of their own: by the strictest rate rule of the API's public operations, or, on an API whose operations all need a token, by the strictest rate rule of all its operations. An API with neither does not count them.
 - The API's address allow list and preflight rate rule apply to every preflight on its paths, also one whose requested method has no operation.
 
 ### Responses

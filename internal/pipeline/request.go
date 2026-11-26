@@ -136,12 +136,17 @@ func (q *request) answerPreflight(allowed bool) {
 
 // answered records and answers 204 an OPTIONS request the gateway answers
 // itself at ROUTE, with whatever headers the caller set: a CORS preflight or
-// one whose Max-Forwards is 0. It is never forwarded.
+// one whose Max-Forwards is 0. It is never forwarded. A refused preflight
+// takes its record from the client address's refusal budget.
 func (q *request) answered(decision, code, result string) {
 	q.event.Kind, q.event.Stage, q.event.Status = "request.preflight", audit.StageNames[audit.StageRoute], http.StatusNoContent
 	q.event.Decision, q.event.Error, q.event.Stages[audit.StageRoute] = decision, code, result
 	q.event.DurationMS = float64(time.Since(q.started)) / float64(time.Millisecond)
-	q.audit.Record(q.event)
+	if result == audit.StageReject {
+		q.audit.RecordRefusal(q.event)
+	} else {
+		q.audit.Record(q.event)
+	}
 	q.observations.Record(q.event)
 	q.w.WriteHeader(http.StatusNoContent)
 }

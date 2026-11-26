@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -28,9 +29,10 @@ type verifiedAuthority struct {
 
 func (a verifiedAuthority) Verifier() *Verifier { return a.verifier }
 
-func runBudgetRequests(t *testing.T, v *Verifier, count int, makeReq func() *http.Request, wantStatus int) ([]map[string]any, map[string]any) {
-	t.Helper()
-	g, err := compile.Compile(policy.Policy{
+// budgetPolicy is the policy of the budget tests: public reads on API a and
+// one operation that needs a token and checks its body.
+func budgetPolicy() policy.Policy {
+	return policy.Policy{
 		SchemaVersion: policy.SchemaVersion,
 		Profile:       policy.ProfileCore,
 		Upstreams:     []policy.Upstream{{ID: "A", Dial: "127.0.0.1:9"}},
@@ -52,7 +54,14 @@ func runBudgetRequests(t *testing.T, v *Verifier, count int, makeReq func() *htt
 				},
 			},
 		},
-	}, 1, time.Time{}, policy.Limits{})
+	}
+}
+
+// serveRecorded sends count requests from one client address through a
+// handler for p and returns their statuses and the security log's records.
+func serveRecorded(t *testing.T, p policy.Policy, v *Verifier, count int, makeReq func() *http.Request) ([]int, []map[string]any) {
+	t.Helper()
+	g, err := compile.Compile(p, 1, time.Time{}, policy.Limits{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -73,14 +82,13 @@ func runBudgetRequests(t *testing.T, v *Verifier, count int, makeReq func() *htt
 	if err != nil {
 		t.Fatal(err)
 	}
+	var codes []int
 	for range count {
 		rec := httptest.NewRecorder()
 		req := makeReq()
 		req.RemoteAddr = "203.0.113.10:12345"
 		h.ServeHTTP(rec, req)
-		if rec.Code != wantStatus {
-			t.Fatalf("status = %d, want %d (body=%s)", rec.Code, wantStatus, rec.Body.String())
-		}
+		codes = append(codes, rec.Code)
 	}
 	if err := log.Close(t.Context()); err != nil {
 		t.Fatal(err)
@@ -90,25 +98,44 @@ func runBudgetRequests(t *testing.T, v *Verifier, count int, makeReq func() *htt
 		t.Fatal(err)
 	}
 	defer file.Close()
-	var rejected []map[string]any
-	var summary map[string]any
+	var events []map[string]any
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
 		var ev map[string]any
-		if json.Unmarshal(scanner.Bytes(), &ev) != nil {
-			continue
-		}
-		switch ev["kind"] {
-		case "request.rejected":
-			rejected = append(rejected, ev)
-		case "audit.ingress_summary":
-			summary = ev
+		if json.Unmarshal(scanner.Bytes(), &ev) == nil {
+			events = append(events, ev)
 		}
 	}
 	if err := scanner.Err(); err != nil {
 		t.Fatal(err)
 	}
-	return rejected, summary
+	return codes, events
+}
+
+// kindOf returns the records of one kind, in log order.
+func kindOf(events []map[string]any, kind string) []map[string]any {
+	var out []map[string]any
+	for _, ev := range events {
+		if ev["kind"] == kind {
+			out = append(out, ev)
+		}
+	}
+	return out
+}
+
+func runBudgetRequests(t *testing.T, v *Verifier, count int, makeReq func() *http.Request, wantStatus int) ([]map[string]any, map[string]any) {
+	t.Helper()
+	codes, events := serveRecorded(t, budgetPolicy(), v, count, makeReq)
+	for i, code := range codes {
+		if code != wantStatus {
+			t.Fatalf("request %d: status = %d, want %d", i, code, wantStatus)
+		}
+	}
+	var summary map[string]any
+	if summaries := kindOf(events, "audit.ingress_summary"); len(summaries) > 0 {
+		summary = summaries[len(summaries)-1]
+	}
+	return kindOf(events, "request.rejected"), summary
 }
 
 func assertBudgeted(t *testing.T, rejected []map[string]any, summary map[string]any, stage, reason, summaryKey string) {
@@ -183,5 +210,57 @@ func TestValidationRefusalsStayFull(t *testing.T) {
 	}
 	if summary != nil {
 		t.Fatalf("expected no audit.ingress_summary, got %v", summary)
+	}
+}
+
+// The preflights of an API whose operations all need a token take the
+// strictest of their rate rules, per client address, and its refused
+// preflights share the address's refusal budget.
+func TestTokenAPIPreflightsRateLimitedAndBudgeted(t *testing.T) {
+	strict := &policy.RateRule{Algorithm: compile.RateAlgorithm, Count: 3, WindowSeconds: 60, Key: compile.RateKeySubject}
+	loose := &policy.RateRule{Algorithm: compile.RateAlgorithm, Count: 5, WindowSeconds: 60, Key: compile.RateKeySubject}
+	cors := &policy.CORS{Origins: []string{"https://shop.example.com"}, Methods: []string{http.MethodGet}}
+	token := func(id, api, target string, rate *policy.RateRule) policy.Operation {
+		return policy.Operation{ID: id, API: api, Method: http.MethodGet, Target: target, Access: "allow", Auth: "required", Rate: rate}
+	}
+	p := policy.Policy{
+		SchemaVersion: policy.SchemaVersion,
+		Profile:       policy.ProfileCore,
+		Upstreams:     []policy.Upstream{{ID: "A", Dial: "127.0.0.1:9"}},
+		APIs:          []policy.API{{ID: "a", Upstream: "A", CORS: cors}, {ID: "b", Upstream: "A", CORS: cors}},
+		Roles:         []policy.Role{{ID: "customer"}},
+		Permits:       []policy.Permit{{Role: "customer", Operation: "items"}, {Role: "customer", Operation: "orders"}, {Role: "customer", Operation: "tickets"}},
+		Operations:    []policy.Operation{token("items", "a", "/a/items", loose), token("orders", "a", "/a/orders", strict), token("tickets", "b", "/b/tickets", nil)},
+	}
+	preflight := func(path, origin string) func() *http.Request {
+		return func() *http.Request {
+			req := httptest.NewRequest(http.MethodOptions, path, nil)
+			req.Header.Set("Origin", origin)
+			req.Header.Set("Access-Control-Request-Method", http.MethodGet)
+			return req
+		}
+	}
+
+	codes, _ := serveRecorded(t, p, nil, 5, preflight("/a/items", "https://shop.example.com"))
+	if want := []int{204, 204, 204, 429, 429}; !slices.Equal(codes, want) {
+		t.Errorf("preflights of a token API: %v, want %v", codes, want)
+	}
+
+	codes, events := serveRecorded(t, p, nil, 70, preflight("/b/tickets", "https://other.example.com"))
+	for i, code := range codes {
+		if code != http.StatusNoContent {
+			t.Fatalf("refused preflight %d: status %d, want 204", i, code)
+		}
+	}
+	if full := len(kindOf(events, "request.preflight")); full != 60 {
+		t.Errorf("refused preflights recorded in full: %d, want 60", full)
+	}
+	summaries := kindOf(events, "audit.ingress_summary")
+	if len(summaries) == 0 {
+		t.Fatal("no audit.ingress_summary record")
+	}
+	counts, _ := summaries[len(summaries)-1]["counts"].(map[string]any)
+	if counts["ROUTE/cors_refused/tickets"] != float64(10) {
+		t.Errorf("summary counts %v, want 10 under ROUTE/cors_refused/tickets", counts)
 	}
 }

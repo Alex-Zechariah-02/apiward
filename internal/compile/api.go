@@ -18,7 +18,7 @@ type apiRule struct {
 	response  *ResponseRule // nil: responses unchanged
 	addresses ranges
 	limited   bool      // addresses applies; false admits every client address
-	preflight *RateRule // the strictest public operation's rate rule, if any
+	preflight *RateRule // the rate rule of the API's preflights, if any (checkAPIs)
 }
 
 // compileAPIs checks the policy's APIs against the upstream inventory and
@@ -84,21 +84,31 @@ func compileAddresses(ranges []string, i int) ([]netip.Prefix, error) {
 // without credentials on an API whose operations are all public. It also
 // picks each API's preflight rate rule: the strictest of its public
 // operations' rules, so no public operation's quota is looser for a
-// preflight than for the request it announces.
+// preflight than for the request it announces; on an API without public
+// operations, the strictest of all its operations' rules, so a client
+// without a token cannot send it preflights without limit.
 func checkAPIs(p policy.Policy, apis map[string]*apiRule, rules map[string]*Rule) error {
 	for i, a := range p.APIs {
 		api := apis[a.ID]
-		methods, public := map[string]bool{}, true
+		methods, public, open := map[string]bool{}, true, false
+		var strictest *RateRule
 		for _, op := range p.Operations {
 			if op.API != a.ID {
 				continue
 			}
 			methods[op.Method] = true
 			public = public && op.Auth == "none"
-			// No public operation with a rate rule: preflights are not counted.
-			if rate := rules[op.ID].rate; op.Auth == "none" && rate != nil && (api.preflight == nil || rate.stricter(api.preflight)) {
+			open = open || op.Auth == "none"
+			rate := rules[op.ID].rate
+			if rate != nil && (strictest == nil || rate.stricter(strictest)) {
+				strictest = rate
+			}
+			if op.Auth == "none" && rate != nil && (api.preflight == nil || rate.stricter(api.preflight)) {
 				api.preflight = rate
 			}
+		}
+		if !open {
+			api.preflight = strictest
 		}
 		if api.cors == nil {
 			continue
