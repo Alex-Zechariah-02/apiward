@@ -150,6 +150,10 @@ func ReadPacked(path string) (Packed, error) {
 		return Packed{}, err
 	}
 	defer zr.Close()
+	return readPackedHeader(filepath.Base(path), zr)
+}
+
+func readPackedHeader(name string, zr *gzip.Reader) (Packed, error) {
 	var p Packed
 	for field := range strings.FieldsSeq(zr.Comment) {
 		key, value, _ := strings.Cut(field, "=")
@@ -163,13 +167,13 @@ func ReadPacked(path string) (Packed, error) {
 		case "bytes":
 			size, err := strconv.ParseInt(value, 10, 64)
 			if err != nil || size < 0 || size > MaxAuditBytes {
-				return Packed{}, fmt.Errorf("%s: the size in its gzip header is not 0 to %d bytes", filepath.Base(path), MaxAuditBytes)
+				return Packed{}, fmt.Errorf("%s: the size in its gzip header is not 0 to %d bytes", name, MaxAuditBytes)
 			}
 			p.Bytes = size
 		}
 	}
 	if p.Digest == "" {
-		return Packed{}, fmt.Errorf("%s: no description in its gzip header", filepath.Base(path))
+		return Packed{}, fmt.Errorf("%s: no description in its gzip header", name)
 	}
 	return p, nil
 }

@@ -25,25 +25,35 @@ func Regular(path string) (os.FileInfo, error) {
 	return info, nil
 }
 
+// OpenRegular opens the regular file at path after verifying it is regular
+// before opening and that the opened descriptor still refers to the same file.
+func OpenRegular(path string) (*os.File, os.FileInfo, error) {
+	named, err := Regular(path)
+	if err != nil {
+		return nil, nil, err
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, nil, err
+	}
+	info, err := file.Stat()
+	if err != nil {
+		return nil, nil, errors.Join(err, file.Close())
+	}
+	if !os.SameFile(named, info) {
+		return nil, nil, errors.Join(errors.New("the file was replaced while it was opened"), file.Close())
+	}
+	return file, info, nil
+}
+
 // Read reads the regular file at path, refusing one larger than limit bytes
 // unread, after check, when given, accepted the opened file's information.
 func Read(path string, limit int64, check func(os.FileInfo) error) ([]byte, error) {
-	named, err := Regular(path)
-	if err != nil {
-		return nil, err
-	}
-	file, err := os.Open(path)
+	file, info, err := OpenRegular(path)
 	if err != nil {
 		return nil, err
 	}
 	defer file.Close()
-	info, err := file.Stat()
-	if err != nil {
-		return nil, err
-	}
-	if !os.SameFile(named, info) {
-		return nil, errors.New("the file was replaced while it was opened")
-	}
 	if check != nil {
 		if err := check(info); err != nil {
 			return nil, err

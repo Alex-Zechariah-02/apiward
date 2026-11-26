@@ -21,6 +21,10 @@ func TestVerifyRefusesIrregularAndHugeInput(t *testing.T) {
 	if err := syscall.Mkfifo(fifo, 0o600); err != nil {
 		t.Fatal(err)
 	}
+	gzFifo := filepath.Join(dir, "audit-fifo.log.gz")
+	if err := syscall.Mkfifo(gzFifo, 0o600); err != nil {
+		t.Fatal(err)
+	}
 	huge := filepath.Join(dir, "audit-huge.log")
 	if err := os.WriteFile(huge, nil, 0o600); err != nil {
 		t.Fatal(err)
@@ -28,7 +32,7 @@ func TestVerifyRefusesIrregularAndHugeInput(t *testing.T) {
 	if err := os.Truncate(huge, MaxAuditBytes+1); err != nil {
 		t.Fatal(err)
 	}
-	for _, path := range []string{fifo, huge} {
+	for _, path := range []string{fifo, gzFifo, huge} {
 		done := make(chan error, 1)
 		go func() {
 			_, err := VerifyChain([]string{path}, nil)

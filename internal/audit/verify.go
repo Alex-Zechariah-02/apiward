@@ -13,6 +13,7 @@ package audit
 import (
 	"bufio"
 	"bytes"
+	"compress/gzip"
 	"crypto"
 	"crypto/sha256"
 	"encoding/hex"
@@ -123,22 +124,25 @@ func (v *verifier) content(path string) ([]byte, error) {
 		data, err := filecheck.Read(path, MaxAuditBytes, nil)
 		return Content(data), err
 	}
-	if _, err := filecheck.Regular(path); err != nil {
+	file, _, err := filecheck.OpenRegular(path)
+	if err != nil {
 		return nil, err
 	}
-	header, err := ReadPacked(path)
+	defer file.Close()
+	zr, err := gzip.NewReader(file)
 	if err != nil {
 		v.report.Problems = append(v.report.Problems, path+": "+err.Error())
 		return nil, nil
 	}
-	reader, err := OpenRecords(path)
+	defer zr.Close()
+	header, err := readPackedHeader(filepath.Base(path), zr)
 	if err != nil {
-		return nil, err
+		v.report.Problems = append(v.report.Problems, path+": "+err.Error())
+		return nil, nil
 	}
-	defer reader.Close()
 	// Bounded by the size the header states, so a changed file cannot
 	// expand without limit; a longer content fails the digest check.
-	data, err := io.ReadAll(io.LimitReader(reader, header.Bytes+1))
+	data, err := io.ReadAll(io.LimitReader(zr, header.Bytes+1))
 	sum := sha256.Sum256(data)
 	switch {
 	case err != nil:
