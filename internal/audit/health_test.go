@@ -7,6 +7,8 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -65,6 +67,110 @@ func TestAuditReplaceClearsStuckNoSpace(t *testing.T) {
 			t.Fatal("log stayed Failed() after replace() following down -> noSpace")
 		}
 	})
+}
+
+// Every state move in the audit health table is accepted and updates health,
+// every disallowed move and stale expected state is refused, healthFailed is
+// terminal, and concurrent readers observe only valid health states.
+func TestAuditHealthTransitions(t *testing.T) {
+	t.Parallel()
+	allStates := []logHealth{healthWriting, healthFull, healthDown, healthNoSpace, healthFailed}
+	allowed := map[[2]logHealth]bool{
+		{healthWriting, healthFull}:    true,
+		{healthWriting, healthDown}:    true,
+		{healthWriting, healthNoSpace}: true,
+		{healthWriting, healthFailed}:  true,
+		{healthFull, healthWriting}:    true,
+		{healthFull, healthDown}:       true,
+		{healthFull, healthNoSpace}:    true,
+		{healthFull, healthFailed}:     true,
+		{healthNoSpace, healthWriting}: true,
+		{healthNoSpace, healthDown}:    true,
+		{healthNoSpace, healthFailed}:  true,
+		{healthDown, healthWriting}:    true,
+		{healthDown, healthFailed}:     true,
+	}
+
+	for _, from := range allStates {
+		for _, to := range allStates {
+			a := &AuditLog{}
+			a.health.Store(int32(from))
+			want := allowed[[2]logHealth{from, to}]
+			got := a.moveHealth(from, to)
+			if got != want {
+				t.Errorf("moveHealth(%d, %d) = %v, want %v", from, to, got, want)
+			}
+			wantAfter := from
+			if want {
+				wantAfter = to
+			}
+			if after := a.currentHealth(); after != wantAfter {
+				t.Errorf("after moveHealth(%d, %d): state %d, want %d", from, to, after, wantAfter)
+			}
+		}
+	}
+
+	// Wrong expected state is refused even for a legal edge.
+	a := &AuditLog{}
+	if a.moveHealth(healthDown, healthWriting) || a.currentHealth() != healthWriting {
+		t.Fatalf("wrong expected state succeeded: health=%d", a.currentHealth())
+	}
+	// Unknown state refuses every transition.
+	a.health.Store(99)
+	if a.moveHealth(logHealth(99), healthWriting) {
+		t.Fatal("unknown state transitioned to healthWriting")
+	}
+
+	// failHealth transitions every non-failed state to terminal healthFailed
+	// once and returns false once already failed.
+	for _, from := range allStates {
+		a := &AuditLog{}
+		a.health.Store(int32(from))
+		want := from != healthFailed
+		if got := a.failHealth(); got != want || a.currentHealth() != healthFailed {
+			t.Errorf("from %d: failHealth() = %v (want %v), after=%d", from, got, want, a.currentHealth())
+		}
+		if a.failHealth() {
+			t.Errorf("from %d: second failHealth() succeeded", from)
+		}
+	}
+
+	// Failed() holds for every state except healthWriting.
+	for _, s := range allStates {
+		a.health.Store(int32(s))
+		if got, want := a.Failed(), s != healthWriting; got != want {
+			t.Errorf("state %d: Failed() = %v, want %v", s, got, want)
+		}
+	}
+
+	// Concurrent transitions, terminal failHealth and Failed() reads stay
+	// race-free and valid.
+	a = &AuditLog{}
+	var wg sync.WaitGroup
+	var stop atomic.Bool
+	for range 4 {
+		wg.Go(func() {
+			for !stop.Load() {
+				s := a.currentHealth()
+				_ = a.Failed()
+				if s < healthWriting || s > healthFailed {
+					t.Errorf("invalid health state %d", s)
+					return
+				}
+			}
+		})
+	}
+	for range 2000 {
+		a.moveHealth(healthWriting, healthFull)
+		a.moveHealth(healthFull, healthNoSpace)
+		a.moveHealth(healthNoSpace, healthDown)
+		a.moveHealth(healthDown, healthWriting)
+	}
+	if !a.failHealth() || a.currentHealth() != healthFailed {
+		t.Fatalf("final failHealth failed: state=%d", a.currentHealth())
+	}
+	stop.Store(true)
+	wg.Wait()
 }
 
 func BenchmarkAuditHealth(b *testing.B) {

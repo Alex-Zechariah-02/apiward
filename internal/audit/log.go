@@ -68,17 +68,10 @@ type AuditLog struct {
 	openErr error // why openAudit could not open the file; never changes
 	queue   chan *auditEntry
 	evictCh chan *auditEntry
-	failed  atomic.Bool
-	full    atomic.Bool // the active folder is at its bound under FullRefuse
-	// noSpace is set while the file system has no space for a write; the
-	// writer clears it once a retried write and its sync succeed.
-	noSpace atomic.Bool
+	health  atomic.Int32 // logHealth: writing, full, down, noSpace, or terminal failed
 	// spaceFails counts writes refused for want of space; the archiver evicts
 	// one file on the log disk for each.
 	spaceFails atomic.Uint64
-	// down is set while the active file is being replaced after a failed
-	// sync or write (recover.go); the writer clears it.
-	down atomic.Bool
 	// spaceSince is when the log ran out of space; downSince when it went
 	// down, suspect the file it left and suspectEnd the end of its last
 	// synced batch; used only by the writer.
@@ -129,7 +122,7 @@ type AuditLog struct {
 // administrator outcome that could not be recorded (its reconciliation runs
 // at the next start).
 func (a *AuditLog) Fail(err error) {
-	if a.failed.CompareAndSwap(false, true) {
+	if a.failHealth() {
 		slog.Error("audit log failed; protected admission disabled", "error", err)
 	}
 }

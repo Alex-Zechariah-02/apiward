@@ -77,8 +77,8 @@ func TestAuditCloseReportsWriterFailure(t *testing.T) {
 	if err := a.Close(context.Background()); err != nil {
 		t.Fatalf("close after the replaced file: %v", err)
 	}
-	if a.failed.Load() || a.down.Load() || a.Recoveries() != 1 {
-		t.Fatalf("after the replacement: failed %v, down %v, recoveries %d", a.failed.Load(), a.down.Load(), a.Recoveries())
+	if a.currentHealth() != healthWriting || a.Recoveries() != 1 {
+		t.Fatalf("after the replacement: health %d, recoveries %d", a.currentHealth(), a.Recoveries())
 	}
 	var lost uint64
 	recovered := false
@@ -133,8 +133,8 @@ func TestAuditCloseKeepsLossAfterFailedRotation(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), fmt.Sprintf("0 accepted events and the count of %d refused events not written", room+3)) {
 		t.Fatalf("close after the failed rotation: %v", err)
 	}
-	if a.failed.Load() || !a.full.Load() {
-		t.Fatalf("after the failed rotation: failed %v, full %v; want full only", a.failed.Load(), a.full.Load())
+	if a.currentHealth() != healthFull {
+		t.Fatalf("after the failed rotation: health %d; want healthFull", a.currentHealth())
 	}
 	if events := fileEvents(t, path); len(events) != 1 || events[0].Kind != "earlier" {
 		t.Fatalf("records after the failed rotation: %+v", events)

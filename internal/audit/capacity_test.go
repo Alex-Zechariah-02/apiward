@@ -59,8 +59,8 @@ func TestFullLogResumesWhenFilesMoved(t *testing.T) {
 		}
 		commitN(a, 1)
 	}
-	if a.failed.Load() || !a.full.Load() || commitN(a, 1) != 0 {
-		t.Fatalf("full log: failed %v, full %v, or a commit was acknowledged", a.failed.Load(), a.full.Load())
+	if a.currentHealth() != healthFull || commitN(a, 1) != 0 {
+		t.Fatalf("full log: health %d, or a commit was acknowledged", a.currentHealth())
 	}
 	moved := rotated(t, path)[0]
 	if err := os.Rename(moved, filepath.Join(t.TempDir(), filepath.Base(moved))); err != nil {

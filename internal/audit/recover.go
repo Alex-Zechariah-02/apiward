@@ -33,11 +33,9 @@ var errDown = fmt.Errorf("%w: the audit file is being replaced", errAuditFailed)
 // active file. A failure while the log is already down only leaves it down,
 // so a replacement never recurses.
 func (a *AuditLog) failWrite(err error, reason string) error {
-	if a.down.Load() {
+	if !a.moveHealth(a.currentHealth(), healthDown) {
 		return errDown
 	}
-	a.down.Store(true)
-	a.noSpace.Store(false)
 	a.downSince, a.downReason = time.Now(), reason
 	a.suspect, a.suspectEnd = filepath.Base(a.path), a.size
 	slog.Error("audit file failed; replacing it, protected admission refused until the new file is written", "reason", reason, "error", err)
@@ -63,9 +61,10 @@ func (a *AuditLog) replace() {
 	if err := a.writeBatch([]*auditEntry{{event: a.stamp(e), done: make(chan error, 1)}}); err != nil {
 		return
 	}
-	a.down.Store(false)
-	a.recoveries.Add(1)
-	slog.Info("audit file replaced; protected admission resumed", "suspect", a.suspect, "synced_end", a.suspectEnd)
+	if a.moveHealth(healthDown, healthWriting) {
+		a.recoveries.Add(1)
+		slog.Info("audit file replaced; protected admission resumed", "suspect", a.suspect, "synced_end", a.suspectEnd)
+	}
 }
 
 // reopen closes the active file and moves it aside: a file this recovery

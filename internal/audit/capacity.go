@@ -76,7 +76,7 @@ func (a *AuditLog) Recoveries() int64 { return a.recoveries.Load() }
 // markFull records that the active folder is at its bound. The log keeps its
 // file and retries at each later rotation, so it is not failed.
 func (a *AuditLog) markFull(err error) {
-	if a.full.CompareAndSwap(false, true) {
+	if a.moveHealth(healthWriting, healthFull) {
 		slog.Error("audit log full; protected admission refused until rotated files are moved away (gateway.audit_when_full is \"refuse\")", "error", err)
 	}
 }

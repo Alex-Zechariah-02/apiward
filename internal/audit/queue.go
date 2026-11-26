@@ -38,7 +38,7 @@ var ErrTimedOut = fmt.Errorf("%w: acknowledgement timed out", errAuditFailed)
 // once. When ctx ends first it withdraws the event if the writer has not
 // taken it, and returns ErrTimedOut.
 func (a *AuditLog) Commit(ctx context.Context, e Event) error {
-	if a.failed.Load() || a.noSpace.Load() || a.down.Load() {
+	if h := a.currentHealth(); h == healthFailed || h == healthNoSpace || h == healthDown {
 		return errAuditFailed
 	}
 	entry := &auditEntry{event: e, done: make(chan error, 1)}
@@ -61,7 +61,7 @@ func (a *AuditLog) Commit(ctx context.Context, e Event) error {
 // or it is closing, is counted; the writer writes the count with its next
 // batch, or as it ends.
 func (a *AuditLog) Record(e Event) {
-	if a.failed.Load() || a.enqueue(&auditEntry{event: e}) != nil {
+	if a.currentHealth() == healthFailed || a.enqueue(&auditEntry{event: e}) != nil {
 		a.lost.Add(1)
 	}
 }

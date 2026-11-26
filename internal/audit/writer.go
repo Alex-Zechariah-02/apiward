@@ -62,10 +62,10 @@ func (a *AuditLog) run() {
 				a.write([]*auditEntry{{event: e, done: make(chan error, 1)}})
 			}
 		case <-retry.C:
-			switch {
-			case a.down.Load():
+			switch a.currentHealth() {
+			case healthDown:
 				a.replace()
-			case a.noSpace.Load():
+			case healthNoSpace:
 				a.retrySpace()
 			}
 		}
@@ -160,14 +160,13 @@ func (a *AuditLog) writeSummary() {
 // unacknowledged events are counted as lost; any other failure replaces the
 // active file (recover.go).
 func (a *AuditLog) write(batch []*auditEntry) error {
-	if a.failed.Load() {
+	switch a.currentHealth() {
+	case healthFailed:
 		return errAuditFailed
-	}
-	if a.noSpace.Load() {
+	case healthNoSpace:
 		a.lost.Add(unacknowledged(batch))
 		return errNoSpace
-	}
-	if a.down.Load() {
+	case healthDown:
 		a.lost.Add(unacknowledged(batch))
 		return errDown
 	}
@@ -199,7 +198,7 @@ func (a *AuditLog) writeBatch(batch []*auditEntry) error {
 		}
 		a.marker = rotated
 		rotatedNow = true
-		a.full.Store(false)
+		a.moveHealth(healthFull, healthWriting)
 		mark = a.seq
 		buffer = a.encode(buffer[:0], lost, batch)
 	}

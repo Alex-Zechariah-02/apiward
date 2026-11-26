@@ -33,7 +33,7 @@ func (a *AuditLog) enterNoSpace(err error) {
 			return
 		}
 	}
-	if !a.down.Load() && a.noSpace.CompareAndSwap(false, true) {
+	if a.moveHealth(a.currentHealth(), healthNoSpace) {
 		a.spaceSince = time.Now()
 		slog.Error("audit log has no space; protected admission refused until space returns", "error", err)
 	}
@@ -45,7 +45,7 @@ func (a *AuditLog) enterNoSpace(err error) {
 // reserve when the log is refusing admissions for want of space (noSpace).
 // Only eviction records call commitEviction.
 func (a *AuditLog) commitEviction(ctx context.Context, e Event) error {
-	if a.failed.Load() {
+	if a.currentHealth() == healthFailed {
 		return errAuditFailed
 	}
 	a.mu.RLock()
@@ -73,15 +73,15 @@ func (a *AuditLog) commitEviction(ctx context.Context, e Event) error {
 // record. Under noSpace it deletes and syncs the eviction reserve first, then
 // writes and syncs the record with its chain record without clearing noSpace.
 func (a *AuditLog) writeEviction(entry *auditEntry) error {
-	if a.failed.Load() {
+	switch a.currentHealth() {
+	case healthFailed:
 		return errAuditFailed
-	}
-	if a.down.Load() {
+	case healthDown:
 		return errDown
-	}
-	if !a.noSpace.Load() {
+	case healthNoSpace:
+	default:
 		err := a.writeBatch([]*auditEntry{entry})
-		if err == nil || !a.noSpace.Load() {
+		if err == nil || a.currentHealth() != healthNoSpace {
 			return err
 		}
 	}
@@ -111,8 +111,9 @@ func (a *AuditLog) retrySpace() {
 	if err := a.writeBatch([]*auditEntry{{event: a.stamp(e), done: make(chan error, 1)}}); err != nil {
 		return
 	}
-	a.noSpace.Store(false)
-	slog.Info("audit log has space again; protected admission resumed", "off", off.String())
+	if a.moveHealth(healthNoSpace, healthWriting) {
+		slog.Info("audit log has space again; protected admission resumed", "off", off.String())
+	}
 }
 
 // syncError marks an error of a sync rather than of a write.

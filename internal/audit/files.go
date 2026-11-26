@@ -244,7 +244,7 @@ func (a *AuditLog) Usage() (activeBytes, activeLimit, files, filesLimit int64) {
 // folder is full under FullRefuse, the file system has no space, or the
 // active file is being replaced.
 func (a *AuditLog) Failed() bool {
-	return a.failed.Load() || a.full.Load() || a.noSpace.Load() || a.down.Load()
+	return a.currentHealth() != healthWriting
 }
 
 // OpenErr is why the log could not open its file, or nil.
