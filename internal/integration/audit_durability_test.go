@@ -136,6 +136,8 @@ func TestOutcomeFailureStopsLaterAdmissions(t *testing.T) {
 	if !recovered || lost < 1 {
 		t.Fatalf("replacement recorded %v, lost outcomes counted %v", recovered, lost)
 	}
+	// The archiver moves rotated files while the gateway runs; stopped, they stay put.
+	e.Stop()
 	var admitted bool
 	for _, file := range gatewaytest.RotatedAudit(t, e.AuditLog) {
 		if found, _ := gatewaytest.ParseAudit(gatewaytest.ReadAudit(t, file), filepath.Base(file)); gatewaytest.FindEvent(found, "request.admitted", id) != nil {
