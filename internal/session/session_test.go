@@ -53,6 +53,11 @@ func TestGlobalBound(t *testing.T) {
 	if _, _, err := s.Create("another", 1, now); err != ErrFull {
 		t.Fatalf("past the global bound: %v, want ErrFull", err)
 	}
+	// An administrator at its own limit replaces its oldest session, so a
+	// full table does not refuse it.
+	if _, _, err := s.Create("aaa", 1, now); err != nil {
+		t.Fatalf("an administrator at its own limit in a full table: %v", err)
+	}
 }
 
 // Count reports live sessions only, and ending them closes them.
