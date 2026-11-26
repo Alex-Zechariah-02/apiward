@@ -159,9 +159,17 @@ func readPackedHeader(name string, zr *gzip.Reader) (Packed, error) {
 		key, value, _ := strings.Cut(field, "=")
 		switch key {
 		case "first":
-			p.First, _ = time.Parse(time.RFC3339Nano, value)
+			at, err := time.Parse(time.RFC3339Nano, value)
+			if err != nil {
+				return Packed{}, fmt.Errorf("%s: invalid first time in its gzip header", name)
+			}
+			p.First = at
 		case "last":
-			p.Last, _ = time.Parse(time.RFC3339Nano, value)
+			at, err := time.Parse(time.RFC3339Nano, value)
+			if err != nil {
+				return Packed{}, fmt.Errorf("%s: invalid last time in its gzip header", name)
+			}
+			p.Last = at
 		case "sha256":
 			p.Digest = value
 		case "bytes":

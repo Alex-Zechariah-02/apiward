@@ -40,3 +40,33 @@ func TestReadPackedRefusesBadSize(t *testing.T) {
 		}
 	}
 }
+
+func TestReadPackedRefusesBadTimes(t *testing.T) {
+	dir := t.TempDir()
+	cases := []struct{ name, comment string }{
+		{"bad-first", "first=not-a-time last=2026-11-25T00:00:01Z sha256=deadbeef bytes=0"},
+		{"bad-last", "first=2026-11-25T00:00:00Z last=not-a-time sha256=deadbeef bytes=0"},
+	}
+	for _, tc := range cases {
+		path := filepath.Join(dir, "audit-"+tc.name+".log.gz")
+		var buf bytes.Buffer
+		zw := gzip.NewWriter(&buf)
+		zw.Comment = tc.comment
+		if err := zw.Close(); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, buf.Bytes(), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if packed, err := ReadPacked(path); err == nil {
+			t.Errorf("%s: header accepted: %+v", tc.name, packed)
+		}
+		report, err := VerifyChain([]string{path}, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(strings.Join(report.Problems, "\n"), path) {
+			t.Errorf("%s: verify reported no problem for %s: %v", tc.name, path, report.Problems)
+		}
+	}
+}

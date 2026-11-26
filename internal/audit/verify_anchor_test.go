@@ -220,3 +220,20 @@ func TestVerifyNamesFileWhereUnanchoredRunStarts(t *testing.T) {
 		t.Fatalf("problems %q, want one naming %s", report.Problems, first)
 	}
 }
+
+func TestVerifyRejectsMalformedAnchorDigest(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "audit-1.log")
+	text := `{"event_id":"bbbb-1","kind":"audit.rotated","file":"audit-0.log"}` + "\n" +
+		`{"event_id":"bbbb-2","kind":"audit.chain","sha256":"not-hex"}` + "\n"
+	if err := os.WriteFile(path, []byte(text), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	report, err := VerifyChain([]string{path}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(strings.Join(report.Problems, "\n"), "invalid SHA-256 digest") {
+		t.Fatalf("problems %q, want invalid SHA-256 digest problem", report.Problems)
+	}
+}

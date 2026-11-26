@@ -194,7 +194,11 @@ func (v *verifier) line(line []byte, where string, head bool) {
 	if parsed && r.Kind == "audit.chain" {
 		if v.needAnchor {
 			v.reportUnanchored()
-			v.head, _ = parseDigest(r.Digest)
+			head, ok := parseDigest(r.Digest)
+			if !ok {
+				v.report.Problems = append(v.report.Problems, where+": the chain record has an invalid SHA-256 digest")
+			}
+			v.head = head
 			v.pending, v.lines = v.pending[:0], 0
 			v.runEvicted = nil
 			v.report.Chains++
