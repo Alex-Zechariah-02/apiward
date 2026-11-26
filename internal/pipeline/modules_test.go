@@ -53,7 +53,7 @@ func (p probe) Compile(_ module.Operation, raw json.RawMessage) (module.Check, e
 
 type probeCheck struct{ id, action string }
 
-func (c probeCheck) Check(context.Context, *module.Request) module.Result {
+func (c probeCheck) Check(ctx context.Context, _ *module.Request) module.Result {
 	ranMu.Lock()
 	ran = append(ran, c.id)
 	ranMu.Unlock()
@@ -66,6 +66,8 @@ func (c probeCheck) Check(context.Context, *module.Request) module.Result {
 		panic("check")
 	case "zero":
 		return module.Result{}
+	case "slow":
+		<-ctx.Done()
 	}
 	return module.Pass()
 }
@@ -88,9 +90,9 @@ func (fixedAuthority) Blocked() *store.BlockedAccounts   { return &store.Blocked
 func (fixedAuthority) AddressIndex() *store.AddressIndex { return nil }
 
 // serve compiles a policy whose public endpoint GET /a/x has the given module
-// members, sends one request and returns the answer, whether it was
-// forwarded, and the request's final record.
-func serve(t *testing.T, members map[string]string) (int, bool, map[string]any) {
+// members, sends one request under limits and returns the answer, whether it
+// was forwarded, and the request's final record.
+func serve(t *testing.T, members map[string]string, limits Limits) (int, bool, map[string]any) {
 	t.Helper()
 	ranMu.Lock()
 	ran = nil
@@ -110,7 +112,7 @@ func serve(t *testing.T, members map[string]string) (int, bool, map[string]any) 
 	path := filepath.Join(t.TempDir(), "audit.log")
 	log := audit.OpenAudit(path, audit.Settings{MaxBytes: 1 << 20, MaxFiles: 4})
 	forwarded := false
-	h, err := New(Deps{Authority: fixedAuthority{g}, Audit: log, Observations: monitor.New(policy.DefaultWindow, policy.DefaultAPIs), Limiter: NewLimiter(policy.DefaultRateCounters), Clock: NewClock(), AuditTimeout: time.Second,
+	h, err := New(Deps{Authority: fixedAuthority{g}, Audit: log, Observations: monitor.New(policy.DefaultWindow, policy.DefaultAPIs), Limiter: NewLimiter(policy.DefaultRateCounters), Clock: NewClock(), AuditTimeout: time.Second, Limits: limits,
 		Forward: func(w http.ResponseWriter, _ *http.Request) error {
 			forwarded = true
 			w.WriteHeader(http.StatusOK)
@@ -144,7 +146,7 @@ func serve(t *testing.T, members map[string]string) (int, bool, map[string]any) 
 // Modules run after the built-in stage of their phase, phase by phase and by
 // ID within a phase; every one is recorded, and an unconfigured one reads NA.
 func TestModuleOrder(t *testing.T) {
-	code, forwarded, record := serve(t, map[string]string{"identity_a": "pass", "identity_b": "pass", "authorise_b": "pass", "traffic_a": "pass", "validate_a": "pass", "validate_b": "pass"})
+	code, forwarded, record := serve(t, map[string]string{"identity_a": "pass", "identity_b": "pass", "authorise_b": "pass", "traffic_a": "pass", "validate_a": "pass", "validate_b": "pass"}, Limits{})
 	want := []string{"ingress_a", "ingress_b", "identity_a", "identity_b", "authorise_b", "traffic_a", "validate_a", "validate_b"}
 	if code != http.StatusOK || !forwarded || !slices.Equal(ran, want) {
 		t.Fatalf("answer %d, forwarded %v, ran %v, want %v", code, forwarded, ran, want)
@@ -168,7 +170,7 @@ func TestModuleFailures(t *testing.T) {
 		{"panic", "RBAC", "FAIL", "module authorise_a: panic", http.StatusServiceUnavailable},
 		{"zero", "RBAC", "FAIL", "module authorise_a: no result", http.StatusServiceUnavailable},
 	} {
-		code, forwarded, record := serve(t, map[string]string{"authorise_a": tc.action, "authorise_b": "pass", "traffic_a": "pass"})
+		code, forwarded, record := serve(t, map[string]string{"authorise_a": tc.action, "authorise_b": "pass", "traffic_a": "pass"}, Limits{})
 		stages, _ := record["stages"].(map[string]any)
 		modules, _ := record["modules"].(map[string]any)
 		if code != tc.status || forwarded || record["stage"] != tc.stage || stages[tc.stage] != tc.result || record["error"] != tc.errorText ||
@@ -184,6 +186,16 @@ func TestModuleFailures(t *testing.T) {
 	}, 1, time.Time{}, policy.Limits{})
 	if code := problemCode(err); code != "MODULE_FAILED operations[0].validate_a" {
 		t.Errorf("panic in Compile: %v", err)
+	}
+}
+
+// A module still checking when its phase's deadline passes refuses the
+// request as a failed check does, while the client is still waiting.
+func TestModulePastDeadline(t *testing.T) {
+	code, forwarded, record := serve(t, map[string]string{"traffic_a": "slow"}, Limits{ModuleTimeout: 50 * time.Millisecond})
+	modules, _ := record["modules"].(map[string]any)
+	if code != http.StatusServiceUnavailable || forwarded || modules["traffic_a"] != "FAIL" || record["error"] != "module traffic_a: the phase ran out of time" {
+		t.Fatalf("answer %d, forwarded %v, record %v", code, forwarded, record)
 	}
 }
 
