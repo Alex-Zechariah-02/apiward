@@ -66,7 +66,6 @@ type archiver struct {
 	totalLog, totalArchive atomic.Int64
 	pressure               atomic.Int64
 	held                   atomic.Int64
-	failing                bool // the archive failed at the last pass; archiver only
 	// spaceSeen is the spaceFails count last answered by an eviction; archiver only.
 	spaceSeen uint64
 	// released and evictReleased record when each reserve was last released (Unix ns).
@@ -177,7 +176,7 @@ func (r *archiver) archive(f RotatedFile) error {
 	}
 	if err != nil {
 		if target == r.dir {
-			r.usable.Store(false)
+			r.note(false)
 		}
 		return err
 	}
@@ -263,12 +262,11 @@ func (r *archiver) probe() bool {
 
 // note publishes the archive's health and logs each change once.
 func (r *archiver) note(usable bool) {
-	r.usable.Store(usable)
+	wasUsable := r.usable.Swap(usable)
 	switch {
-	case !usable && !r.failing:
+	case !usable && wasUsable:
 		slog.Error("security log archive folder unavailable; rotated files are compressed in the log folder until it works", "archive", r.dir)
-	case usable && r.failing:
+	case usable && !wasUsable:
 		slog.Info("security log archive folder available again", "archive", r.dir)
 	}
-	r.failing = !usable
 }

@@ -7,14 +7,17 @@
 package audit
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -262,4 +265,32 @@ func TestReserveReleasedAndRemade(t *testing.T) {
 		t.Fatal("the reserve was not released exactly once")
 	}
 	waitFor(t, time.Now().Add(10*time.Second), "the reserve made again", func() bool { return fileExists(reserve) })
+}
+
+func TestArchiverFailureSyncsUsabilityState(t *testing.T) {
+	dir := t.TempDir()
+	path, archive := filepath.Join(dir, "audit.log"), filepath.Join(dir, "archive")
+	// Regular file at archive path forces pack() into r.dir to fail.
+	if err := os.WriteFile(archive, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	src := filepath.Join(dir, "audit-2026-11-27T01-00-00.000.log")
+	if err := os.WriteFile(src, []byte(`{"time":"2026-11-27T01:00:00Z","kind":"request.forwarded"}`+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var logs bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+	r := newArchiver(&AuditLog{path: path}, Settings{Storage: Storage{Archive: archive}})
+	if err := r.archive(RotatedFile{Name: filepath.Base(src), Dir: dir}); err == nil {
+		t.Fatal("archive into a regular file succeeded")
+	}
+	if r.usable.Load() {
+		t.Fatal("archive still marked usable after archive failure")
+	}
+	r.note(true)
+	if !strings.Contains(logs.String(), "archive folder unavailable") || !strings.Contains(logs.String(), "archive folder available again") {
+		t.Fatalf("missing archive state transition logs: %s", logs.String())
+	}
 }
