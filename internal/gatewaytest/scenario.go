@@ -97,6 +97,12 @@ func RunScenarios(t *testing.T, e *Env, fixtures map[string]*FixtureProcess, c f
 			forwarded["generation"] != generation || subject != receipt.Subject {
 			t.Errorf("%s: gateway event %v does not match fixture receipt %+v", sc.Name, forwarded, receipt)
 		}
+		// The upstream's share of the request is milliseconds within its whole time.
+		upstream, _ := forwarded["upstream_ms"].(float64)
+		duration, _ := forwarded["duration_ms"].(float64)
+		if upstream <= 0 || upstream > duration {
+			t.Errorf("%s: upstream_ms %v, want more than 0 and at most duration_ms %v", sc.Name, upstream, duration)
+		}
 		results = append(results, StepResult{resp.StatusCode, receipt.Operation, receipt.Effect})
 	}
 	return results
