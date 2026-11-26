@@ -76,7 +76,6 @@ func parseDigest(text string) ([sha256.Size]byte, bool) {
 	return out, true
 }
 
-// checkpoint checks a checkpoint names the head so far and is signed by its key.
 func (v *verifier) checkpoint(r chainLine, where string) {
 	v.report.Checkpoints++
 	signature, err := base64.RawURLEncoding.DecodeString(r.Signature)

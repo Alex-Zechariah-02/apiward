@@ -29,7 +29,6 @@ func TestVerifyRequiresSignedCoverage(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "audit.log")
 
-	// Two runs producing rotated files with signed checkpoints.
 	for _, subj := range []string{"cust-001", "cust-002"} {
 		a := OpenAudit(path, Settings{MaxBytes: 1500, MaxFiles: 64, Append: true, Signer: signer})
 		for i := range 20 {
@@ -54,8 +53,6 @@ func TestVerifyRequiresSignedCoverage(t *testing.T) {
 		t.Fatalf("setup expected %s missing: %+v %v", deletedName, before, err)
 	}
 
-	// Case 1: a forged uncheckpointed run naming the deleted file in audit.evicted
-	// neither clears Missing nor passes verification with keys.
 	forgedEvict := fmt.Sprintf(`{"event_id":"forgedboot-1","kind":"audit.evicted","file":%q}`+"\n", deletedName)
 	var zeroHead [sha256.Size]byte
 	sum := sha256.New()
@@ -84,7 +81,6 @@ func TestVerifyRequiresSignedCoverage(t *testing.T) {
 		t.Errorf("expected checkpoint problem naming forgedboot, got %v", after.Problems)
 	}
 
-	// Case 2: completely forged standalone file with zero checkpoints verified with keys.
 	forgedOnly := filepath.Join(dir, "forged-only.log")
 	if err := os.WriteFile(forgedOnly, []byte(forgedEvict+forgedChain), 0o600); err != nil {
 		t.Fatal(err)
@@ -97,7 +93,6 @@ func TestVerifyRequiresSignedCoverage(t *testing.T) {
 		t.Errorf("forged standalone file: valid=%v problems=%v, want 1 checkpoint problem", repForged.Valid(), repForged.Problems)
 	}
 
-	// Case 3: a real run younger than its first checkpoint reports one problem with keys.
 	youngPath := filepath.Join(dir, "young.log")
 	young := OpenAudit(youngPath, Settings{MaxBytes: 1 << 20, MaxFiles: 4, Append: true, Signer: signer})
 	if err := young.Commit(context.Background(), Event{Kind: "request.admitted", RequestID: "r-young", Subject: "cust-001"}); err != nil {
@@ -124,7 +119,6 @@ func TestVerifyAcceptsSignedEviction(t *testing.T) {
 	keys := map[string]crypto.PublicKey{"k1": public}
 	path := filepath.Join(t.TempDir(), "audit.log")
 
-	// Run 1 and Run 2 produce rotated files with signed checkpoints.
 	for _, subj := range []string{"cust-001", "cust-002"} {
 		a := OpenAudit(path, Settings{MaxBytes: 1500, MaxFiles: 64, Append: true, Signer: signer})
 		for i := range 20 {
@@ -143,8 +137,6 @@ func TestVerifyAcceptsSignedEviction(t *testing.T) {
 	// Omit rot12[len-2] (whose successor rot12[len-1] is in Run 2 and anchors cleanly).
 	evictedName := filepath.Base(rot12[len(rot12)-2])
 
-	// Run 3: record audit.evicted for evictedName, then write enough records to
-	// rotate so a signed checkpoint of Run 3 covers that eviction record.
 	a3 := OpenAudit(path, Settings{MaxBytes: 1500, MaxFiles: 64, Append: true, Signer: signer})
 	if err := a3.Commit(context.Background(), Event{Kind: "audit.evicted", File: evictedName}); err != nil {
 		t.Fatal(err)

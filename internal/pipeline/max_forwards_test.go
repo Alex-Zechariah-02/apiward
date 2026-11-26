@@ -102,7 +102,6 @@ func TestMaxForwardsAfterAdmissionChecks(t *testing.T) {
 		}
 	}
 
-	// Rate-limited OPTIONS route: first admitted locally (204), second refused 429.
 	if rec := send("/a/limited", "0"); rec.Code != http.StatusNoContent {
 		t.Fatalf("first rate-limited Max-Forwards 0: status %d, want 204", rec.Code)
 	}
@@ -110,7 +109,6 @@ func TestMaxForwardsAfterAdmissionChecks(t *testing.T) {
 		t.Errorf("second rate-limited Max-Forwards 0: status %d, want 429", rec.Code)
 	}
 
-	// Admitted OPTIONS route: answered locally with Allow and never forwarded.
 	if rec := send("/a/o", "0"); rec.Code != http.StatusNoContent || !strings.Contains(rec.Header().Get("Allow"), "GET") || !strings.Contains(rec.Header().Get("Allow"), "OPTIONS") {
 		t.Errorf("admitted Max-Forwards 0: status %d Allow=%q", rec.Code, rec.Header().Get("Allow"))
 	}
