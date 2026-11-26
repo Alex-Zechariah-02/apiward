@@ -63,10 +63,12 @@ type verifier struct {
 	runRecords    bool
 	runVerified   bool
 	runUnanchored bool
-	runEvicted    []string
-	// evicted names the files audit.evicted records name (covered by a
-	// verified checkpoint when keys are given); before names each file's
-	// predecessor from its first audit.rotated record.
+	runEvicted    []string // audit.evicted files no chain record covers yet
+	runChained    []string // audit.evicted files chained but not yet signed
+	// evicted names the files audit.evicted records name (with keys given,
+	// only once a verified checkpoint signs a chain head covering them);
+	// before names each file's predecessor from its first audit.rotated
+	// record.
 	evicted map[string]bool
 	before  []string
 }
@@ -185,6 +187,7 @@ func (v *verifier) line(line []byte, where string, head bool) {
 			v.reportUnanchored()
 			v.head, _ = parseDigest(r.Digest)
 			v.pending, v.lines = v.pending[:0], 0
+			v.runEvicted = nil
 			v.report.Chains++
 			return
 		}
@@ -193,9 +196,12 @@ func (v *verifier) line(line []byte, where string, head bool) {
 		sum.Write(v.pending)
 		var head [sha256.Size]byte
 		copy(head[:], sum.Sum(nil))
-		if hex.EncodeToString(head[:]) != r.Digest {
+		if hex.EncodeToString(head[:]) == r.Digest {
+			v.runChained = append(v.runChained, v.runEvicted...)
+		} else {
 			v.report.Problems = append(v.report.Problems, where+": the records before this chain record were altered, added or removed")
 		}
+		v.runEvicted = nil
 		v.head, v.pending, v.lines = head, v.pending[:0], 0
 		v.report.Chains++
 		return

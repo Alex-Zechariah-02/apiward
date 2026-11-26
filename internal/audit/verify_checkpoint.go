@@ -39,10 +39,10 @@ func (v *verifier) anchor(r chainLine) {
 
 func (v *verifier) markVerified() {
 	v.runVerified = true
-	for _, name := range v.runEvicted {
+	for _, name := range v.runChained {
 		v.evicted[name] = true
 	}
-	v.runEvicted = nil
+	v.runChained = nil
 }
 
 func (v *verifier) finishRun() {
@@ -56,7 +56,7 @@ func (v *verifier) finishRun() {
 		}
 		v.report.Problems = append(v.report.Problems, fmt.Sprintf("%s: run %s has no verifiable checkpoint; its records are not signed by any given key", v.origin, name))
 	}
-	v.runRecords, v.runVerified, v.runUnanchored, v.runEvicted = false, false, false, nil
+	v.runRecords, v.runVerified, v.runUnanchored, v.runEvicted, v.runChained = false, false, false, nil, nil
 }
 
 func (v *verifier) reportUnanchored() {

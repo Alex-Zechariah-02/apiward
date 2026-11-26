@@ -11,6 +11,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -179,5 +180,62 @@ func TestVerifyAcceptsSignedEviction(t *testing.T) {
 	}
 	if repUncovered.Valid() || !slices.Contains(repUncovered.Missing, otherMissing) {
 		t.Fatalf("uncovered audit.evicted hid %s or passed: %+v", otherMissing, repUncovered)
+	}
+}
+
+// A checkpoint signs the chain head before it, not the records after that
+// head, so an eviction placed there and cut off from its chain record
+// explains nothing.
+func TestVerifyIgnoresUnchainedEviction(t *testing.T) {
+	public, private, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	signer := func(message []byte) (string, []byte, error) { return "k1", ed25519.Sign(private, message), nil }
+	keys := map[string]crypto.PublicKey{"k1": public}
+	path := filepath.Join(t.TempDir(), "audit.log")
+	for _, subject := range []string{"cust-001", "cust-002"} {
+		a := OpenAudit(path, Settings{MaxBytes: 1500, MaxFiles: 64, Append: true, Signer: signer})
+		for i := range 20 {
+			if err := a.Commit(context.Background(), Event{Kind: "request.admitted", RequestID: fmt.Sprintf("%s-%d", subject, i), Subject: subject}); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := a.Close(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	rot := rotated(t, path)
+	if len(rot) < 3 {
+		t.Fatalf("expected >= 3 rotated files, got %d", len(rot))
+	}
+	deleted := filepath.Base(rot[len(rot)-2])
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.SplitAfter(string(Content(data)), "\n")
+	var forged []string
+	for _, line := range lines {
+		if strings.Contains(line, `"kind":"audit.checkpoint"`) {
+			var r chainLine
+			if err := json.Unmarshal([]byte(line), &r); err != nil {
+				t.Fatal(err)
+			}
+			boot, _, _ := strings.Cut(r.ID, "-")
+			forged = append(forged, fmt.Sprintf(`{"event_id":"%s-forged","kind":"audit.evicted","file":%q}`+"\n", boot, deleted), line)
+			break
+		}
+		forged = append(forged, line)
+	}
+	if err := os.WriteFile(path, []byte(strings.Join(forged, "")), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	report, err := VerifyChain([]string{rot[0], rot[1], rot[len(rot)-1], path}, keys)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Valid() || !slices.Contains(report.Missing, deleted) {
+		t.Fatalf("an eviction no chain record covers hid %s: %+v", deleted, report)
 	}
 }
