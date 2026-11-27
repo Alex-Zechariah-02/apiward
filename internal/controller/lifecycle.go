@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/audit"
+	"github.com/Alex-Zechariah-02/apiward/internal/compile"
 	"github.com/Alex-Zechariah-02/apiward/internal/monitor"
 	"github.com/Alex-Zechariah-02/apiward/internal/store"
 )
@@ -61,7 +62,7 @@ func (c *Controller) savePermitUse() {
 	if st == nil {
 		return
 	}
-	now := time.Now()
+	now := compile.TrustedNow()
 	snap := c.observations.PermitUseSnapshot(now)
 	state := store.PermitUseState{Since: snap.Since, Requests: snap.Requests, Used: make([]store.PermitUseRow, 0, len(snap.Used))}
 	for pair, at := range snap.Used {
