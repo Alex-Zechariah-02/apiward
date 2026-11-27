@@ -118,12 +118,17 @@ func writePacked(src, temporary string, e Event) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-	defer out.Close()
 	stored, err := writeBlocks(out, in, gzip.Header{Name: filepath.Base(src), Comment: headerComment(e), ModTime: e.Last})
+	if err == nil {
+		err = out.Sync()
+	}
+	if closeErr := out.Close(); err == nil {
+		err = closeErr
+	}
 	if err != nil {
 		return 0, err
 	}
-	return stored, out.Sync()
+	return stored, nil
 }
 
 // headerComment is the description a compressed file carries.
