@@ -94,8 +94,14 @@ func (p *connPool) pop(key poolKey) *pooledConn {
 		delete(p.idle, key)
 		return nil
 	}
-	c := list[len(list)-1]
-	p.idle[key] = list[:len(list)-1]
+	last := len(list) - 1
+	c := list[last]
+	list[last] = nil
+	if last == 0 {
+		delete(p.idle, key)
+	} else {
+		p.idle[key] = list[:last]
+	}
 	c.idle = false
 	c.timer.Stop()
 	return c
@@ -142,7 +148,14 @@ func (p *connPool) unlist(c *pooledConn) bool {
 	list := p.idle[c.key]
 	for i, other := range list {
 		if other == c {
-			p.idle[c.key] = append(list[:i:i], list[i+1:]...)
+			copy(list[i:], list[i+1:])
+			last := len(list) - 1
+			list[last] = nil
+			if last == 0 {
+				delete(p.idle, c.key)
+			} else {
+				p.idle[c.key] = list[:last]
+			}
 			break
 		}
 	}
