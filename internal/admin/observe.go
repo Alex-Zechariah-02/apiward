@@ -16,6 +16,12 @@ import (
 	"github.com/Alex-Zechariah-02/apiward/internal/pipeline"
 )
 
+const (
+	defaultEventPage = 20
+	streamWriteWait  = 5 * time.Second
+	streamHeartbeat  = 15 * time.Second
+)
+
 func knownQuery(query url.Values, names ...string) bool {
 	for name, values := range query {
 		if len(values) != 1 || !slices.Contains(names, name) {
@@ -31,8 +37,7 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request, who caller
 		adminError(w, http.StatusBadRequest, "bad_request", "")
 		return
 	}
-	// A default page of 20 keeps one read's copy from the live ring and the answer small.
-	limit := 20
+	limit := defaultEventPage
 	if text := query.Get("limit"); text != "" {
 		limit, err = strconv.Atoi(text)
 		if strconv.Itoa(limit) != text {
@@ -41,8 +46,7 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request, who caller
 	}
 	ref, subject, operation, decision := query.Get("ref"), query.Get("subject"), query.Get("operation"), query.Get("decision")
 	validDecision := decision == "" || slices.Contains(monitor.Decisions, decision)
-	// A page above 100 events is refused, so one read copies only a bounded part of the ring.
-	if err != nil || !knownQuery(query, "ref", "subject", "operation", "decision", "limit", "after") || limit < 1 || limit > 100 || !validDecision {
+	if err != nil || !knownQuery(query, "ref", "subject", "operation", "decision", "limit", "after") || limit < 1 || limit > maxPageSize || !validDecision {
 		adminError(w, http.StatusBadRequest, "bad_request", "")
 		return
 	}
@@ -89,8 +93,7 @@ func (s *Server) handleEventStream(w http.ResponseWriter, r *http.Request, who c
 	w.Header().Set("Cache-Control", "no-store")
 	controller := http.NewResponseController(w)
 	write := func(data []byte) bool {
-		// Each frame has a 5 s write deadline, so a stalled viewer ends the stream instead of holding it.
-		if controller.SetWriteDeadline(time.Now().Add(5*time.Second)) != nil {
+		if controller.SetWriteDeadline(time.Now().Add(streamWriteWait)) != nil {
 			return false
 		}
 		if _, err := w.Write(data); err != nil {
@@ -104,8 +107,8 @@ func (s *Server) handleEventStream(w http.ResponseWriter, r *http.Request, who c
 	if !write([]byte(": connected\n\n")) {
 		return
 	}
-	// An idle stream is kept alive every 15 s, and each beat re-checks the session.
-	heartbeat := time.NewTicker(15 * time.Second)
+	// An idle stream is kept alive periodically, and each beat re-checks the session.
+	heartbeat := time.NewTicker(streamHeartbeat)
 	defer heartbeat.Stop()
 	expiry := time.NewTimer(time.Until(who.session.Expires))
 	defer expiry.Stop()
