@@ -165,6 +165,7 @@ func (p *packedLog) load(i int) error {
 	if err != nil {
 		return err
 	}
+	defer zr.Close()
 	zr.Multistream(false)
 	p.data = p.data[:0]
 	buffer := bytes.NewBuffer(p.data)
