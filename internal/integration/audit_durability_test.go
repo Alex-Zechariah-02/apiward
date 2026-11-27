@@ -76,6 +76,10 @@ func TestAdmissionWaitsForDurableAudit(t *testing.T) {
 		if code, _ := e.Get("/a/x"); code != http.StatusOK {
 			t.Fatalf("after restart: %d", code)
 		}
+		// request.forwarded is written asynchronously after the HTTP response.
+		e.EventsWhen(func(events []map[string]any) bool {
+			return gatewaytest.CountKind(events, "request.forwarded") >= 1
+		})
 		records := auditRecords(e)
 		admitted, forwarded := gatewaytest.CountKind(records, "request.admitted"), gatewaytest.CountKind(records, "request.forwarded")
 		if admitted != 2 || forwarded != 1 {
