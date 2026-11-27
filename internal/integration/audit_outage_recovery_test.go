@@ -113,11 +113,11 @@ func TestRevocationDuringAuditOutageStaysIncomplete(t *testing.T) {
 	t.Parallel()
 	e := gatewaytest.NewEnv(t)
 	gatewaytest.Seed(t, e.Database, e.ProtectedPolicy(), gatewaytest.SeedOptions{})
-	harness := e.StartFailingAudit("audit-full")
 	armed := filepath.Join(e.Dir, "fault-armed")
-	if err := os.Remove(armed); err != nil {
-		t.Fatal(err)
-	}
+	os.Remove(armed)
+	e.Start(gatewaytest.Binaries.Fault, "GATEWAY_FAULT=audit-full", "GATEWAY_FAULT_ARMED="+armed)
+	e.Status()
+	harness := e.MustLogin(gatewaytest.HarnessAdmin, gatewaytest.HarnessPassword)
 	o := e.MustOverride(harness, permitOverride(store.OverrideException, "READER", "write-a", 600), `"r1"`, "cr83-revoke-create")
 	if err := os.WriteFile(armed, nil, 0o600); err != nil {
 		t.Fatal(err)
@@ -136,7 +136,9 @@ func TestRevocationDuringAuditOutageStaysIncomplete(t *testing.T) {
 	if err := os.Remove(armed); err != nil {
 		t.Fatal(err)
 	}
-	time.Sleep(2500 * time.Millisecond)
+	gatewaytest.WaitFor(t, time.Now().Add(10*time.Second), "audit log to recover", func() bool {
+		return !e.Status().AuditFailed
+	})
 	if s := e.Status(); s.State != "transition_incomplete" {
 		t.Fatalf("status after audit recovery: %+v, want transition_incomplete", s)
 	}
