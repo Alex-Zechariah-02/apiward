@@ -16,13 +16,19 @@ import (
 	"github.com/Alex-Zechariah-02/apiward/internal/pipeline"
 )
 
+const (
+	windowMinute = 60
+	windowFive   = 300
+	windowHour   = 3600
+)
+
 func (s *Server) handleTraffic(w http.ResponseWriter, r *http.Request, who caller) {
 	query, err := url.ParseQuery(r.URL.RawQuery)
 	if err != nil {
 		adminError(w, http.StatusBadRequest, "bad_request", "")
 		return
 	}
-	window := 60
+	window := windowMinute
 	if text := query.Get("window"); text != "" {
 		window, err = strconv.Atoi(text)
 		if strconv.Itoa(window) != text {
@@ -30,7 +36,7 @@ func (s *Server) handleTraffic(w http.ResponseWriter, r *http.Request, who calle
 		}
 	}
 	// Only these spans are accepted; an answer reads the current and previous window.
-	if err != nil || !knownQuery(query, "window") || (window != 60 && window != 300 && window != 3600) {
+	if err != nil || !knownQuery(query, "window") || (window != windowMinute && window != windowFive && window != windowHour) {
 		adminError(w, http.StatusBadRequest, "bad_request", "")
 		return
 	}

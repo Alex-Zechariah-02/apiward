@@ -40,7 +40,7 @@ type statusRecorder struct {
 
 func (s *statusRecorder) WriteHeader(status int) {
 	// Informational (1xx) responses precede the final status.
-	if !s.wrote && status >= 200 {
+	if !s.wrote && status >= http.StatusOK {
 		s.status, s.wrote = status, true
 	}
 	s.ResponseWriter.WriteHeader(status)

@@ -1,3 +1,5 @@
+// Loopback port offset helper for APIWard demo and browser test suites.
+
 package demoports
 
 import (
@@ -6,6 +8,8 @@ import (
 	"os"
 	"strconv"
 )
+
+const maxPort = 65535
 
 // Offset applies EAT_PORT_OFFSET once to a base address. Empty means zero;
 // malformed values, negative values and port overflow are errors.
@@ -24,7 +28,7 @@ func Offset(address string) (string, error) {
 		}
 	}
 	port := uint64(base.Port()) + offset
-	if port > 65535 {
+	if port > maxPort {
 		return "", errors.New("EAT_PORT_OFFSET exceeds the available port range")
 	}
 	return netip.AddrPortFrom(base.Addr(), uint16(port)).String(), nil

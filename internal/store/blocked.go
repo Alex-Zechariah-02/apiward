@@ -24,11 +24,13 @@ type BlockedAccount struct {
 // BlockedAccounts is immutable after publication, independently of policy.
 type BlockedAccounts map[string]BlockedAccount
 
+const maxReason = 200
+
 // SQLite bounds UTF-8 bytes because its TEXT length stops at NUL. Both HTTP
 // input and durable state enforce the contract's Unicode character bound.
 func ValidBlockReason(reason string) bool {
 	count := utf8.RuneCountInString(reason)
-	return utf8.ValidString(reason) && count >= 1 && count <= 200
+	return utf8.ValidString(reason) && count >= 1 && count <= maxReason
 }
 
 // MaxBlockedAccounts bounds the published list, which is copied at every

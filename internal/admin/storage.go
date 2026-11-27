@@ -49,12 +49,17 @@ func storageAlerts(state audit.ArchiveState, archives bool) []monitor.Finding {
 	return items
 }
 
+const (
+	mib = 1 << 20
+	gib = 1 << 30
+)
+
 // size words a byte count in MiB or GiB.
 func size(bytes int64) string {
-	if bytes >= 1<<30 {
-		return fmt.Sprintf("%.1f GiB", float64(bytes)/(1<<30))
+	if bytes >= gib {
+		return fmt.Sprintf("%.1f GiB", float64(bytes)/gib)
 	}
-	return fmt.Sprintf("%.0f MiB", float64(bytes)/(1<<20))
+	return fmt.Sprintf("%.0f MiB", float64(bytes)/mib)
 }
 
 func (s *Server) certAlerts(now time.Time) []monitor.Finding {

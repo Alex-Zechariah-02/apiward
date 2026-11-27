@@ -56,9 +56,10 @@ func readLimited(path string, limit int64, name string) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%s file: %w", name, err)
 	}
+	const mib = 1 << 20
 	if int64(len(data)) > limit {
-		if limit%(1<<20) == 0 {
-			return nil, fmt.Errorf("the %s file is larger than %d MiB", name, limit>>20)
+		if limit%mib == 0 {
+			return nil, fmt.Errorf("the %s file is larger than %d MiB", name, limit/mib)
 		}
 		return nil, fmt.Errorf("the %s file is larger than %d bytes", name, limit)
 	}

@@ -80,7 +80,7 @@ func newAPIWriter(w http.ResponseWriter, rule *compile.Rule, r *http.Request) ht
 
 func (a *apiWriter) WriteHeader(status int) {
 	// Informational (1xx) responses precede the final one.
-	if !a.applied && status >= 200 {
+	if !a.applied && status >= http.StatusOK {
 		a.applied = true
 		a.apply()
 	}

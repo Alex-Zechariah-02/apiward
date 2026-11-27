@@ -163,7 +163,8 @@ func New(d Deps) (*Handler, error) {
 	if limits.IPv6RatePrefix == 0 {
 		limits.IPv6RatePrefix = DefaultIPv6RatePrefix
 	}
-	if limits.IPv6RatePrefix < MinIPv6RatePrefix || limits.IPv6RatePrefix > 128 {
+	const maxPrefix = 128
+	if limits.IPv6RatePrefix < MinIPv6RatePrefix || limits.IPv6RatePrefix > maxPrefix {
 		return nil, errors.New("the IPv6 rate prefix must be 48 to 128")
 	}
 	extensions := module.Extensions()

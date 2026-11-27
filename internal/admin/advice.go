@@ -152,19 +152,26 @@ func logFilling(used, budget int64, rate float64, evicts bool) *monitor.Finding 
 	return &monitor.Finding{ID: "A3", Severity: severity, Object: "security_log", Message: message}
 }
 
+const (
+	minuteSeconds = 60
+	twoHours      = 120
+	twoDays       = 48 * 60
+	dayMinutes    = 24 * 60
+)
+
 // about words a number of seconds as minutes, hours or days.
 func about(seconds float64) string {
-	minutes := math.Round(seconds / 60)
+	minutes := math.Round(seconds / minuteSeconds)
 	switch {
 	case minutes < 1:
 		return "less than a minute"
 	case minutes == 1:
 		return "about 1 minute"
-	case minutes < 120:
+	case minutes < twoHours:
 		return fmt.Sprintf("about %.0f minutes", minutes)
-	case minutes < 48*60:
-		return fmt.Sprintf("about %.0f hours", math.Round(minutes/60))
+	case minutes < twoDays:
+		return fmt.Sprintf("about %.0f hours", math.Round(minutes/minuteSeconds))
 	default:
-		return fmt.Sprintf("about %.0f days", math.Round(minutes/(24*60)))
+		return fmt.Sprintf("about %.0f days", math.Round(minutes/dayMinutes))
 	}
 }
