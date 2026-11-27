@@ -15,10 +15,11 @@ import (
 
 // testStorage are the security log storage settings of every test
 // deployment: a 1 % free-space threshold, so a developer's nearly full disk
-// does not evict the files a test counts, and the smallest reserve, so
-// parallel tests do not each write 64 MiB. Tests of those settings set
-// their own.
-var testStorage = map[string]any{"audit_min_free_percent": 1, "audit_reserve_bytes": 1 << 20}
+// does not evict the files a test counts, the smallest reserve, so parallel
+// tests do not each write 64 MiB, and a 10 s sync wait so parallel fsync
+// bursts on loaded CI runners do not time out healthy writes. Tests of those
+// settings set their own.
+var testStorage = map[string]any{"audit_min_free_percent": 1, "audit_reserve_bytes": 1 << 20, "audit_timeout": "10s"}
 
 // WriteConfig writes the gateway configuration file for opts, filling the
 // defaults ConfigOptions names.
@@ -52,18 +53,18 @@ func (e *Env) WriteConfig(opts ConfigOptions) {
 // NativeSettings is the configuration of e's deployment, as the JSON object
 // WriteNative writes. A test may change it first.
 func (e *Env) NativeSettings() map[string]any {
+	gateway := map[string]any{
+		"database":       e.Database,
+		"audit_log":      e.AuditLog,
+		"admin_listen":   e.Admin,
+		"metrics_listen": e.Metrics,
+		"jwt":            TestTrust(issuertest.Name, issuertest.Audience, e.PublicKey),
+	}
+	maps.Copy(gateway, testStorage)
 	return map[string]any{
 		"version": ConfigVersion,
-		"gateway": map[string]any{
-			"database":               e.Database,
-			"audit_log":              e.AuditLog,
-			"admin_listen":           e.Admin,
-			"metrics_listen":         e.Metrics,
-			"jwt":                    TestTrust(issuertest.Name, issuertest.Audience, e.PublicKey),
-			"audit_min_free_percent": testStorage["audit_min_free_percent"],
-			"audit_reserve_bytes":    testStorage["audit_reserve_bytes"],
-		},
-		"data": map[string]any{"listen": e.DataAddr},
+		"gateway": gateway,
+		"data":    map[string]any{"listen": e.DataAddr},
 	}
 }
 
