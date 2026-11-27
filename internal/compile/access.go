@@ -16,9 +16,9 @@ import (
 // Bounds of the host and headers a question may give: a host name with a
 // port, and as many headers as conditions allow, each as long as one.
 const (
-	maxQuestionHost    = 253 + len(":65535")
+	maxQuestionHost    = maxDNS + len(":65535")
 	maxQuestionHeaders = 2 * policy.MaxWhenHeaders
-	maxQuestionValue   = 256
+	maxQuestionValue   = maxHeaderValue
 )
 
 // Question is a checked request description. Only NewQuestion makes one,

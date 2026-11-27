@@ -16,12 +16,8 @@ import (
 	"github.com/Alex-Zechariah-02/apiward/internal/policy"
 )
 
-const (
-	maxHostLength  = 253
-	maxLabelLength = 63
-	// 256 keeps a condition value within the length an access question may use.
-	maxHeaderValue = 256
-)
+// maxHeaderValue keeps a condition value within the length an access question may use.
+const maxHeaderValue = 256
 
 // condition is a compiled When: lower-case host patterns and header
 // conditions with canonical names.
@@ -71,11 +67,11 @@ func compileWhen(w *policy.When, i int) (*condition, error) {
 // hostPattern accepts a lower-case DNS name, optionally after "*.".
 func hostPattern(host string) bool {
 	name := strings.TrimPrefix(host, "*.")
-	if name == "" || len(name) > maxHostLength {
+	if name == "" || len(name) > maxDNS {
 		return false
 	}
 	for _, label := range strings.Split(name, ".") {
-		if label == "" || len(label) > maxLabelLength || label[0] == '-' || label[len(label)-1] == '-' {
+		if label == "" || len(label) > maxLabel || label[0] == '-' || label[len(label)-1] == '-' {
 			return false
 		}
 		for _, c := range []byte(label) {
