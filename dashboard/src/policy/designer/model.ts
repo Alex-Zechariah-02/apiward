@@ -86,7 +86,7 @@ export function shapeIssue(value: unknown): Issue | null {
     permits: 'array',
   })
   if (root) return { id: 'shape', field: '$', message: root }
-  const policy = value as unknown as Policy
+  if (!object(value)) return { id: 'shape', field: '$', message: 'must be an object' }
   const definitions: Record<string, [Record<string, string>, Record<string, string>?]> = {
     upstreams: [{ id: 'string' }, { dial: 'string', url: 'string', tls: 'string', host: 'string' }],
     apis: [{ id: 'string', upstream: 'string' }, { forward: 'object', cors: 'object', response_headers: 'object', allow_addresses: 'array' }],
@@ -98,7 +98,8 @@ export function shapeIssue(value: unknown): Issue | null {
     permits: [{ role: 'string', operation: 'string' }],
   }
   for (const [section, [required, optional]] of Object.entries(definitions)) {
-    const items = (policy[section as keyof Policy] as unknown[] | undefined) ?? []
+    const raw = value[section]
+    const items = Array.isArray(raw) ? raw : []
     for (let index = 0; index < items.length; index++) {
       const item = items[index]
       let error = members(item, required, optional)

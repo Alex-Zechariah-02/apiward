@@ -74,12 +74,16 @@ function members(before: Item, after: Item, path = '', depth = 0): string[] {
   return lines
 }
 
+function sectionItems(policy: Policy, section: (typeof sections)[number]): Item[] {
+  return (policy[section] ?? []).map((entry) => Object.fromEntries(Object.entries(entry)))
+}
+
 export function differences(before: Policy, after: Policy): Change[] {
   const changes: Change[] = []
   for (const section of sections) {
     const name = (item: Item) => (section === 'permits' ? `${item.role} → ${item.operation}` : String(item.id))
-    const old = new Map(((before[section] as unknown as Item[]) ?? []).map((item) => [name(item), item]))
-    const now = new Map(((after[section] as unknown as Item[]) ?? []).map((item) => [name(item), item]))
+    const old = new Map(sectionItems(before, section).map((item) => [name(item), item]))
+    const now = new Map(sectionItems(after, section).map((item) => [name(item), item]))
     for (const [id, item] of now) {
       const previous = old.get(id)
       if (!previous) {
