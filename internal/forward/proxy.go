@@ -14,6 +14,10 @@ import (
 	"github.com/Alex-Zechariah-02/apiward/internal/compile"
 )
 
+// flushInterval passes a slow declared-length response on as it arrives
+// (Traefik's default); streams and unsized bodies flush immediately regardless.
+const flushInterval = 100 * time.Millisecond
+
 // newReverseProxy is the one reverse proxy every exchange shares; each reads
 // its binding from the request's context.
 func (p *upstreamProxy) newReverseProxy() *httputil.ReverseProxy {
@@ -22,14 +26,10 @@ func (p *upstreamProxy) newReverseProxy() *httputil.ReverseProxy {
 			b := bindingOf(pr.In.Context())
 			rewriteToUpstream(pr, b.destination.Endpoint(), b.destination.Path(), b.forwardedFor)
 		},
-		Transport:  p,
-		ErrorLog:   p.errorLog,
-		BufferPool: &p.buffers,
-		// A response with a declared length is otherwise held in the server's
-		// buffer, headers included, until it ends; flushing every 100 ms
-		// (Traefik's default) passes a slow response on as it arrives. Event
-		// streams and bodies without a length are flushed at once regardless.
-		FlushInterval:  100 * time.Millisecond,
+		Transport:      p,
+		ErrorLog:       p.errorLog,
+		BufferPool:     &p.buffers,
+		FlushInterval:  flushInterval,
 		ModifyResponse: p.modifyResponse,
 		// The enforcement handler answers the client; only the cause is kept.
 		ErrorHandler: func(_ http.ResponseWriter, r *http.Request, err error) { bindingOf(r.Context()).failure = err },
