@@ -1,5 +1,5 @@
 // Explain: a term that opens a short explanation on hover, focus or click.
-import { useId, useRef, type ReactNode } from 'react'
+import { useEffect, useId, useRef, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 
 // A pointer passing over a term opens nothing; a short pause lets it reach the explanation.
@@ -14,6 +14,7 @@ export function Explain(props: { term: string; plain: string; technical?: string
   const note = useRef<HTMLDivElement>(null)
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined)
   const pinned = useRef(false)
+  useEffect(() => () => clearTimeout(timer.current), [])
 
   function place() {
     const anchor = button.current?.getBoundingClientRect()
