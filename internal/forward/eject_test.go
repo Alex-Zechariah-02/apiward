@@ -56,24 +56,57 @@ func TestEjectionAfterConnectFailures(t *testing.T) {
 func TestEjectionDoublesAndProbesOnce(t *testing.T) {
 	e := newEjector(1)
 	now := time.Unix(0, 0)
-	e.result("a", false, now)
-	if e.admit("a", now.Add(999*time.Millisecond)) {
+	e.result("a", false, 0, now)
+	if ok, _ := e.admit("a", now.Add(999*time.Millisecond)); ok {
 		t.Fatal("admitted during the first ejection")
 	}
-	probe := now.Add(time.Second)
-	if !e.admit("a", probe) || e.admit("a", probe) {
+	probeAt := now.Add(time.Second)
+	ok, token := e.admit("a", probeAt)
+	if !ok || token == 0 {
+		t.Fatal("after the ejection time, want one probe with a token")
+	}
+	if again, _ := e.admit("a", probeAt); again {
 		t.Fatal("after the ejection time, want exactly one probe")
 	}
-	e.result("a", false, probe)
-	if e.admit("a", probe.Add(1999*time.Millisecond)) || !e.admit("a", probe.Add(2*time.Second)) {
+	e.result("a", false, token, probeAt)
+	if ok, _ := e.admit("a", probeAt.Add(1999*time.Millisecond)); ok {
 		t.Fatal("a failed probe must eject for twice as long")
 	}
-	e.settle("a", true) // the probe's client went away
-	if !e.admit("a", probe.Add(2*time.Second)) {
+	ok, token = e.admit("a", probeAt.Add(2*time.Second))
+	if !ok || token == 0 {
+		t.Fatal("a failed probe must allow a probe after twice as long")
+	}
+	e.settle("a", token, true) // the probe's client went away
+	if ok, _ := e.admit("a", probeAt.Add(2*time.Second)); !ok {
 		t.Fatal("a probe whose client left must pass its turn on")
 	}
-	e.result("a", true, probe.Add(2*time.Second))
-	if !e.admit("a", probe.Add(2*time.Second)) || len(e.states) != 0 {
+	e.result("a", true, 0, probeAt.Add(2*time.Second))
+	if ok, _ := e.admit("a", probeAt.Add(2*time.Second)); !ok || len(e.states) != 0 {
 		t.Fatal("a connection must reset the endpoint")
+	}
+}
+
+func TestStaleRequestDoesNotDisruptActiveProbe(t *testing.T) {
+	e := newEjector(1)
+	now := time.Unix(0, 0)
+	// Stale request admitted before ejection; then endpoint ejects and a probe starts.
+	ok, stale := e.admit("a", now)
+	if !ok || stale != 0 {
+		t.Fatal("initial request not admitted as non-probe")
+	}
+	e.result("a", false, 0, now)
+	probeAt := now.Add(time.Second)
+	ok, active := e.admit("a", probeAt)
+	if !ok || active == 0 {
+		t.Fatal("probe not admitted")
+	}
+	// Stale request's client cancels or fails while probe is still in flight.
+	e.settle("a", stale, true)
+	if again, _ := e.admit("a", probeAt); again {
+		t.Fatal("stale cancel released another request's active probe")
+	}
+	e.result("a", false, stale, probeAt)
+	if e.states["a"].probe != active {
+		t.Fatal("stale failure disturbed active probe")
 	}
 }

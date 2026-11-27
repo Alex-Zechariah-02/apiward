@@ -184,7 +184,8 @@ func (p *upstreamProxy) Forward(w http.ResponseWriter, r *http.Request) error {
 		return fmt.Errorf("%w: %w", ErrNoUpstream, errNotSent)
 	}
 	address := b.destination.Endpoint().Address()
-	if !p.ejector.admit(address, time.Now()) {
+	admitted, probe := p.ejector.admit(address, time.Now())
+	if !admitted {
 		return fmt.Errorf("%w: %w", errEjected, errNotSent)
 	}
 	// The exchange ends when the client goes away, through its request's
@@ -198,7 +199,7 @@ func (p *upstreamProxy) Forward(w http.ResponseWriter, r *http.Request) error {
 	}
 	defer func() { // a request that never connected, however it ends
 		if !b.connected.Load() {
-			p.ejector.settle(address, r.Context().Err() != nil)
+			p.ejector.settle(address, probe, r.Context().Err() != nil)
 		}
 	}()
 	p.proxy.ServeHTTP(w, r.WithContext(ctx))
@@ -220,7 +221,7 @@ func (p *upstreamProxy) Forward(w http.ResponseWriter, r *http.Request) error {
 // ejected endpoint settles at once, not when its exchange ends.
 func (p *upstreamProxy) connected(b *binding) {
 	if b.connected.CompareAndSwap(false, true) {
-		p.ejector.result(b.destination.Endpoint().Address(), true, time.Now())
+		p.ejector.result(b.destination.Endpoint().Address(), true, 0, time.Now())
 	}
 }
 
