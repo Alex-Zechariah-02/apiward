@@ -29,16 +29,19 @@ export function Issues({ issues, onSelect }: { issues: Issue[]; onSelect: (key: 
         {issues.length} {issues.length === 1 ? 'issue' : 'issues'} to fix before saving
       </p>
       <ul>
-        {issues.map((issue, index) => (
-          <li key={`${issue.field}:${index}`}>
-            {issue.message} <code className="soft">{issue.field}</code>{' '}
-            {issue.box ? (
-              <button className="link-button" type="button" onClick={() => onSelect(issue.box!)}>
-                Show
-              </button>
-            ) : null}
-          </li>
-        ))}
+        {issues.map((issue, index) => {
+          const box = issue.box
+          return (
+            <li key={`${issue.field}:${index}`}>
+              {issue.message} <code className="soft">{issue.field}</code>{' '}
+              {box ? (
+                <button className="link-button" type="button" onClick={() => onSelect(box)}>
+                  Show
+                </button>
+              ) : null}
+            </li>
+          )
+        })}
       </ul>
     </section>
   )

@@ -100,7 +100,7 @@ function CanvasGraph(props: CanvasProps) {
     })
   }
   const heightsOf = (list: CardNode[]) =>
-    Object.fromEntries(list.filter((node) => node.measured?.height).map((node) => [node.id, node.measured!.height!]))
+    Object.fromEntries(list.flatMap((node) => (node.measured?.height ? [[node.id, node.measured.height]] : [])))
   const keepMeasured = (laid: CardNode[], from: CardNode[]) =>
     laid.map((node) => ({ ...node, measured: from.find((old) => old.id === node.id)?.measured }))
   const [nodes, setNodes] = useNodesState<CardNode>(laidOut({}))

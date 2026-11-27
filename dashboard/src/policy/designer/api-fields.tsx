@@ -63,7 +63,8 @@ export function ApiFields(props: { api: ApiEntry; policy: Policy; editable: bool
   // update changes the API in a copy of the draft; members left empty are removed.
   function update(change: (entry: ApiEntry) => void) {
     const next = copy(policy)
-    const entry = next.apis.find((candidate) => candidate.id === api.id)!
+    const entry = next.apis.find((candidate) => candidate.id === api.id)
+    if (!entry) return
     change(entry)
     if (entry.forward) entry.forward = compact(entry.forward)
     if (entry.response_headers) entry.response_headers = compact(entry.response_headers)
@@ -71,7 +72,11 @@ export function ApiFields(props: { api: ApiEntry; policy: Policy; editable: bool
     if (entry.response_headers && !Object.keys(entry.response_headers).length) delete entry.response_headers
     onChange(next)
   }
-  const cors = (change: (rule: Cors) => void) => update((entry) => change(entry.cors!))
+  const cors = (change: (rule: Cors) => void) =>
+    update((entry) => {
+      if (entry.cors) change(entry.cors)
+    })
+  const corsRule = api.cors
   const headers = (change: (rule: ResponseHeaders) => void) =>
     update((entry) => {
       entry.response_headers = { ...entry.response_headers }
@@ -120,17 +125,17 @@ export function ApiFields(props: { api: ApiEntry; policy: Policy; editable: bool
           disabled={!editable}
           onChange={(on) => update((entry) => (on ? (entry.cors = { origins: [], methods }) : delete entry.cors))}
         />
-        {api.cors ? (
+        {corsRule ? (
           <>
             <Check
               label="Any Origin (*)"
-              hint={allPublic && !api.cors.credentials ? 'Any web page may call this API.' : 'Only for APIs whose endpoints are all public, without credentials.'}
-              checked={api.cors.origins.includes('*')}
-              disabled={!editable || ((!allPublic || !!api.cors.credentials) && !api.cors.origins.includes('*'))}
+              hint={allPublic && !corsRule.credentials ? 'Any web page may call this API.' : 'Only for APIs whose endpoints are all public, without credentials.'}
+              checked={corsRule.origins.includes('*')}
+              disabled={!editable || ((!allPublic || !!corsRule.credentials) && !corsRule.origins.includes('*'))}
               onChange={(on) => cors((rule) => (rule.origins = on ? ['*'] : []))}
             />
-            {api.cors.origins.includes('*') ? null : (
-              <ListField label="Allowed Origins" hint="One per line, for example https://shop.example.com (no path)." value={api.cors.origins}
+            {corsRule.origins.includes('*') ? null : (
+              <ListField label="Allowed Origins" hint="One per line, for example https://shop.example.com (no path)." value={corsRule.origins}
                 editable={editable} onChange={(origins) => cors((rule) => (rule.origins = origins))} />
             )}
             <fieldset className="designer-choice field-wide">
@@ -139,7 +144,7 @@ export function ApiFields(props: { api: ApiEntry; policy: Policy; editable: bool
                 <label key={method}>
                   <input
                     type="checkbox"
-                    checked={api.cors!.methods.includes(method)}
+                    checked={corsRule.methods.includes(method)}
                     disabled={!editable}
                     onChange={(event) =>
                       cors((rule) => (rule.methods = event.target.checked ? [...rule.methods, method] : rule.methods.filter((m) => m !== method)))
@@ -149,19 +154,19 @@ export function ApiFields(props: { api: ApiEntry; policy: Policy; editable: bool
                 </label>
               ))}
             </fieldset>
-            <ListField label="Allowed Request Headers" hint="Headers a browser may send, one per line, for example Content-Type." value={api.cors.headers ?? []}
+            <ListField label="Allowed Request Headers" hint="Headers a browser may send, one per line, for example Content-Type." value={corsRule.headers ?? []}
               editable={editable} onChange={(list) => cors((rule) => (list.length ? (rule.headers = list) : delete rule.headers))} />
-            <ListField label="Headers Browsers May Read" hint="Answer headers the page's script may read, one per line." value={api.cors.expose ?? []}
+            <ListField label="Headers Browsers May Read" hint="Answer headers the page's script may read, one per line." value={corsRule.expose ?? []}
               editable={editable} onChange={(list) => cors((rule) => (list.length ? (rule.expose = list) : delete rule.expose))} />
             <Check
               label="Allow Credentials"
               hint="Browsers send cookies and may read the answer. Not available with any origin."
-              checked={!!api.cors.credentials}
-              disabled={!editable || api.cors.origins.includes('*')}
+              checked={!!corsRule.credentials}
+              disabled={!editable || corsRule.origins.includes('*')}
               onChange={(on) => cors((rule) => (on ? (rule.credentials = true) : delete rule.credentials))}
             />
             {/* Digits only: any other text would be saved as no value, which the gateway reads as its default. */}
-            {text('max_age', 'Cache Preflight For (Seconds)', api.cors.max_age_seconds === undefined ? '' : String(api.cors.max_age_seconds),
+            {text('max_age', 'Cache Preflight For (Seconds)', corsRule.max_age_seconds === undefined ? '' : String(corsRule.max_age_seconds),
               (value) => {
                 if (value === '') cors((rule) => delete rule.max_age_seconds)
                 else if (/^\d+$/.test(value)) cors((rule) => (rule.max_age_seconds = Number(value)))

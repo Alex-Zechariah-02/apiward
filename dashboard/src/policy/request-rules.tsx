@@ -83,9 +83,10 @@ function within(node: Schema, place: Rule['place'], field: string): Rule[] {
 // describes the policy only: the gateway's compiler and request check stay
 // the only validator.
 export function RequestRules({ operation: o }: { operation: Operation }) {
-  const body = o.body ? (o.body.schema as Schema) : undefined
+  const body = o.body
+  const bodySchema = body ? (body.schema as Schema) : undefined
   const headers = o.headers as Schema | undefined
-  const list = [...rules(body, 'body'), ...rules(headers, 'header')]
+  const list = [...rules(bodySchema, 'body'), ...rules(headers, 'header')]
   const closed = (schema?: Schema) => (schema?.additionalProperties === false ? 'refused' : 'accepted')
   return (
     <div className="rule-block">
@@ -96,7 +97,7 @@ export function RequestRules({ operation: o }: { operation: Operation }) {
         </code>
       </h3>
       <p className="hint">
-        {body ? `JSON body (application/json), at most ${o.body!.max_bytes} bytes, no repeated members; members not listed are ${closed(body)}.` : 'No body accepted.'}
+        {body ? `JSON body (application/json), at most ${body.max_bytes} bytes, no repeated members; members not listed are ${closed(bodySchema)}.` : 'No body accepted.'}
         {headers ? ' Each listed header may appear once; headers not listed are not checked by this rule.' : ''}
       </p>
       <TableScroll label={`Request rules of ${o.id}`}>

@@ -214,7 +214,8 @@ export function StaleNotice(props: {
           className="btn"
           type="button"
           onClick={() => {
-            setDraft({ ...draft, base: copy(confirmed!), baseRevision: current.id })
+            if (!confirmed) return
+            setDraft({ ...draft, base: copy(confirmed), baseRevision: current.id })
             mutation.clear()
             setShowChanges(false)
           }}
@@ -222,7 +223,7 @@ export function StaleNotice(props: {
           Keep my draft and base it on r{current.id}
         </button>
       </div>
-      {showChanges ? <ChangeList changes={differences(draft.base, confirmed!)} /> : null}
+      {showChanges && confirmed ? <ChangeList changes={differences(draft.base, confirmed)} /> : null}
     </section>
   )
 }

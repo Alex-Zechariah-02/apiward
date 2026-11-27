@@ -75,7 +75,8 @@ export function DiscardDialog(props: {
       onCancel={() => setDiscardConfirm(false)}
       onConfirm={() => {
         setDiscardConfirm(false)
-        setDraft({ document: copy(confirmed!), base: copy(confirmed!), baseRevision: current.id })
+        if (!confirmed) return
+        setDraft({ document: copy(confirmed), base: copy(confirmed), baseRevision: current.id })
         setJson(JSON.stringify(confirmed, null, 2))
         setJsonError('')
         setBuffers({})

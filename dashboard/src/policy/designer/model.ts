@@ -216,7 +216,8 @@ export function changes(before: Policy, after: Policy): ControlChange[] {
 export function rename(policy: Policy, key: BoxKey, id: string): Policy {
   const next = copy(policy)
   const [kind, old] = splitKey(key)
-  next[sections[kind]].find((item) => item.id === old)!.id = id
+  const target = next[sections[kind]].find((item) => item.id === old)
+  if (target) target.id = id
   if (kind === 'role') {
     next.permits.forEach((permit) => {
       if (permit.role === old) permit.role = id
@@ -283,7 +284,8 @@ export function fieldBox(policy: Policy, field: string): BoxKey | null {
   const match = /^(upstreams|apis|operations|roles)\[(\d+)\]/.exec(field)
   if (!match) return null
   const section = match[1] as (typeof sections)[BoxKind]
-  const kind = (Object.keys(sections) as BoxKind[]).find((key) => sections[key] === section)!
+  const kind = (Object.keys(sections) as BoxKind[]).find((key) => sections[key] === section)
+  if (!kind) return null
   const item = policy[section][Number(match[2])]
   return item ? `${kind}:${item.id}` : null
 }

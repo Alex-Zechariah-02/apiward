@@ -63,7 +63,9 @@ export function ObjectForm({ selection, inPanel = false, ...props }: FormProps &
 
   function patch(update: Record<string, unknown>) {
     const next = copy(policy)
-    Object.assign(next[sections[kind]].find((entry) => entry.id === id)!, update)
+    const target = next[sections[kind]].find((entry) => entry.id === id)
+    if (!target) return
+    Object.assign(target, update)
     onChange(next)
   }
   function togglePermit(role: string, operationId: string, checked: boolean) {
@@ -269,7 +271,8 @@ export function ObjectForm({ selection, inPanel = false, ...props }: FormProps &
           onCancel={() => setMakingPublic(false)}
           onConfirm={() => {
             const next = copy(policy)
-            const target = next.operations.find((entry) => entry.id === id)!
+            const target = next.operations.find((entry) => entry.id === id)
+            if (!target) return
             target.auth = 'none'
             // A public operation keeps its limit, counted per client address.
             if (target.rate) target.rate.key = 'client_address'

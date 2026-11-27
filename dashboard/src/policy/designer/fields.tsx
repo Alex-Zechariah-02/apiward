@@ -27,6 +27,8 @@ export function OperationFields(props: {
   setMakingPublic: (value: boolean) => void
 }) {
   const { operation, policy, editable, id, selection, fieldId, input, select, patch, onChange, onBufferIssue, setMakingPublic } = props
+  const rate = operation.rate
+  const body = operation.body
   return (
     <>
       {/* The seven methods a policy may name. */}
@@ -94,7 +96,8 @@ export function OperationFields(props: {
             disabled={!editable}
             onChange={(event) => {
               const next = copy(policy)
-              const target = next.operations.find((entry) => entry.id === id)!
+              const target = next.operations.find((entry) => entry.id === id)
+              if (!target) return
               const key = operation.auth === 'none' ? 'client_address' : 'subject'
               // Starts at 100 a minute, like an endpoint added from the canvas; the real numbers are then set below.
               if (event.target.checked) target.rate = { algorithm: 'sliding-window', key, count: 100, window_seconds: 60 }
@@ -106,7 +109,7 @@ export function OperationFields(props: {
         </label>
         <p className="hint">Sliding window, per endpoint. Counters survive policy changes.</p>
       </div>
-      {operation.rate ? (
+      {rate ? (
         <>
           <fieldset id={fieldId('rate-key')} className="designer-choice">
             <legend>Count Requests</legend>
@@ -118,9 +121,9 @@ export function OperationFields(props: {
                 <input
                   type="radio"
                   name={fieldId('rate-key')}
-                  checked={operation.rate!.key === key.value}
+                  checked={rate.key === key.value}
                   disabled={!editable || (key.value === 'subject' && operation.auth === 'none')}
-                  onChange={() => patch({ rate: { ...operation.rate!, key: key.value } })}
+                  onChange={() => patch({ rate: { ...rate, key: key.value } })}
                 />{' '}
                 {key.label}
                 {key.value === 'subject' && operation.auth === 'none' ? <span className="hint"> (needs a token)</span> : null}
@@ -130,16 +133,16 @@ export function OperationFields(props: {
           {input(
             'rate-count',
             'Request count',
-            operation.rate.count,
-            (value) => patch({ rate: { ...operation.rate!, count: Number(value) } }),
+            rate.count,
+            (value) => patch({ rate: { ...rate, count: Number(value) } }),
             undefined,
             'number',
           )}
           {input(
             'rate-window',
             'Window (seconds)',
-            operation.rate.window_seconds,
-            (value) => patch({ rate: { ...operation.rate!, window_seconds: Number(value) } }),
+            rate.window_seconds,
+            (value) => patch({ rate: { ...rate, window_seconds: Number(value) } }),
             undefined,
             'number',
           )}
@@ -149,11 +152,12 @@ export function OperationFields(props: {
         <label className="designer-option">
           <input
             type="checkbox"
-            checked={!!operation.body}
+            checked={!!body}
             disabled={!editable}
             onChange={(event) => {
               const next = copy(policy)
-              const target = next.operations.find((entry) => entry.id === id)!
+              const target = next.operations.find((entry) => entry.id === id)
+              if (!target) return
               // Starts closed: 1,024 bytes and an empty object, so nothing is accepted until members are declared.
               if (event.target.checked)
                 target.body = { max_bytes: 1024, schema: { type: 'object', properties: {}, additionalProperties: false } }
@@ -163,17 +167,17 @@ export function OperationFields(props: {
           />{' '}
           Body rule
         </label>
-        {operation.body && admits(operation.body.schema) === 'none' ? (
+        {body && admits(body.schema) === 'none' ? (
           <p className="hint">This schema accepts only an empty JSON object. Declare the members to accept under properties.</p>
         ) : null}
       </div>
-      {operation.body ? (
+      {body ? (
         <>
           {input(
             'body-max',
             'Maximum body bytes',
-            operation.body.max_bytes,
-            (value) => patch({ body: { ...operation.body!, max_bytes: Number(value) } }),
+            body.max_bytes,
+            (value) => patch({ body: { ...body, max_bytes: Number(value) } }),
             undefined,
             'number',
           )}
@@ -181,9 +185,9 @@ export function OperationFields(props: {
             // One editor per endpoint: its unmount clears the issue it raised, never another endpoint's.
             key={`${selection}.body`}
             label="Body Schema (JSON)"
-            value={operation.body.schema}
+            value={body.schema}
             editable={editable}
-            onChange={(schema) => patch({ body: { ...operation.body!, schema } })}
+            onChange={(schema) => patch({ body: { ...body, schema } })}
             onIssue={(issue) => onBufferIssue(`${selection}.body`, issue)}
           />
         </>
@@ -196,7 +200,8 @@ export function OperationFields(props: {
             disabled={!editable}
             onChange={(event) => {
               const next = copy(policy)
-              const target = next.operations.find((entry) => entry.id === id)!
+              const target = next.operations.find((entry) => entry.id === id)
+              if (!target) return
               // Starts open: a closed header schema would refuse every browser's request; declared headers are then checked.
               if (event.target.checked) target.headers = { type: 'object', properties: {}, additionalProperties: true }
               else delete target.headers

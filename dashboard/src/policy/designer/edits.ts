@@ -134,7 +134,8 @@ export function withBrowserAccess(policy: Policy, api: string, origins: string[]
   const endpoints = next.operations.filter((operation) => operation.api === api)
   // Browsers must be allowed to send Content-Type for JSON bodies, and Authorization where an endpoint needs a token.
   const headers = endpoints.some((operation) => operation.auth === 'required') ? ['Authorization', 'Content-Type'] : ['Content-Type']
-  next.apis.find((entry) => entry.id === api)!.cors = { origins, methods: [...new Set(endpoints.map((operation) => operation.method))], headers }
+  const target = next.apis.find((entry) => entry.id === api)
+  if (target) target.cors = { origins, methods: [...new Set(endpoints.map((operation) => operation.method))], headers }
   return next
 }
 

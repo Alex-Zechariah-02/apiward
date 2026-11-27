@@ -56,7 +56,7 @@ export function buildGraph(props: CanvasProps, zone: string): { cards: CardSpec[
   const badgesFor = (key: BoxKey) => {
     const badges: Row['badges'] = []
     if (props.issues.some((issue) => issue.box === key)) badges.push({ tone: 'pending', text: 'Incomplete' })
-    if (refusedOn(key)) badges.push({ tone: 'refused', text: `Refused: ${props.refused!.code}` })
+    if (props.refused && refusedOn(key)) badges.push({ tone: 'refused', text: `Refused: ${props.refused.code}` })
     return badges
   }
   const allowed = (role: string, operation: string) =>
