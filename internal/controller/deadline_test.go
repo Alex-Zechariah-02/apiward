@@ -29,10 +29,11 @@ func TestSettleSeveralExpired(t *testing.T) {
 	e := newEnv(t)
 	storetest.Seed(t, e.database, storetest.Protected(), storetest.Options{})
 	c := e.own(e.controllerConfig())
+	const overrideTTL = 60
 	requests := []OverrideRequest{
-		permitOverride(store.OverrideException, "READER", "write-a", store.MinOverrideSeconds),
-		permitOverride(store.OverrideContainment, "WRITER", "read-a", store.MinOverrideSeconds),
-		operationContainment("read-b", store.MinOverrideSeconds),
+		permitOverride(store.OverrideException, "READER", "write-a", overrideTTL),
+		permitOverride(store.OverrideContainment, "WRITER", "read-a", overrideTTL),
+		operationContainment("read-b", overrideTTL),
 	}
 	for i, request := range requests {
 		record := store.TransitionRecord{ID: fmt.Sprintf("create-%d", i), Kind: "tpo.create", Actor: "admin", Target: "override"}
@@ -47,12 +48,10 @@ func TestSettleSeveralExpired(t *testing.T) {
 	// Without the timer, which would end each at its own expiry time, all
 	// three are due at the one check below.
 	c.mu.Lock()
-	c.timer.Stop()
-	c.mu.Unlock()
-	time.Sleep(time.Duration(store.MinOverrideSeconds)*time.Second + 100*time.Millisecond)
-
-	c.mu.Lock()
-	a, settled := c.settle(context.Background(), compile.TrustedNow(), false)
+	if c.timer != nil {
+		c.timer.Stop()
+	}
+	a, settled := c.settle(context.Background(), compile.TrustedNow().Add(2*overrideTTL*time.Second), false)
 	c.mu.Unlock()
 	if !settled || len(a.Overrides) != 0 || a.Revision != 1 {
 		t.Fatalf("settled %v: revision %d overrides %+v", settled, a.Revision, a.Overrides)
@@ -100,7 +99,8 @@ func TestExpiryNamesPendingBase(t *testing.T) {
 		r.Expected.Int64, r.Expected.Valid, r.Digest = 1, true, id
 		return r
 	}
-	if result, status := c.CreateOverride(ctx, record("create", "tpo.create", "override"), permitOverride(store.OverrideException, "READER", "write-a", store.MinOverrideSeconds)); status != http.StatusOK {
+	const overrideTTL = 60
+	if result, status := c.CreateOverride(ctx, record("create", "tpo.create", "override"), permitOverride(store.OverrideException, "READER", "write-a", overrideTTL)); status != http.StatusOK {
 		t.Fatalf("override: %d %+v", status, result)
 	}
 	candidate := storetest.Protected()
@@ -122,11 +122,10 @@ func TestExpiryNamesPendingBase(t *testing.T) {
 		t.Fatalf("activation: %d %+v", status, activated)
 	}
 	c.mu.Lock()
-	c.timer.Stop()
-	c.mu.Unlock()
-	time.Sleep(time.Duration(store.MinOverrideSeconds)*time.Second + 100*time.Millisecond)
-	c.mu.Lock()
-	_, settled := c.settle(ctx, compile.TrustedNow(), false)
+	if c.timer != nil {
+		c.timer.Stop()
+	}
+	_, settled := c.settle(ctx, compile.TrustedNow().Add(2*overrideTTL*time.Second), false)
 	c.mu.Unlock()
 	if !settled {
 		t.Fatal("the expiry was not settled")
@@ -162,15 +161,14 @@ func TestExpiryNamesPendingBase(t *testing.T) {
 func TestTimeoutReturnsStoredAuthority(t *testing.T) {
 	e := newEnv(t)
 	provisional := storetest.Policy(true)
-	deadline := time.UnixMilli(time.Now().Add(time.Second).UnixMilli())
+	deadline := time.UnixMilli(time.Now().Add(time.Hour).UnixMilli())
 	storetest.Seed(t, e.database, storetest.Policy(false), storetest.Options{Provisional: &provisional, Deadline: deadline})
 	c := e.own(e.controllerConfig())
 	c.mu.Lock()
-	c.timer.Stop()
-	c.mu.Unlock()
-	time.Sleep(time.Until(deadline.Add(200 * time.Millisecond)))
-	c.mu.Lock()
-	a, settled := c.settle(context.Background(), compile.DeadlineNow(), true)
+	if c.timer != nil {
+		c.timer.Stop()
+	}
+	a, settled := c.settle(context.Background(), deadline.Add(time.Second), true)
 	c.mu.Unlock()
 	if !settled || a.Provisional != 0 || a.Confirmed != 1 {
 		t.Fatalf("settled %v: provisional %d, confirmed %d; want no base pending and revision 1 confirmed", settled, a.Provisional, a.Confirmed)
