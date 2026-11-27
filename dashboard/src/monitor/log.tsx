@@ -173,7 +173,9 @@ export function SecurityLogView({ admin }: ViewProps) {
                 type="button"
                 className="btn btn-small"
                 disabled={loading}
-                onClick={() => void read(new URLSearchParams([...(query ?? new URLSearchParams()), ['after', last.next!]]), true)}
+                onClick={() => {
+                  if (last.next) void read(new URLSearchParams([...(query ?? new URLSearchParams()), ['after', last.next]]), true)
+                }}
               >
                 {loading ? 'Searching…' : 'Show Older'}
               </button>
