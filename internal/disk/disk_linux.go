@@ -5,6 +5,8 @@
 package disk
 
 import (
+	"math"
+	"math/bits"
 	"strconv"
 	"syscall"
 )
@@ -19,5 +21,17 @@ func Of(dir string) (Space, error) {
 	if err := syscall.Stat(dir, &st); err != nil {
 		return Space{}, err
 	}
-	return Space{Free: bytesOf(fs.Bavail) * fs.Bsize, Total: bytesOf(fs.Blocks) * fs.Bsize, ID: strconv.FormatUint(st.Dev, 10)}, nil
+	return Space{Free: mulBytes(fs.Bavail, fs.Bsize), Total: mulBytes(fs.Blocks, fs.Bsize), ID: strconv.FormatUint(st.Dev, 10)}, nil
+}
+
+// mulBytes multiplies a block count by a block size without overflowing int64.
+func mulBytes(blocks uint64, bsize int64) int64 {
+	if bsize <= 0 {
+		return 0
+	}
+	hi, lo := bits.Mul64(blocks, uint64(bsize))
+	if hi != 0 {
+		return math.MaxInt64
+	}
+	return bytesOf(lo)
 }
