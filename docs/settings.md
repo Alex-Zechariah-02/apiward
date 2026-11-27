@@ -77,7 +77,7 @@ The JSON settings file that `apiward run --config <file>` reads. Upstream TLS pr
 - `gateway.health_listen` (optional, unset by default) binds a listener that serves `GET /livez` and `GET /readyz` alone, so a load balancer can read readiness without `/metrics` reaching its network; it leaves loopback only with `"health_listen_any": true`. The metrics listener keeps serving both. The `health` command probes it when it is set.
 - No two listeners may share an address and port; `0.0.0.0` covers every IPv4 address and `[::]` every address, so a listener on either conflicts with one on the same port.
 - The admin listener always stays on loopback: reach it through an SSH tunnel.
-- The admin and metrics listeners each keep at most 64 open connections, and the redirect listener `data.max_connections`; one more is closed at once and counted in `gateway_listener_connections_refused_total{listener="admin"|"metrics"|"redirect"}`.
+- The admin, metrics and health listeners each keep at most 64 open connections, and the redirect listener `data.max_connections`; one more is closed at once and counted in `gateway_listener_connections_refused_total{listener="admin"|"metrics"|"health"|"redirect"}`.
 - If the metrics or redirect listener fails, only that listener stops (logged as `listener stopped`); the data plane keeps serving, and health checks against a stopped metrics listener fail. A data listener failure stops the gateway.
 
 ### Health endpoints

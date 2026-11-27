@@ -162,8 +162,8 @@ func serveMetrics(w http.ResponseWriter, r *http.Request, o *Observations, gauge
 		b.sample(counter.name, count(counter.value))
 	}
 	b.family("gateway_listener_connections_refused_total", "counter")
-	for _, name := range Auxiliary {
-		b.sample("gateway_listener_connections_refused_total", count(o.auxiliary[name].Load()), "listener", name)
+	for l := range auxiliaryListeners {
+		b.sample("gateway_listener_connections_refused_total", count(o.auxiliary[l].Load()), "listener", l.String())
 	}
 	b.family("gateway_admin_failures_total", "counter")
 	for f := range adminFailures {

@@ -243,3 +243,25 @@ func TestMetricsExposition(t *testing.T) {
 		}
 	}
 }
+
+// Every auxiliary listener refuser (including health) increments its refusal
+// counter without panicking and appears in the Prometheus exposition.
+func TestRefuserAuxiliaryListeners(t *testing.T) {
+	o := New(10, 1)
+	for l := range auxiliaryListeners {
+		o.Refuser(l)()
+	}
+	reply := httptest.NewRecorder()
+	Metrics(o, func() []Gauge { return nil }).ServeHTTP(reply, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	text := reply.Body.String()
+	for _, want := range []string{
+		`gateway_listener_connections_refused_total{listener="admin"} 1`,
+		`gateway_listener_connections_refused_total{listener="metrics"} 1`,
+		`gateway_listener_connections_refused_total{listener="health"} 1`,
+		`gateway_listener_connections_refused_total{listener="redirect"} 1`,
+	} {
+		if !strings.Contains(text, want) {
+			t.Errorf("exposition lacks %s", want)
+		}
+	}
+}

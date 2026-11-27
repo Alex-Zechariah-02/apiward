@@ -44,13 +44,13 @@ type Observations struct {
 	permits permitTracker
 	// redirects counts the redirect listener's 308 answers, refused the
 	// data connections closed at the connection cap, and auxiliary the
-	// connections each other listener closed at its cap (keys fixed by New);
+	// connections each other listener closed at its cap (by AuxiliaryListener);
 	// they need no lock.
 	redirects atomic.Uint64
 	refused   atomic.Uint64
 	// http2 counts the data listener's HTTP/2 protocol errors.
 	http2     atomic.Uint64
-	auxiliary map[string]*atomic.Uint64
+	auxiliary [auxiliaryListeners]atomic.Uint64
 	// admin counts the Admin API's own failures by AdminFailure.
 	admin [adminFailures]atomic.Uint64
 	// keyReloads counts key reloads refused because the keys or the
@@ -61,12 +61,7 @@ type Observations struct {
 // New keeps the last window requests; apis bounds the per-API duration
 // metrics. Both are the resolved capacity limits.
 func New(window, apis int) *Observations {
-	o := &Observations{ring: ring{size: window}, viewers: map[*Viewer]bool{}, done: make(chan struct{}), metrics: requestMetrics{apis: apis},
-		auxiliary: map[string]*atomic.Uint64{}}
-	for _, name := range Auxiliary {
-		o.auxiliary[name] = new(atomic.Uint64)
-	}
-	return o
+	return &Observations{ring: ring{size: window}, viewers: map[*Viewer]bool{}, done: make(chan struct{}), metrics: requestMetrics{apis: apis}}
 }
 
 // Record keeps a request's final event in the window, counts it in the

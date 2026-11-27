@@ -20,6 +20,7 @@ import (
 
 	"github.com/Alex-Zechariah-02/apiward/internal/connections"
 	"github.com/Alex-Zechariah-02/apiward/internal/controller"
+	"github.com/Alex-Zechariah-02/apiward/internal/monitor"
 )
 
 // Exit statuses of the native run command.
@@ -137,7 +138,7 @@ func startNative(cfg nativeConfig, logger *slog.Logger) (*nativeGateway, error) 
 	listener = connections.CapPerAddress(listener, cfg.maxConnections, cfg.perAddress, c.Observations().ConnectionRefused)
 	if redirectListener != nil {
 		// The redirect listener faces the same clients as the data listener.
-		redirectListener = connections.Cap(redirectListener, cfg.maxConnections, c.Observations().Refuser("redirect"))
+		redirectListener = connections.Cap(redirectListener, cfg.maxConnections, c.Observations().Refuser(monitor.ListenerRedirect))
 	}
 	server := cfg.server()
 	server.countError = c.Observations().HTTP2Error

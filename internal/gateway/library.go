@@ -210,7 +210,7 @@ func (d *deployment) listen(plain, hostServed bool) (metrics, health net.Listene
 	if err != nil {
 		return nil, nil, classify(ErrListen, fmt.Errorf("metrics listener: %w", err))
 	}
-	metrics = connections.Cap(metrics, connections.Auxiliary, d.controller.Observations().Refuser("metrics"))
+	metrics = connections.Cap(metrics, connections.Auxiliary, d.controller.Observations().Refuser(monitor.ListenerMetrics))
 	if d.config.healthListen != "" {
 		health, err = net.Listen("tcp", d.config.healthListen)
 		if err != nil {
@@ -218,7 +218,7 @@ func (d *deployment) listen(plain, hostServed bool) (metrics, health net.Listene
 			return nil, nil, classify(ErrListen, fmt.Errorf("health listener: %w", err))
 		}
 		d.healthListen = health.Addr().String()
-		health = connections.Cap(health, connections.Auxiliary, d.controller.Observations().Refuser("health"))
+		health = connections.Cap(health, connections.Auxiliary, d.controller.Observations().Refuser(monitor.ListenerHealth))
 	}
 	var ui http.Handler // nil when no files are configured: the routes stay unregistered
 	if d.ui != nil {

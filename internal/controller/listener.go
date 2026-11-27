@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/Alex-Zechariah-02/apiward/internal/connections"
+	"github.com/Alex-Zechariah-02/apiward/internal/monitor"
 )
 
 // AdminWriteTimeout is how long the Admin API may take to answer: an answer
@@ -25,7 +26,7 @@ func (c *Controller) startAdmin(handler http.Handler) error {
 	if err != nil {
 		return err
 	}
-	listener = connections.Cap(listener, connections.Auxiliary, c.observations.Refuser("admin"))
+	listener = connections.Cap(listener, connections.Auxiliary, c.observations.Refuser(monitor.ListenerAdmin))
 	// A loopback client sends a request in milliseconds; the read bounds
 	// only stop a stalled client from holding one of the few connections.
 	c.admin = &http.Server{

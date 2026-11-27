@@ -166,9 +166,22 @@ func (h histogram) copy() histogram {
 	return h
 }
 
-// Auxiliary names the listeners besides the data listener, in the order the
-// metrics list them.
-var Auxiliary = []string{"admin", "metrics", "redirect"}
+// AuxiliaryListener names a listener besides the data listener, in the order
+// the metrics list them.
+type AuxiliaryListener int
+
+const (
+	ListenerAdmin AuxiliaryListener = iota
+	ListenerMetrics
+	ListenerHealth
+	ListenerRedirect
+	auxiliaryListeners
+)
+
+var auxiliaryNames = [auxiliaryListeners]string{"admin", "metrics", "health", "redirect"}
+
+// String is the listener's metric label value.
+func (l AuxiliaryListener) String() string { return auxiliaryNames[l] }
 
 // Redirected counts one redirect of the HTTP-to-HTTPS redirect listener.
 func (o *Observations) Redirected() { o.redirects.Add(1) }
@@ -181,9 +194,9 @@ func (o *Observations) HTTP2Error(string) { o.http2.Add(1) }
 func (o *Observations) ConnectionRefused() { o.refused.Add(1) }
 
 // Refuser returns the function that counts one connection closed at the cap
-// of listener, one of Auxiliary.
-func (o *Observations) Refuser(listener string) func() {
-	count := o.auxiliary[listener]
+// of listener.
+func (o *Observations) Refuser(listener AuxiliaryListener) func() {
+	count := &o.auxiliary[listener]
 	return func() { count.Add(1) }
 }
 
