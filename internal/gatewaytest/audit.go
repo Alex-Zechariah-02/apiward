@@ -6,10 +6,9 @@ package gatewaytest
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
-	"net/http"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -25,11 +24,31 @@ func LogOwn(kind string) bool {
 	return kind == "audit.chain" || kind == "audit.checkpoint" || kind == "audit.closed"
 }
 
+// readLiveAudit reads the active audit file up to its logical end without
+// blocking Windows renames or scanning a Linux prefill zero tail.
+func readLiveAudit(path string) ([]byte, error) {
+	file, err := audit.OpenShared(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	end, err := audit.End(file)
+	if err != nil || end == 0 {
+		return nil, err
+	}
+	data := make([]byte, end)
+	n, err := file.ReadAt(data, 0)
+	if err != nil && !errors.Is(err, io.EOF) {
+		return nil, err
+	}
+	return data[:n], nil
+}
+
 // AuditEvents reads every record of the deployment's audit log but its own
 // bookkeeping records (LogOwn).
 func (e *Env) AuditEvents() []map[string]any {
 	e.T.Helper()
-	data, err := os.ReadFile(e.AuditLog)
+	data, err := readLiveAudit(e.AuditLog)
 	if err != nil {
 		e.T.Fatal(err)
 	}
@@ -114,19 +133,34 @@ const auditWait = 5 * time.Second
 
 // EventsWhen waits until the audit log satisfies done and fails the test
 // when it does not within auditWait. Events that do not gate a decision are
-// written asynchronously, so they may land shortly after the response.
+// written asynchronously, so they may land shortly after the response; a
+// concurrent WriteAt into a prefilled Linux file can also tear one read, so
+// transient parse errors retry until auditWait and fail if they persist.
 func (e *Env) EventsWhen(done func([]map[string]any) bool) []map[string]any {
 	e.T.Helper()
 	limit := time.Now().Add(auditWait)
+	var lastErr error
+	var count int
 	for {
-		events := e.AuditEvents()
-		if done(events) {
-			return events
+		data, err := readLiveAudit(e.AuditLog)
+		if err == nil {
+			var events []map[string]any
+			events, err = ParseAudit(data, filepath.Base(e.AuditLog))
+			if err == nil {
+				count = len(events)
+				if done(events) {
+					return events
+				}
+			}
 		}
+		lastErr = err
 		if time.Now().After(limit) {
-			e.T.Fatalf("the audit log did not reach the awaited state within %s (%d records)", auditWait, len(events))
+			if lastErr != nil {
+				e.T.Fatalf("the audit log did not become readable within %s: %v", auditWait, lastErr)
+			}
+			e.T.Fatalf("the audit log did not reach the awaited state within %s (%d records)", auditWait, count)
 		}
-		// Each pass re-reads the whole file; 20 ms keeps that cheap.
+		// Each pass re-reads the active file; 20 ms keeps that cheap.
 		time.Sleep(20 * time.Millisecond)
 	}
 }
@@ -198,100 +232,4 @@ func (e *Env) RequestEvents(requestID string, want int) []map[string]any {
 		}
 	}
 	return mine
-}
-
-// ExpectedStages builds the full stage map for a request event: the listed
-// stages passed, the terminal stage has the given result, and every other
-// stage was not evaluated.
-func ExpectedStages(passed []string, terminal, result string) map[string]any {
-	stages := map[string]any{}
-	for _, name := range audit.StageNames {
-		stages[name] = audit.StageNotRun
-	}
-	for _, name := range passed {
-		stages[name] = audit.StagePass
-	}
-	if terminal != "" {
-		stages[terminal] = result
-	}
-	return stages
-}
-
-// Public marks the authentication and rate stages of a public operation as
-// not applicable: it reads no token and cannot carry a rate rule.
-func Public(stages map[string]any) map[string]any {
-	stages["JWT"] = audit.StageNotApplicable
-	stages["RBAC"] = audit.StageNotApplicable
-	stages["RATE"] = audit.StageNotApplicable
-	return stages
-}
-
-// RequestID returns a data-plane response's status and the request_id its
-// JSON body names, empty when the body names none.
-func RequestID(resp *http.Response, body string) (int, string) {
-	var reply struct {
-		RequestID string `json:"request_id"`
-	}
-	json.Unmarshal([]byte(body), &reply)
-	return resp.StatusCode, reply.RequestID
-}
-
-// SameStages reports whether two stage maps encode to the same JSON.
-func SameStages(got any, want map[string]any) bool {
-	a, _ := json.Marshal(got)
-	b, _ := json.Marshal(want)
-	return bytes.Equal(a, b)
-}
-
-// IngressSummary stops the gateway gracefully, so it writes the ingress
-// refusals counted since its last summary, and returns every summary's
-// counts by reason. The gateway must have been started Interruptible.
-func (e *Env) IngressSummary() map[string]int {
-	e.T.Helper()
-	e.Shutdown()
-	return SummaryCounts(e.AuditEvents())
-}
-
-// SummaryCounts adds up the ingress summaries among events by reason.
-func SummaryCounts(events []map[string]any) map[string]int {
-	counts := map[string]int{}
-	for _, ev := range events {
-		if ev["kind"] != "audit.ingress_summary" {
-			continue
-		}
-		reasons, _ := ev["counts"].(map[string]any)
-		for reason, n := range reasons {
-			count, _ := n.(float64)
-			counts[reason] += int(count)
-		}
-	}
-	return counts
-}
-
-// SummaryRefusals adds up the refusals the ingress summaries among events
-// count (keys <STAGE>/<reason>/<operation>), those over a client address's
-// budget of recorded refusals a minute.
-func SummaryRefusals(events []map[string]any) int {
-	total := 0
-	for reason, n := range SummaryCounts(events) {
-		if strings.Contains(reason, "/") {
-			total += n
-		}
-	}
-	return total
-}
-
-// RecordOf returns a record of one of the requests ids among events, or nil
-// when none has one.
-func RecordOf(events []map[string]any, ids []string) map[string]any {
-	wanted := map[any]bool{}
-	for _, id := range ids {
-		wanted[id] = true
-	}
-	for _, ev := range events {
-		if wanted[ev["request_id"]] {
-			return ev
-		}
-	}
-	return nil
 }
