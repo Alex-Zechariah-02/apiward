@@ -63,7 +63,7 @@ func (s *Server) handleBlockAddress(w http.ResponseWriter, r *http.Request, who 
 		return
 	}
 	if request.ExpiresAt != nil {
-		ahead := time.Until(*request.ExpiresAt)
+		ahead := request.ExpiresAt.Sub(compile.TrustedNow())
 		// A minute to 30 days ahead: a timed block is never already over and lapses within a month.
 		if ahead < store.MinAddressExpiry || ahead > store.MaxAddressExpiry {
 			adminError(w, http.StatusBadRequest, "bad_request", "expires_at")
