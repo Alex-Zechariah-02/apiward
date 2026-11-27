@@ -142,7 +142,7 @@ func canonicalSchema(raw json.RawMessage) (json.RawMessage, error) {
 	if raw == nil {
 		return nil, nil
 	}
-	value, reason := DecodeJSON(raw)
+	value, reason := DecodeBounded(raw, MaxSchemaDepth, MaxJSONValues)
 	if reason != "" {
 		return nil, errors.New("schema not encodable: " + reason)
 	}

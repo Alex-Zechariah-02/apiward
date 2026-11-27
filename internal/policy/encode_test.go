@@ -162,3 +162,15 @@ func TestEncodeKeepsMixedRequired(t *testing.T) {
 		t.Fatalf("encoded %s, want the mixed required list as written", data)
 	}
 }
+
+// A schema deeper than MaxJSONDepth but within MaxSchemaDepth encodes cleanly,
+// matching checkMembers and CompileSchema.
+func TestEncodeAllowsMaxSchemaDepth(t *testing.T) {
+	depth := MaxJSONDepth + 4
+	raw := strings.Repeat(`{"a":`, depth-1) + `{"type":"string"}` + strings.Repeat(`}`, depth-1)
+	p := Policy{SchemaVersion: SchemaVersion, Profile: ProfileCore, Operations: []Operation{{ID: "x", API: "a", Method: "POST", Target: "/a/x",
+		Body: &BodyRule{MaxBytes: 10, Schema: json.RawMessage(raw)}}}}
+	if _, err := Encode(p); err != nil {
+		t.Fatalf("Encode rejected valid depth-%d schema (MaxSchemaDepth=%d): %v", depth, MaxSchemaDepth, err)
+	}
+}

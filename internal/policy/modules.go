@@ -36,7 +36,7 @@ func takeModules(document []byte, ids []string) ([]byte, []map[string]json.RawMe
 	for i, op := range operations {
 		for _, id := range ids {
 			if raw, ok := op[id]; ok {
-				if _, reason := DecodeJSON(raw); reason != "" {
+				if _, reason := DecodeBounded(raw, MaxSchemaDepth, MaxJSONValues); reason != "" {
 					return nil, nil, Invalid("SCHEMA_INVALID", "operations[%d].%s", i, id)
 				}
 				if taken[i] == nil {
@@ -107,7 +107,7 @@ func (o Operation) MarshalJSON() ([]byte, error) {
 // canonicalValue re-encodes a module value with its object members sorted;
 // member order carries no meaning in JSON. Numbers keep their literal form.
 func canonicalValue(raw json.RawMessage) ([]byte, error) {
-	value, reason := DecodeJSON(raw)
+	value, reason := DecodeBounded(raw, MaxSchemaDepth, MaxJSONValues)
 	if reason != "" {
 		return nil, errors.New("module value not encodable: " + reason)
 	}
