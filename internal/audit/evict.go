@@ -71,6 +71,9 @@ func (r *archiver) trim() {
 // overArchive picks the oldest archived file while the archive exceeds its
 // bound, or -1.
 func (r *archiver) overArchive(files []RotatedFile, seen uint64) eviction {
+	if r.budget <= 0 {
+		return eviction{at: -1, seen: seen}
+	}
 	return eviction{at: oldestOver(files, r.dir, r.budget), seen: seen}
 }
 
@@ -81,7 +84,7 @@ func (r *archiver) overLive(files []RotatedFile, seen uint64) eviction {
 }
 
 // oldestOver picks the oldest file in dir while the files there hold more
-// than bound bytes (bound <= 0 with dir the archive: no bound), or -1.
+// than bound bytes, or -1.
 func oldestOver(files []RotatedFile, dir string, bound int64) int {
 	var held int64
 	first := -1
@@ -94,7 +97,7 @@ func oldestOver(files []RotatedFile, dir string, bound int64) int {
 			first = i
 		}
 	}
-	if first < 0 || bound <= 0 || held <= bound {
+	if first < 0 || held <= bound {
 		return -1
 	}
 	return first
