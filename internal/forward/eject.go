@@ -74,19 +74,21 @@ func (e *ejector) result(address string, connected bool, probe uint64, now time.
 	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
+	s := e.states[address]
+	if probe != 0 {
+		if s == nil || s.probe != probe {
+			return
+		}
+	} else if s != nil && !s.until.IsZero() {
+		return
+	}
 	if connected {
 		delete(e.states, address)
 		return
 	}
-	s := e.states[address]
 	if s == nil {
 		s = &ejection{}
 		e.states[address] = s
-	}
-	// Requests sent before the ejection began may still fail during it or
-	// while a probe is in flight; they neither extend nor disturb the probe.
-	if now.Before(s.until) || (s.probe != 0 && s.probe != probe) {
-		return
 	}
 	s.failures++
 	if s.probe == 0 && s.failures < e.after {

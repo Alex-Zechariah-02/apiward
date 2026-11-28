@@ -25,8 +25,9 @@ var (
 // proxy, its closures and a client trace.
 type binding struct {
 	destination  compile.Destination
-	forwardedFor string        // validated X-Forwarded-For chain from a trusted proxy; empty for untrusted peers
-	connected    atomic.Bool   // a connection to the upstream was held
+	forwardedFor string      // validated X-Forwarded-For chain from a trusted proxy; empty for untrusted peers
+	connected    atomic.Bool // a connection to the upstream was held
+	probe        uint64
 	upstream     time.Duration // from sending the request to the response headers
 	cancel       context.CancelCauseFunc
 	failure      error // why the exchange failed before any response

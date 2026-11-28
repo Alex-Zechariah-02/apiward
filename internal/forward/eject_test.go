@@ -77,10 +77,11 @@ func TestEjectionDoublesAndProbesOnce(t *testing.T) {
 		t.Fatal("a failed probe must allow a probe after twice as long")
 	}
 	e.settle("a", token, true) // the probe's client went away
-	if ok, _ := e.admit("a", probeAt.Add(2*time.Second)); !ok {
+	ok, token = e.admit("a", probeAt.Add(2*time.Second))
+	if !ok {
 		t.Fatal("a probe whose client left must pass its turn on")
 	}
-	e.result("a", true, 0, probeAt.Add(2*time.Second))
+	e.result("a", true, token, probeAt.Add(2*time.Second))
 	if ok, _ := e.admit("a", probeAt.Add(2*time.Second)); !ok || len(e.states) != 0 {
 		t.Fatal("a connection must reset the endpoint")
 	}
@@ -108,5 +109,56 @@ func TestStaleRequestDoesNotDisruptActiveProbe(t *testing.T) {
 	e.result("a", false, stale, probeAt)
 	if e.states["a"].probe != active {
 		t.Fatal("stale failure disturbed active probe")
+	}
+}
+
+func TestStaleConnectionCannotCompleteAnotherProbe(t *testing.T) {
+	t.Parallel()
+	e := newEjector(1)
+	now := time.Unix(0, 0)
+	allowed, stale := e.admit("a", now)
+	if !allowed {
+		t.Fatal("initial connection attempt was refused")
+	}
+	e.result("a", false, stale, now)
+	probeAt := now.Add(ejectFirst)
+	allowed, active := e.admit("a", probeAt)
+	if !allowed || active == 0 {
+		t.Fatal("recovery probe was not admitted")
+	}
+	e.result("a", true, stale, probeAt)
+	if allowed, _ := e.admit("a", probeAt); allowed {
+		t.Fatal("a stale successful connection cleared the active recovery probe")
+	}
+	e.result("a", true, active, probeAt)
+	if allowed, _ := e.admit("a", probeAt); !allowed {
+		t.Fatal("the owning successful probe did not restore normal admission")
+	}
+}
+
+func TestCompletedProbeCannotChangeLaterEjection(t *testing.T) {
+	t.Parallel()
+	e := newEjector(1)
+	now := time.Unix(0, 0)
+	e.result("a", false, 0, now)
+	firstAt := now.Add(ejectFirst)
+	allowed, first := e.admit("a", firstAt)
+	if !allowed || first == 0 {
+		t.Fatal("first probe was not admitted")
+	}
+	e.result("a", false, first, firstAt)
+	e.result("a", true, first, firstAt)
+	if allowed, _ := e.admit("a", firstAt); allowed {
+		t.Fatal("completed probe cleared the next ejection")
+	}
+	secondAt := firstAt.Add(2 * ejectFirst)
+	allowed, second := e.admit("a", secondAt)
+	if !allowed || second == 0 || second == first {
+		t.Fatal("second probe has no distinct ownership")
+	}
+	e.result("a", true, second, secondAt)
+	e.result("a", false, first, secondAt)
+	if allowed, token := e.admit("a", secondAt); !allowed || token != 0 {
+		t.Fatal("an old failed probe recreated ejection after successful recovery")
 	}
 }

@@ -188,6 +188,7 @@ func (p *upstreamProxy) Forward(w http.ResponseWriter, r *http.Request) error {
 	if !admitted {
 		return fmt.Errorf("%w: %w", errEjected, errNotSent)
 	}
+	b.probe = probe
 	// The exchange ends when the client goes away, through its request's
 	// context, or when the response body stalls.
 	ctx, cancel := context.WithCancelCause(r.Context())
@@ -221,7 +222,7 @@ func (p *upstreamProxy) Forward(w http.ResponseWriter, r *http.Request) error {
 // ejected endpoint settles at once, not when its exchange ends.
 func (p *upstreamProxy) connected(b *binding) {
 	if b.connected.CompareAndSwap(false, true) {
-		p.ejector.result(b.destination.Endpoint().Address(), true, 0, time.Now())
+		p.ejector.result(b.destination.Endpoint().Address(), true, b.probe, time.Now())
 	}
 }
 
