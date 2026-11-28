@@ -101,13 +101,13 @@ func unfinished(path string, end int64, window time.Duration) ([]scanned, bool, 
 // closedTail checks whether file's first end bytes are empty or end with
 // audit.closed (followed only by audit.chain records), reading at most two
 // record windows from the tail so a clean stop skips decoding the file.
-func closedTail(file *os.File, end int64) (bool, error) {
+func closedTail(file io.ReaderAt, end int64) (bool, error) {
 	if end <= 0 {
 		return true, nil
 	}
 	start := max(int64(0), end-2*MaxRecordBytes)
 	tail := make([]byte, end-start)
-	if _, err := file.ReadAt(tail, start); err != nil && err != io.EOF {
+	if err := readAt(file, tail, start); err != nil {
 		return false, err
 	}
 	if start > 0 {

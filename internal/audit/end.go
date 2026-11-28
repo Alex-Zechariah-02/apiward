@@ -30,12 +30,15 @@ func End(file *os.File) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-	end := info.Size()
+	return endAt(file, info.Size())
+}
+
+func endAt(r io.ReaderAt, end int64) (int64, error) {
 	window := make([]byte, min(end, MaxRecordBytes))
 	for end > 0 {
 		base := max(end-int64(len(window)), 0)
 		chunk := window[:end-base]
-		if _, err := file.ReadAt(chunk, base); err != nil && !errors.Is(err, io.EOF) {
+		if err := readAt(r, chunk, base); err != nil {
 			return 0, err
 		}
 		if kept := len(bytes.TrimRight(chunk, "\x00")); kept > 0 {
@@ -47,8 +50,19 @@ func End(file *os.File) (int64, error) {
 	// A record is at most MaxRecordBytes, so the last newline is in reach.
 	base := max(end-int64(len(window)), 0)
 	tail := window[:end-base]
-	if _, err := file.ReadAt(tail, base); err != nil && !errors.Is(err, io.EOF) {
+	if err := readAt(r, tail, base); err != nil {
 		return 0, err
 	}
 	return base + int64(len(Content(tail))), nil
+}
+
+func readAt(r io.ReaderAt, dst []byte, off int64) error {
+	n, err := r.ReadAt(dst, off)
+	if err != nil && !errors.Is(err, io.EOF) {
+		return err
+	}
+	if n < len(dst) {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
 }

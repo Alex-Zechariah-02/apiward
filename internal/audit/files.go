@@ -211,13 +211,13 @@ func (a *AuditLog) open() (int64, error) {
 
 // incompleteRecord returns the offset of an unterminated last record of the
 // file's content, which ends at end, or -1.
-func incompleteRecord(file *os.File, end int64) (int64, error) {
+func incompleteRecord(file io.ReaderAt, end int64) (int64, error) {
 	if end == 0 {
 		return -1, nil
 	}
 	start := max(end-MaxRecordBytes, 0)
 	tail := make([]byte, end-start)
-	if _, err := file.ReadAt(tail, start); err != nil && err != io.EOF {
+	if err := readAt(file, tail, start); err != nil {
 		return -1, err
 	}
 	if tail[len(tail)-1] == '\n' {
