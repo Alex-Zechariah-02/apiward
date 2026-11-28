@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/netip"
+	"slices"
 	"sync/atomic"
 	"time"
 
@@ -184,7 +185,7 @@ func New(d Deps) (*Handler, error) {
 	h := &Handler{
 		authority: d.Authority, audit: d.Audit, observations: d.Observations,
 		limiter: d.Limiter, clock: d.Clock, auditTimeout: d.AuditTimeout,
-		maxBodyBytes: limits.MaxBodyBytes, maxInFlight: limits.MaxInFlight, ipv6Prefix: limits.IPv6RatePrefix, proxies: limits.TrustedProxies,
+		maxBodyBytes: limits.MaxBodyBytes, maxInFlight: limits.MaxInFlight, ipv6Prefix: limits.IPv6RatePrefix, proxies: slices.Clone(limits.TrustedProxies),
 		forward: d.Forward, signer: d.Signer, ingress: ingress,
 	}
 	h.upstreams.max = limits.MaxInFlightPerUpstream

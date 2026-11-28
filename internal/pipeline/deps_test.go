@@ -6,6 +6,7 @@ import (
 	"math"
 	"math/big"
 	"net/http"
+	"net/http/httptest"
 	"net/netip"
 	"testing"
 	"time"
@@ -87,5 +88,32 @@ func TestDefaultPerUpstreamPreservesFraction(t *testing.T) {
 		if got := DefaultPerUpstream(ceiling); got != want {
 			t.Errorf("global cap %d: got %d, want %d", ceiling, got, want)
 		}
+	}
+}
+
+func TestTrustedProxyConfigurationOwnsPrefixes(t *testing.T) {
+	t.Parallel()
+	proxies := []netip.Prefix{netip.MustParsePrefix("10.0.0.0/8")}
+	s := setup{
+		ops:    []policy.Operation{public(http.MethodGet, "/a/x")},
+		limits: Limits{TrustedProxies: proxies},
+		forward: func(w http.ResponseWriter, _ *http.Request) error {
+			proxies[0] = netip.MustParsePrefix("198.51.100.0/24")
+			w.WriteHeader(http.StatusOK)
+			return nil
+		},
+	}
+	request := func() *http.Request {
+		r := httptest.NewRequest(http.MethodGet, "/a/x", nil)
+		r.RemoteAddr = "198.51.100.2:1"
+		r.Header.Set("X-Forwarded-For", "203.0.113.9")
+		return r
+	}
+	rec, records, recovered := exchange(t, s, request(), request())
+	if recovered != nil || rec.Code != http.StatusOK {
+		t.Fatalf("request did not complete: status %d, panic %v", rec.Code, recovered)
+	}
+	if got := last(records)["client_address"]; got != "198.51.100.2" {
+		t.Fatalf("caller mutation changed the trusted peer set: client %v, want 198.51.100.2", got)
 	}
 }
