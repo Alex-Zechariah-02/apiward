@@ -3,7 +3,11 @@
 package module
 
 import (
+	"context"
 	"encoding/json"
+	"flag"
+	"os"
+	"os/exec"
 	"strings"
 	"testing"
 )
@@ -15,6 +19,29 @@ func (named) Compile(Operation, json.RawMessage) (Check, error) { return nil, ni
 
 // A build with an invalid, reserved or repeated module ID never starts.
 func TestRegisterRefuses(t *testing.T) {
+	const child = "register-refusals"
+	if flag.Arg(0) == child {
+		checkRegister(t)
+		return
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := t.Context()
+	if deadline, ok := t.Deadline(); ok {
+		bounded, cancel := context.WithDeadline(ctx, deadline)
+		defer cancel()
+		ctx = bounded
+	}
+	cmd := exec.CommandContext(ctx, exe, "-test.run=^"+t.Name()+"$", "--", child)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("registration subprocess: %v\n%s", err, output)
+	}
+}
+
+func checkRegister(t *testing.T) {
+	t.Helper()
 	Register(named("taken"))
 	for _, id := range []string{"", "Upper", "has-dash", "target", "taken"} {
 		func() {
