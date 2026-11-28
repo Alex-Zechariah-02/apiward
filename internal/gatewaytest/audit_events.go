@@ -50,8 +50,14 @@ func RequestID(resp *http.Response, body string) (int, string) {
 
 // SameStages reports whether two stage maps encode to the same JSON.
 func SameStages(got any, want map[string]any) bool {
-	a, _ := json.Marshal(got)
-	b, _ := json.Marshal(want)
+	a, err := json.Marshal(got)
+	if err != nil {
+		return false
+	}
+	b, err := json.Marshal(want)
+	if err != nil {
+		return false
+	}
 	return bytes.Equal(a, b)
 }
 
