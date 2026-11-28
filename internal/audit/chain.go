@@ -69,4 +69,11 @@ func (a *AuditLog) ChainBatches() uint64 { return a.chainBatches.Load() }
 
 // Checkpoint returns the last synced signed checkpoint, or nil before the first
 // checkpoint or when signing is disabled.
-func (a *AuditLog) Checkpoint() *Checkpoint { return a.lastCheckpoint.Load() }
+func (a *AuditLog) Checkpoint() *Checkpoint {
+	cp := a.lastCheckpoint.Load()
+	if cp == nil {
+		return nil
+	}
+	snapshot := *cp
+	return &snapshot
+}

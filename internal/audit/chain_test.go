@@ -59,3 +59,59 @@ func TestChainFindsTampering(t *testing.T) {
 		}
 	}
 }
+
+func TestCheckpointSnapshotOwnsFields(t *testing.T) {
+	t.Parallel()
+	public, private, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, signer := range map[string]Signer{
+		"unsigned": nil,
+		"signed": func(message []byte) (string, []byte, error) {
+			return "k1", ed25519.Sign(private, message), nil
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "audit.log")
+			a := OpenAudit(path, Settings{MaxBytes: DefaultAuditBytes, MaxFiles: 1, Append: true, Signer: signer})
+			t.Cleanup(func() {
+				if err := a.Close(context.Background()); err != nil {
+					t.Error(err)
+				}
+			})
+			if cp := a.Checkpoint(); cp != nil {
+				t.Fatalf("checkpoint before any signed write: %+v", cp)
+			}
+			if err := a.Commit(context.Background(), Event{Kind: "request.admitted", RequestID: "r"}); err != nil {
+				t.Fatal(err)
+			}
+			if err := a.Close(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			cp := a.Checkpoint()
+			if signer == nil {
+				if cp != nil {
+					t.Fatalf("unsigned log published a checkpoint: %+v", cp)
+				}
+				return
+			}
+			if cp == nil {
+				t.Fatal("signed clean stop did not publish its checkpoint")
+			}
+			want := *cp
+			cp.Boot += "changed"
+			cp.SHA256 += "changed"
+			cp.Kid += "changed"
+			cp.Signature += "changed"
+			cp.Time = cp.Time.Add(CheckpointInterval)
+			got := a.Checkpoint()
+			if got == nil || got.Boot != want.Boot || got.SHA256 != want.SHA256 || got.Kid != want.Kid || got.Signature != want.Signature || !got.Time.Equal(want.Time) {
+				t.Fatalf("checkpoint changed through a returned snapshot: got %+v, want %+v", got, want)
+			}
+			if report, err := VerifyChain([]string{path}, map[string]crypto.PublicKey{"k1": public}); err != nil || !report.Valid() || report.Checkpoints == 0 {
+				t.Fatalf("checkpoint was not backed by the signed log: %+v, %v", report, err)
+			}
+		})
+	}
+}
