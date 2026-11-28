@@ -225,7 +225,12 @@ func (n *Network) Has(id string) bool { return n.profiles[id] != nil }
 func (n *Network) Profiles() []ProfileInfo {
 	items := make([]ProfileInfo, 0, len(n.profiles))
 	for _, p := range n.profiles {
-		items = append(items, p.info)
+		info := p.info
+		if info.ExpiresAt != nil {
+			expires := *info.ExpiresAt
+			info.ExpiresAt = &expires
+		}
+		items = append(items, info)
 	}
 	slices.SortFunc(items, func(a, b ProfileInfo) int { return strings.Compare(a.ID, b.ID) })
 	return items

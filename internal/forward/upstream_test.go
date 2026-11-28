@@ -226,6 +226,35 @@ func TestUpstreamHostHeader(t *testing.T) {
 	}
 }
 
+func TestProfileSnapshotsOwnExpiry(t *testing.T) {
+	t.Parallel()
+	dir, ca := t.TempDir(), newIssuer(t)
+	certFile, keyFile, pair := ca.leaf(t, dir, "client", true, nil)
+	certificate, err := x509.ParseCertificate(pair.Certificate[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	n, err := LoadNetwork(false, []ProfileSettings{
+		{ID: "client", ClientCertificateFile: certFile, ClientKeyFile: keyFile},
+		{ID: "system"},
+	}, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := certificate.NotAfter.UTC()
+	items := n.Profiles()
+	if len(items) != 2 || items[0].ID != "client" || !items[0].ClientCertificate || items[0].ExpiresAt == nil || !items[0].ExpiresAt.Equal(want) || items[1].ID != "system" || items[1].ExpiresAt != nil {
+		t.Fatalf("profile metadata does not match the loaded certificate: %+v", items)
+	}
+	*items[0].ExpiresAt = items[0].ExpiresAt.Add(time.Hour)
+	items[0].ID = "changed"
+	items[1].ExpiresAt = &want
+	next := n.Profiles()
+	if len(next) != 2 || next[0].ID != "client" || next[0].ExpiresAt == nil || !next[0].ExpiresAt.Equal(want) || next[1].ExpiresAt != nil {
+		t.Fatalf("caller changed later profile metadata: %+v", next)
+	}
+}
+
 // A CA pin file is read only when it is a regular file that, on Unix, the
 // group and others cannot rewrite.
 func TestCAFileChecks(t *testing.T) {
