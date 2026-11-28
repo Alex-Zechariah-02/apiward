@@ -3,6 +3,8 @@
 package pipeline
 
 import (
+	"math"
+	"math/big"
 	"net/http"
 	"net/netip"
 	"testing"
@@ -62,6 +64,28 @@ func TestIPv6RateKey(t *testing.T) {
 		deps.Limits = Limits{IPv6RatePrefix: prefix}
 		if _, err := New(deps); err == nil {
 			t.Fatalf("prefix %d accepted", prefix)
+		}
+	}
+}
+
+func TestDefaultPerUpstreamPreservesFraction(t *testing.T) {
+	t.Parallel()
+	for _, scenario := range []struct{ global, upstream int64 }{
+		{1, 1}, {2, 1}, {3, 2}, {4, 3}, {5, 3},
+	} {
+		if got := DefaultPerUpstream(scenario.global); got != scenario.upstream {
+			t.Errorf("global cap %d: got %d, want %d", scenario.global, got, scenario.upstream)
+		}
+	}
+	for _, ceiling := range []int64{DefaultMaxInFlight, math.MaxInt64 / upstreamNumerator, math.MaxInt64/upstreamNumerator + 1, math.MaxInt64} {
+		fraction := new(big.Int).Mul(big.NewInt(ceiling), big.NewInt(upstreamNumerator))
+		fraction.Quo(fraction, big.NewInt(upstreamDenominator))
+		if !fraction.IsInt64() {
+			t.Fatal("the expected upstream share does not fit int64")
+		}
+		want := max(int64(1), fraction.Int64())
+		if got := DefaultPerUpstream(ceiling); got != want {
+			t.Errorf("global cap %d: got %d, want %d", ceiling, got, want)
 		}
 	}
 }

@@ -33,10 +33,19 @@ const DefaultMaxInFlight = 1024
 // limit: the data listener's default write_timeout.
 const DefaultModuleTimeout = 30 * time.Second
 
+const (
+	upstreamNumerator   int64 = 3
+	upstreamDenominator int64 = 4
+)
+
 // DefaultPerUpstream is the default in-flight bound of one upstream: three
 // quarters of maxInFlight (768 by default), so a slow upstream leaves a
 // quarter for the others.
-func DefaultPerUpstream(maxInFlight int64) int64 { return max(1, maxInFlight*3/4) }
+func DefaultPerUpstream(maxInFlight int64) int64 {
+	whole := maxInFlight / upstreamDenominator * upstreamNumerator
+	remainder := maxInFlight % upstreamDenominator * upstreamNumerator / upstreamDenominator
+	return max(1, whole+remainder)
+}
 
 // DefaultIPv6RatePrefix is the prefix an IPv6 client's rate key is masked
 // to: one /64 is what a single subscriber is usually given, so a client
