@@ -135,8 +135,12 @@ func scanLinesBackward(ctx context.Context, path string, end, floor int64, budge
 			buffer = make([]byte, size)
 		}
 		window := buffer[:size]
-		if _, err := file.ReadAt(window, base); err != nil && !errors.Is(err, io.EOF) {
+		n, err := file.ReadAt(window, base)
+		if err != nil && !errors.Is(err, io.EOF) {
 			return 0, false, err
+		}
+		if n < len(window) {
+			return 0, false, io.ErrUnexpectedEOF
 		}
 		*budget -= size
 		// Start at the first whole line; the part before it is read with
