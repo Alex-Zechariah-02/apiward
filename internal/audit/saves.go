@@ -12,9 +12,9 @@ import (
 	"time"
 )
 
-// SaveBounds are the histogram's upper bounds in seconds: the gateway
+// saveBounds are the histogram's upper bounds in seconds: the gateway
 // overhead buckets plus 0.5 s and 2 s, the default save wait.
-var SaveBounds = []float64{0.0001, 0.00025, 0.0005, 0.001, 0.0025, 0.005, 0.01, 0.025, 0.1, 0.5, 1, 2, 10}
+var saveBounds = [...]float64{0.0001, 0.00025, 0.0005, 0.001, 0.0025, 0.005, 0.01, 0.025, 0.1, 0.5, 1, 2, 10}
 
 // SlowSave is the wait from which a save counts as slow: a hundred times a
 // typical synced write, a twentieth of the default save wait.
@@ -26,7 +26,7 @@ const slowReport = time.Minute
 // saves is the histogram; buckets count waits up to each bound, the last
 // place those above every bound.
 type saves struct {
-	buckets [14]atomic.Uint64
+	buckets [len(saveBounds) + 1]atomic.Uint64
 	count   atomic.Uint64
 	nanos   atomic.Uint64
 	slow    atomic.Int64
@@ -38,8 +38,8 @@ type saves struct {
 
 // observe records one wait.
 func (s *saves) observe(wait time.Duration) {
-	at := len(SaveBounds)
-	for i, bound := range SaveBounds {
+	at := len(saveBounds)
+	for i, bound := range saveBounds[:] {
 		if wait.Seconds() <= bound {
 			at = i
 			break
@@ -69,10 +69,11 @@ func (s *saves) report(wait time.Duration) {
 	s.since, s.pending, s.longest = now, 0, 0
 }
 
-// SaveTimes is the histogram: the count per bucket of SaveBounds (not
+// SaveTimes is the histogram: the count per bucket of Bounds (not
 // cumulative; the last entry counts waits above every bound), the number of
 // waits, their sum in seconds and the slow ones.
 type SaveTimes struct {
+	Bounds  [len(saveBounds)]float64
 	Buckets []uint64
 	Count   uint64
 	Sum     float64
@@ -82,7 +83,12 @@ type SaveTimes struct {
 // Saves reads the histogram.
 func (a *AuditLog) Saves() SaveTimes {
 	s := &a.saves
-	t := SaveTimes{Buckets: make([]uint64, len(s.buckets)), Count: s.count.Load(), Slow: s.slow.Load()}
+	t := SaveTimes{
+		Bounds:  saveBounds,
+		Buckets: make([]uint64, len(s.buckets)),
+		Count:   s.count.Load(),
+		Slow:    s.slow.Load(),
+	}
 	for i := range s.buckets {
 		t.Buckets[i] = s.buckets[i].Load()
 	}

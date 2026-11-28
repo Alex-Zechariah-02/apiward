@@ -15,7 +15,7 @@ func auditGauges(log *audit.AuditLog) []monitor.Gauge {
 	gauges := []monitor.Gauge{
 		{Name: "gateway_audit_sync_recoveries_total", Value: log.Recoveries(), Counter: true},
 		{Name: "gateway_audit_slow_saves_total", Value: saves.Slow, Counter: true},
-		{Name: "gateway_audit_save_seconds", Spread: &monitor.Spread{Bounds: audit.SaveBounds, Buckets: saves.Buckets, Count: saves.Count, Sum: saves.Sum}},
+		{Name: "gateway_audit_save_seconds", Spread: &monitor.Spread{Bounds: saves.Bounds[:], Buckets: saves.Buckets, Count: saves.Count, Sum: saves.Sum}},
 	}
 	state, ok := log.Archive()
 	if !ok {
