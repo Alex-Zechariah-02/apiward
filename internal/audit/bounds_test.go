@@ -107,7 +107,7 @@ func TestLiveBoundCountsActiveFile(t *testing.T) {
 	r := &archiver{live: dir, log: &AuditLog{maxBytes: 50, maxFiles: 2}}
 	r.log.activeBytes.Store(30)
 	files := []RotatedFile{{Name: "a", Dir: dir, Bytes: 40}, {Name: "b", Dir: dir, Bytes: 40}}
-	if at := r.overLive(files); at != 0 {
+	if at := r.overLive(files, 0).at; at != 0 {
 		t.Fatalf("80 rotated bytes beside a 30-byte active file under a 100-byte bound: picked %d, want 0", at)
 	}
 }
@@ -119,11 +119,11 @@ func TestPressureFloorWhileReserveReleased(t *testing.T) {
 	r := &archiver{live: dir, dir: t.TempDir(), reserve: 1 << 50, log: &AuditLog{}}
 	files := []RotatedFile{{Name: "a", Dir: dir, Bytes: 1}}
 	r.held.Store(r.reserve)
-	if at := r.underPressure(files); at != -1 {
+	if at := r.underPressure(files, 0).at; at != -1 {
 		t.Fatalf("held reserve: picked %d, want none", at)
 	}
 	r.held.Store(r.reserve - 1)
-	if at := r.underPressure(files); at != 0 {
+	if at := r.underPressure(files, 0).at; at != 0 {
 		t.Fatalf("released reserve below twice its size free: picked %d, want 0", at)
 	}
 }

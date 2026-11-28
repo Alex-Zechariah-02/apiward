@@ -31,6 +31,11 @@ const (
 	evictPressure = "disk_pressure"
 )
 
+type eviction struct {
+	at   int
+	seen uint64
+}
+
 // trim evicts until every bound holds or nothing is left to evict.
 func (r *archiver) trim() {
 	files, err := RotatedFiles(r.log.path, r.dir)
@@ -40,14 +45,15 @@ func (r *archiver) trim() {
 	}
 	for _, rule := range []struct {
 		reason string
-		pick   func([]RotatedFile) int
+		pick   func([]RotatedFile, uint64) eviction
 	}{
 		{evictArchive, r.overArchive},
 		{evictLog, r.overLive},
 		{evictPressure, r.underPressure},
 	} {
 		for len(files) > 0 && r.ctx.Err() == nil {
-			at := rule.pick(files)
+			picked := rule.pick(files, r.spaceSeen)
+			at := picked.at
 			if at < 0 {
 				break
 			}
@@ -55,6 +61,7 @@ func (r *archiver) trim() {
 				slog.Error("evicting a security log file; retried at the next pass", "file", files[at].Name, "error", err)
 				return
 			}
+			r.spaceSeen = picked.seen
 			files = slices.Delete(files, at, at+1)
 		}
 	}
@@ -63,14 +70,14 @@ func (r *archiver) trim() {
 
 // overArchive picks the oldest archived file while the archive exceeds its
 // bound, or -1.
-func (r *archiver) overArchive(files []RotatedFile) int {
-	return oldestOver(files, r.dir, r.budget)
+func (r *archiver) overArchive(files []RotatedFile, seen uint64) eviction {
+	return eviction{at: oldestOver(files, r.dir, r.budget), seen: seen}
 }
 
 // overLive picks the oldest rotated file in the active folder while the
 // folder, the active file included, exceeds its bound, or -1.
-func (r *archiver) overLive(files []RotatedFile) int {
-	return oldestOver(files, r.live, r.log.budget()-r.log.activeBytes.Load())
+func (r *archiver) overLive(files []RotatedFile, seen uint64) eviction {
+	return eviction{at: oldestOver(files, r.live, r.log.budget()-r.log.activeBytes.Load()), seen: seen}
 }
 
 // oldestOver picks the oldest file in dir while the files there hold more
@@ -97,7 +104,7 @@ func oldestOver(files []RotatedFile, dir string, bound int64) int {
 // threshold, or -1. While a reserve is released a disk must also have twice
 // the reserve free. Each write refused for want of space also picks one file
 // on the log disk, whatever its free space reads (a quota or inode limit).
-func (r *archiver) underPressure(files []RotatedFile) int {
+func (r *archiver) underPressure(files []RotatedFile, seen uint64) eviction {
 	fails := r.log.spaceFails.Load()
 	floor := int64(0)
 	if r.reserve > 0 && r.held.Load() < r.reserve {
@@ -106,20 +113,20 @@ func (r *archiver) underPressure(files []RotatedFile) int {
 	for _, dir := range []string{r.live, r.dir} {
 		d, err := disk.Of(dir)
 		state := r.log.currentHealth()
-		full := dir == r.live && (state == healthNoSpace || state == healthDown) && fails != r.spaceSeen
+		full := dir == r.live && (state == healthNoSpace || state == healthDown) && fails != seen
 		if err != nil || !full && !d.Below(r.minFree, floor) {
 			continue
 		}
 		for i, f := range files {
 			if same, err := disk.Of(f.Dir); err == nil && same.ID == d.ID {
 				if full {
-					r.spaceSeen = fails
+					return eviction{at: i, seen: fails}
 				}
-				return i
+				return eviction{at: i, seen: seen}
 			}
 		}
 	}
-	return -1
+	return eviction{at: -1, seen: seen}
 }
 
 // evict records files[at] and deletes it; a file newer than another still

@@ -6,9 +6,11 @@ package audit
 import (
 	"context"
 	"errors"
+	"os"
 	"path/filepath"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -184,33 +186,67 @@ func TestUnderPressureEvictsOnSpaceFails(t *testing.T) {
 	files := []RotatedFile{{Name: "audit-2026-01-01T00-00-00.000.log", Dir: dir, Bytes: 1}}
 
 	// Healthy log with no space failures never triggers space-failure eviction.
-	if at := r.underPressure(files); at != -1 {
+	if at := r.underPressure(files, 0).at; at != -1 {
 		t.Fatalf("healthy log with 0 spaceFails: picked %d, want -1", at)
 	}
 	// Healthy log even with an unseen spaceFail does not evict once writing resumed.
 	log.spaceFails.Store(1)
-	if at := r.underPressure(files); at != -1 {
+	if at := r.underPressure(files, 0).at; at != -1 {
 		t.Fatalf("healthy log with stale spaceFails: picked %d, want -1", at)
 	}
 	// healthNoSpace with r.dir == "" evicts once per unseen spaceFail.
 	log.health.Store(int32(healthNoSpace))
-	if at := r.underPressure(files); at != 0 {
-		t.Fatalf("healthNoSpace with unseen spaceFail and no archive: picked %d, want 0", at)
+	first := r.underPressure(files, 0)
+	if first.at != 0 || first.seen != 1 {
+		t.Fatalf("healthNoSpace with unseen spaceFail and no archive: picked %+v", first)
 	}
-	if at := r.underPressure(files); at != -1 {
+	if at := r.underPressure(files, first.seen).at; at != -1 {
 		t.Fatalf("healthNoSpace with already-seen spaceFail: picked %d, want -1", at)
 	}
 	// healthDown with a new spaceFail (replace() hit ENOSPC) evicts once.
 	log.health.Store(int32(healthDown))
-	if at := r.underPressure(files); at != -1 {
+	if at := r.underPressure(files, first.seen).at; at != -1 {
 		t.Fatalf("healthDown with seen spaceFail: picked %d, want -1", at)
 	}
 	log.spaceFails.Store(2)
-	if at := r.underPressure(files); at != 0 {
-		t.Fatalf("healthDown with unseen spaceFail and no archive: picked %d, want 0", at)
+	second := r.underPressure(files, first.seen)
+	if second.at != 0 || second.seen != 2 {
+		t.Fatalf("healthDown with unseen spaceFail and no archive: picked %+v", second)
 	}
-	if at := r.underPressure(files); at != -1 {
+	if at := r.underPressure(files, second.seen).at; at != -1 {
 		t.Fatalf("healthDown after spaceFail seen: picked %d, want -1", at)
+	}
+}
+
+func TestFailedEvictionLeavesPressurePending(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	log := &AuditLog{path: filepath.Join(dir, "audit.log"), maxBytes: 1 << 20, maxFiles: 4}
+	if _, err := log.open(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := log.file.Close(); err != nil {
+			t.Error(err)
+		}
+	})
+	log.enterNoSpace(syscall.ENOSPC)
+
+	name := "audit-2026-01-01T00-00-00.000.log.gz"
+	if err := os.WriteFile(filepath.Join(dir, name), []byte("invalid archive metadata"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	files, err := RotatedFiles(log.path, "")
+	if err != nil || len(files) != 1 || !files[0].Packed {
+		t.Fatalf("rotated files %v, error %v", files, err)
+	}
+	archiver := &archiver{live: dir, log: log, ctx: t.Context()}
+	archiver.trim()
+	if _, err := os.Stat(files[0].Path()); err != nil {
+		t.Fatalf("failed eviction removed its file: %v", err)
+	}
+	if selected := archiver.underPressure(files, archiver.spaceSeen).at; selected != 0 {
+		t.Fatalf("failed eviction left selection %d, want the pending file", selected)
 	}
 }
 
