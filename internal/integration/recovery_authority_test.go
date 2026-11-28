@@ -39,14 +39,15 @@ func TestExpiredProvisionalNeverServes(t *testing.T) {
 	// expired grant.
 	t.Run("deadline passes while running without timer", func(t *testing.T) {
 		e := gatewaytest.NewEnv(t)
-		provisional := e.Policy(e.A, true)
-		deadline := time.Now().Add(3 * time.Second)
-		gatewaytest.Seed(t, e.Database, e.Policy(e.A, false), gatewaytest.SeedOptions{Provisional: &provisional, Deadline: deadline})
+		gatewaytest.Seed(t, e.Database, e.Policy(e.A, false), gatewaytest.SeedOptions{})
 		e.Start(gatewaytest.Binaries.Fault, "GATEWAY_FAULT=no-deadline-timer")
+		harness := e.MustLogin(gatewaytest.HarnessAdmin, gatewaytest.HarnessPassword)
+		_, activated := e.ProvisionalFrom(harness, e.Policy(e.A, true), 1, 3, "expiry-without-timer")
+		deadline := activated.Deadline
 		if code, _ := e.Get("/b/x"); code != http.StatusOK {
 			t.Fatalf("before deadline: %d", code)
 		}
-		time.Sleep(time.Until(deadline) + 200*time.Millisecond)
+		time.Sleep(time.Until(deadline))
 		if code, _ := e.Get("/b/x"); code != http.StatusServiceUnavailable {
 			t.Fatalf("after deadline: %d, want 503", code)
 		}
@@ -65,10 +66,11 @@ func TestExpiredProvisionalNeverServes(t *testing.T) {
 
 	t.Run("deadline passes while running", func(t *testing.T) {
 		e := gatewaytest.NewEnv(t)
-		provisional := e.Policy(e.A, true)
-		deadline := time.Now().Add(2 * time.Second)
-		gatewaytest.Seed(t, e.Database, e.Policy(e.A, false), gatewaytest.SeedOptions{Provisional: &provisional, Deadline: deadline})
+		gatewaytest.Seed(t, e.Database, e.Policy(e.A, false), gatewaytest.SeedOptions{})
 		e.Start(gatewaytest.Binaries.Plain)
+		harness := e.MustLogin(gatewaytest.HarnessAdmin, gatewaytest.HarnessPassword)
+		_, activated := e.ProvisionalFrom(harness, e.Policy(e.A, true), 1, 2, "expiry-with-timer")
+		deadline := activated.Deadline
 		if s := e.Status(); s.Revision != 2 {
 			t.Fatalf("before deadline serving %d, want provisional 2", s.Revision)
 		}
